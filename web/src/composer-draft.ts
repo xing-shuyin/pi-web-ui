@@ -19,8 +19,10 @@ export function selectDraftToRestore(
 export interface DraftAttachment {
 	path: string;
 	name: string;
-	mode?: "inline" | "reference" | "lines" | "page" | "conversation" | "quote" | "canvas";
+	mode?: "inline" | "reference" | "lines" | "page" | "conversation" | "quote" | "canvas" | "terminal";
 	quote?: import("../../server/protocol.js").TextQuote;
+	/** `mode: "terminal"`：终端标签 id（同一个 tab 多次引用只留一条）。 */
+	terminalId?: string;
 	conversationId?: string;
 	sessionPath?: string;
 	isDir?: boolean;
@@ -36,6 +38,7 @@ function attachmentIdentity(a: DraftAttachment): string | null {
 	if (a.mode === "quote" && a.quote) {
 		return `quote:${JSON.stringify([a.quote.sessionId ?? "", a.quote.messageId, a.quote.role, a.quote.text])}`;
 	}
+	if (a.mode === "terminal" && a.terminalId) return `terminal:${a.terminalId}`;
 	if (a.key) return `key:${a.key}`;
 	if (a.mode === "conversation") {
 		if (a.conversationId) return `conv:id:${a.conversationId}`;

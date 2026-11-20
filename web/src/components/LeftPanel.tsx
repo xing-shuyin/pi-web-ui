@@ -72,6 +72,7 @@ import { ProjectPicker } from "./ProjectPicker.js";
 import { type UiSlotEntry } from "../ui-slots";
 import { contextMenuItems, openContextMenu, type ContextMenuRequest } from "../context-menu-state";
 import { HalfRingSpinner } from "./HalfRingSpinner";
+import { nativeCliRowState } from "../native-cli";
 import { composeToComposer, focusComposer } from "../composer-bridge";
 import { openQuickAsk, type QuickAskReferenceSource } from "../quick-ask";
 import { buildSessionDeepLink, extractSessionIdFromPath } from "../session-url";
@@ -1558,12 +1559,7 @@ export const LeftPanel = memo(function LeftPanel({
 					c.isStreaming ||
 					c.hasQuestion ||
 					c.completionPending ||
-					Boolean(
-						c.nativeCli &&
-						c.nativeCli.status?.phase !== "exited" &&
-						c.nativeCli.status?.phase !== "error" &&
-						c.nativeCli.status?.phase !== "disconnected",
-					),
+					Boolean(c.nativeCli && nativeCliRowState(c.nativeCli, c.error) === "busy"),
 			).length;
 			const unreadRunningCount = openRowConvs.filter(
 				(c) =>
@@ -1959,15 +1955,10 @@ export const LeftPanel = memo(function LeftPanel({
 		const hasError = Boolean(runInfo?.hasError || runInfo?.error);
 		const isCli = Boolean(s.nativeCli || runInfo?.conv?.nativeCli);
 		const cliPhase = runInfo?.conv?.nativeCli?.status?.phase;
-		const isCliRunning =
-			Boolean(runInfo?.conv?.nativeCli) &&
-			(cliPhase === "running" ||
-				cliPhase === "working" ||
-				cliPhase === "starting" ||
-				(!cliPhase && !runInfo?.conv?.error));
-		const isCliWaiting =
-			Boolean(runInfo?.conv?.nativeCli) && (cliPhase === "waiting_input" || cliPhase === "waiting_approval");
-		const isCliExited = isCli && !isCliRunning && !isCliWaiting;
+		const cliState = isCli ? nativeCliRowState(runInfo?.conv?.nativeCli, runInfo?.conv?.error) : undefined;
+		const isCliRunning = cliState === "busy";
+		const isCliWaiting = cliState === "waiting";
+		const isCliExited = cliState === "ended";
 		const isActuallyRunning = Boolean(
 			isStreaming || hasQuestion || runInfo?.conv?.completionPending || runInfo?.conv?.isStreaming || isCliRunning,
 		);
@@ -2025,7 +2016,7 @@ export const LeftPanel = memo(function LeftPanel({
 					{isCli && (
 						<FiTerminal
 							size={13}
-							className={`native-cli-conversation-icon${isCliRunning ? " is-running" : isCliExited ? " is-exited" : isCliWaiting ? " is-waiting" : ""}`}
+							className={`native-cli-conversation-icon${isCliRunning ? " is-running" : isCliWaiting ? " is-waiting" : isCliExited ? " is-exited" : ""}`}
 							title={
 								cliPhase
 									? `${t("nativeCli")} (${t(`nativeCliSession.${cliPhase === "waiting_input" ? "waitingInput" : cliPhase === "waiting_approval" ? "waitingApproval" : cliPhase}`) || cliPhase})`
@@ -2423,10 +2414,10 @@ export const LeftPanel = memo(function LeftPanel({
 		const active = !sharedConversationOwner && activeConversationId === c.id;
 		const isCli = Boolean(c.nativeCli);
 		const cliPhase = c.nativeCli?.status?.phase;
-		const isCliRunning =
-			isCli && (cliPhase === "running" || cliPhase === "working" || cliPhase === "starting" || (!cliPhase && !c.error));
-		const isCliWaiting = isCli && (cliPhase === "waiting_input" || cliPhase === "waiting_approval");
-		const isCliExited = isCli && (cliPhase === "exited" || cliPhase === "disconnected");
+		const cliState = isCli ? nativeCliRowState(c.nativeCli, c.error) : undefined;
+		const isCliRunning = cliState === "busy";
+		const isCliWaiting = cliState === "waiting";
+		const isCliExited = cliState === "ended";
 		const isActuallyRunning = Boolean(c.isStreaming || hasStreaming || c.completionPending || isCliRunning);
 		const isUnread =
 			!active &&
@@ -2489,7 +2480,7 @@ export const LeftPanel = memo(function LeftPanel({
 					{c.nativeCli && (
 						<FiTerminal
 							size={13}
-							className={`native-cli-conversation-icon${isCliRunning ? " is-running" : isCliExited ? " is-exited" : isCliWaiting ? " is-waiting" : ""}`}
+							className={`native-cli-conversation-icon${isCliRunning ? " is-running" : isCliWaiting ? " is-waiting" : isCliExited ? " is-exited" : ""}`}
 							title={
 								cliPhase
 									? `${t("nativeCli")} (${t(`nativeCliSession.${cliPhase === "waiting_input" ? "waitingInput" : cliPhase === "waiting_approval" ? "waitingApproval" : cliPhase}`) || cliPhase})`

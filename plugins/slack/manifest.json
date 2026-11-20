@@ -2,7 +2,7 @@
 	"apiVersion": 2,
 	"name": "slack",
 	"nameEn": "Slack",
-	"version": "0.1.15",
+	"version": "0.1.16",
 	"alwaysOn": true,
 	"description": "Slack 机器人：官方 Socket Mode 出站 WebSocket 双工长连接（零公网 IP / 智能 Markdown 分块 / 多轮会话隔离）/ 用户白名单准入 / AI slack 工具（密钥加密存储，零外部依赖）",
 	"descriptionEn": "Slack Bot: official Socket Mode outbound WebSocket duplex chat (zero public IP, structure-aware Markdown chunks, isolated multi-turn sessions), access control whitelist, and AI slack tool.",
@@ -18,9 +18,12 @@
 			{
 				"id": "slack-open",
 				"label": "Slack",
+				"labelEn": "Slack",
 				"icon": "💬",
 				"kind": "view",
 				"view": "plugin:slack",
+				"hint": "打开 Slack 机器人工作台",
+				"hintEn": "Open the Slack bot workbench",
 				"order": 62
 			}
 		],
@@ -28,7 +31,9 @@
 			{
 				"id": "slack-status",
 				"label": "💬 Slack",
+				"labelEn": "💬 Slack",
 				"hint": "点击打开 Slack 工作台",
+				"hintEn": "Open the Slack workbench",
 				"kind": "view",
 				"view": "plugin:slack",
 				"order": 52

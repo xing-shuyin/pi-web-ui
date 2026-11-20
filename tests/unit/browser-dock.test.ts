@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { DOCK_SCRIPT, getDockScript } from "../../browser/runtime/dock.js";
 
 const DOCK_JS = readFileSync(new URL("../../browser/renderer/dock.js", import.meta.url), "utf8");
+const DOWNLOADS_JS = readFileSync(new URL("../../browser/renderer/downloads.js", import.meta.url), "utf8");
 const MANAGER_TS = readFileSync(new URL("../../browser/runtime/manager.ts", import.meta.url), "utf8");
 const BUILD_MJS = readFileSync(new URL("../../scripts/build-browser.mjs", import.meta.url), "utf8");
 
@@ -46,9 +47,50 @@ describe("浏览器悬浮 Dock（刷新圆钮）", () => {
 	});
 
 	it("不往内部页注入，且仍然只在单击（非拖动）时刷新", () => {
-		expect(DOCK_JS).toContain('location.pathname.includes("shell.html")');
-		expect(DOCK_JS).toContain('location.pathname.includes("newtab.html")');
+		// 判据是 file:// 协议 + 内部页文件名：只看 pathname 会把 github.com 上的同名路径当内部页
+		expect(DOCK_JS).toContain(
+			'location.protocol === "file:" && /(?:^|\\/)(?:shell|newtab)\\.html$/i.test(location.pathname)',
+		);
 		expect(DOCK_JS).toContain("location.reload()");
 		expect(DOCK_JS).toContain("if (hasMoved)");
+	});
+
+	it("刷新钮不透明，位置恢复按当前视口夹一遍（否则窄窗口里整颗钮落到屏幕外）", () => {
+		expect(DOCK_JS).not.toContain("opacity: 0.35");
+		expect(DOCK_JS).not.toMatch(/\.dock-container:hover\s*\{\s*opacity/);
+		// 拖动与恢复走同一个夹取函数，窗口变小后（分栏 / 还原）重新夹
+		expect(DOCK_JS).toContain("function clampPosition(");
+		expect(DOCK_JS).toContain('window.addEventListener("resize"');
+		const mousemove = DOCK_JS.slice(DOCK_JS.indexOf('window.addEventListener("mousemove"'));
+		expect(mousemove).toContain("place(initialRight - dx, initialBottom - dy)");
+	});
+
+	it("看不见就自己救回来：连可见性一起查，不只是「在 DOM 里」", () => {
+		expect(DOCK_JS).toContain("function onScreen()");
+		expect(DOCK_JS).toContain("host.getBoundingClientRect()");
+		const watch = DOCK_JS.slice(DOCK_JS.indexOf("function watch()"));
+		expect(watch).toContain("if (onScreen()) return");
+	});
+
+	it("一列钮一样大、悬停不放大，展开方向跟着视口边缘翻转", () => {
+		// 主钮 / 菜单钮 / 插槽里的下载钮同一个尺寸：一列圆钮看着得是一条线
+		const rule = (selector: string) => {
+			const start = DOCK_JS.indexOf(`${selector} {`);
+			const end = DOCK_JS.indexOf("}", start);
+			return start >= 0 && end > start ? DOCK_JS.slice(start, end) : "";
+		};
+		const widthOf = (selector: string) => Number((/width:\s*(\d+)px/.exec(rule(selector)) || [])[1]);
+		expect(widthOf(".dock-main-btn")).toBe(32);
+		expect(widthOf(".dock-sub-btn")).toBe(widthOf(".dock-main-btn"));
+		expect(DOWNLOADS_JS).toContain("width: 32px;");
+		// 悬停只换底色：圆钮不许“弹一下”，呼吸态也不许改尺寸
+		expect(rule(".dock-sub-btn:hover")).not.toContain("transform");
+		expect(rule(".dock-main-btn:hover")).not.toContain("transform");
+		expect(DOCK_JS).not.toContain("transform: scale(1.12)");
+		// 主钮贴顶边就整列翻转（主钮在上、菜单往下长），装不下就压上限并可滚——不给边缘切钮
+		expect(DOCK_JS).toContain(".dock-container.dock-flip");
+		expect(DOCK_JS).toContain("flex-direction: column-reverse");
+		expect(DOCK_JS).toContain("var(--dock-menu-max, 230px)");
+		expect(DOCK_JS).toContain('dock.classList.toggle("dock-flip", flip)');
 	});
 });

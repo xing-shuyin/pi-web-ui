@@ -551,7 +551,10 @@ export default {
 					if (!ok) {
 						mirrorDenied = true;
 						host.log("warn", `镜像目录未授权，已暂停镜像：${dir}`);
-						host.notify("warning", `笔记镜像需要目录授权：${dir}`);
+						host.notify(
+							"warning",
+							`笔记镜像需要目录授权：${dir} / Directory access required for note mirroring: ${dir}`,
+						);
 						return false;
 					}
 				}

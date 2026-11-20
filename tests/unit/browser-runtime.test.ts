@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BrowserWindow, WebContents } from "electron";
 import { isInternalUrl, normalizeBrowserUrl, pickTabFavicon, webOrigin } from "../../browser/runtime/urls.js";
+import { themeBackground } from "../../browser/runtime/palette.js";
 
 const mock = vi.hoisted(() => ({ views: [] as any[], sessions: [] as any[], downloadsDir: "" }));
 vi.mock("electron", async () => {
@@ -56,6 +57,8 @@ vi.mock("electron", async () => {
 	class View {
 		webContents = new Contents();
 		setBounds = vi.fn();
+		// 首帧底色：页面画出来之前视图露的就是这块颜色（`setBackgroundColor` 是真实 API）
+		setBackgroundColor = vi.fn();
 		constructor(readonly options: any) {
 			mock.views.push(this);
 		}
@@ -90,6 +93,7 @@ function directory(): string {
 function setup(dataDir = directory()) {
 	const window = Object.assign(new EventEmitter(), {
 		isDestroyed: () => false,
+		setBackgroundColor: vi.fn(),
 		contentView: { addChildView: vi.fn(), removeChildView: vi.fn() },
 	});
 	const onChange = vi.fn();
@@ -220,6 +224,22 @@ describe("BrowserManager", () => {
 		manager.closeTab(firstId);
 		expect(manager.getTabs()).toHaveLength(1);
 		expect(manager.getActiveTabId()).not.toBe(firstId);
+	});
+
+	it("首帧底色跟主题走：新建标签页那块空白不是白的", () => {
+		const { manager, window } = setup();
+		// 建窗口就把底色钺上（外壳页 body 透明，没盖住的地方露的就是它）
+		expect(window.setBackgroundColor).toHaveBeenCalledWith(themeBackground("dark"));
+		expect(mock.views.length).toBeGreaterThan(0);
+		for (const view of mock.views) expect(view.setBackgroundColor).toHaveBeenCalledWith(themeBackground("dark"));
+		// 新建的标签页同样先铺色：页面画出第一帧之前露的就是它
+		const id = manager.createTab("https://example.com");
+		expect(mock.views[mock.views.length - 1].setBackgroundColor).toHaveBeenCalledWith(themeBackground("dark"));
+		// 换主题连这块一起换，否则浅色主题下新建标签页还会先闪一帧深色
+		manager.saveSettings({ ...manager.getSettings(), theme: "light" });
+		expect(window.setBackgroundColor).toHaveBeenLastCalledWith(themeBackground("light"));
+		for (const view of mock.views) expect(view.setBackgroundColor).toHaveBeenLastCalledWith(themeBackground("light"));
+		manager.closeTab(id);
 	});
 
 	it("routes popups to tabs and blocks remote renderer attempts to access internal files", async () => {

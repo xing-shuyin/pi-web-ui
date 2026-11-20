@@ -2,7 +2,7 @@
 	"apiVersion": 2,
 	"name": "qq",
 	"nameEn": "QQ",
-	"version": "0.2.6",
+	"version": "0.2.7",
 	"alwaysOn": true,
 	"description": "QQ 机器人：官方出站 WebSocket 双向对话、富媒体收发、用户白名单与 AI qq 工具；支持系统或插件 TTS 语音自动回复，可选择引擎、音色及语音和文字组合。密钥加密存储。",
 	"descriptionEn": "QQ Bot with outbound WebSocket chat, rich media, access control, and an AI qq tool. Automatic voice replies use the shared TTS center with selectable engines and voices, optional text, and encrypted credentials.",
@@ -18,6 +18,7 @@
 			{
 				"id": "__view",
 				"label": "QQ",
+				"labelEn": "QQ",
 				"icon": "🐧",
 				"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 2a8 8 0 0 0-8 8c0 3 1.5 5 2 7-1 .5-2 1.5-2 3h16c0-1.5-1-2.5-2-3 .5-2 2-4 2-7a8 8 0 0 0-8-8z\"/><circle cx=\"9\" cy=\"9\" r=\"1\"/><circle cx=\"15\" cy=\"9\" r=\"1\"/><path d=\"M10 13h4\"/></svg>",
 				"kind": "view",
@@ -32,6 +33,7 @@
 			{
 				"id": "qq-status",
 				"label": "🐧 QQ",
+				"labelEn": "🐧 QQ",
 				"hint": "点击打开 QQ 机器人工作台",
 				"hintEn": "Open the QQ bot workbench",
 				"kind": "view",

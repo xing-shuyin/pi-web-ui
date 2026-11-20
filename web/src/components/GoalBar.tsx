@@ -3,6 +3,15 @@ import { FiTarget, FiLock, FiUnlock, FiX, FiChevronUp, FiArrowUpRight, FiSquare 
 import type { GoalStatus, ModelInfo } from "../types";
 import { isZhLocale, useT, useI18n } from "../i18n";
 import { appSend, useIsDsh, useEngineCapabilities } from "../app-globals";
+import { composeToComposer, focusComposer } from "../composer-bridge";
+import {
+	setGoalCompose,
+	setGoalPlan,
+	setGoalRefine,
+	useGoalCompose,
+	useGoalPlan,
+	useGoalRefine,
+} from "../goal-compose";
 import { Dropdown, DropdownItem } from "./Dropdown";
 import { UniversalModelPicker, matchesModelId } from "./UniversalModelPicker";
 import type { UiSlotEntry } from "../ui-slots";
@@ -54,14 +63,14 @@ export const GoalBar = memo(function GoalBar({
 		n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
 	const staleBackend = !isDsh && goal.execModel === undefined;
 
-	const [text, setText] = useState("");
 	const [reviewModel, setReviewModel] = useState<string>(goal.reviewModel ?? "");
 	const [maxRounds, setMaxRounds] = useState(goal.maxRounds);
 	const [locked, setLocked] = useState(goal.locked);
-	const [execModel, setExecModel] = useState<string>(goal.execModel ?? "");
 	const [modelOpen, setModelOpen] = useState(false);
-	const [execModelOpen, setExecModelOpen] = useState(false);
 	const [historyOpen, setHistoryOpen] = useState(false);
+	const goalCompose = useGoalCompose();
+	const goalRefine = useGoalRefine();
+	const goalPlan = useGoalPlan();
 	const [reqLoading, setReqLoading] = useState(false);
 	const [collapsed, setCollapsed] = useState(true);
 
@@ -69,9 +78,8 @@ export const GoalBar = memo(function GoalBar({
 		setReviewModel(goal.reviewModel ?? "");
 		setMaxRounds(goal.maxRounds || 0);
 		setLocked(goal.locked);
-		setExecModel(goal.execModel ?? "");
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [goal.goal, goal.reviewModel, goal.maxRounds, goal.locked, goal.execModel]);
+	}, [goal.goal, goal.reviewModel, goal.maxRounds, goal.locked]);
 
 	useEffect(() => {
 		if (modelOpen && models.length === 0 && !reqLoading && !modelsLoading) {
@@ -87,46 +95,10 @@ export const GoalBar = memo(function GoalBar({
 		if (!reviewModel) return t("goalBarUseMainModel");
 		return models.find((m) => m.id === reviewModel)?.name ?? reviewModel;
 	};
-	const execModelName = (): string => {
-		if (!execModel) return t("goalBarUseMainModel");
-		return models.find((m) => m.id === execModel)?.name ?? execModel;
-	};
-
-	const set = () => {
-		const trimmed = text.trim();
-		if (!trimmed) return;
-		appSend({
-			type: "set_goal",
-			goal: trimmed,
-			...(reviewModel ? { reviewModel } : {}),
-			maxRounds,
-			locked,
-			...(execModel ? { execModel } : {}),
-		});
-		setText("");
+	const enterCompose = () => {
+		setGoalCompose(true);
 		setCollapsed(false);
-	};
-
-	const runPlan = () => {
-		const trimmed = text.trim();
-		appSend({ type: "set_plan_mode", enabled: true });
-		if (!trimmed) return;
-		appSend({ type: "prompt", text: trimmed });
-		setText("");
-	};
-
-	const startWizard = () => {
-		const trimmed = text.trim();
-		if (!trimmed) return;
-		appSend({
-			type: "start_goal_wizard",
-			text: trimmed,
-			...(reviewModel ? { wizardModel: reviewModel } : {}),
-			maxRounds,
-			locked,
-		});
-		setText("");
-		setCollapsed(false);
+		focusComposer();
 	};
 
 	const GOAL_DEFAULT_ORDER = [
@@ -137,7 +109,6 @@ export const GoalBar = memo(function GoalBar({
 		"host:goal-lock",
 		"host:goal-collapse",
 		"host:goal-model",
-		"host:goal-execmodel",
 		"host:goal-rounds",
 		"host:goal-openrole",
 		"host:goal-clear",
@@ -156,40 +127,46 @@ export const GoalBar = memo(function GoalBar({
 	};
 	const goalHostNodes: Record<string, ReactNode> = {
 		"host:goal-pill": (
-			<button
-				type="button"
-				className="goalbar-hint"
-				title={t("goalBarPlaceholder")}
-				onClick={() => setCollapsed(false)}
-			>
+			<button type="button" className="goalbar-hint" title={t("goalBarHelp")} onClick={enterCompose}>
 				<FiTarget /> <span>{goalLabel("host:goal-pill", t("goalBarTitle"))}</span>
 			</button>
 		),
 		"host:goal-set": (
-			<button type="button" className="goalbar-btn" disabled={!text.trim()} onClick={set}>
-				{goalLabel("host:goal-set", t("goalBarSet"))}
+			<button
+				type="button"
+				className={`goalbar-btn${goalCompose ? " mode active" : ""}`}
+				title={t("goalComposeHint")}
+				aria-pressed={goalCompose}
+				onClick={() => {
+					if (goalCompose) setGoalCompose(false);
+					else enterCompose();
+				}}
+			>
+				{goalLabel("host:goal-set", t("goalComposeEnter"))}
 			</button>
 		),
 		"host:goal-wizard": (
 			<button
 				type="button"
-				className="goalbar-btn action wizard"
-				disabled={!text.trim()}
+				className={`goalbar-btn action wizard${goalRefine ? " mode active" : ""}`}
 				title={t("goalWizardTip")}
-				onClick={startWizard}
+				aria-pressed={goalRefine}
+				onClick={() => setGoalRefine(!goalRefine)}
 			>
 				{goalLabel("host:goal-wizard", t("goalWizardBtn"))}
+				{goalRefine ? " ✓" : ""}
 			</button>
 		),
 		"host:goal-plan": !capabilities.planMode ? null : (
 			<button
 				type="button"
-				className="goalbar-btn action plan"
-				disabled={!text.trim()}
+				className={`goalbar-btn action plan${goalPlan ? " mode active" : ""}`}
 				title={t("planActionTip")}
-				onClick={runPlan}
+				aria-pressed={goalPlan}
+				onClick={() => setGoalPlan(!goalPlan)}
 			>
 				{goalLabel("host:goal-plan", t("planActionBtn"))}
+				{goalPlan ? " ✓" : ""}
 			</button>
 		),
 		"host:goal-lock": (
@@ -286,55 +263,6 @@ export const GoalBar = memo(function GoalBar({
 					}}
 				/>
 			</label>
-		),
-		"host:goal-execmodel": isDsh ? null : (
-			<Dropdown
-				trigger={
-					<span
-						className="goalbar-opt"
-						title={`${t("goalBarExecModel")}: ${execModelName()} · ${t("goalBarExecModelTip")}`}
-					>
-						<span className="goalbar-opt-label">{`${goalLabel("host:goal-execmodel", t("goalBarExecModel"))}:`}</span>
-						<b>{execModelName()}</b>
-					</span>
-				}
-				open={execModelOpen}
-				onOpenChange={setExecModelOpen}
-				direction="up"
-			>
-				<UniversalModelPicker
-					models={models}
-					modelsLoading={modelsLoading}
-					currentModelId={execModel || null}
-					active={execModelOpen}
-					onEnsureModels={() => {
-						if (models.length === 0 && !modelsLoading && !reqLoading) {
-							setReqLoading(true);
-							appSend({ type: "list_models" });
-						}
-					}}
-					loading={reqLoading}
-					onRefresh={() => appSend({ type: "list_models" })}
-					onPickModel={(m) => {
-						setExecModel(m.id);
-						setExecModelOpen(false);
-						appSend({ type: "set_goal_prefs", execModel: m.id });
-					}}
-					isRowActive={(m) => matchesModelId(m, execModel)}
-					extraTopRow={
-						<DropdownItem
-							active={execModel === ""}
-							onClick={() => {
-								setExecModel("");
-								setExecModelOpen(false);
-								appSend({ type: "set_goal_prefs", execModel: "" });
-							}}
-						>
-							{t("goalBarUseMainModel")}
-						</DropdownItem>
-					}
-				/>
-			</Dropdown>
 		),
 	};
 	const wizardActive = (goal.wizard?.active ?? false) && goalBelongsToActiveConversation;
@@ -438,9 +366,11 @@ export const GoalBar = memo(function GoalBar({
 									className={`goalbar-x${goal.reviewing ? " stopping" : ""}`}
 									title={goalLabel("host:goal-clear", goal.reviewing ? t("goalBarStop") : t("goalBarClear"))}
 									onClick={() => {
-										if (goal.goal) setText(goal.goal);
+										if (goal.goal) composeToComposer({ text: goal.goal });
 										appSend({ type: "clear_goal" });
+										setGoalCompose(true);
 										setCollapsed(false);
+										focusComposer();
 									}}
 								>
 									{goal.reviewing ? <FiSquare /> : <FiX />}
@@ -466,17 +396,18 @@ export const GoalBar = memo(function GoalBar({
 				<span className="goalbar-icon">
 					<FiTarget />
 				</span>
-				<input
-					className="goalbar-input"
-					autoFocus
-					value={text}
-					placeholder={t("goalBarPlaceholder")}
-					title={t("goalBarPlaceholder")}
-					onChange={(e) => setText(e.target.value)}
-					onKeyDown={(e) => {
-						if (e.key === "Enter") set();
-					}}
-				/>
+				<button
+					type="button"
+					className="goalbar-icon-btn"
+					title={t("goalBarHelp")}
+					aria-label={t("goalBarHelp")}
+					onClick={() => focusComposer()}
+				>
+					?
+				</button>
+				<span className="goalbar-lock-hint" title={t("goalBarHelp")}>
+					{goalCompose ? t("goalComposeHint") : t("goalBarHelp")}
+				</span>
 				{renderMergedToolbar(
 					goalZone(["host:goal-set", "host:goal-wizard", "host:goal-plan", "host:goal-lock", "host:goal-collapse"]),
 					goalHostNodes,
@@ -484,7 +415,7 @@ export const GoalBar = memo(function GoalBar({
 				)}
 			</div>
 			<div className="goalbar-opts">
-				{goalZone(["host:goal-model", "host:goal-execmodel", "host:goal-rounds"])
+				{goalZone(["host:goal-model", "host:goal-rounds"])
 					.filter((e) => e.source === "host")
 					.map((e) => (
 						<Fragment key={e.id}>{goalHostNodes[e.id]}</Fragment>
@@ -507,8 +438,10 @@ export const GoalBar = memo(function GoalBar({
 							<DropdownItem
 								key={`${h.finishedAt}-${i}`}
 								onClick={() => {
-									setText(h.goal);
+									composeToComposer({ text: h.goal });
+									setGoalCompose(true);
 									setHistoryOpen(false);
+									focusComposer();
 								}}
 							>
 								<span className="dd-model-cell" title={h.goal}>

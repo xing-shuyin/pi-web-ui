@@ -588,7 +588,7 @@ export class QuiesceRejectedError extends Error {
 	}
 }
 
-import { splitAgentStartPrompt, PI_DOC_PATHS, WINDOWS_PERSONA } from "./persona-chain.js";
+import { splitAgentStartPrompt, WINDOWS_PERSONA } from "./persona-chain.js";
 export { splitAgentStartPrompt };
 
 import { makeKillableBashTool, makeAdaptiveBashTool } from "./bash-tool.js";
@@ -1253,7 +1253,23 @@ export class ClientSession {
 			cwd,
 			() => this.getLang(),
 			"conversation",
-			(config) => resolveNativeCliModelConnection(config, this.sharedModelRuntime),
+			async (config) => {
+				try {
+					return await resolveNativeCliModelConnection(config, this.sharedModelRuntime);
+				} catch (err) {
+					// An unsupported protocol, a missing model or unusable credentials must not block the
+					// CLI: fall back to the CLI's own login, but say why instead of leaving a bare login
+					// prompt behind the "inherit model" toggle.
+					const reason = err instanceof Error ? err.message : String(err);
+					this.emit({
+						type: "notice",
+						level: "warning",
+						text: `CLI 继承模型不可用，已回退到 CLI 自身登录：${reason}（显式 --model 参数优先；换用该 CLI 支持的模型或协议中转网关可免登录）`,
+						textEn: `CLI model inheritance is unavailable, falling back to the CLI's own login: ${reason} (explicit --model wins; switch to a supported model or a protocol-converting gateway for login-free launch)`,
+					});
+					return undefined;
+				}
+			},
 		);
 		this.configureNativeCliRuntime(conversationId, mgr);
 		mgr.onAgentIdle = (terminalId, idleMs, title, lastLines) =>
@@ -1413,7 +1429,14 @@ export class ClientSession {
 		}
 		if (event.type === "working" || (event.type === "done" && event.aborted)) return;
 		if (this.convs.get(conv.id) !== conv || this.disposed) return;
-		const kind = event.type;
+		// Only the four terminal kinds fan out to clients and mobile. tool / notification / compact /
+		// subagent / end stay status-only until the protocol carries them, so a new hook event can
+		// never be emitted as an unknown kind.
+		const kind =
+			event.type === "approval" || event.type === "done" || event.type === "error" || event.type === "question"
+				? event.type
+				: undefined;
+		if (!kind) return;
 		const sessionId = conv.session.sessionId;
 		this.notifyMobile(conv, kind, `${binding.key}:${event.eventId}`);
 		this.emit({
@@ -3553,7 +3576,6 @@ export class ClientSession {
 		selectedTools: string[];
 		toolSnippets: Record<string, string>;
 		toolSignatures?: Record<string, string>;
-		toolGuidelines: string[];
 		contextFiles: { path: string; content: string }[];
 		skills: { name: string; description: string; filePath: string }[];
 		preset?: string;
@@ -3574,12 +3596,8 @@ export class ClientSession {
 			selectedTools: src.selectedTools,
 			toolSnippets: src.toolSnippets,
 			toolSignatures: src.toolSignatures,
-			toolGuidelines: src.toolGuidelines,
 			...(src.lazy ? { lazy: true } : {}),
 			...(src.lazy && src.catalogTools ? { catalogTools: src.catalogTools } : {}),
-			piReadme: PI_DOC_PATHS.readme,
-			piDocs: PI_DOC_PATHS.docs,
-			piExamples: PI_DOC_PATHS.examples,
 			pluginDocs: join(getPkgRoot(), "docs", "architecture-plugins.md"),
 			pluginSdk: join(getPkgRoot(), "plugin-sdk"),
 			pluginsDir: join(this.stateStore.dataDir, "plugins"),
@@ -3609,7 +3627,6 @@ export class ClientSession {
 		selectedTools: string[];
 		toolSnippets: Record<string, string>;
 		toolSignatures?: Record<string, string>;
-		toolGuidelines: string[];
 		contextFiles: { path: string; content: string }[];
 		skills: { name: string; description: string; filePath: string }[];
 		preset?: string;
@@ -3670,7 +3687,6 @@ export class ClientSession {
 			const baseNames = lazyOn ? this.lazyResidentNames(sess, conv) : active;
 			const snippets: Record<string, string> = {};
 			const signatures: Record<string, string> = catalog.signatures ?? {};
-			const guidelines: string[] = [];
 			for (const name of catalog.names) {
 				const def = sess.getToolDefinition(name);
 				if (!def) continue;
@@ -3680,20 +3696,12 @@ export class ClientSession {
 					snippets[name] = eff.promptSnippet.trim();
 				}
 			}
-			for (const name of baseNames) {
-				const def = sess.getToolDefinition(name);
-				if (!def) continue;
-				const ov = toolPromptOverrideOf(this.settingsSvc.current.toolPromptOverrides, name);
-				const eff = effectiveToolPrompt(def, ov);
-				if (eff.promptGuidelines) guidelines.push(...eff.promptGuidelines);
-			}
 			const texts = resolveSectionTexts(
 				this.composeInputs({
 					cwd,
 					selectedTools: baseNames,
 					toolSnippets: snippets,
 					toolSignatures: signatures,
-					toolGuidelines: guidelines,
 					...(lazyOn ? { lazy: true, catalogTools: catalog.names } : {}),
 					contextFiles: loader.getAgentsFiles().agentsFiles,
 					skills: loader.getSkills().skills.map((s) => ({
@@ -5002,7 +5010,6 @@ export class ClientSession {
 										const baseNames = lazyOn && sess ? this.lazyResidentNames(sess, conv) : activeToolNames;
 										const activeSnippets: Record<string, string> = {};
 										const activeSignatures: Record<string, string> = catalog.signatures ?? {};
-										const activeGuidelines: string[] = [];
 										if (sess) {
 											for (const name of catalog.names) {
 												const def = sess.getToolDefinition(name);
@@ -5013,13 +5020,6 @@ export class ClientSession {
 													activeSnippets[name] = eff.promptSnippet.trim();
 												}
 											}
-											for (const name of baseNames) {
-												const def = sess.getToolDefinition(name);
-												if (!def) continue;
-												const ov = toolPromptOverrideOf(this.settingsSvc.current.toolPromptOverrides, name);
-												const eff = effectiveToolPrompt(def, ov);
-												if (eff.promptGuidelines) activeGuidelines.push(...eff.promptGuidelines);
-											}
 										}
 										const currentPreset =
 											conv?.agentPreset ?? targetPreset ?? this.settingsSvc.current.defaultAgentPreset ?? "standard";
@@ -5029,7 +5029,6 @@ export class ClientSession {
 													forceSystemPrompt?: string;
 													selectedTools?: string[];
 													toolSnippets?: Record<string, string>;
-													promptGuidelines?: string[];
 													contextFiles?: { path: string; content: string }[];
 													skills?: { name: string; description?: string; filePath?: string }[];
 											  }
@@ -5042,7 +5041,6 @@ export class ClientSession {
 											selectedTools: baseNames.length > 0 ? baseNames : (opts?.selectedTools ?? []),
 											toolSnippets: activeSnippets,
 											toolSignatures: activeSignatures,
-											toolGuidelines: activeGuidelines,
 											...(lazyOn ? { lazy: true, catalogTools: catalog.names } : {}),
 											contextFiles: opts?.contextFiles ?? [],
 											skills: (opts?.skills ?? []).map((s) => ({
@@ -5251,6 +5249,8 @@ export class ClientSession {
 								}
 								return {};
 							},
+							// 用户自己开的终端标签（「引用到输入框」带过来的）：可读也可输入，安全门禁同一套。
+							resolveExternal: (terminalId) => (this.userTerminals?.has(terminalId) ? this.userTerminals : undefined),
 						}).map((tool) => withWorkspaceSnapshotGate(tool, () => this.awaitPendingWorkspaceSnapshot(ownerId))),
 						...(sandboxIdentity || (apply && apply.enabledExtensions.length > 0)
 							? []
@@ -11781,6 +11781,10 @@ export class ClientSession {
 								settings: this.settingsSvc.current,
 								session: s,
 								getLang: () => this.getLang(),
+								resolveTerminal: (terminalId) =>
+									this.findTerminalManager(terminalId)
+										?.list()
+										.find((item) => item.id === terminalId),
 							},
 							nonQuoteAttachments,
 						)

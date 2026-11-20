@@ -1,7 +1,8 @@
 {
 	"id": "voice-input",
 	"name": "语音与拍照输入",
-	"version": "0.4.8",
+	"nameEn": "Voice & Photo Input",
+	"version": "0.4.9",
 	"icon": "🎤",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z\"/><path d=\"M19 10v2a7 7 0 0 1-14 0v-2\"/><line x1=\"12\" y1=\"19\" x2=\"12\" y2=\"23\"/><line x1=\"8\" y1=\"23\" x2=\"16\" y2=\"23\"/></svg>",
 	"description": "语音与拍照输入：输入框旁的 🎤 语音识别直接听写进输入框（不支持/识别失败自动降级服务端转写）；📷 摄像头现场拍照（或调起手机系统相机）直接把照片放进对话；另给 AI 一个 transcribe_audio 工具，能把工作区里的录音文件转成文字。",
@@ -42,82 +43,104 @@
 			"key": "lang",
 			"type": "select",
 			"label": "识别语言",
+			"labelEn": "Recognition language",
 			"default": "zh-CN",
 			"options": ["zh-CN", "zh-TW", "en-US", "en-GB", "ja-JP"],
-			"hint": "浏览器语音识别与服务端转写共用的语言"
+			"hint": "浏览器语音识别与服务端转写共用的语言",
+			"hintEn": "Shared language for browser speech recognition and server-side transcription"
 		},
 		{
 			"key": "serverFallback",
 			"type": "boolean",
 			"label": "服务端转写降级",
+			"labelEn": "Server-side transcription fallback",
 			"default": true,
-			"hint": "浏览器不支持/识别失败时，录音发往服务端转写（本地 Whisper 或下面的远端接口）"
+			"hint": "浏览器不支持/识别失败时，录音发往服务端转写（本地 Whisper 或下面的远端接口）",
+			"hintEn": "When the browser can't recognize (unsupported or failed), send the recording to server-side transcription (local Whisper or the remote endpoint below)"
 		},
 		{
 			"key": "transcribeTool",
 			"type": "boolean",
 			"label": "给 AI 转写工具",
+			"labelEn": "Expose transcribe tool to AI",
 			"default": true,
-			"hint": "注册 transcribe_audio 工具，AI 可以把工作区里的音频文件（会议录音、语音备忘）转成文字来读；关掉即从 AI 的工具表里下架"
+			"hint": "注册 transcribe_audio 工具，AI 可以把工作区里的音频文件（会议录音、语音备忘）转成文字来读；关掉即从 AI 的工具表里下架",
+			"hintEn": "Register the transcribe_audio tool so the AI can read workspace audio files (meeting recordings, voice memos) as text; turn off to remove it from the AI's tool list"
 		},
 		{
 			"key": "engine",
 			"type": "select",
 			"label": "转写引擎",
+			"labelEn": "Transcription engine",
 			"default": "auto",
 			"options": ["auto", "local", "remote"],
-			"hint": "点 🎤 时直接决定先走哪条路（麦克风浮层里也能随时切，选完会存回这里）：auto=先用浏览器联网识别（免费实时），失败/不支持再降级服务端；local=直接用本地 Whisper（录音不出本机，未装会先带你装）；remote=只用远端接口。auto 与 local 在服务端转写时都是「本地优先、挂了切远端」"
+			"hint": "点 🎤 时直接决定先走哪条路（麦克风浮层里也能随时切，选完会存回这里）：auto=先用浏览器联网识别（免费实时），失败/不支持再降级服务端；local=直接用本地 Whisper（录音不出本机，未装会先带你装）；remote=只用远端接口。auto 与 local 在服务端转写时都是「本地优先、挂了切远端」",
+			"hintEn": "Decides which path the 🎤 button takes first (also switchable anytime in the mic panel; the choice is saved back here): auto = browser online recognition first (free, live), falling back to server-side on failure; local = local Whisper directly (recordings never leave this machine, installs on first use); remote = remote endpoint only. For server-side transcription, both auto and local mean \"local first, remote on failure\"."
 		},
 		{
 			"key": "hfEndpoint",
 			"type": "text",
 			"label": "模型下载源",
+			"labelEn": "Model download source",
 			"default": "",
-			"hint": "留空 = 官方 huggingface.co。国内直连经常超时，可填社区镜像 https://hf-mirror.com ；也认环境变量 HF_ENDPOINT"
+			"hint": "留空 = 官方 huggingface.co。国内直连经常超时，可填社区镜像 https://hf-mirror.com ；也认环境变量 HF_ENDPOINT",
+			"hintEn": "Empty = official huggingface.co. Direct connections from some regions often time out; you can use the community mirror https://hf-mirror.com. The HF_ENDPOINT env var is also honored."
 		},
 		{
 			"key": "localModel",
 			"type": "select",
 			"label": "本地模型",
+			"labelEn": "Local model",
 			"default": "base",
 			"options": ["base", "tiny", "small"],
-			"hint": "base 中文更准（约 290MB）；tiny 更小更快（约 150MB），老机器选它；small 最准（约 500MB，CPU 转写慢 3~4 倍）。转写时常驻内存约 1GB。"
+			"hint": "base 中文更准（约 290MB）；tiny 更小更快（约 150MB），老机器选它；small 最准（约 500MB，CPU 转写慢 3~4 倍）。转写时常驻内存约 1GB。",
+			"hintEn": "base is more accurate for Chinese (~290MB); tiny is smaller and faster (~150MB), pick it for older machines; small is the most accurate (~500MB, 3-4x slower on CPU). Transcription keeps ~1GB resident."
 		},
 		{
 			"key": "transcribeUrl",
 			"type": "text",
 			"label": "转写接口基址",
+			"labelEn": "Transcription endpoint base URL",
 			"default": "",
-			"hint": "OpenAI 兼容基址，如 https://api.openai.com/v1；留空 = 未配置服务端转写"
+			"hint": "OpenAI 兼容基址，如 https://api.openai.com/v1；留空 = 未配置服务端转写",
+			"hintEn": "OpenAI-compatible base URL, e.g. https://api.openai.com/v1; empty = server-side transcription not configured"
 		},
 		{
 			"key": "transcribeKey",
 			"type": "password",
 			"label": "转写接口密钥",
+			"labelEn": "Transcription endpoint key",
 			"default": "",
-			"hint": "保存在 <dataDir>/plugins/voice-input/storage.json，请勿截图外传"
+			"hint": "保存在 <dataDir>/plugins/voice-input/storage.json，请勿截图外传",
+			"hintEn": "Stored in <dataDir>/plugins/voice-input/storage.json — never share screenshots of it"
 		},
 		{
 			"key": "zhVariant",
 			"type": "select",
 			"label": "中文输出字形",
+			"labelEn": "Chinese output script",
 			"default": "simplified",
 			"options": ["simplified", "traditional"],
-			"hint": "Whisper 不分简繁体，不干预常偏繁体；这里按字形自动配 initial_prompt 纠偏"
+			"hint": "Whisper 不分简繁体，不干预常偏繁体；这里按字形自动配 initial_prompt 纠偏",
+			"hintEn": "Whisper doesn't distinguish simplified/traditional and often leans traditional; this auto-tunes initial_prompt per script to correct it"
 		},
 		{
 			"key": "initialPrompt",
 			"type": "text",
 			"label": "转写提示词（initial_prompt）",
+			"labelEn": "Transcription prompt (initial_prompt)",
 			"default": "",
-			"hint": "留空 = 按语言自动用内置提示；填了就两条引擎都用它，也可写专有名词/术语纠偏"
+			"hint": "留空 = 按语言自动用内置提示；填了就两条引擎都用它，也可写专有名词/术语纠偏",
+			"hintEn": "Empty = built-in prompt picked automatically per language; when set, both engines use it. You can also put proper nouns/terms here for correction."
 		},
 		{
 			"key": "transcribeModel",
 			"type": "text",
 			"label": "转写模型",
+			"labelEn": "Transcription model",
 			"default": "whisper-1",
-			"hint": "发给 /audio/transcriptions 的 model 参数"
+			"hint": "发给 /audio/transcriptions 的 model 参数",
+			"hintEn": "The model parameter sent to /audio/transcriptions"
 		}
 	]
 }

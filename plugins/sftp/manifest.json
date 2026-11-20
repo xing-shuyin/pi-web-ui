@@ -2,7 +2,7 @@
 	"id": "sftp",
 	"name": "SFTP 同步",
 	"nameEn": "SFTP Sync",
-	"version": "0.4.11",
+	"version": "0.4.12",
 	"icon": "☁️",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18 16.5a4.5 4.5 0 0 0-.9-8.9 6 6 0 0 0-11.4 1.6A4 4 0 0 0 6.5 17\"/><path d=\"M12 12v7\"/><path d=\"m9 15 3-3 3 3\"/></svg>",
 	"description": "项目级 SFTP 同步：配置存项目 .pi/sftp.json（多环境 profile + .pi/sftp.local.json 本机覆盖），先算差异再传，扫描与传输按层/按文件并行且随时可停（面板「停止」或 action=cancel），支持 dry-run 预览与计划复用（预览完直接执行不重扫）、删除保护（进垃圾桶可回滚）、并发流式传输与原子落盘；打开远端命令执行后另有两条快通道（一次 find 完成远端扫描；一批小文件上行打成 tar 流、下行 tar -czf - 一次拉回，失败自动回落）；凭据走 ${env:} / ${secret:} / ${file:} 引用，明文永不进配置。面板里可直接手动上传/下载单个文件或整棵目录（永不动删除策略），也向 AI 注册**一个** action 式 sftp 工具（status/save/secret/test/plan/sync/cancel/ls/read/write/mkdir/mv/rm/search，可选 exec）。",
@@ -14,64 +14,80 @@
 			"key": "delete",
 			"type": "select",
 			"label": "删除策略",
+			"labelEn": "Delete policy",
 			"options": ["none", "remote-only", "both"],
 			"default": "none",
-			"hint": "none = 从不删除（多出来的文件只报告不动）；remote-only = 允许清理远端多余文件；both = 双向都可清理。删除一律先进垃圾桶。连接内的 sync.delete 优先于这里。"
+			"hint": "none = 从不删除（多出来的文件只报告不动）；remote-only = 允许清理远端多余文件；both = 双向都可清理。删除一律先进垃圾桶。连接内的 sync.delete 优先于这里。",
+			"hintEn": "none = never delete (extra files only reported); remote-only = may clean extra remote files; both = both sides may be cleaned. Deletions always go to trash first. Per-connection sync.delete wins over this."
 		},
 		{
 			"key": "concurrency",
 			"type": "number",
 			"label": "并发传输数",
+			"labelEn": "Concurrent transfers",
 			"default": 4,
 			"min": 1,
 			"max": 16,
-			"hint": "同时进行的文件传输数。SSH 服务端常限制并发通道，网络差时调小到 2。仅影响传输；扫描并发见下一项。"
+			"hint": "同时进行的文件传输数。SSH 服务端常限制并发通道，网络差时调小到 2。仅影响传输；扫描并发见下一项。",
+			"hintEn": "How many file transfers run at once. SSH servers often cap concurrent channels; lower to 2 on poor networks. Transfers only; see next item for scan concurrency."
 		},
 		{
 			"key": "scanConcurrency",
 			"type": "number",
 			"label": "扫描并发",
+			"labelEn": "Scan concurrency",
 			"default": 8,
 			"min": 1,
 			"max": 32,
-			"hint": "扫描时同时在途的 readdir/stat 请求数。远端扫描一次 readdir 一个往返，高延迟链路上调大能快好几倍（8~16 是安全区）；服务端限制严格时调小到 2~4。"
+			"hint": "扫描时同时在途的 readdir/stat 请求数。远端扫描一次 readdir 一个往返，高延迟链路上调大能快好几倍（8~16 是安全区）；服务端限制严格时调小到 2~4。",
+			"hintEn": "How many readdir/stat requests run at once while scanning. One remote readdir costs a round trip, so raising it helps a lot on high-latency links (8-16 is the safe zone); lower to 2-4 when the server caps strictly."
 		},
 		{
 			"key": "autoGitignore",
 			"type": "boolean",
 			"label": "自动忽略本机覆盖文件",
+			"labelEn": "Auto-ignore local overrides",
 			"default": true,
-			"hint": "把 .pi/sftp.local.json 追加进项目 .gitignore（它可能含明文凭据）。"
+			"hint": "把 .pi/sftp.local.json 追加进项目 .gitignore（它可能含明文凭据）。",
+			"hintEn": "Appends .pi/sftp.local.json to the project .gitignore (it may hold plaintext credentials)."
 		},
 		{
 			"key": "plaintextWarn",
 			"type": "boolean",
 			"label": "明文凭据告警",
+			"labelEn": "Plaintext credential warning",
 			"default": true,
-			"hint": "配置里写了明文密码/私钥口令时在界面与工具回执里提示改用 ${secret:名}。"
+			"hint": "配置里写了明文密码/私钥口令时在界面与工具回执里提示改用 ${secret:名}。",
+			"hintEn": "Warns in the panel and tool replies when a plaintext password/passphrase is found; use ${secret:name} instead."
 		},
 		{
 			"key": "allowExec",
 			"type": "boolean",
 			"label": "允许在远端执行命令",
+			"labelEn": "Allow remote exec",
 			"default": false,
-			"hint": "开启后 `sftp` 工具的动作表里才出现 exec（远端跑 shell 命令），同时启用两条快通道：扫描用一次 find 取代逐目录 readdir、一批小文件打成一个 tar 包上传（两者失败都会自动回落逐文件/逐目录，不会把事情做错）。默认关闭：部署脚本请让用户手动跑或走终端。"
+			"hint": "开启后 `sftp` 工具的动作表里才出现 exec（远端跑 shell 命令），同时启用两条快通道：扫描用一次 find 取代逐目录 readdir、一批小文件打成一个 tar 包上传（两者失败都会自动回落逐文件/逐目录，不会把事情做错）。默认关闭：部署脚本请让用户手动跑或走终端。",
+			"hintEn": "Adds exec (run remote shell commands) to the sftp tool and enables two fast paths: one find replaces per-directory readdir scans, and small files batch into one tar upload (both fall back to per-file automatically). Off by default: run deploy scripts manually or in a terminal."
 		},
 		{
 			"key": "batchTransfer",
 			"type": "boolean",
 			"label": "小文件批量打包传输",
+			"labelEn": "Batch small-file transfer",
 			"default": true,
-			"hint": "一批 ≥5 个小文件打成一个 tar 一次传完（上行：本地打包→远端解到暂存区→逐个 mv 落位；下行：远端 tar -czf - →本地只解出这批要的文件→逐个 rename 落位），把每文件 5~8 个往返压成每批几个。两个方向都逐个校大小，失败一律回落逐文件。需要先开「允许在远端执行命令」，否则不生效。"
+			"hint": "一批 ≥5 个小文件打成一个 tar 一次传完（上行：本地打包→远端解到暂存区→逐个 mv 落位；下行：远端 tar -czf - →本地只解出这批要的文件→逐个 rename 落位），把每文件 5~8 个往返压成每批几个。两个方向都逐个校大小，失败一律回落逐文件。需要先开「允许在远端执行命令」，否则不生效。",
+			"hintEn": "Sends batches of 5+ small files as one tar (upload: pack locally, unpack to staging, mv each into place; download: remote tar -czf - , extract only the batch, rename each into place), shrinking 5-8 round trips per file to a few per batch. Sizes are verified per file with per-file fallback. Requires Allow remote exec."
 		},
 		{
 			"key": "trashDays",
 			"type": "number",
 			"label": "垃圾桶保留天数",
+			"labelEn": "Trash retention (days)",
 			"default": 7,
 			"min": 0,
 			"max": 90,
-			"hint": "超过天数的本地垃圾桶目录在下次同步时清理；0 = 不自动清理。"
+			"hint": "超过天数的本地垃圾桶目录在下次同步时清理；0 = 不自动清理。",
+			"hintEn": "Local trash older than this is pruned on the next sync; 0 = never auto-prune."
 		}
 	],
 	"ui": {

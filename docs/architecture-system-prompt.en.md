@@ -13,10 +13,12 @@
 
 ## 1. Overview: assembly order of the final prompt
 
-    Final prompt = base prompt(soul) + tool list(tools) + guidelines(guidelines)
-                   + Pi documentation pointers(pi_docs) + append section(append) + pi-web-ui guidance
-                   (markers) + project context(context) + skills section(skills)
-                   + working directory line(cwd)
+    Final prompt = base prompt(soul) + project context(context) + tool list(tools)
+                   + pi-web-ui guidance(markers) + skills section(skills) + working directory line(cwd)
+                   + append section(append) + plugin dev guide(plugin_dev, disabled by default)
+    That order *is* the **built-in default prompt configuration** (the factory order of
+    PROMPT_TOKENS / DEFAULT_PROMPT_TEMPLATE); `{{guidelines}}` and `{{pi_docs}}` are retired and no
+    longer part of the default prompt.
     Once the main session enables the "compose template", each layer above is a {{token}}: which tokens the
     template contains, in what order, and what text of your own sits between them decides the final prompt;
     a layer without an override uses **automatic content** (tools, context and skills are always regenerated
@@ -25,19 +27,25 @@
 ## 2. Compose template and source tokens
 
     Token list (PROMPT_TOKENS in server/prompt-composer.ts; the default order is the natural assembly order):
-        {{soul}}        agent persona (contents of SYSTEM.md when present, otherwise the built-in default)
-        {{tools}}       Available tools list + the “In addition…” sentence
-        {{guidelines}}  Guidelines: file exploration guidance + each tool's promptGuidelines + two fixed lines
-        {{pi_docs}}     Pi documentation pointers (pointing at the installed pi package path)
-        {{append}}      Append section = APPEND_SYSTEM.md contents; override = custom appended text
-        {{markers}}     built-in marker tool guidance (when markers are on)
+        {{soul}}        role / persona (contents of SYSTEM.md when present, otherwise the built-in default =
+                        the six Core Engineering Principles; English only, same text for every UI language)
         {{context}}     <project_context> (result of collecting AGENTS.md / CLAUDE.md)
+        {{tools}}       on-demand tools list (Available tools / On-demand tools) + the “In addition…” sentence
+        {{markers}}     built-in marker tool guidance (when markers are on)
         {{skills}}      <available_skills> skill list
         {{cwd}}         Current working directory line
+        {{append}}      Append section = APPEND_SYSTEM.md contents; override = custom appended text
+        {{plugin_dev}}  pi-web-ui plugin development guide (off by default via DEFAULT_PROMPT_DISABLED)
+    Retired sources: `{{guidelines}}` / `{{pi_docs}}` (alongside `{{terminal}}` / `{{persona}}` they live in
+    LEGACY_PROMPT_TOKENS; leftovers in stored templates render as empty strings, never as literals).
     Each layer can be **overridden individually**: when overrides[token] has content, your text replaces the
     automatic content; leave it empty = use the automatic content. An empty template = the default template
-    (all tokens in natural order); with no template/override configured, behaviour is exactly the SDK default
-    assembly (zero overhead, before_agent_start returns empty).
+    (all tokens in the order above); the zero-overhead branch (before_agent_start returns empty, i.e. the SDK
+    default assembly) only applies when template, overrides and disabled list are all empty — the factory
+    `promptDisabled` contains plugin_dev, so the default path is composed rendering.
+    Stored-setting convergence (normalizePromptOverrides / normalizePromptDisabled in server/client-state.ts):
+    retired source keys and disabled entries are dropped; a soul override identical to the built-in default
+    is dropped as well (it overrides nothing).
 
 ## 3. Where each source's automatic content comes from (the buildSystemPrompt view)
 
@@ -45,7 +53,8 @@
         1. project level: <cwd>/.pi/SYSTEM.md (when trusted)
         2. global level: <agentDir>/SYSTEM.md
         3. neither → undefined → the SDK default branch assembles the built-in template (persona + tools +
-           guidelines + pi_docs)
+           guidelines + pi_docs). Note: that SDK text is *not* the pi-web-ui built-in default — the built-in
+           default (six engineering principles + the order above) is produced by the compose renderer.
     In compose mode systemPromptOverride always returns base (= SYSTEM.md verbatim, undefined when absent)
     → with the compose template active, before_agent_start replaces the prompt wholesale ({{soul}} uses the same base);
     with the compose template inactive, the SDK default branch keeps .pi/SYSTEM.md on that basis (same semantics as the

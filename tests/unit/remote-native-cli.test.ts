@@ -113,6 +113,25 @@ describe("remote CLI resolution", () => {
 		expect(launch.args.join(" ")).not.toContain("api-key-only-in-env");
 		expect(service.execInWorkspace.mock.calls[0][1]).not.toContain("api-key-only-in-env");
 	});
+	it("points the remote Claude settings overlay at a host-side file instead of inlining the token", async () => {
+		const hooks = JSON.stringify({
+			hooks: { Stop: [{ matcher: "*", hooks: [{ type: "command", command: "done" }] }] },
+		});
+		const launch = await resolveRemoteNativeCliLaunch(
+			mockService(["/remote/npm/bin/claude"]),
+			{ preset: "claude", args: ["--settings", hooks], model: { provider: "test", id: "remote-model" } },
+			uri,
+			{ baseUrl: "https://gateway.test/v1", apiKey: "remote-only-secret", headers: {} },
+		);
+		const settingsIndex = launch.args.indexOf("--settings") + 1;
+		expect(launch.args[settingsIndex]).toMatch(/^\/tmp\/claude-settings-[0-9a-f]{16}\.json$/);
+		expect(launch.args.join(" ")).not.toContain("remote-only-secret");
+		expect(launch.files).toHaveLength(1);
+		expect(launch.files?.[0].path).toBe(launch.args[settingsIndex]);
+		const document = JSON.parse(launch.files![0].content);
+		expect(document.hooks).toEqual(JSON.parse(hooks).hooks);
+		expect(document.env).toMatchObject({ ANTHROPIC_AUTH_TOKEN: "remote-only-secret" });
+	});
 	it("preserves Codex model options and puts credentials/headers solely in environment", async () => {
 		const launch = await resolveRemoteNativeCliLaunch(
 			mockService(["/remote/codex"]),
@@ -258,6 +277,61 @@ describe("remote discovery scripts in a local POSIX shell", () => {
 			child?.kill();
 		}
 	});
+	it("writes a settings overlay on the remote host without putting its content in argv", async () => {
+		await executable("bin/uname", "#!/bin/sh\nprintf '%s\\n' Linux\n");
+		// A pipe has no termios; substitute only stty, exactly as the transport tests do.
+		await executable("bin/stty", "#!/bin/sh\nif [ \"$1\" = -g ]; then printf '%s\\n' saved; fi\nexit 0\n");
+		const overlay = posix(path.join(root, "overlay", "claude-settings.json"));
+		await fs.mkdir(path.join(root, "overlay"), { recursive: true });
+		const target = await executable("bin/reader", `#!/bin/sh\nprintf '%s\\n' "$(cat ${shellQuotePosix(overlay)})"\n`);
+		const service = new RemoteSshService(root);
+		let child: ReturnType<typeof spawn> | undefined;
+		const client = Object.assign(new EventEmitter(), {
+			exec: (command: string, _options: unknown, callback: any) => {
+				child = spawn(
+					shell,
+					["-c", `PATH=${shellQuotePosix(`${posix(root)}/bin:/usr/bin:/bin`)}; export PATH; ${command}`],
+					{
+						env: remoteEnv(),
+						windowsHide: true,
+					},
+				);
+				const channel = Object.assign(new EventEmitter(), {
+					stderr: child.stderr!,
+					write: (data: string) => child!.stdin!.write(data),
+					close: () => child!.kill(),
+					setWindow() {},
+					pause() {},
+					resume() {},
+				});
+				child.stdout!.on("data", (data) => channel.emit("data", data));
+				child.on("close", (code) => channel.emit("close", code));
+				child.on("error", (error) => channel.emit("error", error));
+				callback(null, channel);
+			},
+		});
+		const conn = { client, alive: false, activeOperations: 0 };
+		vi.spyOn(service as any, "getOrConnectByUri").mockResolvedValue({ conn, parsed: { remotePath: posix(root) } });
+		const content = JSON.stringify({ hooks: {}, env: { ANTHROPIC_AUTH_TOKEN: "remote-secret" } }, null, 2) + "\n";
+		try {
+			const pty = await service.createCommandPty(
+				uri,
+				{ file: target, args: [], files: [{ path: overlay, content }] },
+				80,
+				24,
+			);
+			let output = "";
+			pty.onData((data) => {
+				output += data;
+			});
+			await new Promise<void>((resolve) => pty.onExit(() => resolve()));
+			expect(JSON.parse(output.trim())).toEqual({ hooks: {}, env: { ANTHROPIC_AUTH_TOKEN: "remote-secret" } });
+			expect(conn.activeOperations).toBe(0);
+		} finally {
+			child?.kill();
+		}
+	});
+
 	it("keeps credential payload out of actual PTY echo and restores terminal settings before exec", async () => {
 		await executable("bin/uname", "#!/bin/sh\nprintf '%s\\n' Linux\n");
 		const target = await executable(

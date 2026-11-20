@@ -11,6 +11,8 @@ import { randomUuid } from "../uuid";
 import {
 	FiChevronDown,
 	FiChevronUp,
+	FiCopy,
+	FiCornerUpLeft,
 	FiEdit2,
 	FiMenu,
 	FiPlay,
@@ -22,10 +24,13 @@ import {
 } from "react-icons/fi";
 import type { ChatState, TerminalMeta } from "../use-chat";
 import type { CommandDef } from "../types";
-import { TermXterm } from "./TermXterm";
+import { TermXterm, type TermContextRequest } from "./TermXterm";
+import { TerminalContextMenu, type TerminalMenuEntry } from "./TerminalContextMenu";
 import { useT } from "../i18n";
 import { appSend } from "../app-globals";
 import type { TerminalOwnerKind } from "../terminal-bridge";
+import { buildTerminalQuote } from "../terminal-quote";
+import { composeToComposer, focusComposer } from "../composer-bridge";
 
 const tabKey = (t: TerminalMeta) =>
 	JSON.stringify([t.ownerKind ?? "client", t.ownerKind === "conversation" ? t.conversationId : "", t.id]);
@@ -60,6 +65,14 @@ interface Draft {
 	command: string;
 	cwd: string;
 }
+
+/**
+ * 终端右键菜单：一次弹一份，开在新光标处。
+ * 两处右键是两个不同的东西——标签上右键引用的是「这个终端对象」，输出区右键引用的是「这段文字」。
+ */
+type TerminalMenuState =
+	| ({ kind: "output"; terminalId: string; title: string } & TermContextRequest)
+	| { kind: "tab"; x: number; y: number; tab: TerminalMeta };
 
 const EMPTY_DRAFT: Draft = { name: "", command: "", cwd: "${pwd}" };
 
@@ -131,6 +144,7 @@ export function TerminalPanel({
 	const [aiBashOpen, setAiBashOpen] = useState(true);
 	const [renamingTab, setRenamingTab] = useState<string | null>(null);
 	const [renameDraft, setRenameDraft] = useState("");
+	const [termMenu, setTermMenu] = useState<TerminalMenuState | null>(null);
 
 	useEffect(() => {
 		if (chat.terminals.length === 0) setActiveId(null);
@@ -275,8 +289,76 @@ export function TerminalPanel({
 		if (activeId === key) setActiveId(null);
 	};
 
+	/** 输出区右键「引用到输入框」：有选中就用选中，没选中就用当前屏幕（视口）那段输出。 */
+	const quoteTerminalOutput = (target: { text: string; terminalId: string; title: string }) => {
+		const quote = buildTerminalQuote({
+			text: target.text,
+			terminalId: target.terminalId,
+			sessionId: allChat.state?.sessionId ?? "",
+		});
+		if (!quote) return;
+		const accepted = composeToComposer({
+			attachments: [{ path: "", name: target.title, mode: "quote", quote, key: randomUuid() }],
+		});
+		if (accepted) focusComposer();
+	};
+
+	/**
+	 * 标签右键「引用到输入框」：引用的是**终端这个对象**（id + 标题 + 现场解析的 cwd/命令），
+	 * 不是一段文字。AI 拿到 id 后用 terminal 工具按需读它的实时输出，所以引用不会立刻过期。
+	 */
+	const referenceTerminalTab = (tab: TerminalMeta) => {
+		const accepted = composeToComposer({
+			attachments: [{ path: "", name: tab.title, mode: "terminal", terminalId: tab.id, key: `terminal:${tab.id}` }],
+		});
+		if (accepted) focusComposer();
+	};
+
+	const copyTerminalText = (text: string) => {
+		void navigator.clipboard?.writeText(text).catch(() => {});
+	};
+
+	const termMenuEntries: TerminalMenuEntry[] = !termMenu
+		? []
+		: termMenu.kind === "output"
+			? [
+					{ id: "quote", label: t("quoteConversation"), icon: <FiCornerUpLeft /> },
+					...(termMenu.fromSelection ? [{ id: "copy", label: t("copy"), icon: <FiCopy /> }] : []),
+				]
+			: [
+					{ id: "reference", label: t("referenceTerminal"), icon: <FiCornerUpLeft /> },
+					{ id: "rename", label: t("renameTerminal"), icon: <FiEdit2 /> },
+					{ id: "close", label: t("closeTerminal"), icon: <FiX /> },
+				];
+
+	const onTermMenuSelect = (id: string) => {
+		const target = termMenu;
+		setTermMenu(null);
+		if (!target) return;
+		if (target.kind === "output") {
+			if (id === "quote") quoteTerminalOutput(target);
+			else if (id === "copy") copyTerminalText(target.text);
+			return;
+		}
+		if (id === "reference") referenceTerminalTab(target.tab);
+		else if (id === "rename") {
+			setRenameDraft(target.tab.title);
+			setRenamingTab(tabKey(target.tab));
+		} else if (id === "close") closeTab(tabKey(target.tab));
+	};
+
 	const renderTab = (tab: TerminalMeta) => (
-		<div key={tabKey(tab)} className={`term-tab ${tabKey(tab) === activeId ? "active" : ""}`}>
+		<div
+			key={tabKey(tab)}
+			className={`term-tab ${tabKey(tab) === activeId ? "active" : ""}`}
+			onContextMenu={(e) => {
+				// 重命名输入框里右键还是走系统菜单（复制 / 粘贴文本）
+				if (e.target instanceof Element && e.target.closest("input, textarea")) return;
+				e.preventDefault();
+				e.stopPropagation();
+				setTermMenu({ kind: "tab", x: e.clientX, y: e.clientY, tab });
+			}}
+		>
 			<button
 				type="button"
 				className="term-tab-main"
@@ -617,26 +699,38 @@ export function TerminalPanel({
 								<div className="term-empty-sub">{t("termEmptySub")}</div>
 							</div>
 						) : (
-							chat.terminals.map((t) => (
+							chat.terminals.map((tab) => (
 								<TermXterm
-									key={tabKey(t)}
-									ownerKind={t.ownerKind ?? "client"}
-									conversationId={t.conversationId}
-									terminalId={t.id}
-									command={t.command}
-									cwd={t.cwd}
-									title={t.title}
-									agentBash={t.agentBash}
-									active={tabKey(t) === activeId}
-									running={t.running}
-									exitCode={t.exitCode}
+									key={tabKey(tab)}
+									ownerKind={tab.ownerKind ?? "client"}
+									conversationId={tab.conversationId}
+									terminalId={tab.id}
+									command={tab.command}
+									cwd={tab.cwd}
+									title={tab.title}
+									agentBash={tab.agentBash}
+									active={tabKey(tab) === activeId}
+									running={tab.running}
+									exitCode={tab.exitCode}
 									register={terminal.register}
+									onContextRequest={(request) =>
+										setTermMenu({ kind: "output", ...request, terminalId: tab.id, title: tab.title })
+									}
 								/>
 							))
 						)}
 					</div>
 				</div>
 			</div>
+			{termMenu && (
+				<TerminalContextMenu
+					x={termMenu.x}
+					y={termMenu.y}
+					entries={termMenuEntries}
+					onSelect={onTermMenuSelect}
+					onClose={() => setTermMenu(null)}
+				/>
+			)}
 		</div>
 	);
 }

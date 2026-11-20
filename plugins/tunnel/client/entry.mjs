@@ -780,6 +780,29 @@ export default defineView({
 		refreshMe();
 		refresh();
 		const timer = setInterval(refresh, 3000);
+		// 宿主全局语言单源：首帧 t() 已按 locale.current() 取词，切语言后重渲染
+		let offLocale = null;
+		let onLocaleEvent = null;
+		try {
+			offLocale =
+				window.__piWebUiHost?.locale?.onChange?.(() => {
+					try {
+						refresh();
+					} catch {}
+				}) ?? null;
+		} catch {
+			offLocale = null;
+		}
+		try {
+			onLocaleEvent = () => {
+				try {
+					refresh();
+				} catch {}
+			};
+			window.addEventListener("pi-web-ui:locale", onLocaleEvent);
+		} catch {
+			onLocaleEvent = null;
+		}
 
 		$("#tnl-toggle").onclick = async () => {
 			const ep = running ? "/plugins-api/tunnel/stop" : "/plugins-api/tunnel/start";
@@ -819,6 +842,12 @@ export default defineView({
 		return () => {
 			clearInterval(timer);
 			clearInterval(auditTimer);
+			try {
+				offLocale?.();
+			} catch {}
+			try {
+				if (onLocaleEvent) window.removeEventListener("pi-web-ui:locale", onLocaleEvent);
+			} catch {}
 		};
 	},
 });

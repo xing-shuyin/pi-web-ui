@@ -2,7 +2,7 @@
 	"apiVersion": 2,
 	"name": "matrix",
 	"nameEn": "Matrix",
-	"version": "0.2.7",
+	"version": "0.2.8",
 	"alwaysOn": true,
 	"description": "Matrix 机器人与工作台 (实验功能)：开源去中心化通信协议 Matrix 出站长轮询双工对话（零公网 IP / 智能 Markdown 分块 / 多轮会话隔离）/ 用户白名单准入 / AI matrix 工具",
 	"descriptionEn": "Matrix workspace & Bot (experimental): decentralized Matrix protocol outbound sync duplex chat (zero public IP, structure-aware Markdown chunks, isolated multi-turn sessions), access control whitelist, and AI matrix tool.",
@@ -18,9 +18,12 @@
 			{
 				"id": "matrix-open",
 				"label": "Matrix",
+				"labelEn": "Matrix",
 				"icon": "🔮",
 				"kind": "view",
 				"view": "plugin:matrix",
+				"hint": "打开 Matrix 机器人工作台",
+				"hintEn": "Open the Matrix bot workbench",
 				"order": 65
 			}
 		],
@@ -28,7 +31,9 @@
 			{
 				"id": "matrix-status",
 				"label": "🔮 Matrix",
+				"labelEn": "🔮 Matrix",
 				"hint": "点击打开 Matrix 工作台",
+				"hintEn": "Open the Matrix workbench",
 				"kind": "view",
 				"view": "plugin:matrix",
 				"order": 55

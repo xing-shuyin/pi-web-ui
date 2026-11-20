@@ -65,6 +65,8 @@ export function materializeUploads(
 /** Plain-text pointer for a non-image attachment, shared by the CLI drivers. */
 export function describeCliAttachment(att: PromptAttachment): string | null {
 	if (att.mode === "canvas") return formatUnavailableCanvasReference(att);
+	if (att.mode === "terminal")
+		return `Referenced terminal tab: ${JSON.stringify(att.name ?? att.terminalId)} (live terminal access is unavailable in this engine).`;
 	if (att.mode === "page" || att.mode === "conversation")
 		return `Referenced ${att.mode}: ${JSON.stringify(att.path)} (host access unavailable in this engine).`;
 	if (att.mode === "quote" && att.quote) return `<quote>\n${att.quote.text}\n</quote>`;

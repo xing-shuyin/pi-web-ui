@@ -46,6 +46,25 @@ describe("device project path validation", () => {
 			});
 		}
 	});
+	it("accepts SSH workspaces for directly reachable devices and normalizes them", async () => {
+		const f = await fixture();
+		expect(await validateDeviceProject("ssh://dev@192.168.1.10/home/dev/app/", f.dataDir)).toBe(
+			"ssh://dev@192.168.1.10:22/home/dev/app",
+		);
+		expect(await validateDeviceProject("ssh://dev@example.com:2222//srv/app//", f.dataDir)).toBe(
+			"ssh://dev@example.com:2222/srv/app",
+		);
+		for (const bad of [
+			"ssh://",
+			"ssh://bad-uri",
+			"ssh://@host/path",
+			"ssh:///path",
+			"ssh://u@h:0/x",
+			"ssh://u@h:99999/x",
+		]) {
+			await expect(validateDeviceProject(bad, f.dataDir)).rejects.toMatchObject({ code: "WORKSPACE_INVALID" });
+		}
+	});
 	it("rejects symbolic links in the selected directory and all ancestor segments", async () => {
 		const f = await fixture();
 		await mkdir(join(f.project, "child"));

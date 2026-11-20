@@ -9,13 +9,13 @@ if (previous?.destroy) {
 	try {
 		previous.destroy();
 	} catch (err) {
-		console.warn("[live2d] 清理旧实例失败:", err);
+		console.warn("[live2d] failed to dispose the previous instance:", err);
 	}
 }
 
 const clientBase = getClientBase(import.meta.url);
-const currentLang = detectLang();
-const t = makeT(currentLang);
+let currentLang = detectLang();
+const t = makeT(() => currentLang);
 
 const widget = new Live2DWidget({
 	clientBase,
@@ -138,12 +138,75 @@ const onKeyDown = (e) => {
 };
 window.addEventListener("keydown", onKeyDown);
 
+// Host locale is the single source of truth: the lazy t() follows currentLang,
+// so only refresh the already-rendered chrome on change.
+function refreshWidgetTexts() {
+	try {
+		const map = {
+			exp: "actions.expressions",
+			switch: "actions.switch_model",
+			music: "actions.music",
+			mode: "actions.mode",
+			ghost: "actions.click_through",
+			settings: "actions.settings",
+			close: "actions.close",
+		};
+		widget.container?.querySelectorAll(".pi-l2d-action-btn").forEach((btn) => {
+			const k = map[btn.dataset?.action];
+			if (k) btn.title = t(k);
+		});
+	} catch {}
+	try {
+		widget._closeContextMenu?.();
+	} catch {}
+	try {
+		if (widget.modalEl) {
+			widget.modalEl.remove();
+			widget.modalEl = null;
+		}
+	} catch {}
+	try {
+		const badge = widget.container?.querySelector(".pi-l2d-bubble-badge-label");
+		if (badge) badge.textContent = t("bubble.thought_label");
+	} catch {}
+}
+let offLocale = null;
+let onLocaleEvent = null;
+try {
+	offLocale =
+		globalThis.window?.__piWebUiHost?.locale?.onChange?.(() => {
+			try {
+				currentLang = detectLang();
+			} catch {}
+			refreshWidgetTexts();
+		}) ?? null;
+} catch {
+	offLocale = null;
+}
+try {
+	onLocaleEvent = () => {
+		try {
+			currentLang = detectLang();
+		} catch {}
+		refreshWidgetTexts();
+	};
+	globalThis.window?.addEventListener("pi-web-ui:locale", onLocaleEvent);
+} catch {
+	onLocaleEvent = null;
+}
+
 const runtime = {
 	widget,
 	toggle: handleToggleOrUnlock,
 	destroy() {
 		window.removeEventListener("pi-web-ui:plugin-data", onPluginData);
 		window.removeEventListener("keydown", onKeyDown);
+		try {
+			offLocale?.();
+		} catch {}
+		try {
+			if (onLocaleEvent) globalThis.window?.removeEventListener("pi-web-ui:locale", onLocaleEvent);
+		} catch {}
 		for (const u of unbinds) {
 			try {
 				u();

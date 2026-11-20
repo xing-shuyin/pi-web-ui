@@ -85,7 +85,7 @@ SDK 没有自动压缩指令及权限前别名解析的公开接口，分别用 
 `_toolRegistry` 上（核心内置 / 本项目工具 / 插件 / MCP 一网打尽）。见
 `server/tool-prompt-overrides.ts`。
 
-### 2.3 延迟加载（本机制，**默认关**，可开；名单制）
+### 2.3 延迟加载（本机制，**出厂默认开**，可关；名单制）
 
 开：`load_tools` 常驻；只有**按需名单**（`ClientSettings.toolOnDemandTools`，见 §2.6）里的工具才走延迟——
 它们在系统提示词的 `{{tools}}` 段里只有**名字 + 一行摘要**（目录），参数 schema 不进上下文。模型
@@ -93,10 +93,13 @@ SDK 没有自动压缩指令及权限前别名解析的公开接口，分别用 
 名单外的工具（含核心工具 `bash` / `read` / `edit` / `write`）按开关/预设常驻可用；名单为空时等于都不延迟
 （此时 `load_tools` 也不挂载、`{{tools}}` 段整段不输出，见 §3）。
 
-- 开关：设置 → 工具区「工具按需加载」（`ClientSettings.toolLazyLoading`，**出厂默认关**，即 `load_tools` 总闸）。
-  默认关的理由：模型忘加载会先吃一次 `Tool <name> not found`（SDK 只认已声明集），开箱
-  即用优先；需要省上下文的实例自己打开，部署级默认可用环境变量 `PI_WEB_TOOL_LAZY_LOADING=1`
-  / `true` / `on` / `yes`（只作默认值，用户已存盘的设置优先）。
+- 开关：设置 → 工具区「工具按需加载」（`ClientSettings.toolLazyLoading`，**出厂默认开**，即 `load_tools` 总闸）。
+  出厂默认开的理由：默认工具面收窄——常驻只留核心四件套与轻量工具，7 个重工具（`terminal` /
+  `browser_page` / `browser_script` / `browser_design` / `agent_bot` / `schedule` / `compact_context`）走按需，
+  模型先调 `load_tools` 再拿 schema（同一份名单见 §2.6 与 `DEFAULT_CLIENT_SETTINGS.toolOnDemandTools`）。
+  代价：模型忘加载会先吃一次 `Tool <name> not found`（SDK 只认已声明集）。想回到「全部常驻」的实例
+  自己关掉；部署级默认可用环境变量 `PI_WEB_TOOL_LAZY_LOADING=0` / `false` / `off` / `no` 覆盖
+  （只作默认值，用户已存盘的设置优先）。
   关着 = 按开关/预设直接全部活跃（与 pi 命令行一致，名单无效果）。**只影响新会话与之后的门控重放**——
   不会把正在跑的对话里的工具反向清空。
 - 门控实现：延迟加载**不引入第二条门控路径**。未加载的名单工具 = 临时加进禁用名单
@@ -203,10 +206,13 @@ SDK 没有自动压缩指令及权限前别名解析的公开接口，分别用 
   合并只省约 1.2k 字符（~330 tokens），代价是两套 service/审批/设置行/权限闸门并成一套 15 项 action 的
   混合枚举，且违反「一个能力一个工具名」。
 - **不改默认开关去「延迟加载」它们**（当时结论）。延迟加载已经由 §2.3 的全局开关提供；把 `canvas` /
-  `sandbox` / `schedule` 这类主打功能默认改成待加载，是产品决定，不是预算优化的顺带结论。后来的
-  产品决定是**直接默认关闭** `ls` / `patch` / `delegate_task` / `sandbox` / `worktree` / `canvas`
-  （目录 `defaultOn: false` + 出厂设置 `disabledAgentTools` 同名单），理由不再是预算，而是默认工具面
-  收窄；`plan_update` / `compact_context` / `schedule` 仍默认开。
+  `sandbox` 这类主打功能默认改成待加载，是产品决定，不是预算优化的顺带结论。后来的
+  产品决定是**直接默认关闭** `powershell` / `ls` / `delegate_task` / `phone` / `patch` / `lsp` / `eval` /
+  `tool_search` / `mcp_manage` / `sandbox` / `worktree` / `canvas` 12 个（目录 `defaultOn: false` +
+  出厂设置 `disabledAgentTools` 同名单），理由不再是预算，而是默认工具面收窄；`plan_update` 仍默认开。
+  最新一次则把三个重工具从「关闭」改拮「按需」：`terminal`（原本硬关）、`schedule` / `compact_context`
+  （原本默认开）——出厂 `toolOnDemandTools` = 7 个：`terminal` / `browser_page` / `browser_script` /
+  `browser_design` / `agent_bot` / `schedule` / `compact_context`。按需 ≠ 关闭：模型调 `load_tools` 就能拿到。
 
 守卫：`tests/unit/tool-schema-slim.test.ts` 现在把上面 21 个工具全部纳进来（含 `patternProperties`），
 任何一条装饰约束、任何一个白名单外的字段说明都会红。
@@ -265,7 +271,7 @@ redefinition）、关掉某个工具（`toolsRemoved` → 该对话之后只能�
 
 ## 4. 换来的收益与代价
 
-（都是**开启**这个开关之后的口径；出厂默认关，所以下面是「想省上下文时才付的代价」）
+（都是**开启**这个开关之后的口径；出厂默认开，所以下面是这套默认一直付的代价和一直拿到的收益）
 
 - 收益：常驻 schema 取决于名单大小——名单把重量级工具都收进来时 33k → **~7k**（核心工具 + load_tools + 名单外常驻）。名单里的工具体用不到就永远不进上下文；
   系统提示词本身也从 ~8.6k 降到 ~6.7k（guidelines 只剩常驻）。名单为空时开关等同关闭（既不延迟、也不挂 `load_tools`、不出按需段），记得先勾名单再开开关。

@@ -5,7 +5,6 @@ import {
 	DEFAULT_PROMPT_TEMPLATE,
 	PROMPT_TOKENS,
 	READONLY_PROMPT_SOURCES,
-	buildPiDocsText,
 	buildPluginDevText,
 	buildSkillsText,
 	buildToolsSchemaText,
@@ -36,10 +35,6 @@ function inputs(partial: Partial<PromptComposerInputs> = {}): PromptComposerInpu
 			terminal_create: "create interactive terminals",
 			ask_user_question: "ask the user questions",
 		},
-		toolGuidelines: ["Use read to examine files instead of cat or sed.", "Ask whenever requirements are ambiguous."],
-		piReadme: "E:/pi-web-ui/node_modules/@earendil-works/pi-coding-agent/README.md",
-		piDocs: "E:/pi-web-ui/node_modules/@earendil-works/pi-coding-agent/docs",
-		piExamples: "E:/pi-web-ui/node_modules/@earendil-works/pi-coding-agent/examples",
 		appendFiles: [],
 		markersGuidance: "",
 		contextFiles: [{ path: "E:\\pi-web-ui\\AGENTS.md", content: AGENTS_CONTENT }],
@@ -153,24 +148,6 @@ describe("resolveSectionTexts — 各来源自动内容", () => {
 		expect(out.tools).toContain("- mystery: {x: string}");
 	});
 
-	it("guidelines：探索引导 + 工具引导去重（无固定文案，固定文案已移 soul）", () => {
-		const auto = resolveSectionTexts(inputs());
-		expect(auto.guidelines).toContain("Guidelines:\n- Use bash for file operations like ls, rg, find");
-		expect(auto.guidelines).toContain("- Use read to examine files instead of cat or sed.");
-		expect(auto.guidelines).not.toContain("Be concise in your responses");
-		expect(auto.guidelines).not.toContain("Show file paths clearly when working with files");
-		expect(auto.guidelines.match(/Use bash for file operations/g)?.length).toBe(1);
-	});
-
-	it("pi_docs：固定指引 + 注入路径", () => {
-		const auto = resolveSectionTexts(inputs());
-		expect(auto.pi_docs).toContain(
-			"Main documentation: E:/pi-web-ui/node_modules/@earendil-works/pi-coding-agent/README.md",
-		);
-		expect(auto.pi_docs).toContain("resolve docs/... under Additional docs");
-		expect(auto.pi_docs).toBe(buildPiDocsText(inputs().piReadme, inputs().piDocs, inputs().piExamples));
-	});
-
 	it("append：多文件 \n\n 连接；无文件为空", () => {
 		const empty = resolveSectionTexts(inputs());
 		expect(empty.append).toBe("");
@@ -210,11 +187,12 @@ describe("renderPromptTemplate — 组合与覆盖", () => {
 	const texts = resolveSectionTexts(inputs());
 	const RENDERED = renderDefaultPrompt(texts);
 
-	it("默认渲染 ≈ SDK 默认拼装：顺序、关键段、无残留花括号", () => {
+	it("默认渲染 = 内置默认配置：顺序、关键段、无残留花括号；不含已下线段", () => {
 		const order = [
-			"You are an expert coding assistant",
-			"Guidelines:",
-			"Pi documentation (read only",
+			"# Core Engineering Principles",
+			"<project_context>",
+			"Available tools:",
+			"<available_skills>",
 			"Current working directory: E:/pi-web-ui",
 		];
 		let last = -1;
@@ -224,16 +202,17 @@ describe("renderPromptTemplate — 组合与覆盖", () => {
 			last = idx;
 		}
 		expect(RENDERED).not.toContain("{{");
-		expect(RENDERED).toContain("<project_context>");
 		expect(RENDERED).toContain(AGENTS_CONTENT);
-		expect(RENDERED).toContain("<available_skills>");
+		// 已下线的两段（行为准则 / pi 文档指引）不得回到默认提示词
+		expect(RENDERED).not.toContain("Guidelines:");
+		expect(RENDERED).not.toContain("Pi documentation (read only");
 	});
 
 	it("覆盖 soul：整体模板中灵魂被替换、其他自动段原样", () => {
 		const out = renderPromptTemplate(DEFAULT_PROMPT_TEMPLATE, texts, { soul: "你是降世神龙，专精代码重构。" });
 		expect(out.startsWith("你是降世神龙，专精代码重构。")).toBe(true);
-		expect(out).not.toContain("You are an expert coding assistant");
-		expect(out).toContain("Guidelines:");
+		expect(out).not.toContain("# Core Engineering Principles");
+		expect(out).toContain("Available tools:");
 		expect(out).toContain(AGENTS_CONTENT);
 		expect(out).toContain("Current working directory: E:/pi-web-ui");
 	});
@@ -374,11 +353,15 @@ describe("buildSkillsText 全文/名单模式", () => {
 });
 
 describe("READONLY_PROMPT_SOURCES / isReadonlyPromptSource — 只读来源判定", () => {
-	it("只读集合为 7 个，且不含 soul / guidelines / append", () => {
-		expect(READONLY_PROMPT_SOURCES).toHaveLength(7);
-		expect(READONLY_PROMPT_SOURCES).toEqual(["tools", "pi_docs", "plugin_dev", "markers", "context", "skills", "cwd"]);
-		for (const s of ["soul", "guidelines", "append"]) {
+	it("只读集合为 6 个，且不含 soul / append", () => {
+		expect(READONLY_PROMPT_SOURCES).toHaveLength(6);
+		expect(READONLY_PROMPT_SOURCES).toEqual(["tools", "markers", "plugin_dev", "context", "skills", "cwd"]);
+		for (const s of ["soul", "append"]) {
 			expect(READONLY_PROMPT_SOURCES).not.toContain(s);
+		}
+		// 已下线的来源（guidelines / pi_docs）不得回到在册列表
+		for (const s of ["guidelines", "pi_docs"]) {
+			expect(isKnown(s)).toBe(false);
 		}
 	});
 
@@ -387,7 +370,6 @@ describe("READONLY_PROMPT_SOURCES / isReadonlyPromptSource — 只读来源判�
 		expect(isReadonlyPromptSource("plugin_dev")).toBe(true);
 		expect(isReadonlyPromptSource("cwd")).toBe(true);
 		expect(isReadonlyPromptSource("soul")).toBe(false);
-		expect(isReadonlyPromptSource("guidelines")).toBe(false);
 		expect(isReadonlyPromptSource("append")).toBe(false);
 		expect(isReadonlyPromptSource("typo")).toBe(false);
 	});

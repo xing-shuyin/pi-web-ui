@@ -1896,7 +1896,7 @@ export default {
 			try {
 				st.toolOff = host.registerAgentTool({
 					name: "wechat_send",
-					label: "发微信消息",
+					label: "Send WeChat message",
 					description:
 						"Send a text and/or a local media file (image/video/file) over the WeChat channel to a paired user. Relative paths resolve against the channel workspace; http(s) URLs are downloaded first.",
 					parameters: {

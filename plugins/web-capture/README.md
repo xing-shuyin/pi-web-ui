@@ -1,105 +1,95 @@
-# Web Capture
+[English](./README.en.md) · **简体中文**
 
-No-extension page capture for AI debugging — bookmarklet + side-by-side browser/steps tab + 6 agent tools. English only.
+# 网页取证（Web Capture）
 
-## Layout
+免扩展的页面取证，用于 AI 调试——书签工具 + 浏览器/步骤左右分栏页签 + 6 个 agent 工具。中英双语（跟随宿主界面语言）。
+
+## 布局
 
 ```
-┌ icon toolbar: [→] [snap] [pick]      page ────────┐
+┌ 图标工具栏：[→] [快照] [拾取]          页面 ──────┐
 ├──────────────────────────────┬───────────┤
-│                              │ Capture | Steps | Send   │
-│  browser (iframe, left)      │ ① guide / URL+Go         │ sidebar (right,
-│                              │ ② pick/snap/bookmarklet  │  resizable, default
-│  (URL input centered when     │ ③ task → Send tab        │  320px, remembered)
-│   no page yet)               ├───────────┤
-│                              │ [Final & send to chat]  │ Send tab only
+│                              │ 取证 | 步骤 | 发送   │
+│  浏览器（左侧 iframe）        │ ① 指引 / 链接+打开    │ 右侧边栏
+│                              │ ② 拾取/快照/书签工具   │ （可拖宽，默认
+│  （无页面时居中显示链接输入框）│ ③ 任务 → 发送页       │  320px，按浏览器记忆）
+│                              ├───────────┤
+│                              │ [定稿并发送到对话]   │ 仅发送页
 └──────────────────────────────┴───────────┘
 ```
 
-- Left: browser pane (iframe, max height, no header bar). Same-origin pages
-  (localhost dev, liveserver previews) are observed directly: clicks/inputs
-  recorded, **Pick** outlines elements in-page, **Snap** captures 60 elements.
-  Empty state shows a centered URL input instead of a blank page.
-- Right: resizable steps sidebar (`⇔` drag, width remembered, default from
-  settings). Three tabs: **Capture** (numbered 1-2-3 guide) / **Steps**
-  (list + note/clear) / **Send** (task box + **Final & send** at its bottom).
-- Framing-blocked sites (most logins): open them in your own tab and click
-  the bookmarklet — snapshot/pick/click/input logs stream into the same steps
-  (preflight-free GET beacon, no CORS; passwords masked per settings).
+- 左侧：浏览器窗格（iframe，占满高度，无头栏）。同源页面（本机开发、liveserver 预览）
+  直接观测：记录点击/输入，**拾取**在页内描边元素，**快照**抓 60 个元素。空态居中显示链接输入框。
+- 右侧：可拖宽的步骤边栏（`⇔` 拖拽，宽度被记住，默认值走设置）。三个页签：**取证**（1-2-3 编号指引）/
+  **步骤**（列表 + 备注/清空）/**发送**（任务框 + 底部**定稿并发送**）。
+- 禁止被嵌入的站点（多数登录页）：在自己的页签里打开再点书签工具——快照/拾取/点击/输入
+  日志会流入同一份步骤（免预检 GET 信标，无跨域问题；密码按设置遮罩）。
 
-## Flow
+## 流程
 
-1. Open the 🎯 tab, type a URL (or pick one from Capture) → `visit` step;
-2. Click Pick, click an element → `pick` step with CSS selector;
-3. Type in the page → `input` steps (passwords masked);
-4. Write the task in Send → **Final & send to chat**: saves
-   `web-capture/report-<ts>.md` in the workspace and attaches it to the
-   composer as a file reference. Then describe the fix and send.
+1. 打开 🎯 页签，输入链接（或从取证页选一个）→ 记一步 `visit`；
+2. 点拾取，再点页面元素 → 记一步带 CSS 选择器的 `pick`；
+3. 在页里打字 → 记 `input` 步（密码遮罩）；
+4. 在发送页写任务 → **定稿并发送到对话**：把 `web-capture/report-<时间>.md` 存到工作区并作为
+   文件引用附到输入框。然后描述修复方案并发送。
 
-## Model protocol (MCP-style JSON-Schema tools)
+## 模型协议（MCP 风格 JSON-Schema 工具）
 
-In-chat models call these directly (name + description + input schema, the
-same contract as MCP tools). pi-web-ui exposes plugin functions to models as
-agent tools, so no separate MCP server is needed.
+对话内模型直接调用（名 + 描述 + 输入 schema，与 MCP 工具同一契约）。pi-web-ui 把插件函数
+以 agent 工具暴露给模型，不需要单独的 MCP 服务。
 
-| tool | what |
-|---|---|
-| `web_capture_state` | page + pick + recent log (Markdown) |
-| `web_capture_log {limit?,kind?}` | log tail: `pick/snap/click/input/submit/change/note/event/step` |
-| `web_capture_steps {limit?}` | ordered steps with selectors — replay/debug what the user did |
-| `web_capture_note {text}` | append a note (visible in tab) |
-| `web_capture_clear` | clear log + steps |
-| `web_capture_report {task?}` | save Markdown report under `web-capture/`, return `{path, markdown}` |
+| 工具                             | 说明                                                            |
+| -------------------------------- | --------------------------------------------------------------- |
+| `web_capture_state`              | 页面 + 拾取 + 最近日志（Markdown）                              |
+| `web_capture_log {limit?,kind?}` | 日志尾巴：`pick/snap/click/input/submit/change/note/event/step` |
+| `web_capture_steps {limit?}`     | 带选择器的有序步骤——回放/调试用户做了什么                       |
+| `web_capture_note {text}`        | 追一条备注（页签可见）                                          |
+| `web_capture_clear`              | 清空日志 + 步骤                                                 |
+| `web_capture_report {task?}`     | 把 Markdown 报告存到 `web-capture/`，返回 `{path, markdown}`    |
 
-## Settings (manifest `settings` → pi-web-ui settings page)
+## 设置（manifest `settings` → pi-web-ui 设置页）
 
-- `sidebarWidth` (default 320): steps sidebar width, draggable in-tab;
-- `maskPasswords` (default true): password inputs logged as typed, no values;
-- `autoSnapshot` (default true): auto-capture after opening same-origin pages;
-- `maxSteps` (default 100): oldest steps dropped past the limit.
+- `sidebarWidth`（默认 320）：步骤栏宽度，页签内可拖；
+- `maskPasswords`（默认 true）：密码框只记“已输入”，不记值；
+- `autoSnapshot`（默认 true）：打开同源页面后自动抓一次快照；
+- `maxSteps`（默认 100）：超出后丢弃最早的步骤。
 
-## i18n
+## 多语言
 
-English only — one language everywhere (tab, bookmarklet, reports), no mixed
-display. Server/agent strings are English per the repo prompt-hygiene rule.
+页签 UI 中英双语（`client/i18n.mjs` 的 zh/en 字典，经 `createPluginI18n` 跟随宿主界面语言）。
+服务端/agent 字符串按仓库提示词规范保持英文。
 
-## Network requirements (read this if the page looks broken)
+## 网络要求（页面显示异常先看这节）
 
-- The proxy fetches the page **server-side**: `localhost` means the machine
-  running pi-web-ui. Dev server on another box? Use its LAN/Tailscale address
-  in the URL bar, not `localhost`.
-- Assets/API/HMR go **directly from your browser** to the target
-  (absolute URLs resolved via `<base>`). If the browser can't reach the dev
-  server (remote phone vs local dev), the shell loads but data doesn't —
-  open the page in a real tab instead (same network as the dev server).
-- Login cookies are never forwarded by the proxy — logged-in pages must use
-  the bookmarklet.
+- 代理在**服务端**抓页面：`localhost` 指运行 pi-web-ui 的那台机器。开发服务器在别的机器上？
+  请在地址栏填局域网/Tailscale 地址，不要填 `localhost`。
+- 静态资源/API/HMR 由**你的浏览器直连**目标站（绝对地址经 `<base>` 解析）。浏览器够不着开发服务器
+  （比如远程手机 vs 本机开发），壳子能出来但数据出不来——请在真实页签里打开（与开发服务器同网）。
+- 代理从不转发登录 Cookie——已登录页面请用书签工具。
 
-## Why bookmarklet instead of iframe/extension
+## 为什么用书签工具而不用 iframe/扩展
 
-Login pages mostly send `X-Frame-Options: DENY`; the bookmarklet runs in the
-user's own browser, so login sessions just work (same idea as OpenCode Browse).
-Cross-origin beacons use preflight-free GET (`Image.src`), no CORS, no install,
-phones and desktops both work. Snapshots > 7KB truncate → re-capture or narrow
-the page (chunked beacons are v2).
+登录页大多回 `X-Frame-Options: DENY`；书签工具跑在用户自己的浏览器里，所以登录态直接可用
+（与 OpenCode Browse 同思路）。跨域信标用免预检 GET（`Image.src`），无跨域、无需安装，
+手机和桌面都能用。快照超过 7KB 会截断→重新抓或收窄页面（分片信标是 v2）。
 
-## Reference mapping
+## 对照表
 
-| need | Codex Browser Use | Playwright / chrome-devtools MCP | web-capture |
-|---|---|---|---|
-| snapshot → act by ref | ✅ (own browser/CDP) | ✅ snapshot+ref | snapshot+selector ✅, reverse-act v2 |
-| console log | ✅ | ✅ | click/input/submit log ✅ (page console v2) |
-| login session | extension/own browser | own profile | user's real browser ✅ |
-| no-Chrome hosts (Termux) | ❌ | ❌ | ✅ |
+| 需求                     | Codex Browser Use    | Playwright / chrome-devtools MCP | web-capture                              |
+| ------------------------ | -------------------- | -------------------------------- | ---------------------------------------- |
+| 快照 → 按引用操作        | ✅（自有浏览器/CDP） | ✅ 快照+引用                     | 快照+选择器 ✅，反向操作 v2              |
+| 控制台日志               | ✅                   | ✅                               | 点击/输入/提交日志 ✅（页面 console v2） |
+| 登录态                   | 扩展/自有浏览器      | 自有 profile                     | 用户真实浏览器 ✅                        |
+| 无 Chrome 主机（Termux） | ❌                   | ❌                               | ✅                                       |
 
-## Roadmap (v2)
+## 路线图（v2）
 
-- `web_capture_act`: agent → page via `sendTo` + on-screen confirm;
-- page console-error capture; snapshot chunking (`seq/total`).
+- `web_capture_act`：agent 经 `sendTo` 操作页面 + 屏上确认；
+- 页面 console 报错捕获；快照分片（`seq/total`）。
 
-## Files
+## 文件
 
-- `manifest.json` (`view:true`, `ui/tools/http/fs/fs:write`, 4 settings)
-- `index.mjs` (beacon `/collect`, `/state`, `/settings`, `/report`, 6 tools)
-- `client/entry.mjs` (browser+steps layout, same-origin observe/pick/snap)
-- `client/i18n.mjs` (en)
+- `manifest.json`（`view:true`，`ui/tools/http/fs/fs:write`，4 个设置）
+- `index.mjs`（信标 `/collect`、`/state`、`/settings`、`/report`，6 个工具）
+- `client/entry.mjs`（浏览器+步骤布局，同源观测/拾取/快照）
+- `client/i18n.mjs`（zh/en）

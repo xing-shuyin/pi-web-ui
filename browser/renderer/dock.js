@@ -3,7 +3,7 @@
  * 集成：刷新、后退、前进、收藏弹窗选择目录、复制 Markdown 与自由拖动
  * 移植自 E:\ai-browser\src\dock.js
  *
- * 「站点怎么折腾都得看得见」的四条底线：
+ * 「站点怎么折腾都得看得见」的六条底线：
  * 1. **挂在 top layer**（`popover="manual"` + `showPopover()`）：不参与页面的层叠上下文。
  *    站点的 z-index 战争、祖先的 `transform`/`filter`/`contain`（那会让 `position:fixed`
  *    退化成相对定位、跟着页面滚走）、`overflow: hidden` 的裁剪，统统影响不到它。
@@ -17,9 +17,17 @@
  *    旧实现 `setMarkup()` 一失败整个 dock 连按钮都没有——这才是「某些网站上看不见」
  *    最常见的原因。样式同理优先走 `adoptedStyleSheets`（构造式样式表不受页面 CSP
  *    `style-src` 管），拿不到才退回 `<style>`。
+ * 5. **位置按当前视口夹一遍**：拖出来的坐标按 origin 存在 `localStorage` 里，宽窗口拖到右边、
+ *    换窄窗口（分栏 / 小屏）恢复时就成了屏幕外——「只有某个站看不见」多半是这个，不是站点压住了。
+ * 6. **一列钮一样大、悬停不放大、不被边缘切掉**：主钮 / 菜单钮 / 下载钮统一 32px，悬停只换底色；
+ *    主钮贴在视口顶边时整列翻转（主钮在上、菜单往下长），窗口矮到装不下一列就把展开上限压小并可滚。
  *
  * 兜底：top layer 不支持 / 开不出来时退回 `position:fixed` + `z-index:2147483647`
- * （不比旧实现差），失败原因不抛给页面。
+ * （不比旧实现差），失败原因不抛给页面；看门狗还会查「到底在不在屏幕上」，
+ * 被站点藏了就自己救回来。
+ *
+ * 插槽：`window.__AIB_DOCK__.slot(id)` 给同源的页面脚本（下载圆钮 `downloads.js`）留的位置，
+ * 让它和刷新钮住在同一列、一起拖动。
  */
 (function () {
 	const existingDock = window.__AIB_DOCK__;
@@ -27,10 +35,18 @@
 		existingDock.remount();
 		return;
 	}
-	if (location.protocol === "file:" && location.pathname.includes("newtab.html")) return;
-	if (location.pathname.includes("shell.html")) return;
+	// 内部页（`file://` 的 shell.html / newtab.html）不注入。**必须连协议一起判**：只看 pathname
+	// 会把 `https://github.com/<owner>/<repo>/blob/main/browser/renderer/shell.html` 这类正常网页
+	// 当成内部页，整颗钮凭空消失。
+	if (location.protocol === "file:" && /(?:^|\/)(?:shell|newtab)\.html$/i.test(location.pathname)) return;
 	// dom-ready / did-finish-load 都会注入，先占位避免建出两个 Dock。
-	window.__AIB_DOCK__ = { ready: false, remount() {} };
+	window.__AIB_DOCK__ = {
+		ready: false,
+		remount() {},
+		slot() {
+			return null;
+		},
+	};
 
 	const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -102,13 +118,29 @@
       align-items: center;
       gap: 6px;
       pointer-events: auto;
-      opacity: 0.35;
-      transition: opacity 0.25s ease;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
     }
-    .dock-container:hover {
-      opacity: 1;
+    /* 主钮贴在视口顶边、上方装不下整列时翻转：主钮还在原处，菜单改成往下长（见 place()） */
+    .dock-container.dock-flip {
+      flex-direction: column-reverse;
     }
+    /* 刷新钮不透明：它是要被看见、被点的，不该跟着站点背景淡下去 */
+    .dock-slot {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .dock-slot-item {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .dock-slot-item:empty {
+      display: none;
+    }
+    /* 一列钮一样大：主钮 / 菜单钮 / 插槽里的下载钮（.pi-dl-fab）统一 32px。
+       整列走同一条尺寸与间距，悬停只换底色，任何钮都不放大、不“弹一下”。 */
     .dock-main-btn {
       width: 32px;
       height: 32px;
@@ -121,7 +153,6 @@
       justify-content: center;
       cursor: pointer;
       box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-      /* 刷新钮不缩放：悬停只换底色，圆钮本身别“弹一下” */
       transition: background 0.15s ease;
     }
     .dock-main-btn:hover {
@@ -138,14 +169,16 @@
       pointer-events: none;
       transition: max-height 0.32s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;
     }
+    /* 展开上限默认 230px（5 个 32px 钮 + 4 个 6px 间距 = 184px，够放）；
+       窗口矮到装不下一列时由 place() 把 --dock-menu-max 压到真实空间并允许滚动，绝不切钮 */
     .dock-container:hover .dock-expanded-menu {
-      max-height: 230px;
+      max-height: var(--dock-menu-max, 230px);
       opacity: 1;
       pointer-events: auto;
     }
     .dock-sub-btn {
-      width: 26px;
-      height: 26px;
+      width: 32px;
+      height: 32px;
       border-radius: 50%;
       background: #2a2d36;
       border: 1px solid rgba(255, 255, 255, 0.10);
@@ -154,12 +187,11 @@
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      transition: all 0.15s ease;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
     }
     .dock-sub-btn:hover {
       background: #5b8cff;
       color: #ffffff;
-      transform: scale(1.12);
     }
     .dock-sub-btn.star:hover {
       background: #f59e0b;
@@ -179,8 +211,12 @@
       border-color: #5b8cff;
       animation: dock-pulse 1.1s ease-in-out infinite;
     }
+    /* 呼吸态也不缩放：只让边框/外发光一亮一暗，列宽一点不抖 */
     @keyframes dock-pulse {
-      50% { transform: scale(1.12); }
+      50% {
+        border-color: rgba(91, 140, 255, 0.35);
+        box-shadow: 0 0 0 3px rgba(91, 140, 255, 0.14);
+      }
     }
 
     /* 优雅轻量提示条 (Toast) */
@@ -453,20 +489,22 @@
 	dock.style.right = "28px";
 	dock.style.bottom = "28px";
 
-	function subButton(id, title, size, shapes) {
+	// 一列钮一样大，图标也一个尺寸：不用再给每个钮单独挑大小
+	const ICON_SIZE = 15;
+	function subButton(id, title, shapes) {
 		const btn = h("button", "dock-sub-btn", { id, type: "button", title });
-		btn.appendChild(icon(size, shapes));
+		btn.appendChild(icon(ICON_SIZE, shapes));
 		return btn;
 	}
 
 	const menu = h("div", "dock-expanded-menu");
-	const btnMd = subButton("btn-md", "复制当前页面 Markdown (Ctrl+Shift+C)", 15, ICON.markdown);
-	const btnFwd = subButton("btn-fwd", "前进 (Alt+→)", 14, ICON.forward);
-	const btnBack = subButton("btn-back", "后退 (Alt+←)", 14, ICON.back);
-	const btnStar = subButton("btn-star", "收藏此页面 (Ctrl+D)", 14, ICON.star);
+	const btnMd = subButton("btn-md", "复制当前页面 Markdown (Ctrl+Shift+C)", ICON.markdown);
+	const btnFwd = subButton("btn-fwd", "前进 (Alt+→)", ICON.forward);
+	const btnBack = subButton("btn-back", "后退 (Alt+←)", ICON.back);
+	const btnStar = subButton("btn-star", "收藏此页面 (Ctrl+D)", ICON.star);
 	btnStar.classList.add("star");
 	const starIcon = btnStar.firstChild;
-	const btnTranslate = subButton("btn-translate", "翻译此页 / 显示原文", 15, ICON.translate);
+	const btnTranslate = subButton("btn-translate", "翻译此页 / 显示原文", ICON.translate);
 	menu.append(btnTranslate, btnMd, btnFwd, btnBack, btnStar);
 
 	const btnMain = h("button", "dock-main-btn", {
@@ -474,8 +512,27 @@
 		type: "button",
 		title: "刷新页面 / 展开导航 (按住可拖动)",
 	});
-	btnMain.appendChild(icon(14, ICON.reload));
-	dock.append(menu, btnMain);
+	btnMain.appendChild(icon(ICON_SIZE, ICON.reload));
+	// 插槽在菜单与刷新钮之间：菜单收起时下载钮就紧贴在刷新钮上方（两个一起看见）
+	const slotBox = h("div", "dock-slot");
+	dock.append(menu, slotBox, btnMain);
+	const slots = new Map();
+	/**
+	 * 给同源的页面脚本（下载圆钮）留的插槽：塞进来的东西跟着刷新钮一起摆、一起拖动。
+	 * 只认一个 id，重复调用回同一个节点。
+	 */
+	function slot(id) {
+		if (!id) return null;
+		const key = String(id);
+		let node = slots.get(key);
+		if (node && node.isConnected) return node;
+		node = h("div", "dock-slot-item", { "data-slot": key });
+		slotBox.appendChild(node);
+		slots.set(key, node);
+		// 列里多了一颗钮 → 重摆一次：贴在顶边时该翻转就翻转，别让新钮冒到屏幕外
+		reposition();
+		return node;
+	}
 
 	// 2. 构建优雅提示条 Toast
 	const toast = h("div", "toast-box", { id: "dock-toast" });
@@ -648,13 +705,28 @@
 		if (!ensureMounted()) window.addEventListener("DOMContentLoaded", mount, { once: true });
 	}
 	mount();
-	window.__AIB_DOCK__ = { ready: true, remount: ensureMounted };
+	window.__AIB_DOCK__ = { ready: true, remount: ensureMounted, slot };
 
 	// 看门狗：站点把宿主藏了 / 摘了 / 把 popover 关了，下一拍自己回来（后台标签页不烧 CPU）
 	// 页面自己 `showModal()` 的 dialog 期间我们仍然画在它上面（截图可验），只是整条链路被 site
 	// 设成 inert、点不动——这是 Chromium 的定了，页面注入赢不了，不在这里挣扎。
 	const WATCH_MS = 1000;
 	let lastFullscreen = Boolean(document.fullscreenElement);
+	/**
+	 * 宿主真的在屏幕上吗：在 DOM 里不够，站点把 `display:none` / 尺寸归零同样得算看不见。
+	 * 这是「某些站整颗钮看不到」的最后一道兜底——看不见就自己救回来，不赌站点怎么改的。
+	 */
+	function onScreen() {
+		try {
+			if (!host.isConnected) return false;
+			const rect = host.getBoundingClientRect();
+			if (!(rect.width > 0) || !(rect.height > 0)) return false;
+			const style = window.getComputedStyle(host);
+			return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+		} catch (_) {
+			return false;
+		}
+	}
 	function watch() {
 		if (document.hidden) return;
 		// 页面吞掉 fullscreenchange（监听被抢 / 事件被 stop）时，这里补一次「排到顶层末尾」
@@ -663,6 +735,20 @@
 			lastFullscreen = fullscreen;
 			if (fullscreen) raiseTopLayer();
 		}
+		ensureMounted();
+		if (onScreen()) return;
+		// 还被藏着：先把 inline 样式整段写回（站点可能改了 visibility / opacity / 宽高），再重开 top layer
+		try {
+			host.style.cssText = HOST_STYLE;
+		} catch (_) {}
+		ensureMounted();
+		if (onScreen() || popoverBroken) return;
+		// 还不行就摘掉 popover 退回普通 fixed
+		popoverBroken = true;
+		try {
+			host.removeAttribute("popover");
+			host.style.cssText = HOST_STYLE;
+		} catch (_) {}
 		ensureMounted();
 	}
 	setInterval(watch, WATCH_MS);
@@ -679,17 +765,100 @@
 		true,
 	);
 
-	// 恢复拖动位置
-	try {
-		const saved = localStorage.getItem("__aib_dock_pos");
-		if (saved) {
-			const { right, bottom } = JSON.parse(saved);
-			dock.style.right = right + "px";
-			dock.style.bottom = bottom + "px";
-			toast.style.right = right + "px";
-			toast.style.bottom = bottom + 46 + "px";
+	// 拖动位置：恢复时必须按**当前**视口重新夹一遍。坐标是按 origin 存的，宽窗口里拖到右下、
+	// 换成窄窗口（分栏 / 小屏）再恢复就成了屏幕外——这正是「只有某个站整颗钮看不见」的常见成因。
+	const EDGE = 12; // 圆钮距视口边缘的最小留白：左右上下都不许贴到 0
+	const DOCK_GAP = 6; // 与 .dock-container / .dock-expanded-menu 的 gap 一致
+	const DOCK_BTN = 32; // 与 .dock-main-btn / .dock-sub-btn / .pi-dl-fab 一致（量不到时的兜底）
+	let lastSpot = { right: 28, bottom: 28 };
+
+	function mainSize() {
+		const rect = btnMain.getBoundingClientRect();
+		return rect.height > 0 ? rect.height : DOCK_BTN;
+	}
+	/** 一段竖列的实测高度：收起态（max-height:0）的 scrollHeight 仍是内容高度，量不到就按统一尺寸推。 */
+	function stackHeight(box, count) {
+		const measured = box ? box.scrollHeight : 0;
+		if (measured > 0) return measured;
+		return count > 0 ? count * DOCK_BTN + (count - 1) * DOCK_GAP : 0;
+	}
+	/** 展开态整列要占多高：菜单 + 插槽（下载钮）+ 主钮，含容器 gap。 */
+	function expandedHeight() {
+		const parts = [stackHeight(menu, menu.children.length), stackHeight(slotBox, slotBox.children.length), mainSize()];
+		let total = 0;
+		for (const part of parts) if (part > 0) total += (total > 0 ? DOCK_GAP : 0) + part;
+		return total;
+	}
+	function clampPosition(right, bottom) {
+		const size = mainSize();
+		const maxRight = Math.max(EDGE, window.innerWidth - EDGE - size);
+		const maxBottom = Math.max(EDGE, window.innerHeight - EDGE - size);
+		return {
+			right: Math.max(EDGE, Math.min(maxRight, Number(right) || 28)),
+			bottom: Math.max(EDGE, Math.min(maxBottom, Number(bottom) || 28)),
+		};
+	}
+	/**
+	 * 摆位：横向按视口夹；纵向默认「主钮在下、菜单往上长」。主钮贴在视口顶边时上方装不下整列，
+	 * 那就翻转成「主钮在上、菜单往下长」（`column-reverse` + 把锚点从 bottom 改成 top）——
+	 * **不管摆在哪，展开的钮都不许被视口边缘切掉**。
+	 */
+	function place(right, bottom) {
+		const spot = clampPosition(right, bottom);
+		lastSpot = spot;
+		dock.style.right = spot.right + "px";
+
+		const size = mainSize();
+		const menuFull = stackHeight(menu, menu.children.length);
+		const mainTop = window.innerHeight - spot.bottom - size;
+		// 主钮之外要摆的部分（菜单 / 插槽各自带一个 gap）
+		const need = Math.max(0, expandedHeight() - size);
+		const above = Math.max(0, mainTop - EDGE);
+		const below = Math.max(0, window.innerHeight - (mainTop + size) - EDGE);
+		const flip = need > above && below > above;
+		const room = flip ? below : above;
+
+		// 两边都放不下（窗口矮到装不下一列）：把展开上限压到真实空间并允许滚动，不把钮切掉
+		if (need > room) {
+			const cap = Math.max(size, Math.floor(room - (need - menuFull)));
+			dock.style.setProperty("--dock-menu-max", cap + "px");
+			menu.style.overflowY = "auto";
+		} else {
+			dock.style.removeProperty("--dock-menu-max");
+			menu.style.overflowY = "";
 		}
+
+		dock.classList.toggle("dock-flip", flip);
+		if (flip) {
+			dock.style.top = mainTop + "px";
+			dock.style.bottom = "auto";
+		} else {
+			dock.style.top = "auto";
+			dock.style.bottom = spot.bottom + "px";
+		}
+
+		// toast 跟着主钮走：正常态贴主钮上方；翻转到顶边时改到主钮左侧，免得自己也跑到屏幕外
+		toast.style.right = (flip ? spot.right + size + 8 : spot.right) + "px";
+		toast.style.bottom = (flip ? spot.bottom : spot.bottom + 46) + "px";
+		return spot;
+	}
+	/** 列的内容变了（下载钮冒出来 / 收起）重新摆一次：锚点仍用上一次的坐标。 */
+	function reposition() {
+		place(lastSpot.right, lastSpot.bottom);
+	}
+	// 启动就摆一次：没存过坐标也得跑一遍 place()，否则翻转 / 空间压缩要等第一次拖动才生效
+	let savedSpot = null;
+	try {
+		savedSpot = JSON.parse(localStorage.getItem("__aib_dock_pos") || "null");
 	} catch (_) {}
+	place(savedSpot && savedSpot.right, savedSpot && savedSpot.bottom);
+	// 窗口变小（分栏、还原、旋屏）之后重新夹：不然又落到屏幕外
+	window.addEventListener("resize", () => {
+		const current = place(lastSpot.right, lastSpot.bottom);
+		try {
+			localStorage.setItem("__aib_dock_pos", JSON.stringify(current));
+		} catch (_) {}
+	});
 
 	// 中心化书签能力与状态管理
 	function setStarStatus(isStarred) {
@@ -995,9 +1164,9 @@
 		hasMoved = false;
 		startX = e.clientX;
 		startY = e.clientY;
-		const s = window.getComputedStyle(dock);
-		initialRight = parseInt(s.right, 10) || 28;
-		initialBottom = parseInt(s.bottom, 10) || 28;
+		// 锚点只认 lastSpot：翻转态 inline 的 bottom 是 auto，读样式会把它当回 28
+		initialRight = lastSpot.right;
+		initialBottom = lastSpot.bottom;
 		e.preventDefault();
 	});
 
@@ -1006,14 +1175,9 @@
 		const dx = e.clientX - startX;
 		const dy = e.clientY - startY;
 		if (Math.abs(dx) > 3 || Math.abs(dy) > 3) hasMoved = true;
-		const r = Math.max(12, Math.min(window.innerWidth - 44, initialRight - dx));
-		const b = Math.max(12, Math.min(window.innerHeight - 44, initialBottom - dy));
-		dock.style.right = r + "px";
-		dock.style.bottom = b + "px";
-		toast.style.right = r + "px";
-		toast.style.bottom = b + 46 + "px";
+		const spot = place(initialRight - dx, initialBottom - dy);
 		try {
-			localStorage.setItem("__aib_dock_pos", JSON.stringify({ right: r, bottom: b }));
+			localStorage.setItem("__aib_dock_pos", JSON.stringify(spot));
 		} catch (_) {}
 	});
 

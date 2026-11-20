@@ -43,7 +43,7 @@ export function ensureLive2dEngine(clientBase) {
 				await loadScript(`${clientBase}/vendor/pixi-live2d-display.min.js`);
 			}
 		} catch (localErr) {
-			console.warn("[live2d] 本地 vendor 加载失败，回退 CDN：", localErr);
+			console.warn("[live2d] local vendor load failed, falling back to CDN:", localErr);
 			if (!window.Live2DCubismCore) {
 				await loadScript("https://cdn.jsdelivr.net/gh/dylanNew/live2d/webgl/Live2D/lib/live2dcubismcore.min.js");
 			}
@@ -59,7 +59,7 @@ export function ensureLive2dEngine(clientBase) {
 		}
 
 		if (!window.PIXI || !window.PIXI.live2d?.Live2DModel) {
-			throw new Error("Live2D 渲染引擎未能成功加载");
+			throw new Error("Live2D render engine failed to load");
 		}
 		return window.PIXI;
 	})();
@@ -439,7 +439,7 @@ export class Live2DStage {
 			this.model.expression(targetExp);
 			return true;
 		} catch (err) {
-			console.warn("[live2d] 播放表情失败:", targetExp, err);
+			console.warn("[live2d] failed to play expression:", targetExp, err);
 			return false;
 		}
 	}
@@ -456,7 +456,7 @@ export class Live2DStage {
 			this.model.motion(targetGroup, index);
 			return true;
 		} catch (err) {
-			console.warn("[live2d] 播放动作失败:", targetGroup, err);
+			console.warn("[live2d] failed to play motion:", targetGroup, err);
 			return false;
 		}
 	}

@@ -1,7 +1,8 @@
 {
 	"id": "notes",
 	"name": "笔记",
-	"version": "0.4.9",
+	"nameEn": "Notes",
+	"version": "0.4.10",
 	"icon": "📓",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1024 1024\"><path d=\"M746.666667 64a170.666667 170.666667 0 0 1 170.666666 170.666667v554.666666a170.666667 170.666667 0 0 1-170.666666 170.666667H298.666667a170.666667 170.666667 0 0 1-170.666667-170.666667V234.666667a170.666667 170.666667 0 0 1 170.666667-170.666667h448z m0 74.666667H298.666667a96 96 0 0 0-95.893334 91.477333L202.666667 234.666667v554.666666a96 96 0 0 0 91.477333 95.893334L298.666667 885.333333h448a96 96 0 0 0 95.893333-91.477333L842.666667 789.333333V234.666667a96 96 0 0 0-91.477334-95.893334L746.666667 138.666667z\" fill=\"currentColor\"/><path d=\"M224 325.333333a37.333333 37.333333 0 0 1 3.072 74.538667l-3.072 0.128H106.666667a37.333333 37.333333 0 0 1-3.072-74.538667L106.666667 325.333333h117.333333zM224 624a37.333333 37.333333 0 0 1 3.072 74.538667l-3.072 0.128H106.666667a37.333333 37.333333 0 0 1-3.072-74.538667L106.666667 624h117.333333zM693.333333 346.666667a37.333333 37.333333 0 0 1 37.205334 34.261333l0.128 3.072v256a37.333333 37.333333 0 0 1-74.538667 3.072L656 640V384c0-20.608 16.725333-37.333333 37.333333-37.333333z\" fill=\"currentColor\"/></svg>",
 	"description": "现代闪念速记：极简无标题随手记、就地快速编辑、支持设置定时提醒，笔记与日历双视图合一。顶栏按钮打开全局浮窗，配合 AI 工具随时捕捉灵感与备忘。",
@@ -15,15 +16,19 @@
 			"key": "mirrorEnabled",
 			"type": "boolean",
 			"label": "镜像成 Markdown 文件（Mirror to Markdown）",
+			"labelEn": "Mirror notes to Markdown files",
 			"default": false,
-			"hint": "每次改动把每篇笔记写成一个 .md，另生成 _todos.md / _reminders.md 两个汇总，放到下面那个目录里 —— 给 Obsidian / git 用。注意是**单向导出**：真相仍在插件自己的 json 库里，改镜像文件不会回流。"
+			"hint": "每次改动把每篇笔记写成一个 .md，另生成 _todos.md / _reminders.md 两个汇总，放到下面那个目录里 —— 给 Obsidian / git 用。注意是**单向导出**：真相仍在插件自己的 json 库里，改镜像文件不会回流。",
+			"hintEn": "On every change, write each note as one .md plus _todos.md / _reminders.md summaries into the directory below — for Obsidian / git. Note this is **one-way export**: the plugin's own JSON store stays the source of truth; editing mirrored files never flows back."
 		},
 		{
 			"key": "mirrorDir",
 			"type": "text",
 			"label": "镜像目录（绝对路径）",
+			"labelEn": "Mirror directory (absolute path)",
 			"default": "",
-			"hint": "例如 D:/notes-vault/pi-notes。工作区外的目录首次写入时浏览器会弹一次授权确认；清理只删我们自己在 .pi-notes-mirror.json 索引里记过的文件。"
+			"hint": "例如 D:/notes-vault/pi-notes。工作区外的目录首次写入时浏览器会弹一次授权确认；清理只删我们自己在 .pi-notes-mirror.json 索引里记过的文件。",
+			"hintEn": "E.g. D:/notes-vault/pi-notes. Directories outside the workspace ask for authorization once on first write; cleanup only removes files tracked in our own .pi-notes-mirror.json index."
 		}
 	],
 	"ui": {

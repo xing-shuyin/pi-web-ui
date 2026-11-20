@@ -1541,7 +1541,7 @@ function AttachmentCard({ message, forceOpen = false }: { message: UiMessage; fo
 	const details = (message.details ?? {}) as {
 		name?: string;
 		path?: string;
-		mode?: "inline" | "reference" | "lines" | "image" | "bridged" | "page" | "conversation" | "canvas";
+		mode?: "inline" | "reference" | "lines" | "image" | "bridged" | "page" | "conversation" | "canvas" | "terminal";
 		size?: number;
 		lines?: number;
 		startLine?: number;
@@ -1551,7 +1551,8 @@ function AttachmentCard({ message, forceOpen = false }: { message: UiMessage; fo
 	const name = details.name ?? details.path ?? t("attachment");
 	const isFolder = details.type === "folder";
 	const isCanvas = details.mode === "canvas";
-	const isReference = details.mode === "reference" || isCanvas;
+	const isTerminal = details.mode === "terminal";
+	const isReference = details.mode === "reference" || isCanvas || isTerminal;
 	const isBridged = details.mode === "bridged";
 	const isPage = details.mode === "page";
 	const isConversation = details.mode === "conversation";
@@ -1580,7 +1581,7 @@ function AttachmentCard({ message, forceOpen = false }: { message: UiMessage; fo
 						<span className="chead-toggle">{shown ? <FiChevronDown /> : <FiChevronRight />}</span>
 					) : null
 				}
-				icon={isCanvas ? "◈" : isFolder ? "📁" : isPage ? "🌐" : isConversation ? "💬" : "📎"}
+				icon={isCanvas ? "◈" : isTerminal ? "🖥" : isFolder ? "📁" : isPage ? "🌐" : isConversation ? "💬" : "📎"}
 				iconClassName="attachcard-icon"
 				titleClassName="attachcard-name"
 				after={

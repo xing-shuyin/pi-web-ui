@@ -219,10 +219,10 @@ export default {
 				const img = await new Promise((resolve, reject) => {
 					const im = el("img");
 					im.onload = () => resolve(im);
-					im.onerror = () => reject(new Error("浏览器无法解码这个文件"));
+					im.onerror = () => reject(new Error(t("msg.undecodable")));
 					im.src = url;
 				});
-				if (!img.naturalWidth || !img.naturalHeight) throw new Error("图片没有有效尺寸");
+				if (!img.naturalWidth || !img.naturalHeight) throw new Error(t("msg.noSize"));
 				return img;
 			} finally {
 				setTimeout(() => URL.revokeObjectURL(url), 5000);
@@ -815,7 +815,7 @@ export default {
 						);
 					}
 					if (others.length) {
-						listEl.append(el("div", { class: "igt-hint", text: `${others.length} 个非图片文件已折叠` }));
+						listEl.append(el("div", { class: "igt-hint", text: t("queue.skipped", { n: others.length }) }));
 					}
 					if (!dirs.length && !imgs.length) listEl.append(el("div", { class: "igt-hint", text: t("ws.empty") }));
 				} catch (err) {
@@ -1554,7 +1554,7 @@ export default {
 				if (c.optional) {
 					const clear = el("button", {
 						class: `igt-btn igt-mini${get(s) ? "" : " on"}`,
-						text: "透明",
+						text: t("act.transparent"),
 						onclick: () => {
 							commit(item, (st) => set(st, ""));
 							clear.classList.add("on");
@@ -2320,6 +2320,38 @@ export default {
 			})
 			.catch(() => {});
 
+		// Host locale is the single source of truth: repaint via the existing rebuild() on change.
+		let offLocale = null;
+		let onLocaleEvent = null;
+		try {
+			offLocale =
+				globalThis.window?.__piWebUiHost?.locale?.onChange?.(() => {
+					try {
+						app.lang = detectLang();
+						if (genHandle?.load) genHandle.load(true);
+					} catch {}
+					try {
+						rebuild();
+					} catch {}
+				}) ?? null;
+		} catch {
+			offLocale = null;
+		}
+		try {
+			onLocaleEvent = () => {
+				try {
+					app.lang = detectLang();
+					if (genHandle?.load) genHandle.load(true);
+				} catch {}
+				try {
+					rebuild();
+				} catch {}
+			};
+			globalThis.window?.addEventListener("pi-web-ui:locale", onLocaleEvent);
+		} catch {
+			onLocaleEvent = null;
+		}
+
 		const offData = ctx.onData?.((payload) => {
 			if (payload?.kind === "settings") {
 				app.cfg = payload.values ?? app.cfg;
@@ -2328,6 +2360,12 @@ export default {
 		});
 
 		return () => {
+			try {
+				offLocale?.();
+			} catch {}
+			try {
+				if (onLocaleEvent) globalThis.window?.removeEventListener("pi-web-ui:locale", onLocaleEvent);
+			} catch {}
 			offData?.();
 			for (const f of cleanupFns) {
 				try {
@@ -2486,13 +2524,13 @@ const CSS = `
 .igt-crop-sw { left: -6px; bottom: -6px; cursor: nesw-resize; }
 .igt-crop-w { left: -6px; top: 50%; margin-top: -5px; cursor: ew-resize; }
 
-/* ---- 手机端（≤640px）：三栏 → 上下堆叠 ---------------------------------
-   宿主在手机上本来就是单列铺满，三栏固定宽度（队列 236 + 舞台 + 面板 320）
-   在这里必定挤爆。改法：
-     顶部 = 队列（横向缩略图带，只留缩略图 + 删除）
-     中间 = 舞台（主区，尽量把纵向空间让给图）
-     底部 = 参数抽屉（手柄可收起，收起后只剩 tab 行 + 动作行）
-   各区域自己滚（overflow），插件根不超高，不给宿主的 .plugin-view 添外层滚动。 */
+/* ---- Mobile (<=640px): three columns stack vertically ---------------------------------
+   The host is already single-column on phones; three fixed-width columns (queue 236 + stage + panel 320)
+   would overflow here. Layout:
+     Top = queue (horizontal thumbnail strip, thumbnails + delete only)
+     Middle = stage (main area, give vertical space to the image)
+     Bottom = settings drawer (collapsible handle, collapsed leaves only the tab row + action row)
+   Each area scrolls on its own (overflow); the plugin root never grows taller, so no outer scroll is added to the host .plugin-view. */ */
 @media (max-width: 640px) {
 	.igt-top { padding: 8px 10px; gap: 6px; }
 	.igt-sub { display: none; }
@@ -2500,11 +2538,11 @@ const CSS = `
 
 	.igt-main { flex-direction: column; }
 
-	/* 队列 → 顶部横向缩略图带 */
+	/* Queue becomes the top thumbnail strip */
 	.igt-queue { width: auto; flex: none; border-right: none; border-bottom: 1px solid var(--border, #262a35); }
 	.igt-queue.igt-empty { display: none; }
 	.igt-queue .igt-sec { padding: 3px 8px; border-bottom: none; font-size: 11px; }
-	/* 「拖入图片 / Ctrl+V 粘贴」那条引导是给桌面空队列看的，手机上有缩略图带就不必占两行 */
+	/* The drag-in / Ctrl+V hint is for the empty desktop queue; with the thumbnail strip on phones it need not take two lines */
 	.igt-queue > .igt-hint.igt-pad { display: none; }
 	.igt-queue-list { flex-direction: row; align-items: center; overflow-x: auto; overflow-y: hidden; padding: 6px 8px; gap: 6px; }
 	.igt-qitem { flex: none; padding: 3px; gap: 0; }

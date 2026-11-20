@@ -24,6 +24,9 @@ export const DICT = {
 		done: "已完成",
 		notFilled: "(未填)",
 		refresh: "刷新",
+		renderFailed: "页面渲染失败：{error}",
+		retry: "重试",
+		apiBadJson: "接口返回非 JSON（HTTP {status}）：{body}",
 
 		// 环境探测
 		probing: "正在检测 frp 环境…",
@@ -133,6 +136,9 @@ export const DICT = {
 		done: "已完成",
 		notFilled: "(未填)",
 		refresh: "重新整理",
+		renderFailed: "頁面渲染失敗：{error}",
+		retry: "重試",
+		apiBadJson: "介面返回非 JSON（HTTP {status}）：{body}",
 
 		// 环境探测
 		probing: "正在檢測 frp 環境…",
@@ -242,6 +248,9 @@ export const DICT = {
 		done: "Done",
 		notFilled: "(not set)",
 		refresh: "Refresh",
+		renderFailed: "Render failed: {error}",
+		retry: "Retry",
+		apiBadJson: "Non-JSON response (HTTP {status}): {body}",
 
 		// Environment probe
 		probing: "Checking the frp environment…",

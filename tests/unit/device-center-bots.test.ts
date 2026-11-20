@@ -347,4 +347,20 @@ describe("local Bot registry", () => {
 		}
 		expect(f.registry.busy(bot.id)).toBe(false);
 	});
+
+	it("SSH 智能体：直连设备工作区保存本地、执行走 SSH 代理", async () => {
+		const f = await fixture();
+		const bot = await f.registry.upsert({ ...f.input, cwd: "ssh://dev@192.168.1.10:22/home/dev/project/" });
+		expect(bot.cwd).toBe("ssh://dev@192.168.1.10:22/home/dev/project");
+		expect(f.registry.list()).toEqual([bot]);
+		const lease = await f.registry.acquire(bot.id);
+		try {
+			expect(lease.root).toBe("ssh://dev@192.168.1.10:22/home/dev/project");
+		} finally {
+			lease.release();
+		}
+		await expect(f.registry.upsert({ ...bot, cwd: "ssh://bad-uri" })).rejects.toMatchObject({
+			code: "WORKSPACE_INVALID",
+		});
+	});
 });

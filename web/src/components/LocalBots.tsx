@@ -316,6 +316,13 @@ export function LocalBots({
 									<small className={bot.enabled ? "is-enabled" : ""}>
 										{bot.enabled ? t("localBotEnabled") : t("localBotDisabled")} · r{bot.revision}
 									</small>
+									{bot.cwd.startsWith("ssh://") && (
+										<small title={bot.cwd}>
+											{t("nativeCliRemoteLocation", {
+												host: bot.cwd.replace(/^ssh:\/\/([^@]+)@([^:/]+).*$/, "$1@$2"),
+											})}
+										</small>
+									)}
 								</span>
 							</button>
 							<button
@@ -481,7 +488,6 @@ export function LocalBots({
 											<label htmlFor="local-bot-cwd">{t("localBotCwd")}</label>
 											<UniversalPathPicker
 												inputId="local-bot-cwd"
-												localOnly
 												commitOnBlur
 												pathCompletions={pathCompletions}
 												cwd={draft.cwd}

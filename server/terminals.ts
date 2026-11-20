@@ -2633,6 +2633,12 @@ export interface PersistentTerminalToolsOptions {
 			action: "input" | "key";
 		},
 	) => Promise<TerminalSafetyCheckResult> | TerminalSafetyCheckResult;
+	/**
+	 * 用户自己开的终端标签（另一个 TerminalManager）。
+	 * 只有用户把它们“引用到输入框”时 agent 才找得到它们；找到后与自有终端同等对待
+	 * （可读也可输入，写入照样过 checkSafety 那套安全门禁）。
+	 */
+	resolveExternal?: (terminalId: string) => TerminalManager | undefined;
 }
 
 /** `terminal` 的 action 单源：schema 枚举与 execute 的合法性校验共用这一份。 */
@@ -2658,26 +2664,38 @@ export function makePersistentTerminalTools(
 		if (error) throw new Error(error);
 	};
 
+	// 待确认行记在终端所属的那个 manager 里：用户自己的标签（resolveExternal）也算一份。
 	const fallbackPending = new Map<string, string>();
-	const getPending = (id: string): string => {
-		if (typeof terminals.getAgentPendingLine === "function") {
-			return terminals.getAgentPendingLine(id);
+	const getPending = (mgr: TerminalManager, id: string): string => {
+		if (typeof mgr.getAgentPendingLine === "function") {
+			return mgr.getAgentPendingLine(id);
 		}
 		return fallbackPending.get(id) ?? "";
 	};
-	const setPending = (id: string, line: string): void => {
-		if (typeof terminals.setAgentPendingLine === "function") {
-			terminals.setAgentPendingLine(id, line);
+	const setPending = (mgr: TerminalManager, id: string, line: string): void => {
+		if (typeof mgr.setAgentPendingLine === "function") {
+			mgr.setAgentPendingLine(id, line);
 		} else {
 			fallbackPending.set(id, line);
 		}
 	};
-	const clearPending = (id: string): void => {
-		if (typeof terminals.clearAgentPendingLine === "function") {
-			terminals.clearAgentPendingLine(id);
+	const clearPending = (mgr: TerminalManager, id: string): void => {
+		if (typeof mgr.clearAgentPendingLine === "function") {
+			mgr.clearAgentPendingLine(id);
 		} else {
 			fallbackPending.delete(id);
 		}
+	};
+
+	/**
+	 * 这个 id 归谁管：本会话自己的 manager，或者用户自己开着的终端（「引用到输入框」带过来的）。
+	 * 没挂外部解析器时连 has() 都不碰——纯 mcp/测试替身不必被拖进这个方法。
+	 */
+	const managerFor = (terminalId: string): TerminalManager => {
+		const resolve = options?.resolveExternal;
+		if (!resolve) return terminals;
+		if (terminals.has(terminalId)) return terminals;
+		return resolve(terminalId) ?? terminals;
 	};
 
 	return [
@@ -2762,7 +2780,8 @@ export function makePersistentTerminalTools(
 					}
 					case "close": {
 						const lang = getLang();
-						if (!terminals.has(p.terminalId))
+						const mgr = managerFor(p.terminalId);
+						if (!mgr.has(p.terminalId))
 							throw new Error(
 								pick(
 									lang,
@@ -2772,7 +2791,7 @@ export function makePersistentTerminalTools(
 									{ "p.terminalId": p.terminalId },
 								),
 							);
-						terminals.kill(p.terminalId);
+						mgr.kill(p.terminalId);
 						return result(
 							pick(lang, `终端已关闭：${p.terminalId}`, `Terminal closed: ${p.terminalId}`, "terminals.close.done", {
 								"p.terminalId": p.terminalId,
@@ -2781,7 +2800,8 @@ export function makePersistentTerminalTools(
 					}
 					case "input": {
 						const lang = getLang();
-						const prevPending = getPending(p.terminalId);
+						const mgr = managerFor(p.terminalId);
+						const prevPending = getPending(mgr, p.terminalId);
 						const parsed = parseTerminalLineStream(prevPending, p.data);
 
 						if (options?.checkSafety && parsed.completedLines.length > 0) {
@@ -2798,10 +2818,10 @@ export function makePersistentTerminalTools(
 								if (safety.blocked) {
 									if (prevPending) {
 										try {
-											terminals.inputChecked(p.terminalId, "\x03");
+											mgr.inputChecked(p.terminalId, "\x03");
 										} catch {}
 									}
-									clearPending(p.terminalId);
+									clearPending(mgr, p.terminalId);
 									const reason = pick(lang, safety.reason ?? "", safety.reasonEn ?? safety.reason ?? "");
 									const reasonSuffix = reason ? (lang === "zh" ? ` 原因：${reason}` : ` Reason: ${reason}`) : "";
 									throw new Error(
@@ -2825,12 +2845,12 @@ export function makePersistentTerminalTools(
 								if (safety.editedCommand !== undefined) {
 									if (prevPending) {
 										try {
-											terminals.inputChecked(p.terminalId, "\x03");
+											mgr.inputChecked(p.terminalId, "\x03");
 										} catch {}
 									}
-									clearPending(p.terminalId);
-									failIf(terminals.inputChecked(p.terminalId, safety.editedCommand + "\r"));
-									terminals.noteAgentActivity(p.terminalId);
+									clearPending(mgr, p.terminalId);
+									failIf(mgr.inputChecked(p.terminalId, safety.editedCommand + "\r"));
+									mgr.noteAgentActivity(p.terminalId);
 									return result(
 										pick(
 											lang,
@@ -2844,9 +2864,9 @@ export function makePersistentTerminalTools(
 							}
 						}
 
-						failIf(terminals.inputChecked(p.terminalId, p.data));
-						setPending(p.terminalId, parsed.remainingPending);
-						terminals.noteAgentActivity(p.terminalId);
+						failIf(mgr.inputChecked(p.terminalId, p.data));
+						setPending(mgr, p.terminalId, parsed.remainingPending);
+						mgr.noteAgentActivity(p.terminalId);
 						return result(
 							pick(
 								lang,
@@ -2859,12 +2879,13 @@ export function makePersistentTerminalTools(
 					}
 					case "key": {
 						const lang = getLang();
+						const mgr = managerFor(p.terminalId);
 						const encoded = encodeTerminalKey(p.key, p.modifiers);
 						if ("error" in encoded) throw new Error(encoded.error);
 
 						const isEnter = encoded.data.includes("\r") || encoded.data.includes("\n");
 						if (isEnter) {
-							const pending = getPending(p.terminalId);
+							const pending = getPending(mgr, p.terminalId);
 							const cleanCmd = stripAnsi(pending).trim();
 							if (options?.checkSafety && cleanCmd) {
 								const safety = await options.checkSafety(cleanCmd, {
@@ -2876,9 +2897,9 @@ export function makePersistentTerminalTools(
 								signal?.throwIfAborted();
 								if (safety.blocked) {
 									try {
-										terminals.inputChecked(p.terminalId, "\x03");
+										mgr.inputChecked(p.terminalId, "\x03");
 									} catch {}
-									clearPending(p.terminalId);
+									clearPending(mgr, p.terminalId);
 									const reason = pick(lang, safety.reason ?? "", safety.reasonEn ?? safety.reason ?? "");
 									const reasonSuffix = reason ? (lang === "zh" ? ` 原因：${reason}` : ` Reason: ${reason}`) : "";
 									throw new Error(
@@ -2901,11 +2922,11 @@ export function makePersistentTerminalTools(
 								}
 								if (safety.editedCommand !== undefined) {
 									try {
-										terminals.inputChecked(p.terminalId, "\x03");
+										mgr.inputChecked(p.terminalId, "\x03");
 									} catch {}
-									clearPending(p.terminalId);
-									failIf(terminals.inputChecked(p.terminalId, safety.editedCommand + "\r"));
-									terminals.noteAgentActivity(p.terminalId);
+									clearPending(mgr, p.terminalId);
+									failIf(mgr.inputChecked(p.terminalId, safety.editedCommand + "\r"));
+									mgr.noteAgentActivity(p.terminalId);
 									return result(
 										pick(
 											lang,
@@ -2917,9 +2938,9 @@ export function makePersistentTerminalTools(
 									);
 								}
 							}
-							failIf(terminals.inputChecked(p.terminalId, encoded.data));
-							clearPending(p.terminalId);
-							terminals.noteAgentActivity(p.terminalId);
+							failIf(mgr.inputChecked(p.terminalId, encoded.data));
+							clearPending(mgr, p.terminalId);
+							mgr.noteAgentActivity(p.terminalId);
 							return result(
 								pick(
 									lang,
@@ -2931,11 +2952,11 @@ export function makePersistentTerminalTools(
 							);
 						}
 
-						const prev = getPending(p.terminalId);
+						const prev = getPending(mgr, p.terminalId);
 						const parsed = parseTerminalLineStream(prev, encoded.data);
-						failIf(terminals.inputChecked(p.terminalId, encoded.data));
-						setPending(p.terminalId, parsed.remainingPending);
-						terminals.noteAgentActivity(p.terminalId);
+						failIf(mgr.inputChecked(p.terminalId, encoded.data));
+						setPending(mgr, p.terminalId, parsed.remainingPending);
+						mgr.noteAgentActivity(p.terminalId);
 						return result(
 							pick(
 								lang,
@@ -2951,8 +2972,10 @@ export function makePersistentTerminalTools(
 						const cursor = Math.max(0, Math.floor(p.cursor ?? 0));
 						const waitMs = p.waitMs !== undefined ? Math.max(0, Math.min(120_000, Math.floor(p.waitMs))) : undefined;
 						const maxBytes = Math.max(1, Math.min(100_000, Math.floor(p.maxBytes ?? 20000)));
-						if (waitMs) await terminals.waitForOutput(p.terminalId, cursor, waitMs, signal);
-						const read = terminals.read(p.terminalId, cursor, maxBytes);
+						// 用户自己开着的标签（「引用到输入框」带过来的）读它自己的 manager。
+						const mgr = managerFor(p.terminalId);
+						if (waitMs) await mgr.waitForOutput(p.terminalId, cursor, waitMs, signal);
+						const read = mgr.read(p.terminalId, cursor, maxBytes);
 						if (!read)
 							throw new Error(
 								pick(
@@ -2976,7 +2999,8 @@ export function makePersistentTerminalTools(
 					}
 					case "wait": {
 						const lang = getLang();
-						if (!terminals.has(p.terminalId)) {
+						const mgr = managerFor(p.terminalId);
+						if (!mgr.has(p.terminalId)) {
 							throw new Error(
 								pick(
 									lang,
@@ -2987,7 +3011,7 @@ export function makePersistentTerminalTools(
 								),
 							);
 						}
-						if (p.cursor === undefined && !terminals.isSentinelPending(p.terminalId)) {
+						if (p.cursor === undefined && !mgr.isSentinelPending(p.terminalId)) {
 							const why = pick(
 								lang,
 								`终端 ${p.terminalId} 当前没有正在等待完成的 bash 工具命令（shell 空闲，或该命令是通过 terminal(action='input') 发出的、没有完成标记）。terminal(action='wait') 不适用；要观察输出请用 terminal(action='read', terminalId="${p.terminalId}", waitMs=…)。`,
@@ -2997,10 +3021,10 @@ export function makePersistentTerminalTools(
 							);
 							return result(JSON.stringify({ applicable: false, reason: why }), { applicable: false });
 						}
-						const cursor = p.cursor ?? terminals.endCursor(p.terminalId) ?? 0;
+						const cursor = p.cursor ?? mgr.endCursor(p.terminalId) ?? 0;
 						const maxWait = Math.max(100, Math.min(600_000, Math.floor(p.maxWaitMs ?? 300_000)));
-						const wait = await terminals.waitForCompletion(p.terminalId, maxWait, signal, cursor);
-						const read = terminals.read(p.terminalId, cursor, 20_000);
+						const wait = await mgr.waitForCompletion(p.terminalId, maxWait, signal, cursor);
+						const read = mgr.read(p.terminalId, cursor, 20_000);
 						const outputTail = read?.data ? stripAnsi(read.data).slice(-4000) : "";
 						return result(JSON.stringify({ ...wait, outputTail }), {
 							...wait,

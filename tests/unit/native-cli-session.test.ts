@@ -201,16 +201,25 @@ describe("native CLI exact session binding", () => {
 		expect(launch.config.args!.filter((x) => x.startsWith("hooks.SessionStart="))).toHaveLength(1);
 		expect(launch.capabilities.resume).toBe("explicit-only");
 	});
-	it.each(["claude", "codex"] as const)("wires %s UserPromptSubmit to the narrow submitted signal", async (preset) => {
+	it.each(["claude", "codex"] as const)("points %s hooks at the shared id-routed dispatcher", async (preset) => {
 		const launch = await prepare(preset);
+		// One command serves every event: the dispatcher derives the kind from the payload.
 		if (preset === "claude") {
 			const settings = JSON.parse(launch.config.args![launch.config.args!.indexOf("--settings") + 1]);
-			expect(settings.hooks.UserPromptSubmit[0].hooks[0].command).toMatch(/ submitted$/);
+			expect(settings.hooks.UserPromptSubmit[0].hooks[0].command).toMatch(/hook-dispatcher.mjs"$/);
+			expect(settings.hooks.SessionStart[0].hooks[0].command).toBe(settings.hooks.UserPromptSubmit[0].hooks[0].command);
+			expect(Object.keys(settings.hooks)).toContain("SessionEnd");
 		} else {
-			const hook = launch.config.args!.find((arg) => arg.startsWith("hooks.UserPromptSubmit="));
-			expect(hook).toContain(" submitted");
-			expect(hook).not.toContain(" working");
+			const prompt = launch.config.args!.find((arg) => arg.startsWith("hooks.UserPromptSubmit="));
+			const tool = launch.config.args!.find((arg) => arg.startsWith("hooks.PreToolUse="));
+			expect(prompt).toContain('type = "command"');
+			expect(prompt).toContain("hook-dispatcher.mjs");
+			expect(prompt).not.toContain("submitted");
+			expect(tool).toContain('matcher = "*"');
+			// Codex 在自动化下不会执行未信任的 hook，注入时必须带 bypass 开关。
+			expect(launch.config.args).toContain("--dangerously-bypass-hook-trust");
 		}
+		expect(launch.env).toMatchObject({ PI_WEB_NATIVE_CLI_KEY: key });
 	});
 	it("does not treat a Codex model value as the resume subcommand", async () => {
 		const launch = await prepare("codex", ["--model", "resume"], { key, nativeId } as any);
@@ -236,10 +245,19 @@ describe("native CLI exact session binding", () => {
 		expect(custom.config.args).toEqual(["--my-option"]);
 		expect(custom.capabilities).toEqual({ resume: "none", events: "process" });
 	});
-	it("wires official Antigravity lifecycle hooks through settings by default", async () => {
+	it("installs Antigravity hooks through the shared hooks.json, never --settings", async () => {
 		const agy = await prepare("agy");
-		expect(agy.config.args).toContain("--settings");
+		// agy --settings only accepts settings.json keys: a hooks key exits 1 with unknown setting.
+		expect(agy.config.args).not.toContain("--settings");
+		expect(agy.config.args).toEqual([]);
 		expect(agy.capabilities).toEqual({ resume: "explicit-only", events: "hooks" });
+		expect(agy.env).toMatchObject({ PI_WEB_NATIVE_CLI_KEY: key });
+		const shared = JSON.parse(await readFile(join(os.home, ".gemini", "config", "hooks.json"), "utf8"));
+		const entry = shared["pi-web-ui-observer"];
+		expect(entry.SessionStart[0].type).toBe("command");
+		expect(entry.SessionStart[0].command).toContain("hook-dispatcher.mjs");
+		expect(entry.PreToolUse[0].matcher).toBe("*");
+		expect(entry.PreToolUse[0].hooks[0].command).toBe(entry.SessionStart[0].command);
 	});
 	it("inserts internal flags before -- without consuming user prompt arguments", async () => {
 		const launch = await prepare("pi", ["--", "--session", "this is prompt content"]);

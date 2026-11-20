@@ -3,7 +3,7 @@
 		"id": "hongguo",
 		"name": "hongguo",
 		"nameEn": "hongguo",
-		"version": "0.1.3",
+		"version": "0.1.7",
 		"icon": "📺",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"16\" rx=\"3\"/><path d=\"m10 8 6 4-6 4Z\"/></svg>",
 		"description": "短剧观看",
@@ -15,7 +15,7 @@
 		"id": "github-workbench",
 		"name": "GitHub 工作台",
 		"nameEn": "GitHub Workbench",
-		"version": "0.1.4",
+		"version": "0.1.7",
 		"icon": "🐙",
 		"iconSvg": "<svg stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\" viewBox=\"0 0 24 24\" stroke-linecap=\"round\" stroke-linejoin=\"round\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22\"/></svg>",
 		"description": "文件列表旁的 GitHub 工作台 Tab：集中查看 PR 与 Issue、切换个人待办、筛选搜索、引用到对话、交给 AI、评论及关闭／重新打开。复用本机 gh 登录，切换 Tab 保留草稿。",
@@ -32,20 +32,21 @@
 		"descriptionEn": "Recognize and copy Chinese and English text from any image preview. Local browser OCR, no API key. First use downloads the engine and language data.",
 		"source": "xing-shuyin/pi-web-ui/plugins/image-ocr",
 		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/image-ocr",
-		"version": "0.1.2",
+		"version": "0.1.3",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 7V4h3m10 0h3v3m0 10v3h-3M7 20H4v-3M8 9h8M8 13h8M8 17h4\"/></svg>"
 	},
 	{
 		"id": "superagent",
 		"preinstall": true,
 		"name": "Superagent",
-		"version": "0.1.5",
+		"version": "0.1.10",
 		"icon": "📥",
 		"description": "GitHub / 飞书渠道工单适配、群组映射与原渠道回写；默认仅观察，由群组独立 AI Router 分配给 Bot 执行。",
 		"descriptionEn": "GitHub and Feishu work item adapters, group mapping, and durable channel replies. Observe by default; group AI Router delegates execution to Bots.",
 		"source": "xing-shuyin/pi-web-ui/plugins/superagent",
 		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/superagent",
-		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z\"/></svg>"
+		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z\"/></svg>",
+		"nameEn": "Superagent"
 	},
 	{
 		"id": "lx-music",
@@ -55,7 +56,8 @@
 		"description": "洛雪音乐播放器：多源搜索、流式播放、同步歌词、歌单与自定义音源，支持 AI 点歌。",
 		"descriptionEn": "LX Music player with multi-source search, streaming, synchronized lyrics, playlists, custom sources, and AI playback tools.",
 		"source": "xing-shuyin/pi-web-ui/plugins/lx-music",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/lx-music"
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/lx-music",
+		"nameEn": "LX Music"
 	},
 	{
 		"id": "webmail",
@@ -63,9 +65,10 @@
 		"icon": "📬",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z\"/><polyline points=\"22,6 12,13 2,6\"/></svg>",
 		"description": "网页邮箱：IMAP 收件 + SMTP 发信 + 新邮件通知，可开放给 AI 直接管理邮件。",
-		"descriptionEn": "Web mail: IMAP inbox + SMTP send + new-mail notifications, optionally let the AI manage mail.",
+		"descriptionEn": "IMAP/SMTP mailbox: browse/search/read the inbox, send mail, new-mail notifications, manageable by AI directly",
 		"source": "xing-shuyin/pi-web-ui/plugins/webmail",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/webmail"
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/webmail",
+		"nameEn": "Webmail"
 	},
 	{
 		"id": "db-client",
@@ -75,7 +78,8 @@
 		"description": "数据库连接管理：MySQL / PostgreSQL / SQLite / SQL Server / MongoDB / Redis 的库表浏览、SQL 查询与数据编辑。",
 		"descriptionEn": "Database client: browse schemas, run SQL and edit data across MySQL / PostgreSQL / SQLite / SQL Server / MongoDB / Redis.",
 		"source": "xing-shuyin/pi-web-ui/plugins/db-client",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/db-client"
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/db-client",
+		"nameEn": "Databases"
 	},
 	{
 		"id": "vscode-editor",
@@ -85,7 +89,8 @@
 		"description": "类 VSCode 工作台：多根文件树 + CodeMirror 编辑器 + 底部终端 + Remote-SSH 远程文件浏览与编辑。",
 		"descriptionEn": "VSCode-like workbench: multi-root file tree, CodeMirror editor, integrated terminal, and Remote-SSH remote file browsing/editing.",
 		"source": "xing-shuyin/pi-web-ui/plugins/vscode-editor",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/vscode-editor"
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/vscode-editor",
+		"nameEn": "Editor"
 	},
 	{
 		"id": "sftp",
@@ -95,7 +100,8 @@
 		"description": "项目级 SFTP 同步：配置存项目 .pi/sftp.json（多环境 profile + .pi/sftp.local.json 本机覆盖），先算差异再传，扫描与传输按层/按文件并行且随时可停（面板「停止」或 action=cancel），支持 dry-run 预览与计划复用（预览完直接执行不重扫）、删除保护（进垃圾桶可回滚）、并发流式传输与原子落盘；打开远端命令执行后另有两条快通道（一次 find 完成远端扫描；一批小文件上行打成 tar 流、下行 tar -czf - 一次拉回，失败自动回落）；凭据走 ${env:} / ${secret:} / ${file:} 引用，明文永不进配置。面板里可直接手动上传/下载单个文件或整棵目录（永不动删除策略），也向 AI 注册**一个** action 式 sftp 工具（status/save/secret/test/plan/sync/cancel/ls/read/write/mkdir/mv/rm/search，可选 exec）。",
 		"descriptionEn": "Project-scoped SFTP sync: config lives in the project's .pi/sftp.json (multi-profile, with .pi/sftp.local.json machine override). Plans a diff before transferring; scanning and transfers run in parallel and can be stopped at any time (the panel's Stop button, or action=cancel); dry-run preview plus plan reuse (running right after a preview skips the rescan), delete protection (moved to a trash folder so it can be rolled back), concurrent streaming transfers and atomic writes; with exec access enabled two extra fast paths kick in (one remote find for the whole scan, and one tar batch per direction for a pile of small files, both falling back automatically); credentials use ${env:} / ${secret:} / ${file:} references so plaintext never lands in the config. The panel can upload or download a single file or a whole folder by hand (never touching the delete policy), and the AI gets one action-style sftp tool (status/save/secret/test/plan/sync/cancel/ls/read/write/mkdir/mv/rm/search, plus optional exec).",
 		"source": "xing-shuyin/pi-web-ui/plugins/sftp",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/sftp"
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/sftp",
+		"nameEn": "SFTP Sync"
 	},
 	{
 		"id": "remote-workbench",
@@ -105,7 +111,8 @@
 		"description": "远程工作台：多主机资产管理与 Web SSH 远程交互终端，统一共享 global-hosts.json 事实源，与远程工作区及 SFTP 插件无缝联动，支持一键终端直连、环境探针与多标签会话。",
 		"descriptionEn": "Remote Workbench: multi-host inventory & Web SSH terminal connected to unified global-hosts.json, supporting one-click terminal sessions and SFTP integration.",
 		"source": "xing-shuyin/pi-web-ui/plugins/remote-workbench",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/remote-workbench"
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/remote-workbench",
+		"nameEn": "Remote Workbench"
 	},
 	{
 		"id": "mermaid",
@@ -113,9 +120,10 @@
 		"icon": "📊",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"18\" cy=\"5\" r=\"3\"/><circle cx=\"6\" cy=\"12\" r=\"3\"/><circle cx=\"18\" cy=\"19\" r=\"3\"/><line x1=\"8.59\" y1=\"13.51\" x2=\"15.42\" y2=\"17.49\"/><line x1=\"15.41\" y1=\"6.51\" x2=\"8.59\" y2=\"10.49\"/></svg>",
 		"description": "把对话里的 ```mermaid 围栏渲染成 SVG 图表（fenced-code 渲染插件，本地引擎离线优先）。",
-		"descriptionEn": "Renders ```mermaid fences in messages to SVG diagrams (fenced-code renderer plugin, offline-first local engine).",
+		"descriptionEn": "Renders ```mermaid fences as SVG diagrams (renderer plugin: the engine lazy-loads from CDN only on hit — no bundle cost when unused, zero chat overhead)",
 		"source": "xing-shuyin/pi-web-ui/plugins/mermaid",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/mermaid"
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/mermaid",
+		"nameEn": "Mermaid Diagrams"
 	},
 	{
 		"id": "run-trace",
@@ -125,7 +133,8 @@
 		"description": "运行轨迹：任务 → 思考 → 工具 → 文件改动 → 结果的时间线聚合视图，支持回放与节点详情。",
 		"descriptionEn": "Run trajectory: task → thinking → tools → file changes → result timeline with replay and node details.",
 		"source": "xing-shuyin/pi-web-ui/plugins/run-trace",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/run-trace"
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/run-trace",
+		"nameEn": "Run Trace"
 	},
 	{
 		"id": "legado-web",
@@ -135,7 +144,8 @@
 		"description": "Legado 阅读（文本源）：搜索 / 发现 / 详情 / 目录 / 正文，书源 JSON 与安卓版兼容，可导入、检测、删废源；内置跨域+GBK 代理与本地存储，并给 AI 配了修源接口（读规则、读书源文件、逐步诊断链路、试规则验证）。",
 		"descriptionEn": "Legado reader (text book sources): search / explore / info / TOC / content with Android-compatible book source JSON, plus source import and health checking. Ships its own CORS+GBK proxy, local store, and AI tools to diagnose and repair book sources.",
 		"source": "xing-shuyin/pi-web-ui/plugins/legado-web",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/legado-web"
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/legado-web",
+		"nameEn": "Legado Reader"
 	},
 	{
 		"id": "wechat-ilink",
@@ -261,7 +271,7 @@
 	{
 		"id": "voice-input",
 		"name": "语音输入",
-		"nameEn": "Voice Input",
+		"nameEn": "Voice & Photo Input",
 		"icon": "🎤",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z\"/><path d=\"M19 10v2a7 7 0 0 1-14 0v-2\"/><line x1=\"12\" y1=\"19\" x2=\"12\" y2=\"23\"/><line x1=\"8\" y1=\"23\" x2=\"16\" y2=\"23\"/></svg>",
 		"description": "语音输入：输入框旁的麦克风按钮，浏览器语音识别直接听写进输入框；不支持/识别失败时自动降级为服务端转写（远端接口，或一键安装的本地 Whisper，免费不出网）。",
@@ -277,7 +287,8 @@
 		"description": "Live Server 式预览：/liveserver 看 HTML（含相对资源与自动刷新），/md 看 Markdown 渲染；真服务只绑回环地址，经宿主通用代理对外只露同源前缀。",
 		"descriptionEn": "Live-Server-style preview: HTML under /liveserver (relative assets + auto reload), rendered Markdown under /md. Loopback-only inner server exposed via host proxy prefixes.",
 		"source": "xing-shuyin/pi-web-ui/plugins/live-preview",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/live-preview"
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/live-preview",
+		"nameEn": "Live Preview"
 	},
 	{
 		"id": "image-toolkit",
@@ -397,7 +408,8 @@
 		"description": "反向隧道：主人设备 CLI 主动连入（零公网暴露，穿 NAT），pi 经本机 SOCKS5 以主人所在网络为出口做巡检与访问（DNS 在主人侧解析）。面板展示隧道在线状态/连接数/令牌管理；注册 tunnel_fetch 工具供 AI 直接探测主人网络。",
 		"descriptionEn": "Reverse tunnel: the owner's device dials in (no public exposure, NAT-friendly); pi reaches the owner's network via local SOCKS5 with DNS resolved owner-side. Panel shows tunnel status/connections/token; tunnel_fetch tool for AI probes.",
 		"source": "xing-shuyin/pi-web-ui/plugins/tunnel",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/tunnel"
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/tunnel",
+		"nameEn": "pi-tunnel"
 	},
 	{
 		"id": "approval-gate",
@@ -407,7 +419,8 @@
 		"description": "定时任务拍板中心：待拍板项集中列表，点击跳转对应会话完成拍板；通用 CLI 供任意定时任务登记；顶栏拍板 tab 红点显示待拍板数。",
 		"descriptionEn": "Approval gate: centralized pending-decision list from scheduled tasks; click an item to jump into its conversation; red-dot badge on the tab shows pending count. A generic CLI lets any cron job register items.",
 		"source": "xing-shuyin/pi-web-ui/plugins/approval-gate",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/approval-gate"
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/approval-gate",
+		"nameEn": "Approval Gate"
 	},
 	{
 		"id": "live2d",
@@ -446,7 +459,7 @@
 		"id": "quota-watch",
 		"name": "额度看板",
 		"nameEn": "Quota Watch",
-		"version": "0.5.0",
+		"version": "0.5.3",
 		"icon": "📊",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 3v18h18\"/><rect x=\"7\" y=\"7\" width=\"3\" height=\"9\" rx=\"1\"/><rect x=\"13\" y=\"11\" width=\"3\" height=\"5\" rx=\"1\"/></svg>",
 		"description": "底栏只显示当前模型对应那家的额度，点它，宿主弹出跟随位置的小卡片：自动读取本机已登录的 Claude Code、Codex、OpenCode（Go 订阅剩余额度）登录态，DeepSeek 填一次 Key 即可；卡片里是剩余百分比、重置倒计时与账户余额，刷新按钮外圈就是自动刷新进度、旁边实时显示数据有多旧，点刷新底栏与卡片同一帧更新，AI 也能用工具直接查。只查当前供应商，别家订阅不出网、不打扰。凭据只在本机读取，不外传、不写盘。",
@@ -464,12 +477,12 @@
 		"descriptionEn": "One-stop frp management: auto-download frpc/frps, local proxy list CRUD, visual TOML config, start/stop/logs, local frps for debugging, one-click remote frps deploy script.",
 		"source": "xing-shuyin/pi-web-ui/plugins/frp-manager",
 		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/frp-manager"
-	}	,
+	},
 	{
 		"id": "web-capture",
 		"name": "网页拾取",
 		"nameEn": "Web Capture",
-		"version": "0.1.0",
+		"version": "0.2.1",
 		"icon": "🎯",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M12 2v3m0 14v3M2 12h3m14 0h3\"/><circle cx=\"12\" cy=\"12\" r=\"8\"/></svg>",
 		"description": "免扩展抓页面：收藏夹书签在任意网站点选元素、快照与点击日志实时回传本 Tab，一键送入聊天给 AI 调试；AI 经 web_capture_* 工具读取。",

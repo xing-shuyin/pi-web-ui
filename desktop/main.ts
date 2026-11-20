@@ -10,6 +10,7 @@ import { homedir } from "node:os";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DesktopBrowserHost } from "./browser-host.js";
+import { DEFAULT_THEME_BACKGROUND } from "../browser/runtime/palette.js";
 import { BROWSER_EXTENSION_PARTITION } from "../browser/contracts.js";
 import { createHubBrowser } from "./hub-browser.js";
 import { setupPortableMode } from "./portable.js";
@@ -599,6 +600,9 @@ async function createWindow(): Promise<void> {
 		minWidth: 800,
 		minHeight: 600,
 		autoHideMenuBar: true,
+		// 首帧底色：窗口先于任何页面存在，不给值就是系统默认的白色（外壳页 body 还是透明的，
+		// 会直接露出这块白）。真正的主题底色由 BrowserManager 拿设置里的 theme 再铺一次。
+		backgroundColor: DEFAULT_THEME_BACKGROUND,
 		titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
 		trafficLightPosition: process.platform === "darwin" ? { x: 12, y: 15 } : undefined,
 		webPreferences: {

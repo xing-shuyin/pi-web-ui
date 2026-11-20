@@ -1,4 +1,8 @@
 import { shapeCommands, traceCommands } from "./shapes.mjs";
+import { makeT } from "./i18n.mjs";
+
+/** 编码失败的报错走图片工具词典 t()，语言跟随宿主全局设置（调用处 toast 原样展示）。 */
+const t = makeT();
 
 export const DEFAULT_ADJUST = {
 	brightness: 100,
@@ -492,7 +496,7 @@ export function supportsMime(mime) {
 export function encodeCanvas(canvas, mime, quality) {
 	return new Promise((resolve, reject) => {
 		canvas.toBlob(
-			(blob) => (blob ? resolve(blob) : reject(new Error(`${mime} 编码失败`))),
+			(blob) => (blob ? resolve(blob) : reject(new Error(t("msg.encodeFail", { mime })))),
 			mime,
 			isLossy(mime) ? clamp01(quality) : undefined,
 		);

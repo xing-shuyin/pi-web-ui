@@ -109,10 +109,33 @@ describe("native CLI configuration and argv", () => {
 			writeFileSync(file, "CLI fixture", { mode: 0o755 });
 			const model = { provider: "selected-provider", id: "selected-model" };
 			const launch = resolveNativeCliLaunch({ preset, model, args: ["--verbose"] }, { env: { PATH: root } });
-			expect(launch).toEqual({
-				file,
-				args: [...(preset === "pi" ? ["--provider", model.provider] : []), "--model", model.id, "--verbose"],
-			});
+			// Without a resolved model connection Claude/Codex fall back to their own login, so the
+			// inherited model arguments are dropped; Pi and agy keep their model arguments.
+			const inherited =
+				preset === "claude" || preset === "codex"
+					? []
+					: [...(preset === "pi" ? ["--provider", model.provider] : []), "--model", model.id];
+			expect(launch).toEqual({ file, args: [...inherited, "--verbose"] });
+		},
+	);
+
+	it.each(["claude", "codex"] as const)(
+		"keeps the inherited model arguments for %s when a connection is resolved",
+		(preset) => {
+			const file = join(root, `${preset}${process.platform === "win32" ? ".exe" : ""}`);
+			writeFileSync(file, "CLI fixture", { mode: 0o755 });
+			const model = { provider: "selected-provider", id: "selected-model" };
+			const launch = resolveNativeCliLaunch(
+				{ preset, model, args: ["--verbose"] },
+				{
+					env: { PATH: root },
+					modelConnection: { baseUrl: "https://relay.test", apiKey: "test-key", isOAuth: false },
+				},
+			);
+			const modelIndex = launch.args.indexOf("--model");
+			expect(modelIndex).toBeGreaterThanOrEqual(0);
+			expect(launch.args[modelIndex + 1]).toBe(model.id);
+			expect(launch.args.at(-1)).toBe("--verbose");
 		},
 	);
 

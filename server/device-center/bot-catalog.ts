@@ -6,7 +6,12 @@ import { discoverDiskSkills, mergeSkillCollections } from "../skill-discovery.js
 import { listAllMcpServers } from "../mcp-manager.js";
 import { getMcpToolServer, type McpBridge } from "../mcp-bridge.js";
 import { isBotToolHighPrivilege } from "./bot-execution.js";
-import { DeviceWorkspaceError, validateDeviceProject } from "./workspaces.js";
+import {
+	DeviceWorkspaceError,
+	isSshWorkspaceUri,
+	normalizeSshWorkspaceUri,
+	validateDeviceProject,
+} from "./workspaces.js";
 
 export interface BotToolOption {
 	id: string;
@@ -49,8 +54,15 @@ export async function getLocalBotOptions(
 	signal: AbortSignal,
 ): Promise<LocalBotOptions> {
 	signal.throwIfAborted();
-	if (requestedCwd !== undefined && (typeof requestedCwd !== "string" || !isAbsolute(requestedCwd)))
+	if (
+		requestedCwd !== undefined &&
+		(typeof requestedCwd !== "string" ||
+			(!isSshWorkspaceUri(requestedCwd) && !isAbsolute(requestedCwd)) ||
+			(isSshWorkspaceUri(requestedCwd) && !normalizeSshWorkspaceUri(requestedCwd)))
+	)
 		throw new DeviceWorkspaceError(400, "BOT_CWD_INVALID", "Project path must be absolute");
+	// SSH 智能体：远端磁盘不可直接读，明确指定就按远端 URI 建 catalog（技能留空，工具/全局 MCP 照常）。
+	const sshCwd = isSshWorkspaceUri(requestedCwd) ? (normalizeSshWorkspaceUri(requestedCwd) as string) : null;
 	const projectList = (await sources.projects?.()) ?? [];
 	signal.throwIfAborted();
 	// 明确指定（编辑已有 Bot / 表单选目录）就按它严格校验：选了不可用的目录宁可报错，
@@ -76,19 +88,26 @@ export async function getLocalBotOptions(
 	// 全局设置里没有这个开关（defaultOn:false + 不在用户工具页出现），靠这里给默认值。
 	const defaultTools = [...new Set([...(sources.defaultTools?.() ?? []), BOT_MEMORY_TOOL_NAME])];
 	const agentDir = sources.agentDir ?? getAgentDir();
-	const settings = SettingsManager.create(cwd, agentDir);
-	const resources = await new DefaultPackageManager({ cwd, agentDir, settingsManager: settings }).resolve(async () => {
-		signal.throwIfAborted();
-		return "skip";
-	});
-	signal.throwIfAborted();
-	const sdkSkills = loadSkills({
-		cwd,
-		agentDir,
-		skillPaths: resources.skills.filter((resource) => resource.enabled).map((resource) => resource.path),
-		includeDefaults: false,
-	}).skills;
-	const skills = mergeSkillCollections(sdkSkills, discoverDiskSkills({ cwd, agentDir }));
+	// SSH 智能体的远端技能需连上远端才能发现，catalog 阶段留空（保存/执行不受影响）。
+	const skills = sshCwd
+		? []
+		: await (async () => {
+				const settings = SettingsManager.create(cwd, agentDir);
+				const resources = await new DefaultPackageManager({ cwd, agentDir, settingsManager: settings }).resolve(
+					async () => {
+						signal.throwIfAborted();
+						return "skip";
+					},
+				);
+				signal.throwIfAborted();
+				const sdkSkills = loadSkills({
+					cwd,
+					agentDir,
+					skillPaths: resources.skills.filter((resource) => resource.enabled).map((resource) => resource.path),
+					includeDefaults: false,
+				}).skills;
+				return mergeSkillCollections(sdkSkills, discoverDiskSkills({ cwd, agentDir }));
+			})();
 	const bridge = sources.peekMcpBridge?.(cwd);
 	const definitions = bridge?.getTools() ?? [];
 	const counts = new Map<string, number>();

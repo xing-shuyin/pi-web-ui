@@ -27,7 +27,11 @@ export default {
 					host.broadcast({ mails });
 					break;
 				case "notify":
-					host.notify("info", String(msg.text ?? "插件通知测试"));
+					host.notify(
+						"info",
+						String(msg.text ?? "插件通知测试"),
+						String(msg.textEn ?? msg.text ?? "Plugin notification test"),
+					);
 					break;
 				case "send": {
 					const mail = {

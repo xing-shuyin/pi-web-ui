@@ -329,8 +329,8 @@ export default {
 			qEl.placeholder = t("search");
 			replayBtn.textContent = replay.on ? `⏹ ${t("exitReplay")}` : `▶ ${t("replay")}`;
 			replayBtn.classList.toggle("on", replay.on);
-			// 目标语言的自称（EN / 中文），不是界面文案。
-			langBtn.textContent = lang === "zh" ? "EN" : "中文";
+			// Target language self-name (EN / CN), not UI copy.
+			langBtn.textContent = lang === "zh" ? "EN" : "CN";
 			clearBtn.textContent = `🗑 ${t("clear")}`;
 		}
 

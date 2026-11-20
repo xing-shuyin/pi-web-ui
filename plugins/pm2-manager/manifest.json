@@ -2,7 +2,7 @@
 	"id": "pm2-manager",
 	"name": "进程管家",
 	"nameEn": "Process Manager",
-	"version": "0.4.2",
+	"version": "0.4.3",
 	"icon": "🚀",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"2\" y=\"2\" width=\"20\" height=\"8\" rx=\"2\"/><rect x=\"2\" y=\"14\" width=\"20\" height=\"8\" rx=\"2\"/><line x1=\"6\" y1=\"6\" x2=\"6.01\" y2=\"6\"/><line x1=\"6\" y1=\"18\" x2=\"6.01\" y2=\"18\"/></svg>",
 	"description": "pm2 安装/管理/卸载一体：未装 pm2 时一键安装；面板可直接启动新应用（安装到 pm2），应用表看状态/日志、做停止/重启/删除；不用时一键卸载 pm2 本体。宿主顶栏「后台任务」面板与插件面板看的是同一份列表（状态/CPU/内存/重启次数/时长/日志）。插件不拦截 AI 的任何命令，只提供工具与面板，管不管由模型和用户自行决定。",
@@ -15,8 +15,10 @@
 			"key": "pm2Bin",
 			"type": "text",
 			"label": "pm2 入口路径（可选）",
+			"labelEn": "pm2 entry path (optional)",
 			"default": "",
-			"hint": "留空自动探测（node 前缀 → npm root -g → 环境变量 PI_WEB_PM2）。填绝对路径时指向 pm2 的 bin/pm2（JS 入口，不是 .cmd 垫片）。"
+			"hint": "留空自动探测（node 前缀 → npm root -g → 环境变量 PI_WEB_PM2）。填绝对路径时指向 pm2 的 bin/pm2（JS 入口，不是 .cmd 垫片）。",
+			"hintEn": "Auto-detect when empty (node prefix → npm root -g → PI_WEB_PM2 env). An absolute path must point at pm2's bin/pm2 (the JS entry, not the .cmd shim)."
 		}
 	],
 	"ui": {
@@ -26,7 +28,9 @@
 				"label": "pm2 托管的应用",
 				"labelEn": "pm2-supervised apps",
 				"kind": "view",
-				"view": "plugin:pm2-manager"
+				"view": "plugin:pm2-manager",
+				"hint": "pm2 托管的应用列表（状态/CPU/内存/重启/日志/操作）",
+				"hintEn": "pm2-supervised app list (status/CPU/memory/restarts/logs/actions)"
 			}
 		]
 	}

@@ -387,78 +387,99 @@ export default {
 			const el = $(sel);
 			if (el) el.textContent = text;
 		};
-
-		setText(".ttl", t("title"));
-		setText(".sub", t("subtitle"));
-		setText(".ttl-profile", t("profile"));
-		setText(".l-host", t("host"));
-		setText(".l-port", t("port"));
-		setText(".l-user", t("username"));
-		setText(".l-remote", t("remotePath"));
-		setText(".l-auth", t("authMethod"));
-		setText(".l-secret-name", t("secretName"));
-		setText(".l-secret-val", t("secretValue"));
-		setText(".l-pass", t("password"));
-		const btnHelpPass = $(".btn-help-pass");
-		if (btnHelpPass) {
-			btnHelpPass.title = t("passwordHelpTip");
-			btnHelpPass.setAttribute("aria-label", t("passwordHelpTitle"));
+		// 宿主全局语言单源：首帧按 locale.current() 取词（makeT 内部已读），切语言后重涂静态文案
+		function applyStaticI18n() {
+			setText(".ttl", t("title"));
+			setText(".sub", t("subtitle"));
+			setText(".ttl-profile", t("profile"));
+			setText(".l-host", t("host"));
+			setText(".l-port", t("port"));
+			setText(".l-user", t("username"));
+			setText(".l-remote", t("remotePath"));
+			setText(".l-auth", t("authMethod"));
+			setText(".l-secret-name", t("secretName"));
+			setText(".l-secret-val", t("secretValue"));
+			setText(".l-pass", t("password"));
+			const btnHelpPass = $(".btn-help-pass");
+			if (btnHelpPass) {
+				btnHelpPass.title = t("passwordHelpTip");
+				btnHelpPass.setAttribute("aria-label", t("passwordHelpTitle"));
+			}
+			setText(".pass-help-ttl", `🔑 ${t("passwordHelpTitle")}`);
+			setText(".help-plain-ttl", t("helpPlainTitle"));
+			setText(".help-plain-desc", t("helpPlainDesc"));
+			setText(".help-blank-ttl", t("helpBlankTitle"));
+			setText(".help-blank-desc", t("helpBlankDesc"));
+			setText(".help-secret-ttl", t("helpSecretTitle"));
+			setText(".help-secret-desc", t("helpSecretDesc"));
+			setText(".help-env-ttl", t("helpEnvFileTitle"));
+			setText(".help-env-desc", t("helpEnvFileDesc"));
+			setText(".btn-help-secret", t("helpQuickSecret"));
+			setText(".l-keypath", t("privateKeyPath"));
+			setText(".l-passphrase", t("passphrase"));
+			setText(".l-agent", t("agent"));
+			setText(".l-ignore", t("ignore"));
+			setText(".l-dir", t("direction"));
+			setText(".l-scope", t("scope"));
+			setText(".btn-save", t("save"));
+			setText(".btn-secret", t("secretBtn"));
+			setText(".btn-test", t("test"));
+			$(".btn-add-profile")?.setAttribute("title", t("addProfile"));
+			$(".btn-add-profile")?.setAttribute("aria-label", t("addProfile"));
+			$(".btn-del-profile")?.setAttribute("title", t("delProfile"));
+			$(".btn-del-profile")?.setAttribute("aria-label", t("delProfile"));
+			setText(".btn-confirm-add-profile", t("confirmAdd"));
+			setText(".btn-cancel-add-profile", t("cancel"));
+			$(".f-new-profile-name")?.setAttribute("placeholder", t("addProfilePrompt"));
+			setText(".btn-copy-key", t("copyKey"));
+			setText(".btn-import", t("import"));
+			setText(".btn-plan", t("plan"));
+			setText(".btn-run", t("run"));
+			setText(".btn-stop", t("stopBtn"));
+			setText(".ttl-sync", t("sync"));
+			setText(".ttl-remote", t("remote"));
+			setText(".btn-up", t("goUp"));
+			setText(".btn-rroot", t("goProjectRoot"));
+			setText(".btn-rgo", t("go"));
+			setText(".btn-rup", t("uploadHere"));
+			setText(".btn-rfresh", t("refresh"));
+			setText(".btn-ed-save", t("write"));
+			setText(".btn-ed-close", t("close"));
+			setText(".hint-settings", t("settingsHint"));
+			const opts = [
+				[".f-dir", ["up", "down", "both"], ["up", "down", "both"]],
+				[".f-scope", ["all", "tree", "file"], ["all", "tree", "file"]],
+				[".f-auth", ["secret", "password", "key", "agent"], ["authSecret", "authPassword", "authKey", "authAgent"]],
+			];
+			for (const [sel, values, keys] of opts) {
+				const el = $(sel);
+				el.innerHTML = values.map((v, i) => `<option value="${v}">${esc(t(keys[i]))}</option>`).join("");
+			}
+			$(".f-secret-name").placeholder = t("secretNamePlaceholder");
+			$(".f-secret-val").placeholder = t("secretValuePlaceholder");
+			$(".f-pass").placeholder = t("passwordPlaceholder");
+			$(".f-keypath").placeholder = t("keypathPlaceholder");
+			$(".f-path").placeholder = t("pathHint");
 		}
-		setText(".pass-help-ttl", `🔑 ${t("passwordHelpTitle")}`);
-		setText(".help-plain-ttl", t("helpPlainTitle"));
-		setText(".help-plain-desc", t("helpPlainDesc"));
-		setText(".help-blank-ttl", t("helpBlankTitle"));
-		setText(".help-blank-desc", t("helpBlankDesc"));
-		setText(".help-secret-ttl", t("helpSecretTitle"));
-		setText(".help-secret-desc", t("helpSecretDesc"));
-		setText(".help-env-ttl", t("helpEnvFileTitle"));
-		setText(".help-env-desc", t("helpEnvFileDesc"));
-		setText(".btn-help-secret", t("helpQuickSecret"));
-		setText(".l-keypath", t("privateKeyPath"));
-		setText(".l-passphrase", t("passphrase"));
-		setText(".l-agent", t("agent"));
-		setText(".l-ignore", t("ignore"));
-		setText(".l-dir", t("direction"));
-		setText(".l-scope", t("scope"));
-		setText(".btn-save", t("save"));
-		setText(".btn-secret", t("secretBtn"));
-		setText(".btn-test", t("test"));
-		$(".btn-add-profile")?.setAttribute("title", t("addProfile"));
-		$(".btn-add-profile")?.setAttribute("aria-label", t("addProfile"));
-		$(".btn-del-profile")?.setAttribute("title", t("delProfile"));
-		$(".btn-del-profile")?.setAttribute("aria-label", t("delProfile"));
-		setText(".btn-confirm-add-profile", t("confirmAdd"));
-		setText(".btn-cancel-add-profile", t("cancel"));
-		$(".f-new-profile-name")?.setAttribute("placeholder", t("addProfilePrompt"));
-		setText(".btn-copy-key", t("copyKey"));
-		setText(".btn-import", t("import"));
-		setText(".btn-plan", t("plan"));
-		setText(".btn-run", t("run"));
-		setText(".btn-stop", t("stopBtn"));
-		setText(".ttl-sync", t("sync"));
-		setText(".ttl-remote", t("remote"));
-		setText(".btn-up", t("goUp"));
-		setText(".btn-rroot", t("goProjectRoot"));
-		setText(".btn-rgo", t("go"));
-		setText(".btn-rup", t("uploadHere"));
-		setText(".btn-rfresh", t("refresh"));
-		setText(".btn-ed-save", t("write"));
-		setText(".btn-ed-close", t("close"));
-		setText(".hint-settings", t("settingsHint"));
-		const opts = [
-			[".f-dir", ["up", "down", "both"], ["up", "down", "both"]],
-			[".f-scope", ["all", "tree", "file"], ["all", "tree", "file"]],
-			[".f-auth", ["secret", "password", "key", "agent"], ["authSecret", "authPassword", "authKey", "authAgent"]],
-		];
-		for (const [sel, values, keys] of opts) {
-			const el = $(sel);
-			el.innerHTML = values.map((v, i) => `<option value="${v}">${esc(t(keys[i]))}</option>`).join("");
+		applyStaticI18n();
+		let offLocale = null;
+		let onLocaleEvent = null;
+		try {
+			offLocale =
+				window.__piWebUiHost?.locale?.onChange?.(() => {
+					if (!disposed) applyStaticI18n();
+				}) ?? null;
+		} catch {
+			offLocale = null;
 		}
-		$(".f-secret-name").placeholder = t("secretNamePlaceholder");
-		$(".f-secret-val").placeholder = t("secretValuePlaceholder");
-		$(".f-pass").placeholder = t("passwordPlaceholder");
-		$(".f-keypath").placeholder = t("keypathPlaceholder");
-		$(".f-path").placeholder = t("pathHint");
+		try {
+			onLocaleEvent = () => {
+				if (!disposed) applyStaticI18n();
+			};
+			window.addEventListener("pi-web-ui:locale", onLocaleEvent);
+		} catch {
+			onLocaleEvent = null;
+		}
 
 		async function api(p, { method = "GET", body } = {}) {
 			const requestContext = trustContext();
@@ -1762,6 +1783,12 @@ export default {
 		return () => {
 			disposed = true;
 			if (pollTimer) clearTimeout(pollTimer);
+			try {
+				offLocale?.();
+			} catch {}
+			try {
+				if (onLocaleEvent) window.removeEventListener("pi-web-ui:locale", onLocaleEvent);
+			} catch {}
 			panelSink = null;
 			panelIgnoreSink = null;
 			container.innerHTML = "";

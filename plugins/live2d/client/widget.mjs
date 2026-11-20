@@ -391,7 +391,7 @@ export class Live2DWidget {
 				}, 600);
 			}
 		} catch (err) {
-			console.error("[live2d] 初始化挂件失败:", err);
+			console.error("[live2d] failed to init widget:", err);
 		}
 	}
 
@@ -419,7 +419,7 @@ export class Live2DWidget {
 		try {
 			await this.stage.loadModel(target);
 		} catch (err) {
-			console.error("[live2d] 模型切换失败，回退到先前模型:", err);
+			console.error("[live2d] model switch failed, rolled back to the previous model:", err);
 			this.showBubble(this.t("bubble.model_load_failed", { name: this._modelLabel(target) }), 3500);
 			this.activeModel = prevModel;
 			this.config.modelKey = prevKey;

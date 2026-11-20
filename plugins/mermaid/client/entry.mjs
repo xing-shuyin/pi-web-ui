@@ -1,3 +1,5 @@
+import { makeT } from "./i18n.mjs";
+
 const CDN_URL = "https://esm.sh/mermaid@12.0.0";
 const THEME_CHANGE_EVENT = "pi-web-ui:theme-change";
 
@@ -139,6 +141,9 @@ function applyRenderedSvg(el, rendered) {
 async function renderMermaid(code) {
 	const el = document.createElement("div");
 	el.className = "mermaid-block mermaid-svg";
+	el.setAttribute("role", "img");
+	// 无障碍标签跟随宿主全局语言（渲染体是 SVG 图形本身，无其它界面文案）。
+	el.setAttribute("aria-label", makeT()("diagram"));
 	applyRenderedSvg(el, await renderSvg(code));
 
 	let themeRequest = 0;

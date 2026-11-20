@@ -774,7 +774,7 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 					nativeCli: {
 						config: { preset: "agy" },
 						terminalId: "term-1",
-						status: { phase: "running", updatedAt: Date.now() },
+						status: { phase: "working", activity: "working", updatedAt: Date.now() },
 					},
 					sessionFile: "/test/cli-run.jsonl",
 				},
@@ -786,6 +786,52 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 		expect(item?.classList.contains("is-running")).toBe(true);
 		expect(container.querySelector(".status-spinner-right")).toBeTruthy();
 		expect(container.querySelector(".native-cli-conversation-icon")?.classList.contains("is-running")).toBe(true);
+		expect(container.querySelector(".lp-project-running-badge")).toBeTruthy();
+
+		// 只有进程状态的引擎拿不到单轮事件：活着的进程继续按在跑处理。
+		rerender({
+			conversations: [
+				{
+					id: "cli-run",
+					cwd: "/test",
+					title: "进程状态 CLI",
+					messageCount: 0,
+					nativeCli: {
+						config: { preset: "agy" },
+						terminalId: "term-1",
+						status: { phase: "running", nativeEvents: false, updatedAt: Date.now() },
+					},
+					sessionFile: "/test/cli-run.jsonl",
+				},
+			],
+			activeConversationId: "other",
+			projectSessions: { "/test": [] },
+		});
+		expect(container.querySelector(".status-spinner-right")).toBeTruthy();
+
+		// hook 报了 done：进程还活着（phase 回到 running），但这一轮已经结束，不该再转圈。
+		rerender({
+			conversations: [
+				{
+					id: "cli-run",
+					cwd: "/test",
+					title: "空闲 CLI",
+					messageCount: 0,
+					nativeCli: {
+						config: { preset: "agy" },
+						terminalId: "term-1",
+						status: { phase: "running", activity: "idle", nativeEvents: true, updatedAt: Date.now() },
+					},
+					sessionFile: "/test/cli-run.jsonl",
+				},
+			],
+			activeConversationId: "other",
+			projectSessions: { "/test": [] },
+		});
+		expect(container.querySelector(".status-spinner-right")).toBeNull();
+		expect(container.querySelector(".lp-tree-session-item")?.classList.contains("is-running")).toBe(false);
+		expect(container.querySelector(".native-cli-conversation-icon")?.classList.contains("is-exited")).toBe(false);
+		expect(container.querySelector(".lp-project-running-badge")).toBeNull();
 
 		rerender({
 			conversations: [

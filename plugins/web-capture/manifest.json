@@ -1,61 +1,55 @@
 {
- "id": "web-capture",
- "name": "Web Capture",
- "nameEn": "Web Capture",
- "version": "0.2.0",
- "icon": "🎯",
- "description": "Browser left + steps sidebar right: open pages, capture clicks/inputs step by step, one click sends a report attachment to chat; AI reads and saves via 6 web_capture_* tools.",
- "descriptionEn": "Browser left + steps sidebar right: open pages, capture clicks/inputs step by step, one click sends a report attachment to chat; AI reads and saves via 6 web_capture_* tools.",
- "apiVersion": 2,
- "view": true,
- "permissions": [
-  "ui",
-  "tools",
-  "http",
-  "fs",
-  "fs:write"
- ],
- "settings": [
-  {
-   "key": "sidebarWidth",
-   "type": "number",
-   "label": "Steps sidebar default width",
-   "labelEn": "Steps sidebar default width",
-   "default": 320,
-   "min": 220,
-   "max": 560,
-   "hint": "Right steps sidebar width in px; draggable inside the tab, remembered per browser",
-   "hintEn": "Right steps sidebar width in px; draggable inside the tab, remembered per browser"
-  },
-  {
-   "key": "maskPasswords",
-   "type": "boolean",
-   "label": "Mask password fields",
-   "labelEn": "Mask password fields",
-   "default": true,
-   "hint": "When recording input steps, password fields are logged as typed without values",
-   "hintEn": "When recording input steps, password fields are logged as typed without values"
-  },
-  {
-   "key": "autoSnapshot",
-   "type": "boolean",
-   "label": "Auto snapshot after visit",
-   "labelEn": "Auto snapshot after visit",
-   "default": true,
-   "hint": "Automatically capture an element snapshot after opening a same-origin page",
-   "hintEn": "Automatically capture an element snapshot after opening a same-origin page"
-  },
-  {
-   "key": "maxSteps",
-   "type": "number",
-   "label": "Max steps kept",
-   "labelEn": "Max steps kept",
-   "default": 100,
-   "min": 20,
-   "max": 500,
-   "hint": "Oldest steps are dropped past this limit",
-   "hintEn": "Oldest steps are dropped past this limit"
-  }
- ],
- "iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M12 2v3m0 14v3M2 12h3m14 0h3\"/><circle cx=\"12\" cy=\"12\" r=\"8\"/></svg>"
+	"id": "web-capture",
+	"name": "网页取证",
+	"nameEn": "Web Capture",
+	"version": "0.2.1",
+	"icon": "🎯",
+	"description": "左侧浏览器 + 右侧步骤栏：打开页面、逐步取证点击/输入，一键发送报告附件到对话；AI 通过 6 个 web_capture_* 工具读取存档。",
+	"descriptionEn": "Browser left + steps sidebar right: open pages, capture clicks/inputs step by step, one click sends a report attachment to chat; AI reads and saves via 6 web_capture_* tools.",
+	"apiVersion": 2,
+	"view": true,
+	"permissions": ["ui", "tools", "http", "fs", "fs:write"],
+	"settings": [
+		{
+			"key": "sidebarWidth",
+			"type": "number",
+			"label": "步骤栏默认宽度",
+			"labelEn": "Steps sidebar default width",
+			"default": 320,
+			"min": 220,
+			"max": 560,
+			"hint": "右侧步骤栏宽度（px），可在页签内拖拽，按浏览器分别记忆",
+			"hintEn": "Right steps sidebar width in px; draggable inside the tab, remembered per browser"
+		},
+		{
+			"key": "maskPasswords",
+			"type": "boolean",
+			"label": "遮罩密码框",
+			"labelEn": "Mask password fields",
+			"default": true,
+			"hint": "录制输入步骤时，密码框只记“已输入”不记具体值",
+			"hintEn": "When recording input steps, password fields are logged as typed without values"
+		},
+		{
+			"key": "autoSnapshot",
+			"type": "boolean",
+			"label": "访问后自动快照",
+			"labelEn": "Auto snapshot after visit",
+			"default": true,
+			"hint": "打开同源页面后自动抓取一次元素快照",
+			"hintEn": "Automatically capture an element snapshot after opening a same-origin page"
+		},
+		{
+			"key": "maxSteps",
+			"type": "number",
+			"label": "最多保留步数",
+			"labelEn": "Max steps kept",
+			"default": 100,
+			"min": 20,
+			"max": 500,
+			"hint": "超出后丢弃最早的步骤",
+			"hintEn": "Oldest steps are dropped past this limit"
+		}
+	],
+	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M12 2v3m0 14v3M2 12h3m14 0h3\"/><circle cx=\"12\" cy=\"12\" r=\"8\"/></svg>"
 }

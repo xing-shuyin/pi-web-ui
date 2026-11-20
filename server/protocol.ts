@@ -1078,8 +1078,13 @@ export interface TextQuote {
 
 export interface PromptAttachment {
 	path: string;
-	mode?: "inline" | "reference" | "lines" | "page" | "conversation" | "quote" | "canvas";
+	mode?: "inline" | "reference" | "lines" | "page" | "conversation" | "quote" | "canvas" | "terminal";
 	quote?: TextQuote;
+	/**
+	 * `mode: "terminal"`：被引用的终端标签 id（`path` 留空，不是文件路径）。
+	 * 服务端按 id 现场解析出标题 / cwd / 命令 / 输出，不把终端当成一条静态文本。
+	 */
+	terminalId?: string;
 	conversationId?: string;
 	sessionPath?: string;
 	lines?: { start: number; end: number };
@@ -2445,12 +2450,14 @@ export interface UiPluginSettingField {
 	key: string;
 	type: "text" | "password" | "number" | "boolean" | "select" | "secret";
 	label: string;
+	labelEn?: string;
 	default?: string | number | boolean;
 	min?: number;
 	max?: number;
 	options?: (string | UiSelectOption)[];
 	optionsFrom?: "models" | "thinkingLevels";
 	hint?: string;
+	hintEn?: string;
 }
 
 export interface PluginRequires {

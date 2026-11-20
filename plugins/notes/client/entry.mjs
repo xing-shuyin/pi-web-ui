@@ -13,7 +13,7 @@ if (previous?.destroy) {
 	try {
 		previous.destroy();
 	} catch (err) {
-		console.warn("[notes] 清理上一轮实例失败：", err);
+		console.warn("[notes] failed to dispose the previous instance:", err);
 	}
 }
 
@@ -134,6 +134,28 @@ function applyLang(next) {
 
 const offPrefs = onPrefs(() => applyLang(currentLang()));
 
+// Follow the host language only when the user keeps the language preference on auto.
+let offHostLocale = null;
+let onHostLocaleEvent = null;
+try {
+	offHostLocale =
+		globalThis.window?.__piWebUiHost?.locale?.onChange?.(() => {
+			if (loadPrefs().lang !== "auto") return;
+			applyLang(detectLang());
+		}) ?? null;
+} catch {
+	offHostLocale = null;
+}
+try {
+	onHostLocaleEvent = () => {
+		if (loadPrefs().lang !== "auto") return;
+		applyLang(detectLang());
+	};
+	globalThis.window?.addEventListener("pi-web-ui:locale", onHostLocaleEvent);
+} catch {
+	onHostLocaleEvent = null;
+}
+
 let langObserver = null;
 try {
 	langObserver = new MutationObserver(() => {
@@ -157,6 +179,12 @@ globalThis[RUNTIME_KEY] = {
 		} catch {}
 		try {
 			langObserver?.disconnect();
+		} catch {}
+		try {
+			offHostLocale?.();
+		} catch {}
+		try {
+			if (onHostLocaleEvent) globalThis.window?.removeEventListener("pi-web-ui:locale", onHostLocaleEvent);
 		} catch {}
 		try {
 			data.stop();

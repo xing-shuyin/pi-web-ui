@@ -1,7 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { ENGINE_CATALOG, type NativeCliEngineId } from "./engine-catalog.js";
 import { nativeCliLaunchArgs, validateNativeCliConfig } from "./native-cli.js";
-import { nativeCliModelLaunch, type NativeCliModelConnection } from "./native-cli-model.js";
+import {
+	nativeCliModelLaunch,
+	claudeSettingsOverlayOnHost,
+	claudeSettingsRemotePath,
+	type NativeCliModelConnection,
+} from "./native-cli-model.js";
 import type { NativeCliConfig } from "./protocol.js";
 import { shellQuotePosix, type RemoteSshService } from "./remote-ssh-service.js";
 
@@ -94,7 +99,13 @@ export async function resolveRemoteNativeCliLaunch(
 	uri: string,
 	connection?: NativeCliModelConnection,
 	signal?: AbortSignal,
-): Promise<{ file: string; args: string[]; env?: NodeJS.ProcessEnv; unsetEnv?: string[] }> {
+): Promise<{
+	file: string;
+	args: string[];
+	env?: NodeJS.ProcessEnv;
+	unsetEnv?: string[];
+	files?: Array<{ path: string; content: string }>;
+}> {
 	const config = validateNativeCliConfig(value);
 	const requested = config.executable ?? (config.preset === "custom" ? "" : ENGINE_CATALOG[config.preset].cliCommand!);
 	const inspected = await inspectRemoteExecutables(service, uri, [requested], signal);
@@ -102,10 +113,22 @@ export async function resolveRemoteNativeCliLaunch(
 	if (!file) throw new Error(`Remote CLI executable is unavailable: ${requested}`);
 	const launchPath = `${file.slice(0, file.lastIndexOf("/")) || "/"}:${inspected.path}`;
 	const model = nativeCliModelLaunch(config, connection, { PATH: launchPath });
+	// Same fallback rule as local launches: without a connection the CLI uses its own login, so the
+	// inherited `--model`/`--provider` must not leak into argv either.
+	const modelArgs =
+		connection || (config.preset !== "claude" && config.preset !== "codex")
+			? nativeCliLaunchArgs(config)
+			: [...(config.args ?? [])];
+	// The overlay is materialized on the remote host: a local path would not exist there, and only the
+	// path (never the token) travels in argv on either side of the connection.
+	const overlay = model.settingsEnv
+		? claudeSettingsOverlayOnHost(modelArgs, model.settingsEnv, claudeSettingsRemotePath(model.settingsEnv))
+		: undefined;
 	return {
 		file,
-		args: [...model.args, ...nativeCliLaunchArgs(config)],
+		args: [...model.args, ...(overlay?.args ?? modelArgs)],
 		env: model.env ?? { PATH: launchPath },
 		...(model.unsetEnv?.length ? { unsetEnv: model.unsetEnv } : {}),
+		...(overlay ? { files: overlay.files } : {}),
 	};
 }

@@ -824,7 +824,7 @@ export default {
 			const json = await res.json();
 			if (!res.ok || !json.ok) throw new Error(json.error || t("requestFailedWithStatus", { status: res.status }));
 			// developer-facing, not UI: sentinel for a view that is already unmounted
-			if (disposed) throw new Error("工作台已卸载");
+			if (disposed) throw new Error(t("workbenchDisposed"));
 			return json.data;
 		}
 
@@ -2146,6 +2146,32 @@ export default {
 			if (currentTab === "term") refitActiveTerm();
 		};
 		window.addEventListener("resize", onResize);
+		// 宿主全局语言单源：首帧 t() 已按 locale.current() 取词，切语言后重渲染
+		const rerenderOnLocale = () => {
+			if (disposed) return;
+			try {
+				renderHosts();
+			} catch {}
+			try {
+				renderTunnels();
+			} catch {}
+			try {
+				renderTermTabs();
+			} catch {}
+		};
+		let offLocale = null;
+		let onLocaleEvent = null;
+		try {
+			offLocale = window.__piWebUiHost?.locale?.onChange?.(rerenderOnLocale) ?? null;
+		} catch {
+			offLocale = null;
+		}
+		try {
+			onLocaleEvent = () => rerenderOnLocale();
+			window.addEventListener("pi-web-ui:locale", onLocaleEvent);
+		} catch {
+			onLocaleEvent = null;
+		}
 		const heartbeat = setInterval(() => {
 			for (const sh of activeShells)
 				if (sh.connected) ctx.send({ action: "shell_ack", shellId: sh.shellId, seq: sh.lastSeq || 0 });
@@ -2546,6 +2572,12 @@ export default {
 			lifecycle.abort();
 			clearTimeout(fitTimer);
 			clearInterval(heartbeat);
+			try {
+				offLocale?.();
+			} catch {}
+			try {
+				if (onLocaleEvent) window.removeEventListener("pi-web-ui:locale", onLocaleEvent);
+			} catch {}
 			operations.dispose();
 			closePopmenu();
 			unsubscribeData?.();

@@ -2,7 +2,7 @@
 	"id": "wallpaper-engine",
 	"name": "动态壁纸",
 	"nameEn": "Wallpaper Engine",
-	"version": "0.3.74",
+	"version": "0.3.75",
 	"icon": "🖼️",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" ry=\"2\"/><circle cx=\"9\" cy=\"9\" r=\"2\"/><path d=\"m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\"/></svg>",
 	"description": "本地 Wallpaper Engine 动态壁纸：自动扫描创意工坊，支持视频、WebGL2 场景与网页壁纸，支持音频频谱联动、定时轮播、壁纸收藏、专属黑曜冷月极简微透毛玻璃与极简行文无界正文主题、原生 1:1 超清物理像素渲染。",
@@ -16,174 +16,218 @@
 			"key": "customSteamPath",
 			"type": "text",
 			"label": "自定义 Steam 路径（留空自动探测）",
+			"labelEn": "Custom Steam path (empty = auto-detect)",
 			"default": "",
-			"hint": "例如 C:\\Program Files (x86)\\Steam。留空将自动从 Windows 注册表与常见路径探测。"
+			"hint": "例如 C:\\Program Files (x86)\\Steam。留空将自动从 Windows 注册表与常见路径探测。",
+			"hintEn": "E.g. C:\\Program Files (x86)\\Steam. Empty means auto-detect from the Windows registry and common paths."
 		},
 		{
 			"key": "wallpaperTheme",
 			"type": "select",
 			"label": "专属壁纸主题风格",
+			"labelEn": "Exclusive wallpaper theme",
 			"default": "obsidian",
 			"options": [
 				{
 					"value": "obsidian",
-					"label": "🌑 黑曜冷月（纯黑极简微透）"
+					"label": "🌑 黑曜冷月（纯黑极简微透）",
+					"labelEn": "🌑 Obsidian Moon (pure-black minimal frosted)"
 				},
 				{
 					"value": "flow",
-					"label": "🖋️ 极简行文（极致紧凑·无界正文）"
+					"label": "🖋️ 极简行文（极致紧凑·无界正文）",
+					"labelEn": "🖋️ Pure Flow (ultra-compact borderless prose)"
 				}
 			],
-			"hint": "壁纸激活时专用的黑曜冷月微透或极简行文无界正文主题，与动态壁纸 100% 融合。"
+			"hint": "壁纸激活时专用的黑曜冷月微透或极简行文无界正文主题，与动态壁纸 100% 融合。",
+			"hintEn": "The Obsidian frosted or Pure Flow borderless theme applied while a wallpaper is active — blends 100% with the live wallpaper."
 		},
 		{
 			"key": "glassBlur",
 			"type": "number",
 			"label": "毛玻璃模糊度 (px)",
+			"labelEn": "Frosted-glass blur (px)",
 			"default": 0,
-			"hint": "界面背景模糊半径。设为 0 可完全关闭 GPU 高斯模糊以保证高刷满帧丝滑，推荐 0-6。"
+			"hint": "界面背景模糊半径。设为 0 可完全关闭 GPU 高斯模糊以保证高刷满帧丝滑，推荐 0-6。",
+			"hintEn": "Background blur radius. Set to 0 to fully disable GPU gaussian blur for silky high-refresh rendering; 0-6 recommended."
 		},
 		{
 			"key": "glassOpacity",
 			"type": "number",
 			"label": "界面底色不透明度 (%)",
+			"labelEn": "Surface opacity (%)",
 			"default": 40,
-			"hint": "对话泡泡与主面板的不透明度（0-100）。数值越低壁纸越透亮。"
+			"hint": "对话泡泡与主面板的不透明度（0-100）。数值越低壁纸越透亮。",
+			"hintEn": "Opacity of chat bubbles and the main panel (0-100). Lower lets more wallpaper shine through."
 		},
 		{
 			"key": "autoRotateMinutes",
 			"type": "select",
 			"label": "自动轮播壁纸",
+			"labelEn": "Auto-rotate wallpapers",
 			"default": "0",
 			"options": [
 				{
 					"value": "0",
-					"label": "关闭自动轮播"
+					"label": "关闭自动轮播",
+					"labelEn": "Rotation off"
 				},
 				{
 					"value": "5",
-					"label": "每 5 分钟切换"
+					"label": "每 5 分钟切换",
+					"labelEn": "Every 5 minutes"
 				},
 				{
 					"value": "15",
-					"label": "每 15 分钟切换"
+					"label": "每 15 分钟切换",
+					"labelEn": "Every 15 minutes"
 				},
 				{
 					"value": "30",
-					"label": "每 30 分钟切换"
+					"label": "每 30 分钟切换",
+					"labelEn": "Every 30 minutes"
 				},
 				{
 					"value": "60",
-					"label": "每 1 小时切换"
+					"label": "每 1 小时切换",
+					"labelEn": "Every 1 hour"
 				}
 			],
-			"hint": "开启后将从“已收藏”壁纸（若无收藏则从全部壁纸）中定时循环切换。"
+			"hint": "开启后将从“已收藏”壁纸（若无收藏则从全部壁纸）中定时循环切换。",
+			"hintEn": "When on, cycle on a timer through favorited wallpapers (or all wallpapers when none are favorited)."
 		},
 		{
 			"key": "audioReactive",
 			"type": "boolean",
 			"label": "音乐频谱响应联动",
+			"labelEn": "Music spectrum reactivity",
 			"default": false,
-			"hint": "开启后，若使用具备音频反应能力的壁纸，将采集声音频谱实时律动。"
+			"hint": "开启后，若使用具备音频反应能力的壁纸，将采集声音频谱实时律动。",
+			"hintEn": "When on, audio-reactive wallpapers pulse in real time to the captured sound spectrum."
 		},
 		{
 			"key": "fpsLimit",
 			"type": "select",
 			"label": "最大帧率限制",
+			"labelEn": "Max frame rate",
 			"default": "0",
 			"options": [
 				{
 					"value": "30",
-					"label": "30 FPS（节能）"
+					"label": "30 FPS（节能）",
+					"labelEn": "30 FPS (power saving)"
 				},
 				{
 					"value": "60",
-					"label": "60 FPS（流畅）"
+					"label": "60 FPS（流畅）",
+					"labelEn": "60 FPS (smooth)"
 				},
 				{
 					"value": "0",
-					"label": "无限制（满帧率）"
+					"label": "无限制（满帧率）",
+					"labelEn": "Unlimited (full frame rate)"
 				}
 			],
-			"hint": "用于控制 Scene 场景壁纸与视频渲染的帧率上限。"
+			"hint": "用于控制 Scene 场景壁纸与视频渲染的帧率上限。",
+			"hintEn": "Caps the frame rate of Scene wallpapers and video rendering."
 		},
 		{
 			"key": "qualityPreset",
 			"type": "select",
 			"label": "Scene 场景画质档位",
+			"labelEn": "Scene quality preset",
 			"default": "high",
 			"options": [
 				{
 					"value": "high",
-					"label": "🎨 高清细腻（默认推荐，原生 1:1 视网膜超清）"
+					"label": "🎨 高清细腻（默认推荐，原生 1:1 视网膜超清）",
+					"labelEn": "🎨 Sharp & detailed (recommended, native 1:1 retina)"
 				},
 				{
 					"value": "ultra",
-					"label": "🌟 极致视网膜（高配旗舰独显，超高清渲染）"
+					"label": "🌟 极致视网膜（高配旗舰独显，超高清渲染）",
+					"labelEn": "🌟 Extreme retina (flagship dGPU, ultra rendering)"
 				},
 				{
 					"value": "balanced",
-					"label": "⚖️ 平衡流畅（轻量后处理，平衡节能）"
+					"label": "⚖️ 平衡流畅（轻量后处理，平衡节能）",
+					"labelEn": "⚖️ Balanced (light post-processing, efficient)"
 				},
 				{
 					"value": "performance",
-					"label": "⚡ 节能极速（核显/轻薄本，仅精简粒子）"
+					"label": "⚡ 节能极速（核显/轻薄本，仅精简粒子）",
+					"labelEn": "⚡ Power saver (iGPU/thin laptops, minimal particles)"
 				}
 			],
-			"hint": "控制 3D/Scene 场景壁纸的渲染分辨率、粒子密度与后处理精度。推荐选择“高清细腻”以获得 1:1 原生超清物理画质。"
+			"hint": "控制 3D/Scene 场景壁纸的渲染分辨率、粒子密度与后处理精度。推荐选择“高清细腻”以获得 1:1 原生超清物理画质。",
+			"hintEn": "Controls render resolution, particle density and post-processing quality of 3D/Scene wallpapers. \"Sharp & detailed\" is recommended for native 1:1 ultra-crisp visuals."
 		},
 		{
 			"key": "antiAliasing",
 			"type": "select",
 			"label": "抗锯齿模式",
+			"labelEn": "Anti-aliasing mode",
 			"default": "off",
 			"options": [
 				{
 					"value": "off",
-					"label": "关闭（最高帧率）"
+					"label": "关闭（最高帧率）",
+					"labelEn": "Off (max frame rate)"
 				},
 				{
 					"value": "fxaa",
-					"label": "FXAA 快速平滑（默认推荐，轻量丝滑）"
+					"label": "FXAA 快速平滑（默认推荐，轻量丝滑）",
+					"labelEn": "FXAA fast smoothing (recommended, lightweight)"
 				},
 				{
 					"value": "msaa2",
-					"label": "MSAA 2x（硬件多重采样）"
+					"label": "MSAA 2x（硬件多重采样）",
+					"labelEn": "MSAA 2x (hardware multisampling)"
 				},
 				{
 					"value": "msaa4",
-					"label": "MSAA 4x（极高负荷，需高端显卡）"
+					"label": "MSAA 4x（极高负荷，需高端显卡）",
+					"labelEn": "MSAA 4x (very heavy, needs high-end GPU)"
 				}
 			],
-			"hint": "FXAA 采用极低开销的后处理抗锯齿，边缘细腻且不掉帧；MSAA 会成倍消耗显存带宽。"
+			"hint": "FXAA 采用极低开销的后处理抗锯齿，边缘细腻且不掉帧；MSAA 会成倍消耗显存带宽。",
+			"hintEn": "FXAA is cheap post-process anti-aliasing — smooth edges with no frame drops; MSAA multiplies VRAM bandwidth cost."
 		},
 		{
 			"key": "lightWallpaperMode",
 			"type": "boolean",
 			"label": "☀️ 亮色壁纸增强模式",
+			"labelEn": "☀️ Bright-wallpaper boost",
 			"default": false,
-			"hint": "开启后，为全屏文字注入紧致微描边锐化边缘并给主要容器铺垫微偏光晶层，确保在纯白、日光或高光壁纸下白字依然清晰锐利。"
+			"hint": "开启后，为全屏文字注入紧致微描边锐化边缘并给主要容器铺垫微偏光晶层，确保在纯白、日光或高光壁纸下白字依然清晰锐利。",
+			"hintEn": "When on, adds a tight micro-outline to full-screen text and a subtle polarizing layer to main surfaces, keeping white text crisp over pure-white, daylight or highlight wallpapers."
 		},
 		{
 			"key": "interactive",
 			"type": "boolean",
 			"label": "允许壁纸交互",
+			"labelEn": "Allow wallpaper interaction",
 			"default": false,
-			"hint": "开启后，鼠标可以穿透到背景中与 Web 和 Scene 场景壁纸产生动态交互。"
+			"hint": "开启后，鼠标可以穿透到背景中与 Web 和 Scene 场景壁纸产生动态交互。",
+			"hintEn": "When on, the mouse reaches through to the background for live interaction with Web and Scene wallpapers."
 		},
 		{
 			"key": "muteAudio",
 			"type": "boolean",
 			"label": "视频静音播放",
+			"labelEn": "Mute video wallpapers",
 			"default": true,
-			"hint": "开启后壁纸视频默认静音，不干扰音频播放。"
+			"hint": "开启后壁纸视频默认静音，不干扰音频播放。",
+			"hintEn": "When on, wallpaper videos play muted so they never disturb audio playback."
 		},
 		{
 			"key": "pauseOnHidden",
 			"type": "boolean",
 			"label": "页面后台自动暂停",
+			"labelEn": "Auto-pause in background tabs",
 			"default": true,
-			"hint": "当浏览器标签页处于后台隐藏状态时，暂停视频与 WebGL 渲染以降低 GPU/CPU 占用。"
+			"hint": "当浏览器标签页处于后台隐藏状态时，暂停视频与 WebGL 渲染以降低 GPU/CPU 占用。",
+			"hintEn": "Pause video and WebGL rendering while the browser tab is hidden in the background to save GPU/CPU."
 		}
 	],
 	"ui": {

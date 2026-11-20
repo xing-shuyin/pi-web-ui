@@ -6,11 +6,24 @@ export type NativeCliSessionEvent =
 	| { type: "session"; eventId: string; nativeId: string; cursor?: string }
 	| { type: "submitted"; eventId: string }
 	| { type: "working" | "question" | "approval"; eventId: string }
+	| { type: "tool" | "notification" | "compact" | "subagent" | "end"; eventId: string }
 	| { type: "done"; eventId: string; aborted?: boolean }
 	| { type: "error"; eventId: string; code: string; message: string };
 
 export type NativeCliHookEvent = {
-	type: "session" | "submitted" | "working" | "done" | "question" | "approval" | "error";
+	type:
+		| "session"
+		| "submitted"
+		| "working"
+		| "tool"
+		| "question"
+		| "approval"
+		| "notification"
+		| "compact"
+		| "subagent"
+		| "done"
+		| "error"
+		| "end";
 	eventId: string;
 	nativeId?: string;
 	aborted?: boolean;
@@ -18,7 +31,20 @@ export type NativeCliHookEvent = {
 
 export const NATIVE_CLI_EVENT_LIMIT = 128;
 export const NATIVE_CLI_EVENT_BYTES = 2048;
-const EVENT_TYPES = new Set(["session", "submitted", "working", "done", "question", "approval", "error"]);
+const EVENT_TYPES = new Set([
+	"session",
+	"submitted",
+	"working",
+	"tool",
+	"question",
+	"approval",
+	"notification",
+	"compact",
+	"subagent",
+	"done",
+	"error",
+	"end",
+]);
 
 /** Parse only our reporter's small whitelist, never CLI output or transcript content. */
 export function parseNativeCliHookEvent(text: string): NativeCliHookEvent | undefined {

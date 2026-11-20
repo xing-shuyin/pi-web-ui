@@ -29,6 +29,8 @@ BrowserWindow 的 webContents 加载本地 shell.html，标签与专用 Agent �
 
 启动模式 = `BrowserSettings.defaultMode`（`agent` 默认 / `browser` / `split`）。两个入口写同一份设置：浏览器设置 → 启动模式，以及应用设置弹窗 →「桌面应用」页（仅桌面壳可见，经 `pi-desktop:browser-get/set-startup-mode` 走宿主 IPC）。运行期切换只改当前会话，不写回设置；旧版本存过的 `mode`（上次使用的模式）在首次读取时迁移为 `defaultMode`，老用户升级后启动行为不变。agent / split 启动时 Agent 首帧就绪前不显示 Agent 视图，由 shell 渲染 `pb-boot` 占位（含失败原因与「切换到浏览器模式」出口），就绪后再交给 Agent 视图并聚焦。
 
+**首帧底色：新标签页不许白闪**。`WebContentsView` 在页面画出第一帧之前只露自己的背景色，Electron 的默认值是白色——新建标签页时那块空白先白一帧、再变成新标签页的深色，观感就是「闪白屏」。所以这块颜色归主进程管：`browser/runtime/palette.ts` 给出 `dark` / `midnight` / `light` 三个主题的底色（与 `browser/renderer/browser.css` 的 `--pb-bg-main` 逐值对应，`tests/unit/browser-palette.test.ts` 读 CSS 校验），`BrowserManager` 建标签视图时铺给视图、构造与 `saveSettings` 换主题时铺给窗口（外壳页 `body` 是透明的，没被视图盖住的地方露的就是窗口这块）；渲染层 `html, body` 也直接取 `--pb-bg-main`，`body.pb-*` 的渐变再叠上来。新增「要等脚本才画出来」的内部页照这条路走，别只依赖 DOM 里的类名。
+
 切换模式复用同一个视图并更新可见性、边界和焦点，不重载页面。隐藏页保留有效尺寸，不缩成 1×1。标签关闭时关闭对应 WebContents；应用关闭时清理标签、下载、Agent 和挂起通道。
 
 **开发者工具是用户的逃生口**：内置浏览器没有「另开一个真 Chrome」这条退路，网站自己出问题（验证码一直转圈、脚本报错）时控制台就在这里。`F12` / `Ctrl+Shift+I` 两条路都开当前标签页的 DevTools（独立窗口，不影响分栏布局）：页面拿着键盘焦点时由 `BrowserManager.createTab` 里的 `before-input-event` 接管（外壳页根本收不到那个键），焦点在外壳（地址栏 / 面板）时由 `shell.ts` 的 keydown 发 `devtools.toggle`；两条最终都落到 `BrowserManager.toggleDevTools()`（空 id 回退当前标签，已开着就关）。**这只给用户用**：agent 的浏览器工具没有这条通道，自动注入脚本也不该借用它。
@@ -158,24 +160,32 @@ Agent 可以给网页注入脚本：`browser_script` 工具（`server/browser-sc
 
 ### 悬浮 Dock（右下角刷新圆钮）
 
-注入在每个页面右下角的一颗圆钮：单击刷新、悬停展开前进/后退/收藏/复制 Markdown，可拖动（位置存 `localStorage.__aib_dock_pos`），`smartDock` 开关可整体关掉。**功能不难，难的是「某些网站上看不见」**——四条底线都写在 `browser/renderer/dock.js` 头部注释里：
+注入在每个页面右下角的一颗圆钮：单击刷新、悬停展开前进/后退/收藏/复制 Markdown，可拖动（位置存 `localStorage.__aib_dock_pos`），`smartDock` 开关可整体关掉。**功能不难，难的是「某些网站上看不见」**——六条底线都写在 `browser/renderer/dock.js` 头部注释里：
 
 - **宿主挂在 top layer**：`popover="manual"` + `showPopover()`，圆钮不参与页面的层叠上下文，所以站点的 z-index 战争（包括同样用 `2147483647` 的全屏遮罩）、祖先 `transform`/`filter`/`contain` 造成的「`position:fixed` 退化成相对定位」、`overflow:hidden` 的裁剪统统影响不到它。UA 给 popover 的 `fit-content`/`margin:auto`/`overflow:auto` 一律用 inline `!important` 盖回「铺满视口 + `pointer-events:none`」；**开不出来就摘掉 `popover` 属性**退回普通 `fixed`（否则 `[popover]:not(:popover-open){display:none}` 反而会把钮藏掉）。
 - **全屏之后重排**：`fullscreenchange` 里 `hidePopover()` / `showPopover()`，圆钮即排到顶层末尾，压在视频/全屏元素之上（看门狗每秒补一次，防页面吞掉事件）。
 - **被摘掉就挂回去**：MutationObserver 盯 `documentElement` 与 `body` 的直接子节点（SPA 清空 body、换掉整个 body），加 1 秒一次的看门狗：页面 `hidePopover()`、`remove()` 宿主、把宿主 inline 样式改成 `display:none`，最迟下一拍自己恢复。
 - **不碰 `innerHTML`、不建 TT policy**：Google 系站点开着 `require-trusted-types-for 'script'` 且限制 policy 名，`createPolicy()` 也建不出来——旧实现 `setMarkup()` 一失败整颗钮连按钮都没有（这才是「某些网站看不见」最常见的原因）。现在整段 DOM 走 `createElement`/`createElementNS`；样式优先 `adoptedStyleSheets`（构造式样式表不吃页面 CSP `style-src`），拿不到才退回 `<style>`。
+- **位置按当前视口夹一遍**：拖出来的坐标按 origin 存在 `localStorage.__aib_dock_pos`，宽窗口拖到右下、换窄窗口（分栏 / 还原 / 小屏）恢复时就成了屏幕外——**「只有某个站整颗钮看不见」最常见的成因**。恢复与拖动都走同一个 `clampPosition()`，`resize` 之后再夹一次并写回。
+- **一列钮一样大、悬停不放大、不被边缘切掉**：主钮 / 展开菜单钮 / 插槽里的下载钮（`.pi-dl-fab`）统一 32px、图标统一 15px，悬停只换底色，`transform: scale()` 从 hover 和 `dock-pulse` 呼吸态里全删（列宽一抖就点不准）。纵向摆位跟着视口算：默认主钮在下、菜单往上长；主钮贴顶边时整列翻转（`.dock-flip` 的 `column-reverse` + 把锚点从 `bottom` 换成 `top`），主钮留在原处、菜单往下长；两边都装不下（窗口比一列还矮）才把 `--dock-menu-max` 压到真实空间并让菜单自己滚——**任何状态下都不把按钮交给视口边缘去切**。翻不翻转只由 `place()` 一处裁定，拖动 / `resize` / 下载钮冒出来（`reposition()`）都走它；回归：`tests/unit/browser-dock-layout.test.ts`。
+- **可见性自愈**：看门狗每秒不只查「还在 DOM 里」，还查 `getBoundingClientRect()` 有没有面积、`display/visibility/opacity` 有没有被站点改过；看不见就先按标准样式重建一次，再不行摘掉 `popover` 退回普通 `fixed`。
+- **不透明**：`.dock-container` 以前空闲态 `opacity: 0.35`，在浅色站上几乎看不见；刷新钮是要被找到并点的，现在恒为全不透明。
+- **内部页判据连协议一起判**：`location.protocol === "file:" && /(?:^|/)(?:shell|newtab).html$/i`——只看 pathname 会把 `github.com/<owner>/<repo>/blob/main/browser/renderer/shell.html` 这类正常网页当成内部页（主进程侧的注入闸门同一口径，见 `manager.ts` 的 `isInternalPage()`）。
+- **插槽**：`window.__AIB_DOCK__.slot(id)` 给下载圆钮留位（见下一节），让它和刷新钮同列、一起拖动。
 - **残留边界**：站点 `showModal()` 的 `<dialog>` 打开期间，页面把其他内容设成 inert——圆钮仍画在它上面，但点不动，`dialog` 一关就恢复；这是 Chromium 的定数，页面注入赢不了。
 - **单源**：注入源码只有 `browser/renderer/dock.js` 一份，`browser/runtime/dock.ts` 只负责按候选路径读文件（读不到返回空串 + 告警），不再留会跑偏的内联复制品；`scripts/build-browser.mjs` 的 `filesToCopy` 必须带上它。回归：`tests/unit/browser-dock.test.ts`。
 
-### 下载圆钮（页面右上角）
+### 下载圆钮（并进右下角悬浮球）
 
-站内点下载时主进程直接落盘，页面上一点反馈都没有：用户既不知道下没下完，也不知道存哪去了。现在每个页面右上角会有一颗下载圆钮：
+站内点下载时主进程直接落盘，页面上一点反馈都没有：用户既不知道下没下完，也不知道存哪去了。现在下载钮**住在右下角悬浮球那一列**：
 
-- **谁注入**：`browser/renderer/downloads.js`（`browser/runtime/downloads.ts` 按 dock 的同一套候选路径读源码，`manager.ts` 在 `dom-ready` / `did-finish-load` 注入）。它**不受 `smartDock` 开关管**——那是导航玩具的开关，这是「文件下来了」的状态提示；内部页（`shell.html` / `newtab.html`）不注入，与 dock 同一口径，`scripts/build-browser.mjs` 的 `filesToCopy` 要带上这份文件，漏了装包后就没有提示。
-- **显示什么**：有任务才出现；角标 = 进行中数量；点开列最近 8 条（文件名 + 进度条 + 已完成/失败/已取消）。新任务出现时自动亮出面板，全部结束后 8 秒自己收走；任务行可拖动改位置（`localStorage.__pi_dl_pos`），因为它压着的就是站点自己的右上角按钮。
-- **状态是单向下推**：`manager.ts` 的 `pushDownloads()` 只推当前活动标签（同一时刻只有它那块视图可见），切标签与「新文档注入完」各补推一次；已结束的任务只在 30 秒内继续推（`DOWNLOAD_NOTICE_MS`），否则每打开一个页面都会把上次那个「已完成」再亮一遍。载体是 `executeJavaScript` 里的一句 `window.__PI_DOWNLOADS__.update(<json>)`，字面量经 `scriptLiteral()` 转义（文件名是网站给的，`\u2028` / `<` 这类字符必须在这里消化）。
-- **能力边界**：脚本跑在网站的主世界，网页任何脚本都能调它，所以它只能是显示面——**不打开文件、不读目录、不碰桥**。已完成项点一下只把保存路径复制到剪贴板（剪贴板被站点策略挡住就把路径摊开显示，不假装成功）。真正的「打开文件」留在「下载」面板（`download.open`）和系统文件管理器里。
-- 回归：`tests/unit/browser-downloads-notice.test.ts`（注入脚本可取 / 打包清单 / 无 innerHTML / 无反向能力 / 只推活动标签 / 字面量转义）。
+- **摆在哪**：`browser/renderer/downloads.js` 通过 `window.__AIB_DOCK__.slot("downloads")`（`browser/renderer/dock.js` 暴露的插槽）把自己挂进刷新钮上方，跟着刷新钮一起摆、一起拖动；`smartDock` 关掉时退回自建宿主（仍在右下角），功能不受影响。**没有下载任务就整颗收起**，有任务才和刷新钮一起出现。
+- **谁注入**：`browser/runtime/downloads.ts` 按 dock 的同一套候选路径读源码，`manager.ts` 在 `dom-ready` / `did-finish-load` 注入。它**不受 `smartDock` 开关管**——那是导航玩具的开关，这是「文件下来了」的状态提示；内部页不注入，与 dock 同一口径（判据是 `manager.ts` 的 `isInternalPage()` 与页面里的 `location.protocol === "file:"`，**不再拿 pathname 子串判**，否则 `github.com/<owner>/<repo>/blob/main/browser/renderer/shell.html` 这种正常网页会被误杀）。`scripts/build-browser.mjs` 的 `filesToCopy` 要带上这份文件，漏了装包后就没有提示。
+- **显示什么**：角标 = 进行中数量；点开列最近 8 条（文件名 + 进度条 + 状态）。新任务出现时自动亮出面板，几秒后自己收起。已完成的行给两颗药丸：**打开文件夹**（在系统文件管理器里定位）与**复制路径**（剪贴板被站点策略挡住就把路径摊开显示，不假装成功）。
+- **状态是单向下推**：`manager.ts` 的 `pushDownloads()` 只推当前活动标签（同一时刻只有它那块视图可见），切标签与「新文档注入完」各补推一次；已结束的任务只在 30 秒内继续推（`DOWNLOAD_NOTICE_MS`），否则每打开一个页面都会把上次那个「已完成」再亮一遍。载体是 `executeJavaScript` 里的一句 `window.__PI_DOWNLOADS__.update(<json>)`，字面量经 `scriptLiteral()` 转义（文件名是网站给的，` ` / `<` 这类字符必须在这里消化）。
+- **能力边界（一条窄桥）**：脚本跑在网站的主世界，网页任何脚本都能调它，所以反向只有一个动作——`window.__piDownloads.reveal(id)`（`browser/preload.cts` 暴露）。**只传 id**：路径由主进程按自己的下载记录解析，只认 `state === "completed"`，发送方必须是浏览器 session 里的网站 frame（`browser-host.ts` 的 `webFrameOrigin()`），落点固定是 `shell.showItemInFolder()`——页面既拿不到任意路径，也没有执行文件的能力。可信外壳的「下载」面板另有 `download.open`（执行）与 `download.reveal`（定位）两个动作。
+- 注入失败不再静默：`manager.ts` 的 `reportInjection()` 把「某站注入失败 + URL + 原因」写进主进程日志，用户报「某站看不见」时有据可查。
+- 回归：`tests/unit/browser-downloads-notice.test.ts`（注入脚本可取 / 打包清单 / 插槽挂载 / 无 innerHTML / 窄桥只收 id / 内部页判据 / 只推活动标签 / 字面量转义）。
 
 ### TOTP
 

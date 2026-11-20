@@ -60,3 +60,12 @@ contextBridge.exposeInMainWorld("__piPasskey", {
 	version: 1,
 	confirm: (kind: unknown) => ipcRenderer.invoke("pi-browser:passkey-confirm", kind === "create" ? "create" : "get"),
 });
+
+// 下载圆钮（`browser/renderer/downloads.js`）的窄桥：**只收 id**，让宿主在文件管理器里
+// 定位这个下载（`shell.showItemInFolder`）。路径与命令一个字都不从页面过——主进程按自己的
+// 下载记录解析、只认已完成项，并按发送方 session/origin 再卡一遍，所以这里同步暴露（圆钮可能
+// 比 trust 往返更早注入）。
+contextBridge.exposeInMainWorld("__piDownloads", {
+	version: 1,
+	reveal: (id: unknown) => ipcRenderer.invoke("pi-browser:downloads-reveal", typeof id === "string" ? id : ""),
+});

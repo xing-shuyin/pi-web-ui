@@ -717,7 +717,14 @@ export const BUILTIN_UI_ITEMS: BuiltinUiItem[] = [
 	{ id: "host:fp-close", slot: "file.preview.toolbar", labelKey: "close", icon: "x", kind: "action", order: 90 },
 
 	{ id: "host:goal-pill", slot: "goalbar.actions", labelKey: "goalBarTitle", icon: "target", kind: "action", order: 5 },
-	{ id: "host:goal-set", slot: "goalbar.actions", labelKey: "goalBarSet", icon: "check", kind: "action", order: 10 },
+	{
+		id: "host:goal-set",
+		slot: "goalbar.actions",
+		labelKey: "goalComposeEnter",
+		icon: "check",
+		kind: "action",
+		order: 10,
+	},
 	{
 		id: "host:goal-wizard",
 		slot: "goalbar.actions",

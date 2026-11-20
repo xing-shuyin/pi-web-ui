@@ -1,4 +1,8 @@
 import { apiBase as getSharedApiBase } from "@pi-web-ui/plugin-sdk/client";
+import { makeT } from "./i18n.mjs";
+
+/** 看板文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。 */
+const t = makeT();
 
 const ACTION_SHOW_DETAILS = "response-speed:show-details";
 const STYLE_ID = "response-speed-styles";
@@ -20,10 +24,10 @@ function formatMs(ms) {
 }
 
 function getRating(ms) {
-	if (ms < 800) return { label: "极速", color: "#10b981" };
-	if (ms < 2000) return { label: "良好", color: "#3b82f6" };
-	if (ms < 5000) return { label: "一般", color: "#f59e0b" };
-	return { label: "偏慢", color: "#ef4444" };
+	if (ms < 800) return { label: t("ratingExcellent"), color: "#10b981" };
+	if (ms < 2000) return { label: t("ratingGood"), color: "#3b82f6" };
+	if (ms < 5000) return { label: t("ratingFair"), color: "#f59e0b" };
+	return { label: t("ratingSlow"), color: "#ef4444" };
 }
 
 function apiBase() {
@@ -269,7 +273,7 @@ function renderModalContent() {
 			})
 			.join("");
 	} else {
-		tableRows = `<tr><td colspan="3" style="text-align: center; color: var(--text-dim, #888); padding: 18px;">当前对话暂无历史测速记录</td></tr>`;
+		tableRows = `<tr><td colspan="3" style="text-align: center; color: var(--text-dim, #888); padding: 18px;">${t("emptyHistory")}</td></tr>`;
 	}
 
 	const modal = overlay.querySelector(".resp-speed-modal");
@@ -279,42 +283,42 @@ function renderModalContent() {
 		<div class="resp-speed-head">
 			<div class="resp-speed-title">
 				<span>⚡</span>
-				<span>AI 响应速度统计看板（当前对话）</span>
+				<span>${t("modalTitle")}</span>
 			</div>
-			<button type="button" class="resp-speed-close" aria-label="关闭">&times;</button>
+			<button type="button" class="resp-speed-close" aria-label="${t("closeLabel")}">&times;</button>
 		</div>
 		<div class="resp-speed-body">
 			<div class="resp-speed-grid">
 				<div class="resp-speed-card">
-					<span class="resp-speed-card-label">最新请求响应速度 (最新)</span>
+					<span class="resp-speed-card-label">${t("cardLatest")}</span>
 					<span class="resp-speed-card-val highlight">${latestStr}</span>
 				</div>
 				<div class="resp-speed-card">
-					<span class="resp-speed-card-label">平均响应速度 (均速)</span>
+					<span class="resp-speed-card-label">${t("cardAvg")}</span>
 					<span class="resp-speed-card-val">${avgStr}</span>
 				</div>
 				<div class="resp-speed-card">
-					<span class="resp-speed-card-label">最快响应时间</span>
+					<span class="resp-speed-card-label">${t("cardMin")}</span>
 					<span class="resp-speed-card-val" style="color: #10b981;">${minStr}</span>
 				</div>
 				<div class="resp-speed-card">
-					<span class="resp-speed-card-label">最慢响应时间</span>
+					<span class="resp-speed-card-label">${t("cardMax")}</span>
 					<span class="resp-speed-card-val" style="color: #ef4444;">${maxStr}</span>
 				</div>
 			</div>
 
 			<div style="font-size: 12px; color: var(--text-dim, #9aa1b4); line-height: 1.5; background: rgba(255,255,255,0.03); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border-soft, rgba(255,255,255,0.06));">
-				💡 <strong>响应速度说明</strong>：统计当前对话向 AI 发起请求到收到首包响应（TTFT）的耗时。每个对话独立记录，提问与 AI 自循环中的每一次 turn 请求均独立测速。
+				💡 <strong>${t("explTitle")}</strong>：${t("explBody")}
 			</div>
 
-			<div class="resp-speed-section-title">最近响应明细 (当前对话样本总数: ${count} 次)</div>
+			<div class="resp-speed-section-title">${t("sectionRecent", { count })}</div>
 			<div class="resp-speed-table-wrap">
 				<table class="resp-speed-table">
 					<thead>
 						<tr>
-							<th>时间</th>
-							<th>首包响应耗时</th>
-							<th>评级</th>
+							<th>${t("thTime")}</th>
+							<th>${t("thLatency")}</th>
+							<th>${t("thRating")}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -324,15 +328,15 @@ function renderModalContent() {
 			</div>
 		</div>
 		<div class="resp-speed-footer">
-			<button type="button" class="resp-speed-btn danger" id="resp-speed-reset-btn">清空当前对话统计</button>
-			<button type="button" class="resp-speed-btn" id="resp-speed-close-btn">关闭</button>
+			<button type="button" class="resp-speed-btn danger" id="resp-speed-reset-btn">${t("btnReset")}</button>
+			<button type="button" class="resp-speed-btn" id="resp-speed-close-btn">${t("btnClose")}</button>
 		</div>
 	`;
 
 	modal.querySelector(".resp-speed-close")?.addEventListener("click", closeDashboardModal);
 	modal.querySelector("#resp-speed-close-btn")?.addEventListener("click", closeDashboardModal);
 	modal.querySelector("#resp-speed-reset-btn")?.addEventListener("click", async () => {
-		if (confirm("确定要清空当前对话的 AI 响应速度统计记录吗？")) {
+		if (confirm(t("confirmReset"))) {
 			await resetStats();
 		}
 	});

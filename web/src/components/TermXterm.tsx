@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -8,6 +8,7 @@ import { shouldStartTouchScroll, touchWheelDeltaY } from "../term-touch";
 import { useI18n } from "../i18n";
 import { appSend } from "../app-globals";
 import type { TerminalOwnerKind } from "../terminal-bridge";
+import { terminalQuoteText, terminalViewportText } from "../terminal-quote";
 
 function stripExitBanner(data: string): { clean: string; exitCode: number | null } {
 	let exitCode: number | null = null;
@@ -24,6 +25,14 @@ export interface TermXtermHandle {
 	focus(): void;
 }
 
+/** 右键菜单要的东西：光标位置 + 待引用正文 + 正文是选中还是整屏。 */
+export interface TermContextRequest {
+	x: number;
+	y: number;
+	text: string;
+	fromSelection: boolean;
+}
+
 interface TermXtermProps {
 	conversationId: string;
 	terminalId: string;
@@ -34,6 +43,7 @@ interface TermXtermProps {
 	ownerKind?: TerminalOwnerKind;
 	active: boolean;
 	onReady?: (handle: TermXtermHandle | null) => void;
+	onContextRequest?: (request: TermContextRequest) => void;
 	running?: boolean;
 	exitCode?: number | null;
 	register: (
@@ -53,11 +63,14 @@ export function TermXterm({
 	exitCode,
 	register,
 	onReady,
+	onContextRequest,
 }: TermXtermProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const termRef = useRef<{ term: Terminal; fit: FitAddon } | null>(null);
 	const onReadyRef = useRef(onReady);
 	onReadyRef.current = onReady;
+	const onContextRequestRef = useRef(onContextRequest);
+	onContextRequestRef.current = onContextRequest;
 	const routeConversationId = ownerKind === "conversation" ? conversationId : "";
 
 	useEffect(() => {
@@ -288,5 +301,27 @@ export function TermXterm({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [running, terminalId, exitCode]);
 
-	return <div ref={containerRef} className={`term-xterm ${active ? "" : "hidden"}`} />;
+	const onContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+		const inst = termRef.current;
+		const send = onContextRequestRef.current;
+		if (!inst || !send) return;
+		const selection = inst.term.getSelection();
+		const fromSelection = selection.trim().length > 0;
+		const buffer = inst.term.buffer.active;
+		const text = terminalQuoteText(
+			fromSelection
+				? selection
+				: terminalViewportText({
+						rows: inst.term.rows,
+						viewportY: buffer.viewportY,
+						line: (y) => buffer.getLine(y)?.translateToString(true) ?? "",
+					}),
+		);
+		// 空终端（或选中的只有空白）没什么可引用的：留着浏览器原生菜单。
+		if (!text) return;
+		event.preventDefault();
+		send({ x: event.clientX, y: event.clientY, text, fromSelection });
+	};
+
+	return <div ref={containerRef} className={`term-xterm ${active ? "" : "hidden"}`} onContextMenu={onContextMenu} />;
 }

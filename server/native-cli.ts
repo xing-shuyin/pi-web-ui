@@ -6,7 +6,7 @@ import { isUploadDataTooLong, uploadLimitBytes, type UploadLimits } from "./payl
 import { CLIENT_ID_PATTERN, saveUpload, uploadsRoot } from "./uploads.js";
 import type { NativeCliDiscoveryOptions } from "./native-cli-discovery.js";
 import { ENGINE_CATALOG, isNativeCliEngineId } from "./engine-catalog.js";
-import { nativeCliModelLaunch, type NativeCliModelConnection } from "./native-cli-model.js";
+import { nativeCliModelLaunch, withClaudeSettingsEnv, type NativeCliModelConnection } from "./native-cli-model.js";
 import { resolveCliExecutableLaunch, resolveEngineCliLaunch } from "./engine-cli.js";
 import { isAbsoluteWirePath, wireToAbs } from "./files-service.js";
 
@@ -122,10 +122,18 @@ export function resolveNativeCliLaunch(
 	const config = validateNativeCliConfig(value);
 	if (config.preset === "custom") return resolveCliExecutableLaunch(config.executable!, config.args, options);
 	const inherited = nativeCliModelLaunch(config, options.modelConnection, options.env ?? process.env);
+	// Without a resolved connection the CLI falls back to its own login: drop the inherited `--model`/
+	// `--provider` too, otherwise a foreign model id (e.g. a DeepSeek id passed to Claude Code) breaks the
+	// fallback launch. Pi only passes model arguments and needs no connection, so it is unaffected.
+	const modelArgs =
+		options.modelConnection || (config.preset !== "claude" && config.preset !== "codex")
+			? nativeCliLaunchArgs(config)
+			: [...(config.args ?? [])];
+	const args = [...inherited.args, ...withClaudeSettingsEnv(modelArgs, inherited.settingsEnv)];
 	const launch = resolveEngineCliLaunch(config.preset, {
 		...options,
 		executablePath: config.executable,
-		args: [...inherited.args, ...nativeCliLaunchArgs(config)],
+		args,
 	});
 	return { ...launch, ...(inherited.env ? { env: inherited.env } : {}) };
 }

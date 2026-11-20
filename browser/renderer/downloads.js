@@ -1,93 +1,88 @@
 /**
- * PI Browser - 右上角下载悬浮圆钮（页面注入）
+ * PI Browser - 下载圆钮（页面注入）
  *
  * 站内点下载时主进程会直接把文件存进系统下载目录，页面上一点提示都没有：用户既不知道
- * 下没下来，也不知道存哪去了。这颗圆钮补的就是这个缺口——有下载任务才出现，可以同时
- * 列出多个，跟着页面走（每次导航后由主进程重新注入并补推当前状态）。
+ * 下没下来，也不知道存哪去了。这颗圆钮补的就是这个缺口。
  *
- * **能力边界**：这段脚本跑在网站的主世界里，网页的任何脚本都能调它，所以它只能是
- * 单向的显示面（`update(list)`），不提供任何宿主能力——不给打开文件、不给读目录、不给调桥。
- * 点击已完成项只把保存路径复制到剪贴板，真正的「打开」留在用户自己的文件管理器里做。
+ * **摆在哪**：并进右下角的悬浮球（`browser/renderer/dock.js`）那一列——没有下载任务时整颗
+ * 收起，有任务时和刷新钮一起出现、一起拖动、一起换位置。dock 的插槽由
+ * `window.__AIB_DOCK__.slot("downloads")` 给；`smartDock` 被关掉时退回自建宿主（仍然在右下角），
+ * 功能不受影响。
+ *
+ * **能力边界**：这段脚本跑在网站的主世界里，网页的任何脚本都能调它，所以它只做两件有界的事：
+ * 显示主进程推来的列表，以及「按 id 请宿主在文件管理器里显示这个下载」——后者走 preload 暴露的
+ * 窄桥 `window.__piDownloads.reveal(id)`，**路径和命令一个字都不从页面过**：主进程按自己的下载
+ * 记录解析，只认已完成项，页面既拿不到任意路径也没有打开文件的能力。
  *
  * 状态由主进程 `BrowserManager` 推送：`window.__PI_DOWNLOADS__.update([{ id, filename, state, receivedBytes, totalBytes, path }])`。
  */
 (function () {
-	if (location.pathname.includes("shell.html") || location.pathname.includes("newtab.html")) return;
+	// 本地文档 / 内部页（file:// 的 shell.html、newtab.html）不注入，和 dock 同一口径
+	if (location.protocol === "file:") return;
 
 	const existing = window.__PI_DOWNLOADS__;
 	if (existing && typeof existing.update === "function") {
-		// dom-ready / did-finish-load / 导航后补注入：只刷新，不重建第二个圆钮
+		// dom-ready / did-finish-load / 导航后补注入：只刷新，不建出第二个圆钮
 		existing.update(existing.items);
 		return;
 	}
 
-	const HOST_ID = "pi-download-host";
-	const POS_KEY = "__pi_dl_pos";
 	const AUTO_EXPAND_MS = 6000;
-	const AUTO_HIDE_MS = 8000;
+	const MAX_ROWS = 8;
 
 	let items = [];
 	let expanded = false;
 	let knownIds = new Set();
-	let autoTimer = 0;
 
-	// 站点 SPA（Gemini / X 之类）会清空 body，脚本只挂一次就会永久消失：host 掉了就重新挂回去
-	let observedBody = null;
-	const observer = typeof MutationObserver === "function" ? new MutationObserver(() => ensureMounted()) : null;
-	function ensureMounted() {
-		if (!document.body) return false;
-		if (!host.isConnected) (document.body || document.documentElement).appendChild(host);
-		if (observer && observedBody !== document.body) {
-			if (observedBody) observer.unobserve(observedBody);
-			observedBody = document.body;
-			observer.observe(observedBody, { childList: true });
+	/** 样式：构造式样式表不吃页面的 CSP `style-src`（dock 同一套做法），拿不到才退回 `<style>`。 */
+	function styleInto(root) {
+		const sheet = (() => {
+			try {
+				if (typeof CSSStyleSheet !== "function" || !("adoptedStyleSheets" in root)) return null;
+				const created = new CSSStyleSheet();
+				created.replaceSync(CSS);
+				return created;
+			} catch (_) {
+				return null;
+			}
+		})();
+		if (sheet) {
+			try {
+				root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+				return;
+			} catch (_) {}
 		}
-		return true;
+		const style = document.createElement("style");
+		style.textContent = CSS;
+		root.appendChild(style);
 	}
 
-	const host = document.createElement("div");
-	host.id = HOST_ID;
-	host.style.cssText = [
-		"position:fixed",
-		"top:14px",
-		"right:16px",
-		"z-index:2147483647",
-		"display:none",
-		"font:500 12px/1.4 system-ui,-apple-system,'Segoe UI',sans-serif",
-		"color:#e8eaf2",
-		"pointer-events:auto",
-	].join(";");
-	const shadow = host.attachShadow ? host.attachShadow({ mode: "open" }) : host;
-
-	const style = document.createElement("style");
-	style.textContent = `
-:host, .pi-dl-root { all: initial; }
+	const CSS = `
 .pi-dl-root {
   position: relative;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
   font: 500 12px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
   color: #e8eaf2;
 }
+.pi-dl-root[hidden] { display: none; }
 .pi-dl-fab {
   position: relative;
-  width: 34px;
-  height: 34px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 50%;
-  background: rgba(24, 26, 34, 0.92);
-  color: #e8eaf2;
+  background: #2a2d36;
+  color: #e6e8ee;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.32);
-  backdrop-filter: blur(8px);
-  transition: transform 0.14s ease, background 0.14s ease;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  transition: background 0.15s ease;
 }
-.pi-dl-fab:hover { background: rgba(38, 42, 56, 0.96); transform: translateY(-1px); }
+.pi-dl-fab:hover { background: #353945; }
 .pi-dl-fab[data-done="1"] { color: #6ee7a8; border-color: rgba(110, 231, 168, 0.45); }
 .pi-dl-badge {
   position: absolute;
@@ -106,8 +101,11 @@
 }
 .pi-dl-badge[hidden] { display: none; }
 .pi-dl-panel {
+  position: absolute;
+  right: calc(100% + 10px);
+  bottom: 0;
   width: 296px;
-  max-height: 268px;
+  max-height: 272px;
   overflow: auto;
   padding: 8px;
   border-radius: 12px;
@@ -133,8 +131,6 @@
   background: rgba(255, 255, 255, 0.04);
 }
 .pi-dl-row + .pi-dl-row { margin-top: 6px; }
-.pi-dl-row[data-open="1"] { cursor: pointer; }
-.pi-dl-row[data-open="1"]:hover { background: rgba(255, 255, 255, 0.09); }
 .pi-dl-name {
   display: flex;
   align-items: center;
@@ -160,13 +156,35 @@
   background: linear-gradient(90deg, #5b8cff, #7fd4ff);
   transition: width 0.2s ease;
 }
+.pi-dl-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex-wrap: wrap;
+}
 .pi-dl-meta { color: #9aa4bf; font-size: 11px; }
 .pi-dl-meta[data-tone="done"] { color: #6ee7a8; }
 .pi-dl-meta[data-tone="error"] { color: #ff8a8a; }
+.pi-dl-actions { display: flex; gap: 6px; margin-left: auto; }
+.pi-dl-btn {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e6e8ee;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+.pi-dl-btn:hover { background: rgba(91, 140, 255, 0.9); border-color: rgba(91, 140, 255, 0.9); color: #fff; }
 `;
 
 	const root = document.createElement("div");
 	root.className = "pi-dl-root";
+	root.hidden = true;
 
 	const fab = document.createElement("button");
 	fab.type = "button";
@@ -184,9 +202,8 @@
 	panel.hidden = true;
 
 	root.append(fab, panel);
-	shadow.append(style, root);
 
-	/** 把状态塞进 DOM 的图标：一律 createElement，不碰 innerHTML（站点可能开了 Trusted Types） */
+	/** 把状态塞进 DOM 的图标：一律 createElementNS，不碰 innerHTML（站点可能开了 Trusted Types） */
 	function downloadIcon() {
 		const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
 		svg.setAttribute("width", "15");
@@ -207,6 +224,19 @@
 			svg.appendChild(node);
 		}
 		return svg;
+	}
+
+	function chip(label, onClick) {
+		const button = document.createElement("button");
+		button.type = "button";
+		button.className = "pi-dl-btn";
+		button.textContent = label;
+		button.addEventListener("click", (event) => {
+			event.preventDefault();
+			event.stopPropagation();
+			onClick();
+		});
+		return button;
 	}
 
 	function formatBytes(value) {
@@ -236,9 +266,9 @@
 
 	function render() {
 		const active = items.filter((item) => item.state === "progressing");
-		const hasItems = items.length > 0;
-		host.style.display = hasItems ? "block" : "none";
-		if (!hasItems) {
+		// 没有任务就整颗收起：它和刷新钮住在同一列，平时不该占着站点的右下角
+		root.hidden = items.length === 0;
+		if (root.hidden) {
 			panel.hidden = true;
 			expanded = false;
 			return;
@@ -249,6 +279,9 @@
 		fab.title = active.length ? `${active.length} 个下载进行中` : "下载任务";
 		panel.hidden = !expanded;
 		if (!expanded) return;
+		// 面板开在圆钮左侧：分栏 / 窄窗口里按当前视口收一收，别让它跑到屏幕外
+		panel.style.width = `${Math.max(200, Math.min(296, window.innerWidth - 96))}px`;
+		panel.style.maxHeight = `${Math.max(120, Math.min(272, window.innerHeight - 140))}px`;
 
 		panel.replaceChildren();
 		const head = document.createElement("div");
@@ -261,55 +294,91 @@
 		panel.appendChild(head);
 
 		for (const item of items) {
-			const row = document.createElement("div");
-			row.className = "pi-dl-row";
-			row.dataset.open = item.state === "completed" ? "1" : "0";
-			row.title = item.path || item.filename || "";
-
-			const name = document.createElement("div");
-			name.className = "pi-dl-name";
-			const filename = document.createElement("span");
-			filename.className = "pi-dl-name-text";
-			filename.textContent = item.filename || "下载";
-			const state = document.createElement("span");
-			state.className = "pi-dl-state";
-			state.textContent = stateLabel(item);
-			name.append(filename, state);
-
-			const bar = document.createElement("div");
-			bar.className = "pi-dl-bar";
-			const fill = document.createElement("i");
-			const total = Number(item.totalBytes) || 0;
-			const ratio = total > 0 ? Math.min(1, (Number(item.receivedBytes) || 0) / total) : 0;
-			fill.style.width = item.state === "completed" ? "100%" : `${Math.round(ratio * 100)}%`;
-			bar.appendChild(fill);
-
-			const meta = document.createElement("div");
-			meta.className = "pi-dl-meta";
-			meta.dataset.tone = item.state === "completed" ? "done" : item.state === "progressing" ? "" : "error";
-			meta.textContent =
-				item.state === "completed"
-					? "已保存 · 点击复制路径"
-					: item.state === "progressing"
-						? `${formatBytes(item.receivedBytes)}${total > 0 ? ` / ${formatBytes(total)}` : ""}`
-						: item.state === "cancelled"
-							? "已取消，未保存"
-							: "下载中断，未保存";
-
-			row.append(name, bar, meta);
-			if (item.state === "completed") {
-				row.addEventListener("click", () => {
-					copyPath(item.path || "", meta);
-				});
-			}
-			panel.appendChild(row);
+			panel.appendChild(renderRow(item));
 		}
 	}
 
+	function renderRow(item) {
+		const row = document.createElement("div");
+		row.className = "pi-dl-row";
+		row.title = item.path || item.filename || "";
+
+		const name = document.createElement("div");
+		name.className = "pi-dl-name";
+		const filename = document.createElement("span");
+		filename.className = "pi-dl-name-text";
+		filename.textContent = item.filename || "下载";
+		const state = document.createElement("span");
+		state.className = "pi-dl-state";
+		state.textContent = stateLabel(item);
+		name.append(filename, state);
+
+		const bar = document.createElement("div");
+		bar.className = "pi-dl-bar";
+		const fill = document.createElement("i");
+		const total = Number(item.totalBytes) || 0;
+		const ratio = total > 0 ? Math.min(1, (Number(item.receivedBytes) || 0) / total) : 0;
+		fill.style.width = item.state === "completed" ? "100%" : `${Math.round(ratio * 100)}%`;
+		bar.appendChild(fill);
+
+		const foot = document.createElement("div");
+		foot.className = "pi-dl-foot";
+		const meta = document.createElement("div");
+		meta.className = "pi-dl-meta";
+		meta.dataset.tone = item.state === "completed" ? "done" : item.state === "progressing" ? "" : "error";
+		meta.textContent =
+			item.state === "completed"
+				? "已保存"
+				: item.state === "progressing"
+					? `${formatBytes(item.receivedBytes)}${total > 0 ? ` / ${formatBytes(total)}` : ""}`
+					: item.state === "cancelled"
+						? "已取消，未保存"
+						: "下载中断，未保存";
+		foot.appendChild(meta);
+
+		if (item.state === "completed") {
+			const actions = document.createElement("div");
+			actions.className = "pi-dl-actions";
+			actions.append(
+				chip("打开文件夹", () => revealFolder(item, meta)),
+				chip("复制路径", () => copyPath(item.path || "", meta)),
+			);
+			foot.appendChild(actions);
+		}
+
+		row.append(name, bar, foot);
+		return row;
+	}
+
 	/**
-	 * 复制保存路径：网页不能替用户打开文件（那是宿主能力），能做的只是把路径给到他手上。
-	 * 剪贴板被站点策略挡住时把路径原样摊在行里，不假装复制成功。
+	 * 在文件管理器里定位这个下载：只把 id 交给宿主，路径由主进程自己的下载记录解析。
+	 * 桥不在（老宿主 / 内部页）或主进程拒绝时把真相摊在行里，不假装成功。
 	 */
+	function revealFolder(item, meta) {
+		const bridge = window.__piDownloads;
+		if (!bridge || typeof bridge.reveal !== "function") {
+			meta.dataset.tone = "error";
+			meta.textContent = "无法打开：浏览器桥未就绪";
+			return;
+		}
+		const done = () => {
+			meta.dataset.tone = "done";
+			meta.textContent = "已在文件管理器中显示";
+		};
+		const failed = () => {
+			meta.dataset.tone = "error";
+			meta.textContent = "打不开，改用「复制路径」";
+		};
+		try {
+			const result = bridge.reveal(item.id);
+			if (result && typeof result.then === "function") result.then((ok) => (ok ? done() : failed()), failed);
+			else failed();
+		} catch (_) {
+			failed();
+		}
+	}
+
+	/** 复制保存路径：站点策略挡住时把路径原样摊在行里，不假装复制成功。 */
 	function copyPath(value, meta) {
 		if (!value) return;
 		const done = () => {
@@ -324,11 +393,12 @@
 			const result = navigator.clipboard && navigator.clipboard.writeText(value);
 			if (result && typeof result.then === "function") result.then(done, failed);
 			else failed();
-		} catch {
+		} catch (_) {
 			failed();
 		}
 	}
 
+	let autoTimer = 0;
 	function schedule(fn, delay) {
 		if (autoTimer) clearTimeout(autoTimer);
 		autoTimer = setTimeout(() => {
@@ -337,8 +407,10 @@
 		}, delay);
 	}
 
-	fab.addEventListener("click", () => {
+	fab.addEventListener("click", (event) => {
 		// 用户自己点了：这次展开/收起听他的，别让自动计时器又给收回去
+		event.preventDefault();
+		event.stopPropagation();
 		if (autoTimer) clearTimeout(autoTimer);
 		autoTimer = 0;
 		expanded = !expanded;
@@ -349,84 +421,75 @@
 	const onDocumentPointerDown = (event) => {
 		if (!expanded) return;
 		const target = event.target;
-		if (target === host || (target instanceof Node && host.contains(target))) return;
+		if (target instanceof Node && (root === target || root.contains(target))) return;
+		const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+		if (path.includes(root)) return;
 		expanded = false;
 		render();
 	};
 
-	document.addEventListener("pointerdown", onDocumentPointerDown, true);
-	window.addEventListener("keydown", (event) => {
+	function onKeyDown(event) {
 		if (event.key === "Escape" && expanded) {
 			expanded = false;
 			render();
 		}
-	});
+	}
 
-	// 拖动：右上角这块地方在不少站点上压着站点自己的按钮，用户能拖走才不算添麻烦
-	let dragging = false;
-	let moved = false;
-	let startX = 0;
-	let startY = 0;
-	let startTop = 14;
-	let startRight = 16;
-	fab.addEventListener("pointerdown", (event) => {
-		if (event.button !== 0) return;
-		dragging = true;
-		moved = false;
-		startX = event.clientX;
-		startY = event.clientY;
-		startTop = parseInt(host.style.top, 10) || 14;
-		startRight = parseInt(host.style.right, 10) || 16;
-		event.preventDefault();
-	});
-	window.addEventListener("pointermove", (event) => {
-		if (!dragging) return;
-		const dx = event.clientX - startX;
-		const dy = event.clientY - startY;
-		if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
-		const top = Math.max(4, Math.min(window.innerHeight - 40, startTop + dy));
-		const right = Math.max(4, Math.min(window.innerWidth - 40, startRight - dx));
-		host.style.top = `${top}px`;
-		host.style.right = `${right}px`;
+	document.addEventListener("pointerdown", onDocumentPointerDown, true);
+	window.addEventListener("keydown", onKeyDown);
+
+	// ── 摆位：优先住进悬浮球（和刷新钮同一列、一起拖动），没有 dock 就自建右下角宿主 ──
+	function dockSlot() {
+		const dock = window.__AIB_DOCK__;
+		if (!dock || !dock.ready || typeof dock.slot !== "function") return null;
 		try {
-			localStorage.setItem(POS_KEY, JSON.stringify({ top, right }));
-		} catch {}
-	});
-	window.addEventListener("pointerup", () => {
-		if (!dragging) return;
-		dragging = false;
-		// 拖动结束后紧接着的那次 click 不该被当成「展开/收起」
-		if (moved) {
-			const swallow = (event) => {
-				event.stopPropagation();
-				event.preventDefault();
-			};
-			fab.addEventListener("click", swallow, { capture: true, once: true });
-			setTimeout(() => fab.removeEventListener("click", swallow, true), 0);
+			return dock.slot("downloads");
+		} catch (_) {
+			return null;
 		}
-	});
+	}
 
-	try {
-		const saved = JSON.parse(localStorage.getItem(POS_KEY) || "null");
-		if (saved && Number.isFinite(saved.top) && Number.isFinite(saved.right)) {
-			host.style.top = `${Math.max(4, Math.min(window.innerHeight - 40, saved.top))}px`;
-			host.style.right = `${Math.max(4, Math.min(window.innerWidth - 40, saved.right))}px`;
-		}
-	} catch {}
+	function ownHost() {
+		const host = document.createElement("div");
+		host.id = "pi-download-host";
+		host.style.cssText = [
+			"position:fixed",
+			"right:28px",
+			"bottom:28px",
+			"z-index:2147483647",
+			"pointer-events:auto",
+		].join(";");
+		const shadow = host.attachShadow ? host.attachShadow({ mode: "open" }) : host;
+		return { host, shadow };
+	}
 
 	function mount() {
-		if (ensureMounted()) return;
-		// body 还没解析出来：等 DOM 就绪再挂（否则圆钮只能挂在 documentElement 上，被站点布局埋掉）
-		window.addEventListener("DOMContentLoaded", mount, { once: true });
+		const slot = dockSlot();
+		if (slot) {
+			slot.appendChild(root);
+			styleInto(slot.getRootNode());
+			return;
+		}
+		const { host, shadow } = ownHost();
+		shadow.append(root);
+		styleInto(shadow);
+		(document.body || document.documentElement).appendChild(host);
+		// 站点 SPA 会清空甚至换掉整个 body：宿主掉了就挂回去（只在没有 dock 的兜底路径上跑）
+		setInterval(() => {
+			if (host.isConnected) return;
+			const parent = document.body || document.documentElement;
+			if (parent) parent.appendChild(host);
+		}, 1500);
 	}
-	if (observer) observer.observe(document.documentElement, { childList: true });
-	mount();
+
+	if (document.body) mount();
+	else window.addEventListener("DOMContentLoaded", mount, { once: true });
 
 	window.__PI_DOWNLOADS__ = {
 		/** 主进程推来的当前下载列表（最近在前）；这里只做显示，不接受任何反向请求。 */
 		update(next) {
 			const list = Array.isArray(next) ? next.filter((item) => item && typeof item === "object") : [];
-			items = list.slice(0, 8);
+			items = list.slice(0, MAX_ROWS);
 			render();
 			// 新任务出现时把面板亮出来：这就是「有下载」的那声提示，几秒后自己收起
 			const fresh = items.some((item) => item.id && !knownIds.has(item.id));
@@ -441,12 +504,11 @@
 					render();
 				}, AUTO_EXPAND_MS);
 			} else if (!active) {
-				// 全部结束：留着让用户看一眼，然后自己消失
+				// 全部结束：留着让用户看一眼，然后收起面板（圆钮继续留在悬浮球里，直到列表过期）
 				schedule(() => {
 					expanded = false;
 					render();
-					host.style.display = "none";
-				}, AUTO_HIDE_MS);
+				}, AUTO_EXPAND_MS);
 			}
 		},
 		get items() {

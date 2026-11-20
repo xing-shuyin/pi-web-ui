@@ -63,6 +63,20 @@ describe("schema 解析 + 默认值", () => {
 		const p = list.find((x) => x.id === "bad")!;
 		expect(p.settingsSchema?.map((f) => f.key)).toEqual(["ok"]);
 	});
+
+	it("字段级 labelEn/hintEn 透传（英文态不露中文的契约）", async () => {
+		await makePlugin("en", {
+			settings: [
+				{ key: "a", type: "boolean", label: "开关", labelEn: "Enable", hint: "提示", hintEn: "Hint" },
+				{ key: "b", type: "text", label: "纯中文" },
+			],
+		});
+		const list = await mgr.list();
+		const p = list.find((x) => x.id === "en")!;
+		expect(p.settingsSchema?.[0]).toMatchObject({ labelEn: "Enable", hintEn: "Hint" });
+		expect(p.settingsSchema?.[1]).not.toHaveProperty("labelEn");
+		expect(p.settingsSchema?.[1]).not.toHaveProperty("hintEn");
+	});
 });
 
 describe("optionsFrom（select 候选值由宿主动态提供）", () => {

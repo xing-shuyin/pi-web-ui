@@ -3,6 +3,15 @@ import { chmod, glob, lstat, mkdir, open, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { writeAtomic } from "./atomic-file.js";
+import {
+	claudeHookSettings,
+	codexHookConfigArgs,
+	nativeCliHookCommand,
+	ensureAgySharedHooks,
+	NATIVE_CLI_HOOK_KEY_ENV,
+	nativeCliHookDispatcher,
+	nativeCliHookSpoolDir,
+} from "./native-cli-hooks.js";
 import type { NativeCliConfig } from "./protocol.js";
 import type { RemoteSshService } from "./remote-ssh-service.js";
 import {
@@ -152,7 +161,7 @@ export async function prepareNativeCliSessionLaunch(
 	const directory = remote
 		? join(home, ".pi-web", "native-cli", ref.key)
 		: path.resolve(ctx.dataDir, "native-cli", ref.key);
-	const eventsDirectory = join(directory, "events");
+	let eventsDirectory = join(directory, "events");
 	if (!ctx.observeOnly && remote) {
 		await exec(
 			`umask 077; [ ! -L ${quote(directory)} ] && [ ! -L ${quote(eventsDirectory)} ] && mkdir -p ${quote(eventsDirectory)} && chmod 700 ${quote(directory)} ${quote(eventsDirectory)}`,
@@ -186,14 +195,24 @@ export async function prepareNativeCliSessionLaunch(
 				((await lstat(directory)).isSymbolicLink() || (await lstat(eventsDirectory)).isSymbolicLink())
 			)
 				throw new Error("Native CLI observer directory must not be a symlink");
-			const names = (await readdir(eventsDirectory))
-				.filter((name) => EVENT_FILE.test(name))
-				.sort()
-				.slice(-NATIVE_CLI_EVENT_LIMIT);
+			// Legacy per-session directory plus the shared dispatcher spool: a conversation keeps the
+			// events written before the switch, and both sources are merged by event id.
+			const entries: Array<{ dir: string; name: string }> = [];
+			for (const dir of spoolDirectory ? [eventsDirectory, spoolDirectory] : [eventsDirectory]) {
+				let names: string[];
+				try {
+					names = (await readdir(dir)).filter((name) => EVENT_FILE.test(name));
+				} catch (error) {
+					if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+					throw error;
+				}
+				for (const name of names) entries.push({ dir, name });
+			}
+			const names = entries.sort((a, b) => a.name.localeCompare(b.name)).slice(-NATIVE_CLI_EVENT_LIMIT);
 			contents = await Promise.all(
-				names.map(async (name) => {
+				names.map(async ({ dir, name }) => {
 					try {
-						return await boundedRead(join(eventsDirectory, name), NATIVE_CLI_EVENT_BYTES);
+						return await boundedRead(join(dir, name), NATIVE_CLI_EVENT_BYTES);
 					} catch (error) {
 						if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
 						throw error;
@@ -224,6 +243,29 @@ export async function prepareNativeCliSessionLaunch(
 		}
 		return file.replace(/\\/g, "/");
 	};
+
+	// One dispatcher serves every engine: the CLI inherits PI_WEB_NATIVE_CLI_KEY, so a single shared
+	// hook config routes each conversation into its own spool no matter how the engine is configured.
+	let hookEnv: NodeJS.ProcessEnv | undefined;
+	let dispatcherScript: string | null = null;
+	let spoolDirectory: string | undefined;
+	if (!remote && !ctx.observeOnly && ["claude", "codex", "agy"].includes(config.preset)) {
+		try {
+			const script = await put(
+				"hook-dispatcher.mjs",
+				nativeCliHookDispatcher({ engine: config.preset, spoolDir: nativeCliHookSpoolDir(ctx.dataDir) }),
+			);
+			const spool = join(nativeCliHookSpoolDir(ctx.dataDir), ref.key);
+			await mkdir(spool, { recursive: true, mode: 0o700 });
+			await chmod(spool, 0o700);
+			eventsDirectory = eventsDirectory;
+			spoolDirectory = spool;
+			hookEnv = { [NATIVE_CLI_HOOK_KEY_ENV]: ref.key };
+			dispatcherScript = script;
+		} catch {
+			dispatcherScript = null;
+		}
+	}
 
 	let oldEvents: NativeCliHookEvent[] = [];
 	let observationFailed = false;
@@ -327,23 +369,30 @@ export async function prepareNativeCliSessionLaunch(
 		}
 		// A second --settings flag would replace the user's explicit settings argument.
 		if (!flag(optionArgs, ["--settings", "--disable-hooks", "--bare"])) {
-			const command = await reporter();
-			const hook = (type: string, matcher?: string) => [
-				{ ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command: `${command} ${type}`, timeout: 5 }] },
-			];
-			launchOptions.push(
-				"--settings",
-				JSON.stringify({
-					hooks: {
-						SessionStart: hook("session"),
-						UserPromptSubmit: hook("submitted"),
-						Stop: hook("done"),
-						PermissionRequest: hook("approval"),
-						Notification: hook("notification"),
-						StopFailure: hook("error"),
-					},
-				}),
-			);
+			if (dispatcherScript) {
+				launchOptions.push(
+					"--settings",
+					claudeHookSettings(nativeCliHookCommand("claude", process.execPath, dispatcherScript)),
+				);
+			} else {
+				const command = await reporter();
+				const hook = (type: string, matcher?: string) => [
+					{ ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command: `${command} ${type}`, timeout: 5 }] },
+				];
+				launchOptions.push(
+					"--settings",
+					JSON.stringify({
+						hooks: {
+							SessionStart: hook("session"),
+							UserPromptSubmit: hook("submitted"),
+							Stop: hook("done"),
+							PermissionRequest: hook("approval"),
+							Notification: hook("notification"),
+							StopFailure: hook("error"),
+						},
+					}),
+				);
+			}
 			capabilities.events = "hooks";
 			acceptsEvents = true;
 		}
@@ -439,28 +488,31 @@ export async function prepareNativeCliSessionLaunch(
 			// Official resume handles an absent exact ID with an error, never --last.
 			args.unshift("resume", id);
 		}
-		const command = await reporter();
-		const mappings: Array<[string, string, string?]> = [
-			["SessionStart", "session"],
-			["UserPromptSubmit", "submitted"],
-			["PermissionRequest", "approval"],
-			["Stop", "done"],
-			["PreToolUse", "question", "request_user_input"],
-			["PostToolUse", "working", "request_user_input"],
-		];
-		for (const [event, type, matcher] of mappings) {
-			if (conflicts.has(event)) continue;
-			const groups = [
-				{ ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command: `${command} ${type}`, timeout: 5 }] },
+		if (dispatcherScript) {
+			// Codex never runs an untrusted hook in automation; we ship the command ourselves.
+			launchOptions.push("--dangerously-bypass-hook-trust");
+			const hookArgs = codexHookConfigArgs(nativeCliHookCommand("codex", process.execPath, dispatcherScript));
+			for (let index = 0; index + 1 < hookArgs.length; index += 2) {
+				const event = /^hooks\.([A-Za-z0-9_]+)=/.exec(hookArgs[index + 1])?.[1];
+				// A user declaration wins: injecting over it would replace (not merge) their hook.
+				if (!event || conflicts.has(event)) continue;
+				launchOptions.push(hookArgs[index], hookArgs[index + 1]);
+				acceptsEvents = true;
+			}
+		} else {
+			const command = await reporter();
+			const mappings: Array<[string, string, string?]> = [
+				["SessionStart", "session"],
+				["UserPromptSubmit", "submitted"],
+				["PermissionRequest", "approval"],
+				["Stop", "done"],
 			];
-			const toml = groups
-				.map(
-					(group) =>
-						`{ ${matcher ? `matcher = ${JSON.stringify(matcher)}, ` : ""}hooks = [{ type = "command", command = ${JSON.stringify(group.hooks[0].command)}, timeout = 5 }] }`,
-				)
-				.join(", ");
-			launchOptions.push("--config", `hooks.${event}=[${toml}]`);
-			acceptsEvents = true;
+			for (const [event, type] of mappings) {
+				if (conflicts.has(event)) continue;
+				const toml = `{ hooks = [{ type = "command", command = ${JSON.stringify(`${command} ${type}`)}, timeout = 5 }] }`;
+				launchOptions.push("--config", `hooks.${event}=[${toml}]`);
+				acceptsEvents = true;
+			}
 		}
 		capabilities = {
 			resume:
@@ -474,24 +526,15 @@ export async function prepareNativeCliSessionLaunch(
 	} else if (config.preset === "agy") {
 		capabilities.resume = "explicit-only";
 		if (!explicit && ref.nativeId) launchOptions.push("--conversation", ref.nativeId);
-		if (!flag(optionArgs, ["--settings", "--disable-hooks", "--bare"])) {
-			const command = await reporter();
-			const hook = (type: string, matcher?: string) => [
-				{ ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command: `${command} ${type}`, timeout: 5 }] },
-			];
-			launchOptions.push(
-				"--settings",
-				JSON.stringify({
-					hooks: {
-						SessionStart: hook("session"),
-						PreInvocation: hook("submitted"),
-						PreToolUse: hook("working", "*"),
-						Stop: hook("done"),
-					},
-				}),
-			);
-			capabilities.events = "hooks";
-			acceptsEvents = true;
+		if (!remote && !ctx.observeOnly && dispatcherScript && !flag(optionArgs, ["--disable-hooks", "--bare"])) {
+			try {
+				await ensureAgySharedHooks(home, nativeCliHookCommand("agy", process.execPath, dispatcherScript));
+				capabilities.events = "hooks";
+				acceptsEvents = true;
+			} catch {
+				// An unwritable home must not block the launch; fall back to process-only observation.
+				capabilities.events = "process";
+			}
 		}
 	} else if (config.preset === "dsh") {
 		capabilities.resume = "explicit-only";
@@ -611,6 +654,7 @@ export async function prepareNativeCliSessionLaunch(
 	ctx.signal?.addEventListener("abort", stop, { once: true });
 	return {
 		config: ctx.observeOnly ? config : { ...config, args: addOptions(args, launchOptions) },
+		...(hookEnv ? { env: hookEnv } : {}),
 		ref,
 		capabilities,
 		start() {

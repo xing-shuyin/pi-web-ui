@@ -3,17 +3,18 @@ import { FiChevronDown, FiChevronUp, FiPlus, FiUsers } from "react-icons/fi";
 import { appUrl } from "../base-url";
 import { DeviceGroupMembers } from "./DeviceGroupMembers";
 import { DeviceGroupBotDialog } from "./DeviceGroupBotDialog";
+import { DeviceGroupEditDialog } from "./DeviceGroupEditDialog";
 import { withToken } from "../auth-token";
 import { useT } from "../i18n";
 import { openContextMenu } from "../context-menu-state";
 import type { UiSlotEntry } from "../ui-slots";
 import { hostEntryIcon } from "../host-icon";
 
-export type SidebarDeviceGroup = { id: string; name: string; botIds: string[] };
+export type SidebarDeviceGroup = { id: string; name: string; botIds: string[]; scope?: "local" | "shared" };
 export const DEVICE_GROUPS_CHANGED = "pi-web-ui:device-groups-changed";
 const ACTION_LABELS = {
 	rename: "deviceGroupManagerRename",
-	members: "deviceGroupManagerManageMembersTitle",
+	edit: "edit",
 	clear: "deviceGroupSectionClearMessages",
 	delete: "deviceGroupSectionDeleteGroup",
 } as const;
@@ -161,6 +162,7 @@ export function DeviceGroupSection({
 	const title = entry?.labelExplicit ? entry.label : t("deviceGroups");
 	const [collapsed, setCollapsed] = useState(false);
 	const [addingBots, setAddingBots] = useState<SidebarDeviceGroup | null>(null);
+	const [editingRoom, setEditingRoom] = useState<SidebarDeviceGroup | null>(null);
 	const [expandedRooms, setExpandedRooms] = useState<Set<string>>(() => new Set());
 	useEffect(() => onCollapsedChange?.(collapsed), [collapsed, onCollapsedChange]);
 	const [rooms, setRooms] = useState<SidebarDeviceGroup[]>([]);
@@ -191,9 +193,26 @@ export function DeviceGroupSection({
 				// 房间引擎在本机：不再要求“已配对远端 Hub”才去拉列表（旧 Hub 也能列本地房间）。
 				confirmedBound = status.roomsReady === true || !!(status.hubUrl && status.deviceId);
 				if (!confirmedBound) return [];
-				const result = await deviceGroupRequest<{ rooms: SidebarDeviceGroup[] }>("rooms", signal);
-				if (!Array.isArray(result.rooms)) throw new Error("Invalid rooms response");
-				return result.rooms;
+				const [local, shared] = await Promise.all([
+					deviceGroupRequest<{ rooms: SidebarDeviceGroup[] }>("rooms", signal),
+					// 共享群组：未配对（409）或远端不可达时视为空，不挡本机列表。
+					deviceGroupRequest<{ rooms: SidebarDeviceGroup[] }>("shared-rooms", signal).catch(() => ({
+						rooms: [] as SidebarDeviceGroup[],
+					})),
+				]);
+				if (!Array.isArray(local.rooms)) throw new Error("Invalid rooms response");
+				const seen = new Set<string>();
+				const merged: SidebarDeviceGroup[] = [];
+				for (const room of local.rooms) {
+					seen.add(room.id);
+					merged.push(room.scope ? room : { ...room, scope: "local" as const });
+				}
+				for (const room of Array.isArray(shared.rooms) ? shared.rooms : []) {
+					if (seen.has(room.id)) continue;
+					seen.add(room.id);
+					merged.push(room.scope ? room : { ...room, scope: "shared" as const });
+				}
+				return merged;
 			},
 			(next) => {
 				setBound(confirmedBound);
@@ -236,8 +255,10 @@ export function DeviceGroupSection({
 		setBusy(true);
 		setError(null);
 		try {
+			// 后端对 rooms/:id* 有共享回退，直连本地前缀即可；显式共享前缀少一次 404。
+			const prefix = room.scope === "shared" ? "shared-rooms" : "rooms";
 			await deviceGroupRequest(
-				`rooms/${encodeURIComponent(room.id)}/${action}`,
+				`${prefix}/${encodeURIComponent(room.id)}/${action}`,
 				controller.signal,
 				action === "rename" ? { name: name.trim() } : {},
 			);
@@ -255,7 +276,7 @@ export function DeviceGroupSection({
 	const menu = (event: React.MouseEvent, room: SidebarDeviceGroup) => {
 		event.preventDefault();
 		event.stopPropagation();
-		const entries: UiSlotEntry[] = (["rename", "members", "clear", "delete"] as const).map((action, order) => ({
+		const entries: UiSlotEntry[] = (["rename", "edit", "clear", "delete"] as const).map((action, order) => ({
 			id: `host:device-group-${action}`,
 			slot: "contextmenu.project",
 			source: "host",
@@ -279,7 +300,7 @@ export function DeviceGroupSection({
 				if (entry.action === "rename") {
 					setRenaming(room.id);
 					setName(room.name);
-				} else if (entry.action === "members") openGroup({ roomId: room.id, manage: true });
+				} else if (entry.action === "edit") setEditingRoom(room);
 				else if (entry.action === "clear" || entry.action === "delete") void mutate(room, entry.action);
 			},
 		});
@@ -343,7 +364,12 @@ export function DeviceGroupSection({
 							onContextMenu={(event) => menu(event, room)}
 						>
 							<FiUsers />
-							<span className="dg-side-name">{room.name}</span>
+							<span className="dg-side-name">
+								{room.name}
+								{room.scope === "shared" && (
+									<small style={{ marginInlineStart: 6, opacity: 0.75 }}>{t("deviceGroupManagerSharedSuffix")}</small>
+								)}
+							</span>
 						</div>
 						<button
 							type="button"
@@ -424,6 +450,7 @@ export function DeviceGroupSection({
 			</div>
 			{!collapsed && body}
 			{addingBots && <DeviceGroupBotDialog room={addingBots} onClose={() => setAddingBots(null)} />}
+			{editingRoom && <DeviceGroupEditDialog roomId={editingRoom.id} onClose={() => setEditingRoom(null)} />}
 		</section>
 	);
 }

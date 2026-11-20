@@ -1587,7 +1587,14 @@ fi
 
 	async createCommandPty(
 		uri: string,
-		command: { file: string; args: string[]; env?: NodeJS.ProcessEnv; unsetEnv?: string[] },
+		command: {
+			file: string;
+			args: string[];
+			env?: NodeJS.ProcessEnv;
+			unsetEnv?: string[];
+			/** Files materialized on the remote host before exec; content travels over the channel, never in argv. */
+			files?: Array<{ path: string; content: string }>;
+		},
 		cols: number,
 		rows: number,
 		options: {
@@ -1610,9 +1617,23 @@ fi
 				throw new Error("Invalid remote environment value");
 			if (value !== undefined) assignments.push(`export ${key}=${shellQuotePosix(value)}`);
 		}
-		let payload = assignments.join("\n") + "\n";
-		if (Buffer.byteLength(payload, "utf8") > 64 * 1024) throw new Error("Remote environment exceeds 64 KiB");
 		const nonce = randomBytes(24).toString("hex");
+		const heredoc = `PI_WEB_FILE_${nonce}`;
+		const writes: string[] = [];
+		for (const file of command.files ?? []) {
+			if (!file.path.startsWith("/") || /[\x00-\x1f\x7f]/.test(file.path))
+				throw new Error("Remote file requires an absolute POSIX path");
+			if (!file.content.trim() || file.content.split("\n").includes(heredoc))
+				throw new Error("Invalid remote file content");
+			writes.push(
+				"umask 077",
+				`cat > ${shellQuotePosix(file.path)} <<'${heredoc}'
+${file.content.replace(/\n+$/, "")}
+${heredoc}`,
+			);
+		}
+		let payload = [...writes, ...assignments].join("\n") + "\n";
+		if (Buffer.byteLength(payload, "utf8") > 64 * 1024) throw new Error("Remote environment exceeds 64 KiB");
 		const ready = `__PI_WEB_READY_${nonce}__`;
 		const started = `__PI_WEB_STARTED_${nonce}__`;
 		const delimiter = `PI_WEB_END_${nonce}`;

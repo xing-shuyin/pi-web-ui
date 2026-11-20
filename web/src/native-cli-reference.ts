@@ -24,6 +24,11 @@ export function planNativeCliReferences(references: readonly NativeCliReferenceA
 				attachments.push({ ...reference });
 				descriptions.push(`Web page reference: ${JSON.stringify({ name: reference.name, target: reference.path })}`);
 				break;
+			case "terminal":
+				descriptions.push(
+					`Terminal reference: ${JSON.stringify({ name: reference.name, terminalId: reference.terminalId })}`,
+				);
+				break;
 			case "conversation":
 				attachments.push({ ...reference });
 				descriptions.push(

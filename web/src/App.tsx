@@ -202,8 +202,9 @@ import { useWallpaperEffect } from "./wallpaper";
 export interface PendingAttachment {
 	path: string;
 	name: string;
-	mode?: "inline" | "reference" | "lines" | "page" | "conversation" | "quote" | "canvas";
+	mode?: "inline" | "reference" | "lines" | "page" | "conversation" | "quote" | "canvas" | "terminal";
 	quote?: import("./types").TextQuote;
+	terminalId?: string;
 	conversationId?: string;
 	sessionPath?: string;
 	isDir?: boolean;
@@ -3342,6 +3343,7 @@ export function App() {
 													sessionDraft={chat.state?.draft ?? null}
 													sessionId={chat.state?.sessionId ?? ""}
 													preserveDraftAcrossConversations={chat.settings?.preserveDraftAcrossConversations ?? false}
+													goal={chat.goal}
 												/>
 											)}
 										</>

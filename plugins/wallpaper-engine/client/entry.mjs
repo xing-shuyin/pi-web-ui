@@ -2,8 +2,25 @@ import { DRAWER_CSS, getGlassThemeCss } from "./styles.mjs?v=0.3.65";
 import { esc as escapeHtml } from "@pi-web-ui/plugin-sdk/client";
 import { makeT } from "./i18n.mjs";
 
-/** 抽屉与检查器文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。 */
+/** Drawer and inspector copy: parsing / fallback / interpolation live in the SDK; read from the host locale here. */
 const t = makeT();
+
+/** Refill drawer static texts in place (input values and listeners are kept). */
+function applyDrawerStaticTexts(root) {
+	const scope = root ?? document;
+	scope.querySelectorAll("[data-i18n]").forEach((n) => {
+		const k = n.getAttribute("data-i18n");
+		if (k) n.textContent = t(k);
+	});
+	scope.querySelectorAll("[data-i18n-ph]").forEach((n) => {
+		const k = n.getAttribute("data-i18n-ph");
+		if (k) n.setAttribute("placeholder", t(k));
+	});
+	scope.querySelectorAll("[data-i18n-title]").forEach((n) => {
+		const k = n.getAttribute("data-i18n-title");
+		if (k) n.setAttribute("title", t(k));
+	});
+}
 
 const RUNTIME_KEY = "__piWallpaperEngineRuntime";
 
@@ -38,7 +55,7 @@ if (prev?.destroy) {
 		prev.destroy();
 	} catch (err) {
 		// developer-facing, not UI: browser console only
-		console.warn("[wallpaper-engine] 清理上一轮实例失败：", err);
+		console.warn("[wallpaper-engine] failed to dispose the previous instance:", err);
 	}
 }
 
@@ -118,7 +135,7 @@ async function loadWebWallGL() {
 		}
 	} catch (err) {
 		// developer-facing, not UI: browser console only
-		console.warn("[wallpaper-engine] WebWallGL 模块加载失败，将自动降级为静态预览：", err);
+		console.warn("[wallpaper-engine] WebWallGL failed to load, falling back to static preview:", err);
 	}
 
 	return null;
@@ -591,7 +608,7 @@ function createBackgroundLayer() {
 				return;
 			} catch (err) {
 				// developer-facing, not UI: browser console only
-				console.warn("[wallpaper-engine] Scene 壁纸渲染失败，平滑保持海报预览：", err);
+				console.warn("[wallpaper-engine] Scene wallpaper render failed, keeping poster preview:", err);
 				mountEl.remove();
 				return;
 			}
@@ -677,7 +694,7 @@ function createBackgroundLayer() {
 				currentSceneInstance.setVolume(vol);
 			} catch (err) {
 				// developer-facing, not UI: browser console only
-				console.warn("[wallpaper-engine] 设置 Scene 音量失败：", err);
+				console.warn("[wallpaper-engine] failed to set Scene volume:", err);
 			}
 		}
 		if (currentMediaEl instanceof HTMLIFrameElement) {
@@ -729,10 +746,10 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 
 	drawer.innerHTML = `
 		<div class="pi-we-header">
-			<h3 class="pi-we-title" title="${t("libraryTitleTooltip")}">${t("libraryTitle")}</h3>
+			<h3 class="pi-we-title" data-i18n="libraryTitle" data-i18n-title="libraryTitleTooltip" title="${t("libraryTitleTooltip")}">${t("libraryTitle")}</h3>
 			<div class="pi-we-header-actions">
-				<button class="pi-we-icon-btn" id="pi-we-toggle-settings-btn" title="${t("settingsToggleTooltip")}">⚙️ <span class="pi-we-btn-label">${t("settingsToggle")}</span> <span id="pi-we-toggle-settings-arrow">▾</span></button>
-				<button class="pi-we-icon-btn" id="pi-we-rescan-btn" title="${t("rescanTooltip")}">🔄 <span class="pi-we-btn-label">${t("rescan")}</span></button>
+				<button class="pi-we-icon-btn" id="pi-we-toggle-settings-btn" data-i18n-title="settingsToggleTooltip" title="${t("settingsToggleTooltip")}">⚙️ <span class="pi-we-btn-label" data-i18n="settingsToggle">${t("settingsToggle")}</span> <span id="pi-we-toggle-settings-arrow">▾</span></button>
+				<button class="pi-we-icon-btn" id="pi-we-rescan-btn" data-i18n-title="rescanTooltip" title="${t("rescanTooltip")}">🔄 <span class="pi-we-btn-label" data-i18n="rescan">${t("rescan")}</span></button>
 				<button class="pi-we-icon-btn pi-we-close-btn" id="pi-we-close-btn" title="${t("closeLibraryTooltip")}">✕</button>
 			</div>
 		</div>
@@ -814,14 +831,14 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 		</div>
 
 		<div class="pi-we-filter-bar">
-			<input type="text" class="pi-we-search-input" id="pi-we-search" placeholder="${t("searchPlaceholder")}" />
+			<input type="text" class="pi-we-search-input" id="pi-we-search" data-i18n-ph="searchPlaceholder" placeholder="${t("searchPlaceholder")}" />
 			<div class="pi-we-tabs">
-				<button class="pi-we-tab active" data-tab="all">${t("tabAll")}</button>
-				<button class="pi-we-tab" data-tab="fav">${t("tabFavorites")}</button>
-				<button class="pi-we-tab" data-tab="video">${t("tabVideo")}</button>
-				<button class="pi-we-tab" data-tab="scene">${t("tabScene")}</button>
-				<button class="pi-we-tab" data-tab="web">${t("tabWeb")}</button>
-				<button class="pi-we-tab" data-tab="image">${t("tabImage")}</button>
+				<button class="pi-we-tab active" data-tab="all" data-i18n="tabAll">${t("tabAll")}</button>
+				<button class="pi-we-tab" data-tab="fav" data-i18n="tabFavorites">${t("tabFavorites")}</button>
+				<button class="pi-we-tab" data-tab="video" data-i18n="tabVideo">${t("tabVideo")}</button>
+				<button class="pi-we-tab" data-tab="scene" data-i18n="tabScene">${t("tabScene")}</button>
+				<button class="pi-we-tab" data-tab="web" data-i18n="tabWeb">${t("tabWeb")}</button>
+				<button class="pi-we-tab" data-tab="image" data-i18n="tabImage">${t("tabImage")}</button>
 				<button class="pi-we-mode-btn" id="pi-we-mode-btn" title="${t("modeTooltip")}">${t("modePaged")}</button>
 			</div>
 		</div>
@@ -1401,7 +1418,36 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 		if (muteCheck) muteCheck.checked = Boolean(s.muteAudio);
 	}
 
+	// Host locale is the single source of truth: refill static texts in place and repaint the grid.
+	function relabelDrawer() {
+		try {
+			applyDrawerStaticTexts(drawer);
+		} catch {}
+		try {
+			renderGrid();
+		} catch {}
+	}
+	let offDrawerLocale = null;
+	let onDrawerLocaleEvent = null;
+	try {
+		offDrawerLocale = globalThis.window?.__piWebUiHost?.locale?.onChange?.(() => relabelDrawer()) ?? null;
+	} catch {
+		offDrawerLocale = null;
+	}
+	try {
+		onDrawerLocaleEvent = () => relabelDrawer();
+		globalThis.window?.addEventListener("pi-web-ui:locale", onDrawerLocaleEvent);
+	} catch {
+		onDrawerLocaleEvent = null;
+	}
+
 	function destroy() {
+		try {
+			offDrawerLocale?.();
+		} catch {}
+		try {
+			if (onDrawerLocaleEvent) globalThis.window?.removeEventListener("pi-web-ui:locale", onDrawerLocaleEvent);
+		} catch {}
 		window.removeEventListener("keydown", onKeyDown);
 		backdrop.remove();
 		drawer.remove();

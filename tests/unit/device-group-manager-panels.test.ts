@@ -153,7 +153,7 @@ describe("device center group Router and work panels", () => {
 		expect(rooms[0].router.enabled).toBe(true);
 		expect(row("one").textContent).toContain("AI Router · local · p/model · off");
 		expect(panel()?.querySelector("h3")?.textContent).toBe("First group");
-		await click("Members", row("one"));
+		await click("Edit", row("one"));
 		expect(host.querySelector("#dg-manager-edit-primary")).toBeNull();
 	});
 
@@ -317,8 +317,8 @@ describe("device center group Router and work panels", () => {
 			if (operation === "delete") {
 				await act(async () => row("one").querySelector<HTMLButtonElement>('button[title="Delete group"]')!.click());
 			} else if (operation === "members") {
-				await click("Members", row("one"));
-				await click("Save Members");
+				await click("Edit", row("one"));
+				await click("Save Members", document.body);
 			} else {
 				if (operation === "create") {
 					await click("Create Group");
@@ -386,8 +386,8 @@ describe("device center group Router and work panels", () => {
 			await click("AI Router", row("one"));
 			await click("Open chat", row("one"));
 			expect((opened.mock.calls[0][0] as CustomEvent).detail).toEqual({ roomId: "one" });
-			await click("Members", row("one"));
-			await click("Save Members");
+			await click("Edit", row("one"));
+			await click("Save Members", document.body);
 			expect(JSON.parse(String(calls("rooms/one/members")[0][1].body))).toEqual({
 				botIds: ["bot"],
 				primaryBotId: "bot",

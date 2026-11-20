@@ -290,7 +290,7 @@ export default {
 			state.activeAgentId = pickAnyOnline();
 			if (state.activeAgentId) {
 				const nm = state.agents.get(state.activeAgentId)?.name || state.activeAgentId;
-				notifyDebounced("info", `网络隧道：出口设备已切换到 ${nm}`);
+				notifyDebounced("info", `网络隧道：出口设备已切换到 ${nm}`, `Tunnel: egress device switched to ${nm}`);
 			}
 		};
 		const CLI_VER_PUBLISH = "p16";
@@ -341,12 +341,12 @@ export default {
 			const safeToken = /^[a-zA-Z0-9_-]+$/.test(token) ? token : "";
 			return code.replaceAll("{{TOKEN}}", safeToken).replaceAll("{{SERVER}}", `ws://${safeHost}`);
 		};
-		const notifyDebounced = (level, text) => {
+		const notifyDebounced = (level, textZh, textEn) => {
 			const now = Date.now();
 			if (now - state.lastNotifyAt < 30_000) return;
 			state.lastNotifyAt = now;
 			try {
-				host.notify(level, text);
+				host.notify(level, textZh, textEn ?? textZh);
 			} catch {}
 		};
 
@@ -465,7 +465,11 @@ export default {
 								}
 							}
 							try {
-								notifyDebounced("info", `网络隧道：设备 ${a?.name || aid}（${a?.os || "未知系统"}）已就绪`);
+								notifyDebounced(
+									"info",
+									`网络隧道：设备 ${a?.name || aid}（${a?.os || "未知系统"}）已就绪`,
+									`Tunnel: device ${a?.name || aid} (${a?.os || "unknown OS"}) ready`,
+								);
 							} catch {}
 							if (!agentById(state.activeAgentId)) state.activeAgentId = aid;
 							if (devCfg[a.name] && !a.cfgSent) {
@@ -590,7 +594,7 @@ export default {
 						state.conns.delete(cid);
 					}
 					ensureActive();
-					notifyDebounced("warning", `网络隧道：设备 ${nm} 已断开`);
+					notifyDebounced("warning", `网络隧道：设备 ${nm} 已断开`, `Tunnel: device ${nm} disconnected`);
 					if (meshEnabled() && meshWatcher) meshRegistry(meshAgentName(nm), nm, false);
 				});
 				ws.on("error", () => {});
@@ -928,7 +932,7 @@ export default {
 			const upWs = await listenSafe(httpSrv, wsPort, "0.0.0.0", `WS:${wsPort}`);
 			const upSocks = await listenSafe(socksSrv, socksPort, "127.0.0.1", `SOCKS:${socksPort}`);
 			running = upWs || upSocks;
-			if (running) notifyDebounced("info", "网络隧道服务已启动");
+			if (running) notifyDebounced("info", "网络隧道服务已启动", "Tunnel service started");
 			if (running)
 				setTimeout(() => {
 					try {
@@ -969,13 +973,17 @@ export default {
 				socksSrv.close();
 			} catch {}
 			running = false;
-			notifyDebounced("info", "网络隧道服务已停止");
+			notifyDebounced("info", "网络隧道服务已停止", "Tunnel service stopped");
 		}
 
 		const listenSafe = (srv, port, addr, name) =>
 			new Promise((resolve) => {
 				srv.once("error", (e) => {
-					notifyDebounced("error", `pi-tunnel ${name} 启动失败：${e.code || e.message}`);
+					notifyDebounced(
+						"error",
+						`pi-tunnel ${name} 启动失败：${e.code || e.message}`,
+						`pi-tunnel ${name} failed to start: ${e.code || e.message}`,
+					);
 					resolve(false);
 				});
 				srv.listen(port, addr, () => resolve(true));
@@ -1040,7 +1048,11 @@ export default {
 			res.end(
 				JSON.stringify({ ok: true, tokenPrefix: `${token.slice(0, 4)}…`, hint: "令牌已重置：所有设备需重新下载 CLI" }),
 			);
-			notifyDebounced("info", "网络隧道：令牌已重置，所有设备 CLI 需重新下载");
+			notifyDebounced(
+				"info",
+				"网络隧道：令牌已重置，所有设备 CLI 需重新下载",
+				"Tunnel: token rotated, all device CLIs must be re-downloaded",
+			);
 		});
 		const offStart = host.route("POST", "/start", async (_req, res) => {
 			const ok = await startTunnel();
@@ -1068,7 +1080,7 @@ export default {
 				}
 				state.activeAgentId = id;
 				const nm = state.agents.get(id)?.name || id;
-				notifyDebounced("info", `网络隧道：出口已切换到 ${nm}`);
+				notifyDebounced("info", `网络隧道：出口已切换到 ${nm}`, `Tunnel: egress switched to ${nm}`);
 				res.setHeader("content-type", "application/json");
 				res.end(JSON.stringify({ ok: true, activeAgentId: id }));
 			});
@@ -1103,6 +1115,7 @@ export default {
 					host.notify(
 						"info",
 						`网络隧道：设备 ${nm} 配置已更新（fsWrite=${next.fsWrite}${a ? "" : "，待设备上线生效"}）`,
+						`Tunnel: device ${nm} config updated (fsWrite=${next.fsWrite}${a ? "" : ", pending until online"})`,
 					);
 				} catch {}
 				res.end(JSON.stringify({ ok: true, name: nm, config: next, pending: !a }));
@@ -1141,7 +1154,11 @@ export default {
 				if (!a) return res.end(JSON.stringify({ ok: false, error: "设备不在线" }));
 				toAgent(id, { t: "uninstall" });
 				try {
-					host.notify("warning", `网络隧道：已下发卸载指令到 ${a.name || id}（停常驻+删文件）`);
+					host.notify(
+						"warning",
+						`网络隧道：已下发卸载指令到 ${a.name || id}（停常驻+删文件）`,
+						`Tunnel: uninstall sent to ${a.name || id} (stop service + remove files)`,
+					);
 				} catch {}
 				res.end(JSON.stringify({ ok: true }));
 			}
@@ -1235,7 +1252,7 @@ export default {
 			if (j.clear) {
 				host.storage.set("modelEnv", "");
 				try {
-					host.notify("info", "网络隧道：模型通道已恢复自动挑选");
+					host.notify("info", "网络隧道：模型通道已恢复自动挑选", "Tunnel: model channel back to auto");
 				} catch {}
 				return res.end(JSON.stringify({ ok: true, cleared: true }));
 			}
@@ -1246,7 +1263,11 @@ export default {
 				return res.end(JSON.stringify({ ok: false, error: "需要 baseUrl（http/https）、apiKey、model 三项齐全" }));
 			host.storage.set("modelEnv", JSON.stringify({ baseUrl, apiKey, model }));
 			try {
-				host.notify("info", `网络隧道：设备任务模型通道已手动指定 → ${model}`);
+				host.notify(
+					"info",
+					`网络隧道：设备任务模型通道已手动指定 → ${model}`,
+					`Tunnel: device task model pinned → ${model}`,
+				);
 			} catch {}
 			res.end(JSON.stringify({ ok: true }));
 		});
@@ -1259,15 +1280,15 @@ export default {
 			name: "tunnel_fetch",
 			label: "隧道探测",
 			description:
-				"经「主人设备反向隧道」发 HTTP 请求：数据面在出口设备所在网络执行，DNS 也在出口设备侧解析。" +
-				"用于巡检主人网络（出口 IP、内网设备端口、经主人网络访问外网）。" +
-				"无在线设备时快速失败。多设备时走面板选中的出口设备。" +
-				'示例: tunnel_fetch {url:"http://myip.ipip.net"} 返回出口设备网络的出口 IP。',
+				"Fetch a URL through the owner-device reverse tunnel: runs on the egress device network with DNS resolved there. " +
+				"Use it to probe the owner network (egress IP, LAN ports, outside access via the owner network). " +
+				"Fails fast with no online device; multi-device setups use the panel-selected egress device. " +
+				'Example: tunnel_fetch {url:"http://myip.ipip.net"} returns the egress IP.',
 			parameters: {
 				type: "object",
 				properties: {
-					url: { type: "string", description: "目标 URL（http/https），域名由出口设备侧解析" },
-					timeout: { type: "number", description: "超时秒数，默认 20，范围 3-60" },
+					url: { type: "string", description: "Target URL (http/https), resolved on the egress device" },
+					timeout: { type: "number", description: "Timeout in seconds, default 20, range 3-60" },
 				},
 				required: ["url"],
 			},
@@ -1310,7 +1331,7 @@ export default {
 		});
 
 		if (running) {
-			notifyDebounced("info", "网络隧道插件已就绪（多设备模式）");
+			notifyDebounced("info", "网络隧道插件已就绪（多设备模式）", "Tunnel plugin ready (multi-device mode)");
 		}
 
 		return () => {

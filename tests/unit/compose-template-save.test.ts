@@ -144,6 +144,6 @@ describe("compose template persistence and state synchronization", () => {
 		expect(appendToken("   ", "tools")).toBe("{{tools}}");
 
 		expect(appendToken("{{soul}}", "tools")).toBe("{{soul}}\n\n{{tools}}");
-		expect(appendToken("{{soul}}\n\n{{append}}", "guidelines")).toBe("{{soul}}\n\n{{append}}\n\n{{guidelines}}");
+		expect(appendToken("{{soul}}\n\n{{append}}", "markers")).toBe("{{soul}}\n\n{{append}}\n\n{{markers}}");
 	});
 });

@@ -108,6 +108,8 @@ function createApp(container) {
 	let notice = "";
 	let timer = null;
 	let destroyed = false;
+	let offLocale = null;
+	let onLocaleEvent = null;
 
 	async function api(path, init) {
 		const res = await fetch(`${API}${path}`, { headers: { "Content-Type": "application/json" }, ...init });
@@ -341,11 +343,36 @@ function createApp(container) {
 			render();
 			void refresh();
 			timer = setInterval(() => void refresh(), 3000);
+			// 宿主全局语言单源：首帧 t() 已按 locale.current() 取词，切语言后重渲染
+			try {
+				offLocale =
+					window.__piWebUiHost?.locale?.onChange?.(() => {
+						if (!destroyed) render();
+					}) ?? null;
+			} catch {
+				offLocale = null;
+			}
+			try {
+				onLocaleEvent = () => {
+					if (!destroyed) render();
+				};
+				window.addEventListener("pi-web-ui:locale", onLocaleEvent);
+			} catch {
+				onLocaleEvent = null;
+			}
 		},
 		destroy() {
 			destroyed = true;
 			if (timer) clearInterval(timer);
 			timer = null;
+			try {
+				offLocale?.();
+			} catch {}
+			try {
+				if (onLocaleEvent) window.removeEventListener("pi-web-ui:locale", onLocaleEvent);
+			} catch {}
+			offLocale = null;
+			onLocaleEvent = null;
 			root.removeEventListener("click", onClick);
 			root.removeEventListener("input", onInput);
 			root.remove();

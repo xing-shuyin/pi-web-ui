@@ -37,6 +37,7 @@ export const DICT = {
 		cardTextLabel: "Markdown 正文内容:",
 		cardTextPlaceholder: "支持企微 Markdown 格式，例如：\n> **构建状态**：成功\n> **提交信息**：修复已知问题",
 		sendToGroup: "🚀 一键推送到企业微信群",
+		defaultNotifyTitle: "通知",
 		pushTextRequired: "请输入 Markdown 正文内容",
 		sending: "发送中...",
 		pushSuccess: "✅ 企业微信消息推送成功！",
@@ -115,6 +116,7 @@ export const DICT = {
 		cardTextLabel: "Markdown 正文內容:",
 		cardTextPlaceholder: "支援企微 Markdown 格式，例如：\n> **構建狀態**：成功\n> **提交資訊**：修復已知問題",
 		sendToGroup: "🚀 一鍵推送到企業微信群",
+		defaultNotifyTitle: "通知",
 		pushTextRequired: "請輸入 Markdown 正文內容",
 		sending: "傳送中...",
 		pushSuccess: "✅ 企業微信訊息推送成功！",
@@ -194,6 +196,7 @@ export const DICT = {
 		cardTextPlaceholder:
 			"WeCom Markdown is supported, e.g.:\n> **Build status**: success\n> **Commit message**: fixed known issues",
 		sendToGroup: "🚀 Push to the WeCom group",
+		defaultNotifyTitle: "Notification",
 		pushTextRequired: "Enter the Markdown body first",
 		sending: "Sending...",
 		pushSuccess: "✅ WeCom message pushed!",

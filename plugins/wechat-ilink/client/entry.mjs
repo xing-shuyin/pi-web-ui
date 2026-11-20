@@ -46,11 +46,29 @@ function loadQrFactory() {
 	return qrFactoryPromise;
 }
 
-import { esc } from "@pi-web-ui/plugin-sdk/client";
-import { makeT } from "./i18n.mjs";
+import { createPluginI18n, esc } from "@pi-web-ui/plugin-sdk/client";
+import { DICT } from "./i18n.mjs";
 
-/** 面板文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。 */
-const t = makeT();
+/** 面板文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。禁自建语言偏好，只跟宿主全局语言。 */
+const i18n = createPluginI18n(DICT);
+const t = (key, params) => i18n.t(key, params);
+
+/** 语言切换时就地重渲染静态文案（输入值与监听保留），动态状态由 renderState() 重画。 */
+function applyStaticTexts(root) {
+	const scope = root ?? document;
+	scope.querySelectorAll("[data-i18n]").forEach((n) => {
+		const k = n.getAttribute("data-i18n");
+		if (k) n.textContent = t(k);
+	});
+	scope.querySelectorAll("[data-i18n-ph]").forEach((n) => {
+		const k = n.getAttribute("data-i18n-ph");
+		if (k) n.setAttribute("placeholder", t(k));
+	});
+	scope.querySelectorAll("[data-i18n-title]").forEach((n) => {
+		const k = n.getAttribute("data-i18n-title");
+		if (k) n.setAttribute("title", t(k));
+	});
+}
 
 function timeStr(at) {
 	try {
@@ -62,6 +80,10 @@ function timeStr(at) {
 
 export default {
 	mount(container, ctx) {
+		// 首帧：显式读取宿主全局语言（SDK 内部同样以 locale.current() 为单源）
+		try {
+			globalThis.window?.__piWebUiHost?.locale?.current?.();
+		} catch {}
 		container.innerHTML = `
 <div class="wx">
 	<style>
@@ -100,55 +122,55 @@ export default {
 			.wx button { min-height: 40px; }
 		}
 	</style>
-	<h2>${t("title")} <span class="pill off" data-ref="pill">${t("statusDisconnected")}</span></h2>
-	<p class="hint">${t("hint")}</p>
+	<h2>${t("title")} <span class="pill off" data-ref="pill" data-i18n="statusDisconnected">${t("statusDisconnected")}</span></h2>
+	<p class="hint" data-i18n="hint">${t("hint")}</p>
 	<section data-ref="sec-workspace">
-		<h3>${t("wsTitle")}</h3>
-		<div class="ws-status" data-ref="ws-status">${t("reading")}</div>
+		<h3 data-i18n="wsTitle">${t("wsTitle")}</h3>
+		<div class="ws-status" data-ref="ws-status" data-i18n="reading">${t("reading")}</div>
 		<div class="row">
-			<input data-ref="ws-input" placeholder="${t("wsInputPlaceholder")}" style="flex:1;min-width:220px" />
+			<input data-ref="ws-input" data-i18n-ph="wsInputPlaceholder" placeholder="${t("wsInputPlaceholder")}" style="flex:1;min-width:220px" />
 			<select data-ref="ws-select" style="min-width:140px;background:var(--bg-elev,#16161d);color:inherit;border:1px solid var(--border,#333);border-radius:6px;padding:6px 8px;font:inherit;">
-				<option value="">${t("wsQuickPick")}</option>
+				<option value="" data-i18n="wsQuickPick">${t("wsQuickPick")}</option>
 			</select>
-			<button class="ghost" data-ref="ws-browse">${t("wsBrowse")}</button>
-			<button data-ref="ws-save">${t("wsSave")}</button>
-			<button class="ghost" data-ref="ws-use-cwd">${t("wsUseCwd")}</button>
-			<button class="ghost" data-ref="ws-open-project">${t("wsOpenProject")}</button>
-			<button class="ghost" data-ref="ws-clear">${t("wsClear")}</button>
+			<button class="ghost" data-ref="ws-browse" data-i18n="wsBrowse">${t("wsBrowse")}</button>
+			<button data-ref="ws-save" data-i18n="wsSave">${t("wsSave")}</button>
+			<button class="ghost" data-ref="ws-use-cwd" data-i18n="wsUseCwd">${t("wsUseCwd")}</button>
+			<button class="ghost" data-ref="ws-open-project" data-i18n="wsOpenProject">${t("wsOpenProject")}</button>
+			<button class="ghost" data-ref="ws-clear" data-i18n="wsClear">${t("wsClear")}</button>
 		</div>
 	</section>
 	<section data-ref="sec-model">
-		<h3>${t("modelTitle")}</h3>
+		<h3 data-i18n="modelTitle">${t("modelTitle")}</h3>
 		<div class="row">
-			<input data-ref="model-input" placeholder="${t("modelInputPlaceholder")}" style="flex:2;min-width:180px" />
-			<button class="ghost" data-ref="model-browse">${t("modelBrowse")}</button>
+			<input data-ref="model-input" data-i18n-ph="modelInputPlaceholder" placeholder="${t("modelInputPlaceholder")}" style="flex:2;min-width:180px" />
+			<button class="ghost" data-ref="model-browse" data-i18n="modelBrowse">${t("modelBrowse")}</button>
 			<select data-ref="thinking-select" style="min-width:120px;background:var(--bg-elev,#16161d);color:inherit;border:1px solid var(--border,#333);border-radius:6px;padding:6px 8px;font:inherit;">
-				<option value="">${t("thinkingFollowGlobal")}</option>
-				<option value="off">${t("thinkingOff")}</option>
-				<option value="low">${t("thinkingLow")}</option>
-				<option value="medium">${t("thinkingMedium")}</option>
-				<option value="high">${t("thinkingHigh")}</option>
-				<option value="max">${t("thinkingMax")}</option>
+				<option value="" data-i18n="thinkingFollowGlobal">${t("thinkingFollowGlobal")}</option>
+				<option value="off" data-i18n="thinkingOff">${t("thinkingOff")}</option>
+				<option value="low" data-i18n="thinkingLow">${t("thinkingLow")}</option>
+				<option value="medium" data-i18n="thinkingMedium">${t("thinkingMedium")}</option>
+				<option value="high" data-i18n="thinkingHigh">${t("thinkingHigh")}</option>
+				<option value="max" data-i18n="thinkingMax">${t("thinkingMax")}</option>
 			</select>
-			<button data-ref="model-save">${t("modelSave")}</button>
-			<button class="ghost" data-ref="model-clear">${t("modelClear")}</button>
+			<button data-ref="model-save" data-i18n="modelSave">${t("modelSave")}</button>
+			<button class="ghost" data-ref="model-clear" data-i18n="modelClear">${t("modelClear")}</button>
 		</div>
 		<div style="margin-top:8px">
 			<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;opacity:.9">
 				<input type="checkbox" data-ref="bind-active-check" />
-				<span>${t("bindActive")}</span>
+				<span data-i18n="bindActive">${t("bindActive")}</span>
 			</label>
 		</div>
 	</section>
-	<section data-ref="sec-login"><h3>${t("loginSection")}</h3><div data-ref="login"></div></section>
-	<section data-ref="sec-pair" style="display:none"><h3>${t("pendingSection")}</h3><ul data-ref="pending"></ul></section>
-	<section><h3>${t("inboxSection")}</h3><ul data-ref="inbox"><li style="opacity:.5">${t("inboxEmpty")}</li></ul></section>
-	<section><h3>${t("sendSection")}</h3>
+	<section data-ref="sec-login"><h3 data-i18n="loginSection">${t("loginSection")}</h3><div data-ref="login"></div></section>
+	<section data-ref="sec-pair" style="display:none"><h3 data-i18n="pendingSection">${t("pendingSection")}</h3><ul data-ref="pending"></ul></section>
+	<section><h3 data-i18n="inboxSection">${t("inboxSection")}</h3><ul data-ref="inbox"><li style="opacity:.5" data-i18n="inboxEmpty">${t("inboxEmpty")}</li></ul></section>
+	<section><h3 data-i18n="sendSection">${t("sendSection")}</h3>
 		<div class="row">
-			<input data-ref="to" placeholder="${t("toPlaceholder")}" style="flex:1;min-width:140px" />
-			<input data-ref="text" placeholder="${t("textPlaceholder")}" style="flex:2;min-width:180px" />
-			<input data-ref="media" placeholder="${t("mediaPlaceholder")}" style="flex:2;min-width:180px" />
-			<button data-ref="send">${t("sendBtn")}</button>
+			<input data-ref="to" data-i18n-ph="toPlaceholder" placeholder="${t("toPlaceholder")}" style="flex:1;min-width:140px" />
+			<input data-ref="text" data-i18n-ph="textPlaceholder" placeholder="${t("textPlaceholder")}" style="flex:2;min-width:180px" />
+			<input data-ref="media" data-i18n-ph="mediaPlaceholder" placeholder="${t("mediaPlaceholder")}" style="flex:2;min-width:180px" />
+			<button data-ref="send" data-i18n="sendBtn">${t("sendBtn")}</button>
 		</div>
 		<div class="err" data-ref="err" style="margin-top:6px"></div>
 	</section>
@@ -173,6 +195,7 @@ export default {
 			inboxEl = $("inbox"),
 			errEl = $("err");
 		let lastInbox = [];
+		let lastState = null;
 		let currentWorkspace = "";
 		let currentHostCwd = "";
 
@@ -261,6 +284,7 @@ export default {
 
 		function renderState(s) {
 			if (!s || s.kind !== "state") return;
+			lastState = s;
 			renderWorkspace(s);
 
 			if (modelInputEl && document.activeElement !== modelInputEl) {
@@ -279,14 +303,14 @@ export default {
 			pill.className = `pill ${s.loggedIn ? "on" : "off"}`;
 			if (s.loggedIn) {
 				loginEl.innerHTML = `<div class="row"><span style="opacity:.7">${t("lastLogin", { time: esc(timeStr(s.loginAt)) })}</span>
-					<button class="ghost" data-act="logout">${t("logout")}</button></div>
+					<button class="ghost" data-act="logout" data-i18n="logout">${t("logout")}</button></div>
 					${s.lastError ? `<div class="err">${t("pollError", { error: esc(s.lastError) })}</div>` : ""}`;
 			} else if (s.qr) {
 				const url = String(s.qr.image ?? s.qr.qrcode ?? "");
-				loginEl.innerHTML = `<div class="qr"><div data-qr="1">${t("qrGenerating")}</div>
-					<p style="opacity:.7">${t("qrHint")}</p>
-					<p style="opacity:.7">${t("qrCantScan")}<a href="${esc(url)}" target="_blank" rel="noopener">${t("qrOpenOfficial")}</a></p>
-					<div class="row"><button class="ghost" data-act="cancel">${t("cancel")}</button></div></div>`;
+				loginEl.innerHTML = `<div class="qr"><div data-qr="1" data-i18n="qrGenerating">${t("qrGenerating")}</div>
+					<p style="opacity:.7" data-i18n="qrHint">${t("qrHint")}</p>
+					<p style="opacity:.7" data-i18n="qrCantScan">${t("qrCantScan")}<a href="${esc(url)}" target="_blank" rel="noopener">${t("qrOpenOfficial")}</a></p>
+					<div class="row"><button class="ghost" data-act="cancel" data-i18n="cancel">${t("cancel")}</button></div></div>`;
 				const slot = loginEl.querySelector('[data-qr="1"]');
 				if (url && slot) {
 					loadQrFactory().then((factory) => {
@@ -303,15 +327,15 @@ export default {
 					});
 				}
 			} else {
-				loginEl.innerHTML = `<div class="row"><button data-act="login">${t("loginBtn")}</button></div>`;
+				loginEl.innerHTML = `<div class="row"><button data-act="login" data-i18n="loginBtn">${t("loginBtn")}</button></div>`;
 			}
 			pendingSec.style.display = (s.pendingPeers ?? []).length ? "" : "none";
 			pendingEl.innerHTML = (s.pendingPeers ?? [])
 				.map(
 					(p) => `
 <li><div class="row"><b>${esc(p)}</b>
-<button data-act="allow" data-peer="${esc(p)}">${t("allow")}</button>
-<button class="ghost" data-act="deny" data-peer="${esc(p)}">${t("deny")}</button></div></li>`,
+<button data-act="allow" data-peer="${esc(p)}" data-i18n="allow">${t("allow")}</button>
+<button class="ghost" data-act="deny" data-peer="${esc(p)}" data-i18n="deny">${t("deny")}</button></div></li>`,
 				)
 				.join("");
 			renderInbox(s.inbox ?? []);
@@ -329,13 +353,13 @@ export default {
 	<div class="meta">
 		<b>${m.dir === "in" ? "←" : "→"} ${esc(m.peer)}</b>
 		<span>${esc(timeStr(m.at))}</span>
-		<button class="ghost" data-act="open-session" style="padding:1px 8px;font-size:11px;margin-left:auto;height:22px;min-height:unset">${t("openSession")}</button>
+		<button class="ghost" data-act="open-session" style="padding:1px 8px;font-size:11px;margin-left:auto;height:22px;min-height:unset" data-i18n="openSession">${t("openSession")}</button>
 	</div>
 	<div style="white-space:pre-wrap">${esc(m.text)}</div>
 </li>`,
 						)
 						.join("")
-				: `<li style="opacity:.5">${t("inboxEmpty")}</li>`;
+				: `<li style="opacity:.5" data-i18n="inboxEmpty">${t("inboxEmpty")}</li>`;
 		}
 
 		container.addEventListener("click", (e) => {
@@ -461,8 +485,21 @@ export default {
 		});
 		ctx.send({ action: "state" });
 
+		// 宿主切语言后重渲染：静态文案就地更新 + 当前状态重画（输入值与监听保留）
+		const offLocale = i18n.onChange(() => {
+			try {
+				applyStaticTexts(container);
+			} catch {}
+			try {
+				renderState(lastState);
+			} catch {}
+		});
+
 		return () => {
 			if (panelSendSink) panelSendSink = null;
+			try {
+				offLocale?.();
+			} catch {}
 			off();
 			container.querySelector(".wx")?.remove();
 		};

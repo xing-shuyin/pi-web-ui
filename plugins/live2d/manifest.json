@@ -2,7 +2,7 @@
 	"id": "live2d",
 	"name": "Live2D 看板娘",
 	"nameEn": "Live2D Companion",
-	"version": "0.1.21",
+	"version": "0.1.22",
 	"icon": "🐾",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-2-9c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1zm4 0c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1zm-2 5c1.66 0 3-1.34 3-3H9c0 1.66 1.34 3 3 3z\"/></svg>",
 	"description": "页面悬浮 Live2D 桌面看板娘宠物：支持 Cubism 2/3/4 模型、音乐音频实时口型对齐 (Lip Sync)、自然眨眼与抛媚眼、透明与完全点击穿透、本地模型一键上传、鼠标视线跟随与 AI 操控工具。",
@@ -16,99 +16,125 @@
 			"key": "enabled",
 			"type": "boolean",
 			"label": "启用看板娘",
+			"labelEn": "Enable companion",
 			"default": true,
-			"hint": "开启后在页面右下角悬浮展示 Live2D 看板娘宠物，可随时拖拽或收起。"
+			"hint": "开启后在页面右下角悬浮展示 Live2D 看板娘宠物，可随时拖拽或收起。",
+			"hintEn": "When on, the Live2D companion floats at the bottom-right of the page; drag or collapse it anytime."
 		},
 		{
 			"key": "defaultModel",
 			"type": "select",
 			"label": "当前看板娘模型",
+			"labelEn": "Active companion model",
 			"default": "shizuku",
 			"options": [
 				{
 					"value": "shizuku",
-					"label": "🌸 雫 (Shizuku - Cubism 2)"
+					"label": "🌸 雫 (Shizuku - Cubism 2)",
+					"labelEn": "🌸 Shizuku (Cubism 2)"
 				},
 				{
 					"value": "haru",
-					"label": "🌿 春 (Haru - Cubism 4)"
+					"label": "🌿 春 (Haru - Cubism 4)",
+					"labelEn": "🌿 Haru (Cubism 4)"
 				},
 				{
 					"value": "hiyori",
-					"label": "☀️ 日和 (Hiyori - Cubism 4)"
+					"label": "☀️ 日和 (Hiyori - Cubism 4)",
+					"labelEn": "☀️ Hiyori (Cubism 4)"
 				},
 				{
 					"value": "wanko",
-					"label": "🐶 萌柴 (Wanko - Cubism 4)"
+					"label": "🐶 萌柴 (Wanko - Cubism 4)",
+					"labelEn": "🐶 Wanko (Cubism 4)"
 				}
 			],
-			"hint": "选择默认展示的看板娘角色（全部内置离线就绪），也可在挂件右键菜单或设置面板中一键换装。"
+			"hint": "选择默认展示的看板娘角色（全部内置离线就绪），也可在挂件右键菜单或设置面板中一键换装。",
+			"hintEn": "Pick the default companion (all built in and ready offline); you can also switch anytime from the widget context menu or settings panel."
 		},
 		{
 			"key": "mode",
 			"type": "select",
 			"label": "默认交互模式",
+			"labelEn": "Default interaction mode",
 			"default": "mouse",
 			"options": [
 				{
 					"value": "mouse",
-					"label": "👀 鼠标视线跟随 (Head & Eye Tracking)"
+					"label": "👀 鼠标视线跟随 (Head & Eye Tracking)",
+					"labelEn": "👀 Mouse look tracking (Head & Eye Tracking)"
 				},
 				{
 					"value": "idle",
-					"label": "💤 自然待机 (Breathing & Auto Blink)"
+					"label": "💤 自然待机 (Breathing & Auto Blink)",
+					"labelEn": "💤 Idle breathing (Breathing & Auto Blink)"
 				}
 			],
-			"hint": "视线跟随模式下看板娘眼珠和头部会跟随鼠标转动；待机模式下自然呼吸。"
+			"hint": "视线跟随模式下看板娘眼珠和头部会跟随鼠标转动；待机模式下自然呼吸。",
+			"hintEn": "In tracking mode the companion's eyes and head follow the mouse; in idle mode it just breathes naturally."
 		},
 		{
 			"key": "scale",
 			"type": "number",
 			"label": "模型初始缩放比例",
+			"labelEn": "Initial model scale",
 			"default": 1,
-			"hint": "模型初始大小比例（0.4 到 2.0），也可在挂件上滚动鼠标滚轮快速缩放。"
+			"hint": "模型初始大小比例（0.4 到 2.0），也可在挂件上滚动鼠标滚轮快速缩放。",
+			"hintEn": "Initial model size ratio (0.4 to 2.0); you can also zoom fast with the mouse wheel over the widget."
 		},
 		{
 			"key": "clickThrough",
 			"type": "boolean",
 			"label": "完全点击穿透",
+			"labelEn": "Full click-through",
 			"default": false,
-			"hint": "开启后看板娘角色完全不拦截鼠标，所有点击划词完全穿透至底层网页（默认透明区域已自动穿透）。"
+			"hint": "开启后看板娘角色完全不拦截鼠标，所有点击划词完全穿透至底层网页（默认透明区域已自动穿透）。",
+			"hintEn": "When on, the companion never intercepts the mouse — clicks and text selection pass straight through to the page (transparent areas already pass through by default)."
 		},
 		{
 			"key": "reactToAgent",
 			"type": "boolean",
 			"label": "伴随 AI 对话情绪联动",
+			"labelEn": "React to AI conversation mood",
 			"default": true,
-			"hint": "AI 思考或调用工具时看板娘展示专注思考表情，生成完毕展示开心表情，出错时提示。"
+			"hint": "AI 思考或调用工具时看板娘展示专注思考表情，生成完毕展示开心表情，出错时提示。",
+			"hintEn": "Shows a focused thinking face while the AI thinks or calls tools, a happy face when done, and an alert on errors."
 		},
 		{
 			"key": "soundEnabled",
 			"type": "boolean",
 			"label": "点击与台词轻提示音",
+			"labelEn": "Tap & bubble chime",
 			"default": true,
-			"hint": "点击看板娘或气泡弹出时播放清脆轻柔的 WebAudio 提示音。"
+			"hint": "点击看板娘或气泡弹出时播放清脆轻柔的 WebAudio 提示音。",
+			"hintEn": "Plays a crisp, soft WebAudio chime when you tap the companion or a bubble pops up."
 		},
 		{
 			"key": "autoBlink",
 			"type": "boolean",
 			"label": "自然眨眼与连眨",
+			"labelEn": "Natural blinking & double-blink",
 			"default": true,
-			"hint": "开启后看板娘在待机和视线跟随状态下拥有真实的生理随机眨眼与灵动连眨。"
+			"hint": "开启后看板娘在待机和视线跟随状态下拥有真实的生理随机眨眼与灵动连眨。",
+			"hintEn": "When on, the companion blinks with lifelike random rhythm (plus playful double-blinks) in idle and tracking modes."
 		},
 		{
 			"key": "lipSyncSensitivity",
 			"type": "number",
 			"label": "音乐口型开合灵敏度",
+			"labelEn": "Lip-sync sensitivity",
 			"default": 1.25,
-			"hint": "播放音乐伴奏或语音时嘴巴张合的幅度灵敏度倍率（0.5 到 2.5）。"
+			"hint": "播放音乐伴奏或语音时嘴巴张合的幅度灵敏度倍率（0.5 到 2.5）。",
+			"hintEn": "Mouth-open amplitude multiplier for music or speech playback (0.5 to 2.5)."
 		},
 		{
 			"key": "voiceOnly",
 			"type": "boolean",
 			"label": "只跟人声（间奏闭嘴）",
+			"labelEn": "Voice-only (closed in breaks)",
 			"default": true,
-			"hint": "开启后只在检测到唱歌人声时张嘴，纯伴奏间奏自动闭嘴；关闭则跟随整曲音量律动。"
+			"hint": "开启后只在检测到唱歌人声时张嘴，纯伴奏间奏自动闭嘴；关闭则跟随整曲音量律动。",
+			"hintEn": "When on, the mouth only opens on detected singing voice and closes during instrumental breaks; when off, it follows the whole mix volume."
 		}
 	],
 	"ui": {

@@ -250,6 +250,7 @@ export class DesktopBrowserHost {
 		"pi-desktop:browser-create-tab",
 		"pi-browser:capture-visible-tab",
 		"pi-browser:translate",
+		"pi-browser:downloads-reveal",
 	];
 
 	constructor(
@@ -406,7 +407,7 @@ export class DesktopBrowserHost {
 		});
 		// 网页侧自动填充下拉的两个口子（`browser/renderer/autofill.js`）
 		ipcMain.handle("pi-browser:autofill-lookup", (event) => {
-			const origin = this.autofillOrigin(event);
+			const origin = this.webFrameOrigin(event);
 			return this.browser.storage
 				.listPasswords()
 				.filter((entry) => webOrigin(entry.url) === origin)
@@ -415,7 +416,7 @@ export class DesktopBrowserHost {
 		// 网页划词/全页翻译：只认 browser session 的 http(s) frame，按 origin 校验，
 		// 目标地址由主进程从 agentUrl 派生，页面传来的任何 URL 一律不接受。
 		ipcMain.handle("pi-browser:translate", async (event, payload: unknown) => {
-			this.autofillOrigin(event);
+			this.webFrameOrigin(event);
 			const request = parseTranslateBridgeRequest(payload);
 			if (!this.agentUrl) throw new Error("Agent runtime is not connected yet");
 			const response = await fetch(translateEndpoint(this.agentUrl), {
@@ -431,16 +432,26 @@ export class DesktopBrowserHost {
 			return (await response.json()) as { translations: string[]; model: string };
 		});
 		ipcMain.handle("pi-browser:passkey-confirm", async (event) => {
-			const origin = this.autofillOrigin(event);
+			const origin = this.webFrameOrigin(event);
 			return await this.confirmPasskey(origin);
 		});
 		ipcMain.handle("pi-browser:autofill-pick", async (event, id: unknown) => {
-			const origin = this.autofillOrigin(event);
+			const origin = this.webFrameOrigin(event);
 			const entry = this.browser.storage
 				.listPasswords()
 				.find((item) => item.id === id && webOrigin(item.url) === origin);
 			if (!entry) throw new Error("This credential belongs to a different website");
 			await fillCredential(event.sender, entry);
+			return true;
+		});
+		// 下载圆钮的「打开所在文件夹」（`browser/renderer/downloads.js` → `__piDownloads.reveal`）：
+		// 页面只给 id，路径由主进程自己的下载记录解析。这里不给页面任何「打开任意路径」的能力——
+		// 最差情况也只是把一次它自己刚触发的下载在文件管理器里标出来。
+		ipcMain.handle("pi-browser:downloads-reveal", (event, id: unknown) => {
+			this.webFrameOrigin(event);
+			const item = this.browser.getDownloads().find((entry) => entry.id === id && entry.state === "completed");
+			if (!item) return false;
+			shell.showItemInFolder(item.path);
 			return true;
 		});
 		// 扩展页面的 chrome.tabs.captureVisibleTab → 主进程截图（见 browser/runtime/extension-bridge.ts）
@@ -453,14 +464,14 @@ export class DesktopBrowserHost {
 	}
 
 	/**
-	 * 自动填充的发送方校验：只认浏览器 session 里的**网站 frame**，返回它的 origin。
-	 * 后面所有候选/填入都按这个 origin 卡，页面自己伪造参数也拿不到别的网站的凭据。
+	 * 网页窄桥（自动填充 / 翻译 / passkey 确认 / 下载圆钮）的发送方校验：只认浏览器 session 里的
+	 * **网站 frame**，返回它的 origin。后面所有动作都按这个 origin 或 session 卡。
 	 */
-	private autofillOrigin(event: IpcMainInvokeEvent): string {
-		if (event.sender.session !== this.browser.session) throw new Error("Untrusted autofill request");
+	private webFrameOrigin(event: IpcMainInvokeEvent): string {
+		if (event.sender.session !== this.browser.session) throw new Error("Untrusted website request");
 		const url = event.senderFrame?.url || event.sender.getURL();
 		const origin = webOrigin(url);
-		if (!origin) throw new Error("Autofill is only available on websites");
+		if (!origin) throw new Error("This action is only available on websites");
 		return origin;
 	}
 
@@ -1448,6 +1459,13 @@ export class DesktopBrowserHost {
 				const item = this.browser.getDownloads().find((item) => item.id === args.id && item.state === "completed");
 				if (!item) throw new Error("Download not available");
 				return shell.openPath(item.path);
+			}
+			// 在文件管理器里定位（不执行文件）：传的只是 id，路径永远由主进程自己的记录给
+			case "download.reveal": {
+				const item = this.browser.getDownloads().find((item) => item.id === args.id && item.state === "completed");
+				if (!item) throw new Error("Download not available");
+				shell.showItemInFolder(item.path);
+				return true;
 			}
 			case "extensions.list":
 				return await this.listExtensions();

@@ -10,6 +10,8 @@ export function PluginSettingsForm({ plugin, models = [] }: { plugin: UiPluginIn
 	const locale = useLocale();
 	const zh = isZhLocale(locale);
 	const schema = plugin.settingsSchema ?? [];
+	const fieldLabel = (f: UiPluginSettingField) => (zh ? f.label : (f.labelEn ?? f.label));
+	const fieldHint = (f: UiPluginSettingField) => (zh ? (f.hint ?? "") : (f.hintEn ?? f.hint ?? ""));
 	const [draft, setDraft] = useState<Record<string, unknown>>(() => {
 		const init: Record<string, unknown> = { ...plugin.settingsValues };
 		for (const f of schema) if (f.type === "secret") init[f.key] = "";
@@ -59,12 +61,12 @@ export function PluginSettingsForm({ plugin, models = [] }: { plugin: UiPluginIn
 		<div className="plugin-settings-form">
 			<div className="plugin-settings-fields">
 				{schema.map((f) => (
-					<label key={f.key} className="plugin-settings-field" data-key={f.key} title={f.hint}>
+					<label key={f.key} className="plugin-settings-field" data-key={f.key} title={fieldHint(f)}>
 						<span className="plugin-settings-label">
-							<span className="plugin-settings-label-text" title={f.label}>
-								{f.label}
+							<span className="plugin-settings-label-text" title={fieldLabel(f)}>
+								{fieldLabel(f)}
 							</span>
-							{f.hint && <span className="plugin-settings-hint">{f.hint}</span>}
+							{fieldHint(f) && <span className="plugin-settings-hint">{fieldHint(f)}</span>}
 						</span>
 						<span className="plugin-settings-control">
 							{f.type === "boolean" ? (

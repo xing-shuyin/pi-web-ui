@@ -2,7 +2,7 @@
 	"id": "tts",
 	"name": "语音合成 (TTS)",
 	"nameEn": "TTS Voice Engine",
-	"version": "1.5.2",
+	"version": "1.5.3",
 	"icon": "🔊",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polygon points=\"11 5 6 9 2 9 2 15 6 15 11 19 11 5\"/><path d=\"M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07\"/></svg>",
 	"description": "将豆包和 DeepSeek 语音及音色注册到系统统一 TTS 中心，供网页播报、QQ 自动回复和其他工具共用。支持浏览器扩展同步凭据、引擎音色查询与音频文件生成。",
@@ -15,23 +15,29 @@
 			"key": "defaultEngine",
 			"type": "select",
 			"label": "默认语音引擎",
+			"labelEn": "Default voice engine",
 			"default": "doubao",
 			"options": ["builtin", "doubao", "deepseek"],
-			"hint": "AI tts 工具默认使用的引擎；builtin 为服务器系统语音，其他引擎使用本插件凭据。工具 action=list 可查询中心全部引擎与音色。"
+			"hint": "AI tts 工具默认使用的引擎；builtin 为服务器系统语音，其他引擎使用本插件凭据。工具 action=list 可查询中心全部引擎与音色。",
+			"hintEn": "The default engine for the AI tts tool; builtin is the server system voice, other engines use this plugin's credentials. Use action=list to query all center engines and voices."
 		},
 		{
 			"key": "doubaoApiKey",
 			"type": "text",
 			"label": "火山引擎 API Key (可选，推荐)",
+			"labelEn": "Volcengine API key (optional, recommended)",
 			"default": "",
-			"hint": "填入火山引擎豆包语音大模型 2.0 的 API Key。配置后走官方正规商业通道，稳定不限频免封号；留空则使用浏览器同步的网页凭据。"
+			"hint": "填入火山引擎豆包语音大模型 2.0 的 API Key。配置后走官方正规商业通道，稳定不限频免封号；留空则使用浏览器同步的网页凭据。",
+			"hintEn": "Enter the Volcengine Doubao speech model 2.0 API key. With it, synthesis goes through the official commercial channel — stable, unlimited, ban-free; empty means use the web credentials synced from the browser."
 		},
 		{
 			"key": "deepseekToken",
 			"type": "text",
 			"label": "DeepSeek userToken (可选，⚠️建议小号)",
+			"labelEn": "DeepSeek userToken (optional, ⚠️ use a spare account)",
 			"default": "",
-			"hint": "chat.deepseek.com 的 userToken (64字符)。已升级为专属会话复用与 Chrome 真实标头伪装；但因非官方开放接口，仍建议使用测试小号。"
+			"hint": "chat.deepseek.com 的 userToken (64字符)。已升级为专属会话复用与 Chrome 真实标头伪装；但因非官方开放接口，仍建议使用测试小号。",
+			"hintEn": "The userToken (64 chars) from chat.deepseek.com. Now with dedicated session reuse and real-Chrome header camouflage; still, as this is not an official open API, a spare test account is recommended."
 		}
 	]
 }

@@ -1,5 +1,5 @@
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import type { PromptAttachment, ServerMessage } from "./protocol.js";
+import type { PromptAttachment, ServerMessage, TerminalInfo } from "./protocol.js";
 import { uploadLimitBytes, isUploadDataTooLong } from "./payload-limits.js";
 import { formatTextQuote, readTextQuote } from "./text-quote.js";
 import type { ServerLang } from "./i18n.js";
@@ -58,6 +58,8 @@ export interface AttachmentContext {
 	settings: ClientSettings;
 	session: AgentSession;
 	getLang?: () => ServerLang;
+	/** 终端引用：按 id 现场拿这个 tab 的真相（可能已被用户关掉，返回 undefined）。 */
+	resolveTerminal?: (terminalId: string) => TerminalInfo | undefined;
 }
 
 function attr(value: string): string {
@@ -377,6 +379,41 @@ The user referenced this canvas. First use canvas(action="get", graphId="${attr(
 					textEn: `Invalid or missing canvas reference, skipped: ${graphId}`,
 				});
 			}
+			continue;
+		}
+		if (att.mode === "terminal") {
+			const terminalId = typeof att.terminalId === "string" ? att.terminalId.trim() : "";
+			const info = terminalId ? ctx.resolveTerminal?.(terminalId) : undefined;
+			if (!info) {
+				ctx.emit({
+					type: "notice",
+					level: "warning",
+					text: `终端引用已失效（该终端标签可能已关闭），已跳过：${att.name ?? terminalId}`,
+					textEn: `Terminal reference is gone (the tab may have been closed), skipped: ${att.name ?? terminalId}`,
+				});
+				continue;
+			}
+			const userOwned = info.ownerKind === "client";
+			const how = userOwned
+				? `Read its output with terminal(action="read", terminalId="${attr(info.id)}") — pass the returned cursor back to read only what is new, and use waitMs to wait for more output. This is the user's own shell tab and you may type in it: action="input"/"key" send keystrokes to that live shell, so anything you submit actually runs in the user's session — say what you are about to run before destructive or irreversible commands. action="wait" only applies to tracked bash commands.`
+				: `Read its output with terminal(action="read", terminalId="${attr(info.id)}") — pass the returned cursor back to read only what is new, and use waitMs to wait for more output. action="wait" only applies to tracked bash commands; action="input"/"key" drive this PTY.`;
+			out.push({
+				message: {
+					customType: "file",
+					content: [
+						{
+							type: "text",
+							text: `
+<terminal-ref id="${attr(info.id)}" title="${attr(info.title)}" cwd="${attr(info.cwd)}" owner="${userOwned ? "user" : "conversation"}" running="${info.running ? "true" : "false"}"${info.command?.command ? ` command="${attr(info.command.command)}"` : ""}>
+The user referenced this terminal tab — a live PTY, not a transcript. Do not guess what it shows. ${how}
+用户引用了这个终端标签（活着的 PTY，不是静态记录），要看内容就用 terminal(action="read")，不要猜；${userOwned ? "这是他自己的 shell，你可以往里输入，但执行不可逆命令前先说一声。" : ""}
+</terminal-ref>`,
+						},
+					],
+					display: true,
+					details: { mode: "terminal", path: "", name: info.title, terminalId: info.id },
+				},
+			});
 			continue;
 		}
 		if (att.mode === "page") {

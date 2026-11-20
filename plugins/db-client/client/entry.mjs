@@ -1,6 +1,6 @@
 /* db-client 客户端 bundle —— 由 npm run build 生成，源码在 src/client.js */
 
-// src/client.js
+// plugins/db-client/src/client.js
 import { makeT } from "../client/i18n.mjs";
 function esc(s) {
   return String(s ?? "").replace(
@@ -1226,8 +1226,51 @@ ${t("valueTruncated")}`;
         syncActiveView();
       }
     });
+    let offLocale = null;
+    let onLocaleEvent = null;
+    try {
+      offLocale = window.__piWebUiHost?.locale?.onChange?.(() => {
+        try {
+          renderConns();
+        } catch {
+        }
+        try {
+          renderDeps();
+        } catch {
+        }
+        try {
+          if (work?.curTable) renderTables();
+        } catch {
+        }
+      }) ?? null;
+    } catch {
+      offLocale = null;
+    }
+    try {
+      onLocaleEvent = () => {
+        try {
+          renderConns();
+        } catch {
+        }
+        try {
+          renderDeps();
+        } catch {
+        }
+      };
+      window.addEventListener("pi-web-ui:locale", onLocaleEvent);
+    } catch {
+      onLocaleEvent = null;
+    }
     return () => {
       work = null;
+      try {
+        offLocale?.();
+      } catch {
+      }
+      try {
+        if (onLocaleEvent) window.removeEventListener("pi-web-ui:locale", onLocaleEvent);
+      } catch {
+      }
       offData();
       root.remove();
     };

@@ -1152,12 +1152,14 @@ function parseSettingsSchema(raw: unknown): UiPluginSettingField[] {
 			key,
 			type: type as UiPluginSettingField["type"],
 			label: typeof o.label === "string" && o.label ? o.label : key,
+			...(typeof o.labelEn === "string" && o.labelEn ? { labelEn: o.labelEn } : {}),
 			...(o.default !== undefined ? { default: o.default as string | number | boolean } : {}),
 			...(typeof o.min === "number" ? { min: o.min } : {}),
 			...(typeof o.max === "number" ? { max: o.max } : {}),
 			...(options ? { options } : {}),
 			...(type === "select" && optionsFrom ? { optionsFrom } : {}),
 			...(typeof o.hint === "string" ? { hint: o.hint } : {}),
+			...(typeof o.hintEn === "string" ? { hintEn: o.hintEn } : {}),
 		};
 		out.push(field);
 		if (out.length >= 32) break;

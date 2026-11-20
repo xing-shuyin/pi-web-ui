@@ -449,6 +449,33 @@ export function createWorkbench() {
 			root.addEventListener("change", onChange);
 			inbox.addEventListener("scroll", rememberScroll, { passive: true });
 			detail.addEventListener("scroll", rememberScroll, { passive: true });
+			// 宿主全局语言单源：首帧按 locale.current() 取词，切语言后重渲染
+			const rerenderOnLocale = () => {
+				if (disposed) return;
+				try {
+					const h1 = root.querySelector("h1");
+					if (h1) h1.textContent = t("appName");
+				} catch {}
+				try {
+					renderList(false);
+				} catch {}
+				try {
+					if (selected?.title) renderDetail(selected);
+				} catch {}
+			};
+			let offLocale = null;
+			let onLocaleEvent = null;
+			try {
+				offLocale = window.__piWebUiHost?.locale?.onChange?.(rerenderOnLocale) ?? null;
+			} catch {
+				offLocale = null;
+			}
+			try {
+				onLocaleEvent = () => rerenderOnLocale();
+				window.addEventListener("pi-web-ui:locale", onLocaleEvent);
+			} catch {
+				onLocaleEvent = null;
+			}
 			syncControls();
 			if (saved) {
 				if (!saved.loadingList) renderList(false);
@@ -492,6 +519,12 @@ export function createWorkbench() {
 				disposed = true;
 				for (const controller of controllers) controller.abort();
 				controllers.clear();
+				try {
+					offLocale?.();
+				} catch {}
+				try {
+					if (onLocaleEvent) window.removeEventListener("pi-web-ui:locale", onLocaleEvent);
+				} catch {}
 				root.removeEventListener("submit", onSubmit);
 				root.removeEventListener("click", onClick);
 				root.removeEventListener("input", onInput);

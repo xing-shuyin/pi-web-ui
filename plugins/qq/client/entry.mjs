@@ -1,8 +1,26 @@
-import { esc } from "@pi-web-ui/plugin-sdk/client";
-import { makeT } from "./i18n.mjs";
+import { createPluginI18n, esc } from "@pi-web-ui/plugin-sdk/client";
+import { DICT } from "./i18n.mjs";
 
-/** 面板文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。 */
-const t = makeT();
+/** 面板文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。禁自建语言偏好，只跟宿主全局语言。 */
+const i18n = createPluginI18n(DICT);
+const t = (key, params) => i18n.t(key, params);
+
+/** 语言切换时就地重渲染静态文案（输入值与监听保留，动态区由 refresh() 重画）。 */
+function applyStaticTexts(root) {
+	const scope = root ?? document;
+	scope.querySelectorAll("[data-i18n]").forEach((n) => {
+		const k = n.getAttribute("data-i18n");
+		if (k) n.textContent = t(k);
+	});
+	scope.querySelectorAll("[data-i18n-ph]").forEach((n) => {
+		const k = n.getAttribute("data-i18n-ph");
+		if (k) n.setAttribute("placeholder", t(k));
+	});
+	scope.querySelectorAll("[data-i18n-title]").forEach((n) => {
+		const k = n.getAttribute("data-i18n-title");
+		if (k) n.setAttribute("title", t(k));
+	});
+}
 
 /** 指令词表本身是数据（/help、1/cwd…），只有方括号里的参数提示随界面语言变化。 */
 const cmdCode = (token) => `<code>${esc(token)}</code>`;
@@ -62,9 +80,14 @@ whenBridge((bridge) => {
 
 export default {
 	async mount(el, ctx) {
+		// 首帧：显式读取宿主全局语言（SDK 内部同样以 locale.current() 为单源）
+		try {
+			globalThis.window?.__piWebUiHost?.locale?.current?.();
+		} catch {}
 		let ridSeq = 0;
 		const pendingReplies = new Map();
 		let offData = null;
+		let offLocale = null;
 
 		el.innerHTML = `
 			<div class="qq-root" style="display: flex; flex-direction: column; height: 100%; box-sizing: border-box; background: var(--bg); color: var(--text); font-size: 13px;">
@@ -72,13 +95,13 @@ export default {
 				<div class="qq-topbar" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--bg-elev); flex-shrink: 0; flex-wrap: wrap; gap: 10px;">
 					<div style="display: flex; align-items: center; gap: 10px;">
 						<span style="font-size: 20px;">🐧</span>
-						<span style="font-weight: 600; font-size: 15px;">${esc(t("workbenchTitle"))}</span>
-						<span class="qq-status-badge" style="font-size: 11px; padding: 2px 8px; border-radius: 12px; background: var(--bg-elev2); color: var(--text-dim); border: 1px solid var(--border);">${esc(t("checking"))}</span>
+						<span style="font-weight: 600; font-size: 15px;" data-i18n="workbenchTitle">${esc(t("workbenchTitle"))}</span>
+						<span class="qq-status-badge" style="font-size: 11px; padding: 2px 8px; border-radius: 12px; background: var(--bg-elev2); color: var(--text-dim); border: 1px solid var(--border);" data-i18n="checking">${esc(t("checking"))}</span>
 					</div>
 					<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-						<button class="qq-btn-refresh" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px;">${esc(t("refreshStatus"))}</button>
-						<button class="qq-btn-toggle-bot" style="padding: 6px 14px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px; font-weight: 500;">${esc(t("toggleBot"))}</button>
-						<button class="qq-btn-config" style="padding: 6px 14px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px;">${esc(t("openConfig"))}</button>
+						<button class="qq-btn-refresh" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px;" data-i18n="refreshStatus">${esc(t("refreshStatus"))}</button>
+						<button class="qq-btn-toggle-bot" style="padding: 6px 14px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px; font-weight: 500;" data-i18n="toggleBot">${esc(t("toggleBot"))}</button>
+						<button class="qq-btn-config" style="padding: 6px 14px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px;" data-i18n="openConfig">${esc(t("openConfig"))}</button>
 					</div>
 				</div>
 
@@ -88,44 +111,44 @@ export default {
 					<!-- Workspace Cwd Section -->
 					<div style="border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; background: var(--bg-elev);">
 						<div style="font-weight: 600; font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-							<span>📂</span><span>${esc(t("wsTitle"))}</span>
+							<span>📂</span><span data-i18n="wsTitle">${esc(t("wsTitle"))}</span>
 						</div>
-						<div class="qq-ws-status" style="font-size: 12px; color: var(--text-dim); margin-bottom: 10px; word-break: break-all;">${esc(t("loading"))}</div>
+						<div class="qq-ws-status" style="font-size: 12px; color: var(--text-dim); margin-bottom: 10px; word-break: break-all;" data-i18n="loading">${esc(t("loading"))}</div>
 						<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-							<input type="text" class="qq-ws-input" placeholder="${esc(t("wsPlaceholder"))}" style="flex: 2; min-width: 220px; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+							<input type="text" class="qq-ws-input" data-i18n-ph="wsPlaceholder" placeholder="${esc(t("wsPlaceholder"))}" style="flex: 2; min-width: 220px; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 							<select class="qq-ws-select" style="min-width: 150px; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
-								<option value="">${esc(t("wsSelectPlaceholder"))}</option>
+								<option value="" data-i18n="wsSelectPlaceholder">${esc(t("wsSelectPlaceholder"))}</option>
 							</select>
-							<button class="qq-ws-browse" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;">${esc(t("wsBrowse"))}</button>
-							<button class="qq-ws-save" style="padding: 6px 14px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-weight: 500;">${esc(t("wsSetRoot"))}</button>
-							<button class="qq-ws-use-cwd" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;">${esc(t("wsUseCwd"))}</button>
-							<button class="qq-ws-clear" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;">${esc(t("wsClear"))}</button>
+							<button class="qq-ws-browse" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;" data-i18n="wsBrowse">${esc(t("wsBrowse"))}</button>
+							<button class="qq-ws-save" style="padding: 6px 14px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-weight: 500;" data-i18n="wsSetRoot">${esc(t("wsSetRoot"))}</button>
+							<button class="qq-ws-use-cwd" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;" data-i18n="wsUseCwd">${esc(t("wsUseCwd"))}</button>
+							<button class="qq-ws-clear" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;" data-i18n="wsClear">${esc(t("wsClear"))}</button>
 						</div>
 					</div>
 
 					<!-- Model & Thinking Level Section -->
 					<div style="border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; background: var(--bg-elev);">
 						<div style="font-weight: 600; font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-							<span>🤖</span><span>${esc(t("modelTitle"))}</span>
+							<span>🤖</span><span data-i18n="modelTitle">${esc(t("modelTitle"))}</span>
 						</div>
 						<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px;">
-							<input type="text" class="qq-model-input" placeholder="${esc(t("modelPlaceholder"))}" style="flex: 2; min-width: 200px; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
-							<button class="qq-model-browse" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;">${esc(t("modelBrowse"))}</button>
+							<input type="text" class="qq-model-input" data-i18n-ph="modelPlaceholder" placeholder="${esc(t("modelPlaceholder"))}" style="flex: 2; min-width: 200px; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+							<button class="qq-model-browse" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;" data-i18n="modelBrowse">${esc(t("modelBrowse"))}</button>
 							<select class="qq-thinking-select" style="min-width: 140px; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
-								<option value="">${esc(t("thinkingDefault"))}</option>
-								<option value="off">${esc(t("thinkingOff"))}</option>
-								<option value="low">${esc(t("thinkingLow"))}</option>
-								<option value="medium">${esc(t("thinkingMedium"))}</option>
-								<option value="high">${esc(t("thinkingHigh"))}</option>
-								<option value="max">${esc(t("thinkingMax"))}</option>
+								<option value="" data-i18n="thinkingDefault">${esc(t("thinkingDefault"))}</option>
+								<option value="off" data-i18n="thinkingOff">${esc(t("thinkingOff"))}</option>
+								<option value="low" data-i18n="thinkingLow">${esc(t("thinkingLow"))}</option>
+								<option value="medium" data-i18n="thinkingMedium">${esc(t("thinkingMedium"))}</option>
+								<option value="high" data-i18n="thinkingHigh">${esc(t("thinkingHigh"))}</option>
+								<option value="max" data-i18n="thinkingMax">${esc(t("thinkingMax"))}</option>
 							</select>
-							<button class="qq-model-save" style="padding: 6px 14px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-weight: 500;">${esc(t("saveConfig"))}</button>
-							<button class="qq-model-clear" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;">${esc(t("modelClear"))}</button>
+							<button class="qq-model-save" style="padding: 6px 14px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-weight: 500;" data-i18n="saveConfig">${esc(t("saveConfig"))}</button>
+							<button class="qq-model-clear" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;" data-i18n="modelClear">${esc(t("modelClear"))}</button>
 						</div>
 						<div style="background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px;">
 							<label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 500;">
 								<input type="checkbox" class="qq-bind-active-check" style="cursor: pointer;" />
-								<span>${esc(t("bindActiveLabel"))}</span>
+								<span data-i18n="bindActiveLabel">${esc(t("bindActiveLabel"))}</span>
 							</label>
 							<div style="font-size: 12px; color: var(--text-dim); margin-top: 4px; line-height: 1.5; padding-left: 22px;">
 								${esc(t("bindActiveHint"))}
@@ -137,9 +160,9 @@ export default {
 					<div style="border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; background: var(--bg-elev);">
 						<div style="font-weight: 600; font-size: 14px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
 							<div style="display: flex; align-items: center; gap: 6px;">
-								<span>💬</span><span>${esc(t("recentTitle"))}</span>
+								<span>💬</span><span data-i18n="recentTitle">${esc(t("recentTitle"))}</span>
 							</div>
-							<span style="font-size: 11px; color: var(--text-dim); font-weight: normal;">${esc(t("recentSubtitle"))}</span>
+							<span style="font-size: 11px; color: var(--text-dim); font-weight: normal;" data-i18n="recentSubtitle">${esc(t("recentSubtitle"))}</span>
 						</div>
 						<div class="qq-recent-list" style="display: flex; flex-direction: column; gap: 8px;">
 							<div style="color: var(--text-dim); font-size: 12px; padding: 12px; text-align: center; border: 1px dashed var(--border); border-radius: 4px;">
@@ -150,63 +173,63 @@ export default {
 
 					<!-- Status & Health Card -->
 					<div style="border: 1px solid var(--border); border-radius: 6px; padding: 16px; background: var(--bg-elev);">
-						<div style="font-weight: 600; font-size: 14px; margin-bottom: 12px;">${esc(t("healthTitle"))}</div>
+						<div style="font-weight: 600; font-size: 14px; margin-bottom: 12px;" data-i18n="healthTitle">${esc(t("healthTitle"))}</div>
 						<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
 							<div style="padding: 10px; border-radius: 4px; background: var(--bg); border: 1px solid var(--border);">
-								<div style="color: var(--text-dim); font-size: 11px; margin-bottom: 4px;">${esc(t("connState"))}</div>
-								<div class="qq-metric-state" style="font-size: 14px; font-weight: 600;">${esc(t("checking"))}</div>
+								<div style="color: var(--text-dim); font-size: 11px; margin-bottom: 4px;" data-i18n="connState">${esc(t("connState"))}</div>
+								<div class="qq-metric-state" style="font-size: 14px; font-weight: 600;" data-i18n="checking">${esc(t("checking"))}</div>
 							</div>
 							<div style="padding: 10px; border-radius: 4px; background: var(--bg); border: 1px solid var(--border);">
-								<div style="color: var(--text-dim); font-size: 11px; margin-bottom: 4px;">${esc(t("botAccount"))}</div>
+								<div style="color: var(--text-dim); font-size: 11px; margin-bottom: 4px;" data-i18n="botAccount">${esc(t("botAccount"))}</div>
 								<div class="qq-metric-username" style="font-size: 14px; font-weight: 600;">--</div>
 							</div>
 							<div style="padding: 10px; border-radius: 4px; background: var(--bg); border: 1px solid var(--border);">
-								<div style="color: var(--text-dim); font-size: 11px; margin-bottom: 4px;">${esc(t("recvCount"))}</div>
+								<div style="color: var(--text-dim); font-size: 11px; margin-bottom: 4px;" data-i18n="recvCount">${esc(t("recvCount"))}</div>
 								<div class="qq-metric-recv" style="font-size: 14px; font-weight: 600;">${esc(t("countMessages", { count: 0 }))}</div>
 							</div>
 							<div style="padding: 10px; border-radius: 4px; background: var(--bg); border: 1px solid var(--border);">
-								<div style="color: var(--text-dim); font-size: 11px; margin-bottom: 4px;">${esc(t("sentCount"))}</div>
+								<div style="color: var(--text-dim); font-size: 11px; margin-bottom: 4px;" data-i18n="sentCount">${esc(t("sentCount"))}</div>
 								<div class="qq-metric-sent" style="font-size: 14px; font-weight: 600;">${esc(t("countMessages", { count: 0 }))}</div>
 							</div>
 						</div>
 						<div style="margin-top: 12px; font-size: 12px; color: var(--text-dim); line-height: 1.6; border-top: 1px dashed var(--border); padding-top: 10px;">
-							💬 <strong>${esc(t("quickCmdTitle"))}</strong>${quickCmdGuide()}
+							💬 <strong data-i18n="quickCmdTitle">${esc(t("quickCmdTitle"))}</strong>${quickCmdGuide()}
 						</div>
 					</div>
 
 					<!-- Send Message Card -->
 					<div style="border: 1px solid var(--border); border-radius: 6px; padding: 16px; background: var(--bg-elev);">
-						<div style="font-weight: 600; font-size: 14px; margin-bottom: 12px;">${esc(t("sendTitle"))}</div>
+						<div style="font-weight: 600; font-size: 14px; margin-bottom: 12px;" data-i18n="sendTitle">${esc(t("sendTitle"))}</div>
 						<div style="display: flex; flex-direction: column; gap: 10px;">
 							<div>
 								<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-									<label style="color: var(--text-dim);">${esc(t("targetChannel"))}</label>
-									<button class="qq-btn-fetch-channels" style="font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;">${esc(t("fetchChannels"))}</button>
+									<label style="color: var(--text-dim);" data-i18n="targetChannel">${esc(t("targetChannel"))}</label>
+									<button class="qq-btn-fetch-channels" style="font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;" data-i18n="fetchChannels">${esc(t("fetchChannels"))}</button>
 								</div>
 								<select class="qq-channels-dropdown" style="display: none; width: 100%; box-sizing: border-box; margin-bottom: 6px; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--accent); background: var(--bg-elev); color: var(--text);"></select>
-								<input type="text" class="qq-send-channelid" placeholder="${esc(t("channelPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+								<input type="text" class="qq-send-channelid" data-i18n-ph="channelPlaceholder" placeholder="${esc(t("channelPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 							</div>
 							<div>
-								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${esc(t("messageText"))}</label>
-								<textarea class="qq-send-text" rows="2" placeholder="${esc(t("messagePlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); resize: vertical; font-family: inherit;"></textarea>
+								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="messageText">${esc(t("messageText"))}</label>
+								<textarea class="qq-send-text" rows="2" data-i18n-ph="messagePlaceholder" placeholder="${esc(t("messagePlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); resize: vertical; font-family: inherit;"></textarea>
 							</div>
 							<div>
-								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${esc(t("mediaLabel"))}</label>
-								<input type="text" class="qq-send-media" placeholder="${esc(t("mediaPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
-								<div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">${esc(t("mediaHint"))}</div>
+								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="mediaLabel">${esc(t("mediaLabel"))}</label>
+								<input type="text" class="qq-send-media" data-i18n-ph="mediaPlaceholder" placeholder="${esc(t("mediaPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+								<div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;" data-i18n="mediaHint">${esc(t("mediaHint"))}</div>
 							</div>
 							<div>
-								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${esc(t("openidLabel"))}</label>
+								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="openidLabel">${esc(t("openidLabel"))}</label>
 								<div style="display: flex; gap: 8px;">
 									<select class="qq-send-openid-type" style="padding: 6px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
-										<option value="user">${esc(t("openidTypeUser"))}</option>
-										<option value="group">${esc(t("openidTypeGroup"))}</option>
+										<option value="user" data-i18n="openidTypeUser">${esc(t("openidTypeUser"))}</option>
+										<option value="group" data-i18n="openidTypeGroup">${esc(t("openidTypeGroup"))}</option>
 									</select>
-									<input type="text" class="qq-send-openid" placeholder="${esc(t("openidPlaceholder"))}" style="flex: 1; min-width: 0; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+									<input type="text" class="qq-send-openid" data-i18n-ph="openidPlaceholder" placeholder="${esc(t("openidPlaceholder"))}" style="flex: 1; min-width: 0; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 								</div>
 							</div>
 							<div style="display: flex; justify-content: flex-end; gap: 8px;">
-								<button class="qq-btn-send" style="padding: 6px 16px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-weight: 500;">${esc(t("sendMessage"))}</button>
+								<button class="qq-btn-send" style="padding: 6px 16px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-weight: 500;" data-i18n="sendMessage">${esc(t("sendMessage"))}</button>
 							</div>
 						</div>
 					</div>
@@ -216,54 +239,54 @@ export default {
 				<div class="qq-modal-settings" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
 					<div style="width: 540px; max-width: 90vw; max-height: 85vh; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.3);">
 						<div style="padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg-elev);">
-							<span style="font-weight: 600;">${esc(t("modalTitle"))}</span>
+							<span style="font-weight: 600;" data-i18n="modalTitle">${esc(t("modalTitle"))}</span>
 							<button class="qq-modal-close" style="background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 16px;">✕</button>
 						</div>
 						<div style="padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;">
 							<div>
-								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${esc(t("appIdLabel"))}</label>
-								<input type="text" class="qq-cfg-appid" placeholder="${esc(t("appIdPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="appIdLabel">${esc(t("appIdLabel"))}</label>
+								<input type="text" class="qq-cfg-appid" data-i18n-ph="appIdPlaceholder" placeholder="${esc(t("appIdPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 							</div>
 
 							<div>
-								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${esc(t("secretLabel"))}</label>
-								<input type="password" class="qq-cfg-clientsecret" placeholder="${esc(t("secretPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="secretLabel">${esc(t("secretLabel"))}</label>
+								<input type="password" class="qq-cfg-clientsecret" data-i18n-ph="secretPlaceholder" placeholder="${esc(t("secretPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 							</div>
 
 							<div style="display: flex; align-items: center; gap: 8px;">
 								<input type="checkbox" id="qq-cfg-sandbox" class="qq-cfg-sandbox" style="cursor: pointer;" />
-								<label for="qq-cfg-sandbox" style="font-size: 12px; cursor: pointer; user-select: none;">${esc(t("sandboxLabel"))}</label>
+								<label for="qq-cfg-sandbox" style="font-size: 12px; cursor: pointer; user-select: none;" data-i18n="sandboxLabel">${esc(t("sandboxLabel"))}</label>
 							</div>
 
 							<div>
-								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${esc(t("defaultChannelLabel"))}</label>
-								<input type="text" class="qq-cfg-default-channel" placeholder="${esc(t("defaultChannelPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="defaultChannelLabel">${esc(t("defaultChannelLabel"))}</label>
+								<input type="text" class="qq-cfg-default-channel" data-i18n-ph="defaultChannelPlaceholder" placeholder="${esc(t("defaultChannelPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 							</div>
 
 							<div style="border-top: 1px solid var(--border); padding-top: 12px;">
-								<div style="font-weight: 600; margin-bottom: 6px;">${esc(t("broadcastSection"))}</div>
-								<div style="font-size: 12px; color: var(--text-dim); margin-bottom: 8px;">${esc(t("broadcastDesc"))}</div>
+								<div style="font-weight: 600; margin-bottom: 6px;" data-i18n="broadcastSection">${esc(t("broadcastSection"))}</div>
+								<div style="font-size: 12px; color: var(--text-dim); margin-bottom: 8px;" data-i18n="broadcastDesc">${esc(t("broadcastDesc"))}</div>
 								<div style="margin-bottom: 8px;">
-									<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${esc(t("broadcastChannelLabel"))}</label>
-									<input type="text" class="qq-cfg-broadcast-channel" placeholder="${esc(t("broadcastChannelPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+									<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="broadcastChannelLabel">${esc(t("broadcastChannelLabel"))}</label>
+									<input type="text" class="qq-cfg-broadcast-channel" data-i18n-ph="broadcastChannelPlaceholder" placeholder="${esc(t("broadcastChannelPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 								</div>
 								<div style="display: flex; flex-direction: column; gap: 6px;">
 									<div style="display: flex; align-items: center; gap: 8px;">
 										<input type="checkbox" id="qq-cfg-notify-question" class="qq-cfg-notify-question" style="cursor: pointer;" />
-										<label for="qq-cfg-notify-question" style="font-size: 12px; cursor: pointer; user-select: none;">${esc(t("notifyQuestionLabel"))}</label>
+										<label for="qq-cfg-notify-question" style="font-size: 12px; cursor: pointer; user-select: none;" data-i18n="notifyQuestionLabel">${esc(t("notifyQuestionLabel"))}</label>
 									</div>
 									<div style="display: flex; align-items: center; gap: 8px;">
 										<input type="checkbox" id="qq-cfg-notify-runend" class="qq-cfg-notify-runend" style="cursor: pointer;" />
-										<label for="qq-cfg-notify-runend" style="font-size: 12px; cursor: pointer; user-select: none;">${esc(t("notifyRunEndLabel"))}</label>
+										<label for="qq-cfg-notify-runend" style="font-size: 12px; cursor: pointer; user-select: none;" data-i18n="notifyRunEndLabel">${esc(t("notifyRunEndLabel"))}</label>
 									</div>
 								</div>
 							</div>
 
 							<div style="border-top: 1px solid var(--border); padding-top: 12px;">
-								<div style="font-weight: 600; margin-bottom: 8px;">${esc(t("voiceSection"))}</div>
+								<div style="font-weight: 600; margin-bottom: 8px;" data-i18n="voiceSection">${esc(t("voiceSection"))}</div>
 								<label style="display: block; margin-bottom: 8px;">${esc(t("replyModeLabel"))}
 									<select class="qq-cfg-reply-mode" style="width: 100%; padding: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px;">
-										<option value="text">${esc(t("replyModeText"))}</option><option value="voice">${esc(t("replyModeVoice"))}</option><option value="both">${esc(t("replyModeBoth"))}</option>
+										<option value="text" data-i18n="replyModeText">${esc(t("replyModeText"))}</option><option value="voice" data-i18n="replyModeVoice">${esc(t("replyModeVoice"))}</option><option value="both" data-i18n="replyModeBoth">${esc(t("replyModeBoth"))}</option>
 									</select>
 								</label>
 								<label style="display: block; margin-bottom: 8px;">${esc(t("voiceEngineLabel"))}
@@ -276,32 +299,32 @@ export default {
 									<input type="number" class="qq-cfg-voice-rate" min="0.5" max="2" step="0.1" value="1" style="width: 100%; box-sizing: border-box; padding: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px;" />
 								</label>
 								<div class="qq-voice-error" role="alert" style="font-size: 12px; color: var(--text-dim); overflow-wrap: anywhere;"></div>
-								<div style="font-size: 12px; color: var(--text-dim);">${esc(t("voiceHint"))}</div>
+								<div style="font-size: 12px; color: var(--text-dim);" data-i18n="voiceHint">${esc(t("voiceHint"))}</div>
 							</div>
 
 							<div style="border-top: 1px solid var(--border); padding-top: 12px;">
-								<div style="font-weight: 600; margin-bottom: 8px;">${esc(t("botSection"))}</div>
+								<div style="font-weight: 600; margin-bottom: 8px;" data-i18n="botSection">${esc(t("botSection"))}</div>
 								<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
 									<input type="checkbox" id="qq-cfg-bot-enabled" class="qq-cfg-bot-enabled" style="cursor: pointer;" />
-									<label for="qq-cfg-bot-enabled" style="font-size: 12px; cursor: pointer; user-select: none;">${esc(t("botEnabledLabel"))}</label>
+									<label for="qq-cfg-bot-enabled" style="font-size: 12px; cursor: pointer; user-select: none;" data-i18n="botEnabledLabel">${esc(t("botEnabledLabel"))}</label>
 								</div>
 								<div style="margin-bottom: 8px;">
-									<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${esc(t("allowedUsersLabel"))}</label>
-									<input type="text" class="qq-cfg-allowed-users" placeholder="${esc(t("allowedUsersPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+									<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="allowedUsersLabel">${esc(t("allowedUsersLabel"))}</label>
+									<input type="text" class="qq-cfg-allowed-users" data-i18n-ph="allowedUsersPlaceholder" placeholder="${esc(t("allowedUsersPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 								</div>
 								<div style="display: flex; gap: 10px; align-items: center;">
 									<div style="flex: 1;">
-										<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${esc(t("timeoutLabel"))}</label>
+										<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="timeoutLabel">${esc(t("timeoutLabel"))}</label>
 										<input type="number" class="qq-cfg-timeout" min="15" max="600" placeholder="90" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 									</div>
 								</div>
 							</div>
 						</div>
 						<div style="padding: 12px 16px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg-elev);">
-							<button class="qq-btn-test-cfg" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;">${esc(t("testConnection"))}</button>
+							<button class="qq-btn-test-cfg" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;" data-i18n="testConnection">${esc(t("testConnection"))}</button>
 							<div style="display: flex; gap: 8px;">
-								<button class="qq-modal-cancel" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;">${esc(t("cancel"))}</button>
-								<button class="qq-btn-save-cfg" style="padding: 6px 16px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-weight: 500;">${esc(t("saveConfigBtn"))}</button>
+								<button class="qq-modal-cancel" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;" data-i18n="cancel">${esc(t("cancel"))}</button>
+								<button class="qq-btn-save-cfg" style="padding: 6px 16px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-weight: 500;" data-i18n="saveConfigBtn">${esc(t("saveConfigBtn"))}</button>
 							</div>
 						</div>
 					</div>
@@ -464,7 +487,7 @@ export default {
 			const listEl = q(".qq-recent-list");
 			if (!listEl) return;
 			if (!Array.isArray(chats) || chats.length === 0) {
-				listEl.innerHTML = `<div style="color: var(--text-dim); font-size: 12px; padding: 12px; text-align: center; border: 1px dashed var(--border); border-radius: 4px;">${esc(t("recentEmpty"))}</div>`;
+				listEl.innerHTML = `<div style="color: var(--text-dim); font-size: 12px; padding: 12px; text-align: center; border: 1px dashed var(--border); border-radius: 4px;" data-i18n="recentEmpty">${esc(t("recentEmpty"))}</div>`;
 				return;
 			}
 
@@ -486,9 +509,11 @@ export default {
 				const textDiv = document.createElement("div");
 				textDiv.style.cssText =
 					"font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 550px;";
-				const promptPreview = item.lastUserText ? `<strong>${esc(t("askPrefix"))}</strong>${item.lastUserText}` : "";
+				const promptPreview = item.lastUserText
+					? `<strong data-i18n="askPrefix">${esc(t("askPrefix"))}</strong>${item.lastUserText}`
+					: "";
 				const replyPreview = item.lastAssistantText
-					? ` <span style="color:var(--text-dim);"><strong>${esc(t("replyPrefix"))}</strong>${item.lastAssistantText}</span>`
+					? ` <span style="color:var(--text-dim);"><strong data-i18n="replyPrefix">${esc(t("replyPrefix"))}</strong>${item.lastAssistantText}</span>`
 					: "";
 				textDiv.innerHTML = promptPreview + replyPreview || esc(t("noMessageText"));
 
@@ -862,7 +887,7 @@ export default {
 					alert?.(t("fetchNoGuilds"));
 					return;
 				}
-				channelsDropdown.innerHTML = `<option value="">${esc(t("channelPickHint"))}</option>`;
+				channelsDropdown.innerHTML = `<option value="" data-i18n="channelPickHint">${esc(t("channelPickHint"))}</option>`;
 				let count = 0;
 				for (const g of guilds) {
 					for (const c of g.channels || []) {
@@ -928,10 +953,23 @@ export default {
 			}
 		});
 
+		// 宿主切语言后重渲染：静态文案就地更新 + 动态区重拉（输入值与监听保留）
+		offLocale = i18n.onChange(() => {
+			try {
+				applyStaticTexts(el);
+			} catch {}
+			try {
+				refresh();
+			} catch {}
+		});
+
 		await refresh();
 
 		return () => {
 			panelSendSink = null;
+			try {
+				offLocale?.();
+			} catch {}
 			if (typeof offData === "function") offData();
 			for (const [, waiter] of pendingReplies) {
 				clearTimeout(waiter.timer);

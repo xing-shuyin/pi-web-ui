@@ -211,8 +211,12 @@ export default {
 			if (st.depsInstalling) return;
 			st.depsInstalling = true;
 			host.log(`installing deps: imapflow / mailparser / nodemailer${auto ? " (auto)" : ""}`);
-			if (!auto) host.notify("info", "📬 邮件插件：开始安装依赖…");
-			host.notify("info", "📬 邮件插件：开始安装依赖（imapflow / mailparser / nodemailer）…");
+			if (!auto)
+				host.notify(
+					"info",
+					"📬 邮件插件：开始安装依赖（imapflow / mailparser / nodemailer）…",
+					"📬 Webmail: installing dependencies (imapflow / mailparser / nodemailer)…",
+				);
 			const pkgs = ["imapflow@latest", "mailparser@latest", "nodemailer@latest"];
 			const npmCli = resolveNpmCli();
 			const isWin = process.platform === "win32";
@@ -251,6 +255,9 @@ export default {
 					ok
 						? "📬 邮件插件依赖安装完成"
 						: `📬 邮件插件依赖安装失败（${why}）——请在插件目录手动执行 npm install，或在设置面板重试「安装依赖」`,
+					ok
+						? "📬 Webmail: dependencies installed"
+						: `📬 Webmail: dependency install failed (${why}) — run npm install in the plugin directory manually, or retry “Install dependencies” in settings`,
 				);
 				broadcastState();
 			}
@@ -768,7 +775,11 @@ export default {
 							.map((m) => `${m.fromName || m.from}: ${m.subject}`);
 					} catch {}
 					if (st.config.notifyEnabled !== false) {
-						host.notify("info", `📬 ${fresh.length} 封新邮件${subjects.length ? ` — ${subjects.join(" · ")}` : ""}`);
+						host.notify(
+							"info",
+							`📬 ${fresh.length} 封新邮件${subjects.length ? ` — ${subjects.join(" · ")}` : ""}`,
+							`📬 Webmail: ${fresh.length} new message${fresh.length > 1 ? "s" : ""}${subjects.length ? ` — ${subjects.join(" · ")}` : ""}`,
+						);
 					}
 					host.broadcast({
 						kind: "new-mail",
@@ -966,7 +977,7 @@ export default {
 								smtp: { ...DEFAULT_CONFIG.smtp, ...msg.config?.smtp },
 							});
 							host.sendTo(from, { kind: "result", ok: true, action: "save_config" });
-							host.notify("info", "📬 邮箱配置已保存并生效");
+							host.notify("info", "📬 邮箱配置已保存并生效", "📬 Webmail: mailbox settings saved");
 						} catch (err) {
 							host.sendTo(from, {
 								kind: "result",
@@ -991,30 +1002,60 @@ export default {
 				case "read":
 					void serialized(() => readMail(msg))
 						.then((mail) => host.broadcast({ kind: "mail", mail }))
-						.catch((err) => host.notify("error", `📬 读取失败：${err?.message ?? err}`));
+						.catch((err) =>
+							host.notify(
+								"error",
+								`📬 读取失败：${err?.message ?? err}`,
+								`📬 Webmail: read failed: ${err?.message ?? err}`,
+							),
+						);
 					break;
 				case "search":
 					void serialized(() => searchMails(msg))
 						.then((mails) => host.broadcast({ kind: "mails", mails }))
-						.catch((err) => host.notify("error", `📬 搜索失败：${err?.message ?? err}`));
+						.catch((err) =>
+							host.notify(
+								"error",
+								`📬 搜索失败：${err?.message ?? err}`,
+								`📬 Webmail: search failed: ${err?.message ?? err}`,
+							),
+						);
 					break;
 				case "mark":
 					void serialized(() => markMails(msg))
 						.then((r) => host.broadcast({ kind: "result", ok: true, action: "mark", ...r }))
-						.catch((err) => host.notify("error", `📬 标记失败：${err?.message ?? err}`));
+						.catch((err) =>
+							host.notify(
+								"error",
+								`📬 标记失败：${err?.message ?? err}`,
+								`📬 Webmail: flag update failed: ${err?.message ?? err}`,
+							),
+						);
 					break;
 				case "delete":
 					void serialized(() => deleteMails(msg))
 						.then((r) => host.broadcast({ kind: "result", ok: true, action: "delete", ...r }))
-						.catch((err) => host.notify("error", `📬 删除失败：${err?.message ?? err}`));
+						.catch((err) =>
+							host.notify(
+								"error",
+								`📬 删除失败：${err?.message ?? err}`,
+								`📬 Webmail: delete failed: ${err?.message ?? err}`,
+							),
+						);
 					break;
 				case "send":
 					void sendMail(msg)
 						.then(() => {
-							host.notify("info", `📬 已发送给 ${msg.to}`);
+							host.notify("info", `📬 已发送给 ${msg.to}`, `📬 Webmail: sent to ${msg.to}`);
 							host.broadcast({ kind: "result", ok: true, action: "send" });
 						})
-						.catch((err) => host.notify("error", `📬 发送失败：${err?.message ?? err}`));
+						.catch((err) =>
+							host.notify(
+								"error",
+								`📬 发送失败：${err?.message ?? err}`,
+								`📬 Webmail: send failed: ${err?.message ?? err}`,
+							),
+						);
 					break;
 				case "translate":
 					void (async () => {
@@ -1033,7 +1074,11 @@ export default {
 								ok: false,
 								error: err?.message ?? String(err),
 							});
-							host.notify("error", `📬 翻译失败：${err?.message ?? err}`);
+							host.notify(
+								"error",
+								`📬 翻译失败：${err?.message ?? err}`,
+								`📬 Webmail: translate failed: ${err?.message ?? err}`,
+							);
 						}
 					})();
 					break;

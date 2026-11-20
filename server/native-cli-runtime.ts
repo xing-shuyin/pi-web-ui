@@ -8,6 +8,7 @@ export interface NativeCliSessionRef {
 export type NativeCliSessionEvent =
 	| { type: "session"; nativeId: string; eventId: string; cursor?: string }
 	| { type: "working" | "submitted" | "question" | "approval"; eventId: string }
+	| { type: "tool" | "notification" | "compact" | "subagent" | "end"; eventId: string }
 	| { type: "done"; eventId: string; aborted?: boolean }
 	| { type: "error"; eventId: string; code: string; message: string };
 

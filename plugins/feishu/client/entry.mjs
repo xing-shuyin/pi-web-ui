@@ -1,8 +1,26 @@
-import { esc as escapeHtml } from "@pi-web-ui/plugin-sdk/client";
-import { makeT } from "./i18n.mjs";
+import { createPluginI18n, esc as escapeHtml } from "@pi-web-ui/plugin-sdk/client";
+import { DICT } from "./i18n.mjs";
 
-/** 面板文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。 */
-const t = makeT();
+/** 面板文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。禁自建语言偏好，只跟宿主全局语言。 */
+const i18n = createPluginI18n(DICT);
+const t = (key, params) => i18n.t(key, params);
+
+/** 语言切换时就地重渲染静态文案（输入值与监听保留），动态列表由 refreshAll() 重画。 */
+function applyStaticTexts(root) {
+	const scope = root ?? document;
+	scope.querySelectorAll("[data-i18n]").forEach((n) => {
+		const k = n.getAttribute("data-i18n");
+		if (k) n.textContent = t(k);
+	});
+	scope.querySelectorAll("[data-i18n-ph]").forEach((n) => {
+		const k = n.getAttribute("data-i18n-ph");
+		if (k) n.setAttribute("placeholder", t(k));
+	});
+	scope.querySelectorAll("[data-i18n-title]").forEach((n) => {
+		const k = n.getAttribute("data-i18n-title");
+		if (k) n.setAttribute("title", t(k));
+	});
+}
 
 function activate(ctx) {
 	ctx.ui?.registerView?.({
@@ -16,8 +34,11 @@ function activate(ctx) {
 }
 
 activate.mount = function mount(el, ctx) {
-	renderFeishuWorkbench(el, ctx);
+	const off = renderFeishuWorkbench(el, ctx);
 	return () => {
+		try {
+			if (typeof off === "function") off();
+		} catch {}
 		try {
 			if (el) el.innerHTML = "";
 		} catch {}
@@ -44,21 +65,25 @@ function formatDate(isoStr) {
 }
 
 function renderFeishuWorkbench(container, ctx) {
+	// 首帧：显式读取宿主全局语言（SDK 内部同样以 locale.current() 为单源）
+	try {
+		globalThis.window?.__piWebUiHost?.locale?.current?.();
+	} catch {}
 	container.innerHTML = `
 		<div class="feishu-root" style="display: flex; flex-direction: column; height: 100%; width: 100%; background: var(--bg); color: var(--text); font-size: 13px; overflow: hidden; box-sizing: border-box;">
 			<!-- Topbar -->
 			<div class="feishu-topbar" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--bg-elev); flex-shrink: 0; gap: 12px; flex-wrap: wrap;">
 				<div style="display: flex; align-items: center; gap: 10px;">
 					<span style="font-size: 18px;">🐦</span>
-					<span style="font-weight: 600; font-size: 14px;">${t("workbench")}</span>
-					<span class="feishu-status-badge" style="font-size: 11px; padding: 2px 8px; border-radius: 12px; background: var(--bg-elev2); color: var(--text-dim); border: 1px solid var(--border);">${t("statusChecking")}</span>
+					<span style="font-weight: 600; font-size: 14px;" data-i18n="workbench">${t("workbench")}</span>
+					<span class="feishu-status-badge" style="font-size: 11px; padding: 2px 8px; border-radius: 12px; background: var(--bg-elev2); color: var(--text-dim); border: 1px solid var(--border);" data-i18n="statusChecking">${t("statusChecking")}</span>
 				</div>
 				<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-					<input type="text" class="feishu-search-input" placeholder="${t("searchPlaceholder")}" style="padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; width: 180px; outline: none;" />
-					<button class="feishu-btn feishu-btn-search" style="padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px;">${t("search")}</button>
-					<button class="feishu-btn feishu-btn-compose" style="padding: 5px 12px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-size: 12px; font-weight: 500;">${t("newCompose")}</button>
-					<button class="feishu-btn feishu-btn-refresh" style="padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px;" title="${t("refreshTitle")}">${t("refresh")}</button>
-					<button class="feishu-btn feishu-btn-settings" style="padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px;" title="${t("settingsTitle")}">${t("settings")}</button>
+					<input type="text" class="feishu-search-input" data-i18n-ph="searchPlaceholder" placeholder="${t("searchPlaceholder")}" style="padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; width: 180px; outline: none;" />
+					<button class="feishu-btn feishu-btn-search" style="padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px;" data-i18n="search">${t("search")}</button>
+					<button class="feishu-btn feishu-btn-compose" style="padding: 5px 12px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-size: 12px; font-weight: 500;" data-i18n="newCompose">${t("newCompose")}</button>
+					<button class="feishu-btn feishu-btn-refresh" style="padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px;" data-i18n-title="refreshTitle" title="${t("refreshTitle")}">${t("refresh")}</button>
+					<button class="feishu-btn feishu-btn-settings" style="padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px;" data-i18n-title="settingsTitle" title="${t("settingsTitle")}">${t("settings")}</button>
 				</div>
 			</div>
 
@@ -67,22 +92,22 @@ function renderFeishuWorkbench(container, ctx) {
 				<!-- Left Column: Chats & Channels -->
 				<div class="feishu-col-chats" style="width: 220px; border-right: 1px solid var(--border); background: var(--bg-elev); display: flex; flex-direction: column; flex-shrink: 0;">
 					<div style="padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; display: flex; justify-content: space-between; align-items: center;">
-						<span>${t("chatsSection")}</span>
-						<button class="feishu-btn-add-chat" style="padding: 2px 6px; font-size: 11px; border-radius: 3px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;" title="${t("addChatTitle")}">+</button>
+						<span data-i18n="chatsSection">${t("chatsSection")}</span>
+						<button class="feishu-btn-add-chat" style="padding: 2px 6px; font-size: 11px; border-radius: 3px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;" data-i18n-title="addChatTitle" title="${t("addChatTitle")}">+</button>
 					</div>
 					<div class="feishu-chats-list" style="flex: 1; overflow-y: auto; padding: 6px;">
-						<div style="padding: 12px; text-align: center; color: var(--text-dim);">${t("loadingChats")}</div>
+						<div style="padding: 12px; text-align: center; color: var(--text-dim);" data-i18n="loadingChats">${t("loadingChats")}</div>
 					</div>
 				</div>
 
 				<!-- Middle Column: Messages Stream -->
 				<div class="feishu-col-messages" style="width: 320px; border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; background: var(--bg);">
 					<div class="feishu-msgs-header" style="padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; background: var(--bg-elev);">
-						<span class="feishu-current-chat-title">${t("messagesList")}</span>
+						<span class="feishu-current-chat-title" data-i18n="messagesList">${t("messagesList")}</span>
 						<span class="feishu-msgs-count" style="font-size: 11px; color: var(--text-dim);">${t("msgCount", { n: 0 })}</span>
 					</div>
 					<div class="feishu-messages-list" style="flex: 1; overflow-y: auto; padding: 6px;">
-						<div style="padding: 20px; text-align: center; color: var(--text-dim);">${t("selectChatPrompt")}</div>
+						<div style="padding: 20px; text-align: center; color: var(--text-dim);" data-i18n="selectChatPrompt">${t("selectChatPrompt")}</div>
 					</div>
 				</div>
 
@@ -90,7 +115,7 @@ function renderFeishuWorkbench(container, ctx) {
 				<div class="feishu-col-reader" style="flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg); overflow-y: auto;">
 					<div class="feishu-reader-placeholder" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-dim); padding: 40px; text-align: center;">
 						<span style="font-size: 32px; margin-bottom: 12px;">🐦</span>
-						<div style="font-weight: 500; font-size: 15px; margin-bottom: 6px;">${t("readerTitle")}</div>
+						<div style="font-weight: 500; font-size: 15px; margin-bottom: 6px;" data-i18n="readerTitle">${t("readerTitle")}</div>
 						<div style="font-size: 12px; max-width: 380px; line-height: 1.6;">
 							${t("readerHint")}
 						</div>
@@ -105,37 +130,37 @@ function renderFeishuWorkbench(container, ctx) {
 							<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 12px; color: var(--text-dim); margin-bottom: 12px;">
 								<div>${t("senderLabel")} <b class="feishu-reader-sender" style="color: var(--text);"></b></div>
 								<div>${t("timeLabel")} <span class="feishu-reader-date"></span></div>
-								<div>ID: <code class="feishu-reader-msgid" style="font-size: 11px; background: var(--bg-elev2); padding: 1px 4px; border-radius: 3px; cursor: pointer;" title="${t("copyMsgIdTitle")}"></code></div>
+								<div>ID: <code class="feishu-reader-msgid" style="font-size: 11px; background: var(--bg-elev2); padding: 1px 4px; border-radius: 3px; cursor: pointer;" data-i18n-title="copyMsgIdTitle" title="${t("copyMsgIdTitle")}"></code></div>
 							</div>
 							<!-- Actions Toolbar -->
 							<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
-								<button class="feishu-btn feishu-btn-reply" style="padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px;">${t("reply")}</button>
-								<button class="feishu-btn feishu-btn-reply-thread" style="padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px;">${t("replyThread")}</button>
-								<button class="feishu-btn feishu-btn-quote" style="padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px;" title="${t("quoteTitle")}">${t("quote")}</button>
+								<button class="feishu-btn feishu-btn-reply" style="padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px;" data-i18n="reply">${t("reply")}</button>
+								<button class="feishu-btn feishu-btn-reply-thread" style="padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px;" data-i18n="replyThread">${t("replyThread")}</button>
+								<button class="feishu-btn feishu-btn-quote" style="padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px;" data-i18n-title="quoteTitle" title="${t("quoteTitle")}">${t("quote")}</button>
 								<div style="display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; background: var(--bg-elev2);">
-									<button class="feishu-btn feishu-btn-translate" style="background: none; border: none; color: var(--text); cursor: pointer; font-size: 12px; padding: 0;">${t("translate")}</button>
+									<button class="feishu-btn feishu-btn-translate" style="background: none; border: none; color: var(--text); cursor: pointer; font-size: 12px; padding: 0;" data-i18n="translate">${t("translate")}</button>
 									<select class="feishu-translate-model" style="background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 3px; font-size: 11px; padding: 1px 4px; outline: none;">
-										<option value="">${t("followDefault")}</option>
+										<option value="" data-i18n="followDefault">${t("followDefault")}</option>
 									</select>
 								</div>
 								<!-- Reaction bar -->
 								<div class="feishu-reaction-bar" style="display: inline-flex; gap: 2px; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px; background: var(--bg-elev2);">
-									<button class="feishu-react-btn" data-emoji="THUMBSUP" style="border: none; background: none; cursor: pointer; font-size: 14px;" title="${t("reactLike")}">👍</button>
-									<button class="feishu-react-btn" data-emoji="OK" style="border: none; background: none; cursor: pointer; font-size: 14px;" title="${t("reactOk")}">👌</button>
-									<button class="feishu-react-btn" data-emoji="HEART" style="border: none; background: none; cursor: pointer; font-size: 14px;" title="${t("reactHeart")}">❤️</button>
-									<button class="feishu-react-btn" data-emoji="APPLAUSE" style="border: none; background: none; cursor: pointer; font-size: 14px;" title="${t("reactApplause")}">👏</button>
-									<button class="feishu-react-btn" data-emoji="DONE" style="border: none; background: none; cursor: pointer; font-size: 14px;" title="${t("reactDone")}">✅</button>
-									<button class="feishu-react-btn" data-emoji="FIRE" style="border: none; background: none; cursor: pointer; font-size: 14px;" title="${t("reactFire")}">🔥</button>
+									<button class="feishu-react-btn" data-emoji="THUMBSUP" style="border: none; background: none; cursor: pointer; font-size: 14px;" data-i18n-title="reactLike" title="${t("reactLike")}">👍</button>
+									<button class="feishu-react-btn" data-emoji="OK" style="border: none; background: none; cursor: pointer; font-size: 14px;" data-i18n-title="reactOk" title="${t("reactOk")}">👌</button>
+									<button class="feishu-react-btn" data-emoji="HEART" style="border: none; background: none; cursor: pointer; font-size: 14px;" data-i18n-title="reactHeart" title="${t("reactHeart")}">❤️</button>
+									<button class="feishu-react-btn" data-emoji="APPLAUSE" style="border: none; background: none; cursor: pointer; font-size: 14px;" data-i18n-title="reactApplause" title="${t("reactApplause")}">👏</button>
+									<button class="feishu-react-btn" data-emoji="DONE" style="border: none; background: none; cursor: pointer; font-size: 14px;" data-i18n-title="reactDone" title="${t("reactDone")}">✅</button>
+									<button class="feishu-react-btn" data-emoji="FIRE" style="border: none; background: none; cursor: pointer; font-size: 14px;" data-i18n-title="reactFire" title="${t("reactFire")}">🔥</button>
 								</div>
-								<button class="feishu-btn feishu-btn-recall" style="padding: 4px 10px; border-radius: 4px; border: 1px solid var(--red, #f87171); background: transparent; color: var(--red, #f87171); cursor: pointer; font-size: 12px; margin-left: auto;" title="${t("recallTitle")}">${t("recall")}</button>
+								<button class="feishu-btn feishu-btn-recall" style="padding: 4px 10px; border-radius: 4px; border: 1px solid var(--red, #f87171); background: transparent; color: var(--red, #f87171); cursor: pointer; font-size: 12px; margin-left: auto;" data-i18n-title="recallTitle" title="${t("recallTitle")}">${t("recall")}</button>
 							</div>
 						</div>
 
 						<!-- Translation Banner (Conditional) -->
 						<div class="feishu-translation-banner" style="display: none; padding: 12px 16px; background: var(--bg-elev2); border-bottom: 1px solid var(--border);">
 							<div style="font-size: 11px; font-weight: 600; color: var(--accent); margin-bottom: 4px; display: flex; justify-content: space-between;">
-								<span>${t("translationResult")}</span>
-								<button class="feishu-btn-hide-trans" style="border: none; background: none; color: var(--text-dim); cursor: pointer; font-size: 11px;">${t("hide")}</button>
+								<span data-i18n="translationResult">${t("translationResult")}</span>
+								<button class="feishu-btn-hide-trans" style="border: none; background: none; color: var(--text-dim); cursor: pointer; font-size: 11px;" data-i18n="hide">${t("hide")}</button>
 							</div>
 							<div class="feishu-translation-text" style="font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;"></div>
 						</div>
@@ -145,7 +170,7 @@ function renderFeishuWorkbench(container, ctx) {
 
 						<!-- Raw JSON Inspector (collapsible) -->
 						<details class="feishu-raw-details" style="padding: 10px 16px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-dim); background: var(--bg-elev);">
-							<summary style="cursor: pointer; user-select: none;">${t("rawDetails")}</summary>
+							<summary style="cursor: pointer; user-select: none;" data-i18n="rawDetails">${t("rawDetails")}</summary>
 							<pre class="feishu-raw-pre" style="margin-top: 8px; padding: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; overflow-x: auto; font-family: var(--mono, monospace); font-size: 11px; max-height: 200px;"></pre>
 						</details>
 					</div>
@@ -156,51 +181,51 @@ function renderFeishuWorkbench(container, ctx) {
 			<div class="feishu-compose-modal" style="display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center;">
 				<div style="width: 520px; max-width: 90%; max-height: 90%; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.3);">
 					<div style="padding: 12px 16px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 14px; display: flex; justify-content: space-between; align-items: center;">
-						<span class="feishu-compose-title">${t("composeModalTitle")}</span>
+						<span class="feishu-compose-title" data-i18n="composeModalTitle">${t("composeModalTitle")}</span>
 						<button class="feishu-compose-close" style="border: none; background: none; color: var(--text-dim); cursor: pointer; font-size: 16px;">×</button>
 					</div>
 					<div style="padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; font-size: 12px;">
 						<div>
-							<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${t("targetLabel")}</label>
-							<input type="text" class="feishu-input-target" placeholder="${t("targetPlaceholder")}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+							<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="targetLabel">${t("targetLabel")}</label>
+							<input type="text" class="feishu-input-target" data-i18n-ph="targetPlaceholder" placeholder="${t("targetPlaceholder")}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 						</div>
 						<div style="display: flex; gap: 12px;">
 							<div style="flex: 1;">
-								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${t("msgTypeLabel")}</label>
+								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="msgTypeLabel">${t("msgTypeLabel")}</label>
 								<select class="feishu-select-msgtype" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
-									<option value="text">${t("msgTypeText")}</option>
-									<option value="post">${t("msgTypePost")}</option>
-									<option value="interactive">${t("msgTypeInteractive")}</option>
+									<option value="text" data-i18n="msgTypeText">${t("msgTypeText")}</option>
+									<option value="post" data-i18n="msgTypePost">${t("msgTypePost")}</option>
+									<option value="interactive" data-i18n="msgTypeInteractive">${t("msgTypeInteractive")}</option>
 								</select>
 							</div>
 							<div class="feishu-wrap-template" style="flex: 1; display: none;">
-								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${t("cardThemeLabel")}</label>
+								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="cardThemeLabel">${t("cardThemeLabel")}</label>
 								<select class="feishu-select-template" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
-									<option value="blue">${t("cardColorBlue")}</option>
-									<option value="wathet">${t("cardColorWathet")}</option>
-									<option value="turquoise">${t("cardColorTurquoise")}</option>
-									<option value="green">${t("cardColorGreen")}</option>
-									<option value="yellow">${t("cardColorYellow")}</option>
-									<option value="orange">${t("cardColorOrange")}</option>
-									<option value="red">${t("cardColorRed")}</option>
-									<option value="violet">${t("cardColorViolet")}</option>
-									<option value="purple">${t("cardColorPurple")}</option>
-									<option value="grey">${t("cardColorGrey")}</option>
+									<option value="blue" data-i18n="cardColorBlue">${t("cardColorBlue")}</option>
+									<option value="wathet" data-i18n="cardColorWathet">${t("cardColorWathet")}</option>
+									<option value="turquoise" data-i18n="cardColorTurquoise">${t("cardColorTurquoise")}</option>
+									<option value="green" data-i18n="cardColorGreen">${t("cardColorGreen")}</option>
+									<option value="yellow" data-i18n="cardColorYellow">${t("cardColorYellow")}</option>
+									<option value="orange" data-i18n="cardColorOrange">${t("cardColorOrange")}</option>
+									<option value="red" data-i18n="cardColorRed">${t("cardColorRed")}</option>
+									<option value="violet" data-i18n="cardColorViolet">${t("cardColorViolet")}</option>
+									<option value="purple" data-i18n="cardColorPurple">${t("cardColorPurple")}</option>
+									<option value="grey" data-i18n="cardColorGrey">${t("cardColorGrey")}</option>
 								</select>
 							</div>
 						</div>
 						<div class="feishu-wrap-title" style="display: none;">
-							<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${t("titleOptional")}</label>
-							<input type="text" class="feishu-input-title" placeholder="${t("titlePlaceholder")}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+							<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="titleOptional">${t("titleOptional")}</label>
+							<input type="text" class="feishu-input-title" data-i18n-ph="titlePlaceholder" placeholder="${t("titlePlaceholder")}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 						</div>
 						<div>
-							<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${t("contentLabel")}</label>
-							<textarea class="feishu-input-content" rows="6" placeholder="${t("contentPlaceholder")}" style="width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); resize: vertical; font-family: inherit; font-size: 12px;"></textarea>
+							<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="contentLabel">${t("contentLabel")}</label>
+							<textarea class="feishu-input-content" rows="6" data-i18n-ph="contentPlaceholder" placeholder="${t("contentPlaceholder")}" style="width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); resize: vertical; font-family: inherit; font-size: 12px;"></textarea>
 						</div>
 					</div>
 					<div style="padding: 12px 16px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px;">
-						<button class="feishu-compose-cancel" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;">${t("cancel")}</button>
-						<button class="feishu-compose-submit" style="padding: 6px 16px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-weight: 500;">${t("send")}</button>
+						<button class="feishu-compose-cancel" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;" data-i18n="cancel">${t("cancel")}</button>
+						<button class="feishu-compose-submit" style="padding: 6px 16px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-weight: 500;" data-i18n="send">${t("send")}</button>
 					</div>
 				</div>
 			</div>
@@ -209,117 +234,117 @@ function renderFeishuWorkbench(container, ctx) {
 			<div class="feishu-settings-modal" style="display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center;">
 				<div style="width: 540px; max-width: 90%; max-height: 90%; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.3);">
 					<div style="padding: 12px 16px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 14px; display: flex; justify-content: space-between; align-items: center;">
-						<span>${t("settingsModalTitle")}</span>
+						<span data-i18n="settingsModalTitle">${t("settingsModalTitle")}</span>
 						<button class="feishu-settings-close" style="border: none; background: none; color: var(--text-dim); cursor: pointer; font-size: 16px;">×</button>
 					</div>
 					<div style="padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; font-size: 12px;">
 						<div>
-							<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${t("presetLabel")}</label>
+							<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="presetLabel">${t("presetLabel")}</label>
 							<select class="feishu-cfg-preset" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
-								<option value="feishu">${t("presetFeishu")}</option>
-								<option value="lark">${t("presetLark")}</option>
-								<option value="webhook">${t("presetWebhook")}</option>
-								<option value="custom">${t("presetCustom")}</option>
+								<option value="feishu" data-i18n="presetFeishu">${t("presetFeishu")}</option>
+								<option value="lark" data-i18n="presetLark">${t("presetLark")}</option>
+								<option value="webhook" data-i18n="presetWebhook">${t("presetWebhook")}</option>
+								<option value="custom" data-i18n="presetCustom">${t("presetCustom")}</option>
 							</select>
 							<div class="feishu-cfg-hint" style="margin-top: 4px; font-size: 11px; color: var(--text-dim); line-height: 1.4;"></div>
 						</div>
 						<div class="feishu-cfg-wrap-baseurl" style="display: none;">
-							<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${t("baseUrlLabel")}</label>
+							<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="baseUrlLabel">${t("baseUrlLabel")}</label>
 							<input type="text" class="feishu-cfg-baseurl" placeholder="https://open.feishu.cn" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 						</div>
 						<div class="feishu-cfg-app-section" style="border-top: 1px solid var(--border); padding-top: 12px;">
-							<div style="font-weight: 600; margin-bottom: 8px;">${t("appCredSection")}</div>
+							<div style="font-weight: 600; margin-bottom: 8px;" data-i18n="appCredSection">${t("appCredSection")}</div>
 							<div style="display: flex; gap: 10px; margin-bottom: 8px;">
 								<div style="flex: 1;">
-									<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${t("appIdLabel")}</label>
+									<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="appIdLabel">${t("appIdLabel")}</label>
 									<input type="text" class="feishu-cfg-appid" placeholder="cli_a1b2c3d4e5" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 								</div>
 								<div style="flex: 1;">
-									<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${t("appSecretLabel")}</label>
-									<input type="password" class="feishu-cfg-appsecret" placeholder="${t("keepBlank")}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+									<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="appSecretLabel">${t("appSecretLabel")}</label>
+									<input type="password" class="feishu-cfg-appsecret" data-i18n-ph="keepBlank" placeholder="${t("keepBlank")}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 								</div>
 							</div>
 							<div style="display: flex; gap: 10px;">
 								<div style="flex: 1;">
-									<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${t("defaultChatLabel")}</label>
-									<input type="text" class="feishu-cfg-default-chat" placeholder="${t("defaultChatPlaceholder")}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+									<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="defaultChatLabel">${t("defaultChatLabel")}</label>
+									<input type="text" class="feishu-cfg-default-chat" data-i18n-ph="defaultChatPlaceholder" placeholder="${t("defaultChatPlaceholder")}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 								</div>
 								<div style="flex: 1;">
-									<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${t("pollSecLabel")}</label>
+									<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="pollSecLabel">${t("pollSecLabel")}</label>
 									<input type="number" class="feishu-cfg-pollsec" placeholder="60" min="15" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 								</div>
 							</div>
 						</div>
 						<div class="feishu-cfg-bot-section" style="border-top: 1px solid var(--border); padding-top: 12px;">
 							<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-								<div style="font-weight: 600;">${t("botSection")}</div>
-								<span class="feishu-bot-status-badge" style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: var(--bg); border: 1px solid var(--border);">${t("botNotStarted")}</span>
+								<div style="font-weight: 600;" data-i18n="botSection">${t("botSection")}</div>
+								<span class="feishu-bot-status-badge" style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: var(--bg); border: 1px solid var(--border);" data-i18n="botNotStarted">${t("botNotStarted")}</span>
 							</div>
 							<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
 								<input type="checkbox" id="feishu-cfg-bot-enabled" class="feishu-cfg-bot-enabled" style="cursor: pointer;" />
-								<label for="feishu-cfg-bot-enabled" style="font-size: 12px; cursor: pointer; user-select: none;">${t("botEnableLabel")}</label>
+								<label for="feishu-cfg-bot-enabled" style="font-size: 12px; cursor: pointer; user-select: none;" data-i18n="botEnableLabel">${t("botEnableLabel")}</label>
 							</div>
 							<div style="display: flex; gap: 10px; margin-bottom: 8px;">
 								<div style="flex: 1;">
-									<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${t("groupModeLabel")}</label>
+									<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="groupModeLabel">${t("groupModeLabel")}</label>
 									<select class="feishu-cfg-group-mode" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
-										<option value="mention">${t("groupModeMention")}</option>
-										<option value="none">${t("groupModeNone")}</option>
-										<option value="all">${t("groupModeAll")}</option>
+										<option value="mention" data-i18n="groupModeMention">${t("groupModeMention")}</option>
+										<option value="none" data-i18n="groupModeNone">${t("groupModeNone")}</option>
+										<option value="all" data-i18n="groupModeAll">${t("groupModeAll")}</option>
 									</select>
 								</div>
 								<div style="flex: 1;">
-									<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${t("allowedSendersLabel")}</label>
-									<input type="text" class="feishu-cfg-allowed-senders" placeholder="${t("allowedSendersPlaceholder")}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+									<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="allowedSendersLabel">${t("allowedSendersLabel")}</label>
+									<input type="text" class="feishu-cfg-allowed-senders" data-i18n-ph="allowedSendersPlaceholder" placeholder="${t("allowedSendersPlaceholder")}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 								</div>
 							</div>
 							<div style="margin-bottom: 8px;">
 								<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-									<label style="color: var(--text-dim);">${t("workspaceLabel")}</label>
+									<label style="color: var(--text-dim);" data-i18n="workspaceLabel">${t("workspaceLabel")}</label>
 								</div>
 								<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-									<input type="text" class="feishu-cfg-workspace" placeholder="${t("workspacePlaceholder")}" style="flex: 2; min-width: 180px; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; outline: none;" />
+									<input type="text" class="feishu-cfg-workspace" data-i18n-ph="workspacePlaceholder" placeholder="${t("workspacePlaceholder")}" style="flex: 2; min-width: 180px; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; outline: none;" />
 									<select class="feishu-cfg-ws-select" style="min-width: 130px; box-sizing: border-box; padding: 6px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; outline: none;">
-										<option value="">${t("quickPickProject")}</option>
+										<option value="" data-i18n="quickPickProject">${t("quickPickProject")}</option>
 									</select>
-									<button type="button" class="feishu-cfg-ws-browse" style="padding: 6px 10px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;">${t("browse")}</button>
-									<button type="button" class="feishu-cfg-use-cwd" style="padding: 6px 10px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;">${t("useCurrentProject")}</button>
+									<button type="button" class="feishu-cfg-ws-browse" style="padding: 6px 10px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;" data-i18n="browse">${t("browse")}</button>
+									<button type="button" class="feishu-cfg-use-cwd" style="padding: 6px 10px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;" data-i18n="useCurrentProject">${t("useCurrentProject")}</button>
 								</div>
 							</div>
 							<div style="margin-bottom: 8px;">
-								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${t("modelLabel")}</label>
+								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="modelLabel">${t("modelLabel")}</label>
 								<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-									<input type="text" class="feishu-cfg-model" placeholder="${t("modelPlaceholder")}" style="flex: 2; min-width: 180px; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; outline: none;" />
-									<button type="button" class="feishu-cfg-model-browse" style="padding: 6px 10px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;">${t("pickModel")}</button>
+									<input type="text" class="feishu-cfg-model" data-i18n-ph="modelPlaceholder" placeholder="${t("modelPlaceholder")}" style="flex: 2; min-width: 180px; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; outline: none;" />
+									<button type="button" class="feishu-cfg-model-browse" style="padding: 6px 10px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;" data-i18n="pickModel">${t("pickModel")}</button>
 									<select class="feishu-cfg-thinking" style="min-width: 130px; box-sizing: border-box; padding: 6px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; outline: none;">
-										<option value="">${t("thinkingFollow")}</option>
-										<option value="off">${t("thinkingOff")}</option>
-										<option value="low">${t("thinkingLow")}</option>
-										<option value="medium">${t("thinkingMedium")}</option>
-										<option value="high">${t("thinkingHigh")}</option>
-										<option value="max">${t("thinkingMax")}</option>
+										<option value="" data-i18n="thinkingFollow">${t("thinkingFollow")}</option>
+										<option value="off" data-i18n="thinkingOff">${t("thinkingOff")}</option>
+										<option value="low" data-i18n="thinkingLow">${t("thinkingLow")}</option>
+										<option value="medium" data-i18n="thinkingMedium">${t("thinkingMedium")}</option>
+										<option value="high" data-i18n="thinkingHigh">${t("thinkingHigh")}</option>
+										<option value="max" data-i18n="thinkingMax">${t("thinkingMax")}</option>
 									</select>
 								</div>
 							</div>
 							<div class="feishu-bot-metrics" style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">${t("botMetrics", { received: 0, replied: 0 })}</div>
 						</div>
 						<div class="feishu-cfg-webhook-section" style="border-top: 1px solid var(--border); padding-top: 12px;">
-							<div style="font-weight: 600; margin-bottom: 8px;">${t("webhookSection")}</div>
+							<div style="font-weight: 600; margin-bottom: 8px;" data-i18n="webhookSection">${t("webhookSection")}</div>
 							<div style="margin-bottom: 8px;">
-								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${t("webhookUrlLabel")}</label>
+								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="webhookUrlLabel">${t("webhookUrlLabel")}</label>
 								<input type="text" class="feishu-cfg-webhook-url" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/xxxx" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 							</div>
 							<div>
-								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${t("webhookSecretLabel")}</label>
-								<input type="password" class="feishu-cfg-webhook-secret" placeholder="${t("keepBlank")}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);" data-i18n="webhookSecretLabel">${t("webhookSecretLabel")}</label>
+								<input type="password" class="feishu-cfg-webhook-secret" data-i18n-ph="keepBlank" placeholder="${t("keepBlank")}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 							</div>
 						</div>
 					</div>
 					<div style="padding: 12px 16px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg-elev2);">
-						<button class="feishu-settings-test" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;">${t("testConnection")}</button>
+						<button class="feishu-settings-test" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;" data-i18n="testConnection">${t("testConnection")}</button>
 						<div style="display: flex; gap: 8px;">
-							<button class="feishu-settings-cancel" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;">${t("cancel")}</button>
-							<button class="feishu-settings-save" style="padding: 6px 16px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-weight: 500;">${t("saveConfig")}</button>
+							<button class="feishu-settings-cancel" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;" data-i18n="cancel">${t("cancel")}</button>
+							<button class="feishu-settings-save" style="padding: 6px 16px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-weight: 500;" data-i18n="saveConfig">${t("saveConfig")}</button>
 						</div>
 					</div>
 				</div>
@@ -477,7 +502,7 @@ function renderFeishuWorkbench(container, ctx) {
 	function renderChats() {
 		if (!chatsListEl) return;
 		if (!state.chats.length) {
-			chatsListEl.innerHTML = `<div style="padding: 16px; text-align: center; color: var(--text-dim); font-size: 12px;">${t("noChats")}</div>`;
+			chatsListEl.innerHTML = `<div style="padding: 16px; text-align: center; color: var(--text-dim); font-size: 12px;" data-i18n="noChats">${t("noChats")}</div>`;
 			return;
 		}
 
@@ -495,7 +520,7 @@ function renderFeishuWorkbench(container, ctx) {
 						<div style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px;">
 							${escapeHtml(c.name)}
 						</div>
-						${c.isCustom ? `<button class="feishu-remove-custom-btn" data-id="${escapeHtml(c.id)}" style="border: none; background: none; color: var(--text-dim); cursor: pointer; font-size: 11px;" title="${t("removeCustomChatTitle")}">×</button>` : ""}
+						${c.isCustom ? `<button class="feishu-remove-custom-btn" data-id="${escapeHtml(c.id)}" style="border: none; background: none; color: var(--text-dim); cursor: pointer; font-size: 11px;" data-i18n-title="removeCustomChatTitle" title="${t("removeCustomChatTitle")}">×</button>` : ""}
 					</div>
 				`;
 			})
@@ -527,7 +552,7 @@ function renderFeishuWorkbench(container, ctx) {
 	function renderMessages() {
 		if (!messagesListEl) return;
 		if (!state.messages.length) {
-			messagesListEl.innerHTML = `<div style="padding: 24px 12px; text-align: center; color: var(--text-dim); font-size: 12px;">${t("noMessages")}</div>`;
+			messagesListEl.innerHTML = `<div style="padding: 24px 12px; text-align: center; color: var(--text-dim); font-size: 12px;" data-i18n="noMessages">${t("noMessages")}</div>`;
 			msgsCountEl.textContent = t("msgCount", { n: 0 });
 			return;
 		}
@@ -542,13 +567,13 @@ function renderFeishuWorkbench(container, ctx) {
 
 				let typeBadge = "";
 				if (m.msgType === "post")
-					typeBadge = `<span style="font-size: 10px; padding: 1px 4px; border-radius: 3px; background: var(--bg-elev2); color: var(--text-dim);">${t("typePost")}</span>`;
+					typeBadge = `<span style="font-size: 10px; padding: 1px 4px; border-radius: 3px; background: var(--bg-elev2); color: var(--text-dim);" data-i18n="typePost">${t("typePost")}</span>`;
 				else if (m.msgType === "interactive")
-					typeBadge = `<span style="font-size: 10px; padding: 1px 4px; border-radius: 3px; background: var(--accent); color: var(--accent-contrast, #fff);">${t("typeCard")}</span>`;
+					typeBadge = `<span style="font-size: 10px; padding: 1px 4px; border-radius: 3px; background: var(--accent); color: var(--accent-contrast, #fff);" data-i18n="typeCard">${t("typeCard")}</span>`;
 				else if (m.msgType === "image")
-					typeBadge = `<span style="font-size: 10px; padding: 1px 4px; border-radius: 3px; background: var(--bg-elev2); color: var(--text-dim);">${t("typeImage")}</span>`;
+					typeBadge = `<span style="font-size: 10px; padding: 1px 4px; border-radius: 3px; background: var(--bg-elev2); color: var(--text-dim);" data-i18n="typeImage">${t("typeImage")}</span>`;
 				else if (m.msgType === "file")
-					typeBadge = `<span style="font-size: 10px; padding: 1px 4px; border-radius: 3px; background: var(--bg-elev2); color: var(--text-dim);">${t("typeFile")}</span>`;
+					typeBadge = `<span style="font-size: 10px; padding: 1px 4px; border-radius: 3px; background: var(--bg-elev2); color: var(--text-dim);" data-i18n="typeFile">${t("typeFile")}</span>`;
 
 				return `
 					<div class="feishu-msg-item" data-id="${escapeHtml(m.id)}" style="padding: 10px; border-radius: 6px; cursor: pointer; margin-bottom: 4px; border: 1px solid ${isSelected ? "var(--accent)" : "transparent"}; background: ${isSelected ? "var(--bg-elev2)" : "var(--bg-elev)"};">
@@ -589,7 +614,7 @@ function renderFeishuWorkbench(container, ctx) {
 	}
 
 	async function loadMessages(chatId) {
-		messagesListEl.innerHTML = `<div style="padding: 20px; text-align: center; color: var(--text-dim);">${t("syncingMessages")}</div>`;
+		messagesListEl.innerHTML = `<div style="padding: 20px; text-align: center; color: var(--text-dim);" data-i18n="syncingMessages">${t("syncingMessages")}</div>`;
 		const res = await sendHost("list_messages", { chatId, limit: 30 });
 		if (res?.items) {
 			state.messages = res.items;
@@ -648,7 +673,7 @@ function renderFeishuWorkbench(container, ctx) {
 
 	q(".feishu-btn-search").addEventListener("click", async () => {
 		const query = q(".feishu-search-input").value.trim();
-		messagesListEl.innerHTML = `<div style="padding: 20px; text-align: center; color: var(--text-dim);">${t("searching")}</div>`;
+		messagesListEl.innerHTML = `<div style="padding: 20px; text-align: center; color: var(--text-dim);" data-i18n="searching">${t("searching")}</div>`;
 		const res = await sendHost("search_messages", { query, chatId: state.activeChatId });
 		if (res?.items) {
 			state.messages = res.items;
@@ -873,7 +898,7 @@ function renderFeishuWorkbench(container, ctx) {
 
 		try {
 			const hostProjects = globalThis.window?.__piWebUiHost?.listProjects?.() ?? [];
-			cfgWsSelect.innerHTML = `<option value="">${t("quickPickProject")}</option>`;
+			cfgWsSelect.innerHTML = `<option value="" data-i18n="quickPickProject">${t("quickPickProject")}</option>`;
 			for (const p of hostProjects) {
 				if (!p) continue;
 				const name =
@@ -1010,5 +1035,16 @@ function renderFeishuWorkbench(container, ctx) {
 		}
 	});
 
+	// 宿主切语言后重渲染：静态文案就地更新 + 动态列表重拉（输入值与监听保留）
+	const offLocale = i18n.onChange(() => {
+		try {
+			applyStaticTexts(container);
+		} catch {}
+		try {
+			refreshAll();
+		} catch {}
+	});
+
 	refreshAll();
+	return offLocale;
 }

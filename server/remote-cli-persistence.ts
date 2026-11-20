@@ -3,7 +3,13 @@ import type { IPty } from "node-pty";
 import { shellQuotePosix, type RemoteSshService } from "./remote-ssh-service.js";
 
 type PersistenceService = Pick<RemoteSshService, "execInWorkspace" | "createCommandPty">;
-type Launch = { file: string; args: string[]; env?: NodeJS.ProcessEnv; unsetEnv?: string[] };
+type Launch = {
+	file: string;
+	args: string[];
+	env?: NodeJS.ProcessEnv;
+	unsetEnv?: string[];
+	files?: Array<{ path: string; content: string }>;
+};
 export interface PersistentRemoteNativeCli {
 	pty: IPty;
 	created: boolean;

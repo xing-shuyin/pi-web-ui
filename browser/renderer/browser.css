@@ -95,6 +95,10 @@ body {
 	margin: 0;
 	width: 100%;
 	min-height: 100%;
+	/* 首帧底色：脚本还没给 body 加 pb-* 类之前，页面也不能是浏览器默认的白色（那就是白闪本身）。
+	   深色是 `:root` 的默认值，浅色主题由 applySettings 写的 data-theme 接上；
+	   主进程侧的同一块颜色在 `browser/runtime/palette.ts`，两处由单测对齐守住。 */
+	background: var(--pb-bg-main);
 }
 
 body.pb-shell,

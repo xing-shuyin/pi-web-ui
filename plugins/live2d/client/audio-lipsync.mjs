@@ -148,7 +148,7 @@ export class AudioLipSyncEngine {
 		});
 
 		this.audioEl.addEventListener("error", () => {
-			console.warn("[live2d] 音频播放错误:", this.audioEl.error);
+			console.warn("[live2d] audio playback error:", this.audioEl.error);
 			this.state = "idle";
 			this.mouthOpen = 0.0;
 			this._resetVadState();
@@ -207,7 +207,7 @@ export class AudioLipSyncEngine {
 			this.gainNode.connect(this.audioCtx.destination);
 			return true;
 		} catch (err) {
-			console.warn("[live2d] 创建 AudioContext 节点失败:", err);
+			console.warn("[live2d] failed to create AudioContext nodes:", err);
 			return false;
 		}
 	}
@@ -225,7 +225,7 @@ export class AudioLipSyncEngine {
 			this._mediaElementSource = this.audioCtx.createMediaElementSource(this.audioEl);
 			this._mediaElementSource.connect(this.analyser);
 		} catch (err) {
-			console.warn("[live2d] 连接 mediaElementSource 异常:", err);
+			console.warn("[live2d] mediaElementSource connection failed:", err);
 		}
 	}
 
@@ -249,7 +249,7 @@ export class AudioLipSyncEngine {
 		try {
 			await this.audioEl.play();
 		} catch (err) {
-			console.warn("[live2d] 自动播放失败 (需用户手势触发):", err);
+			console.warn("[live2d] autoplay failed (needs a user gesture):", err);
 		}
 	}
 
@@ -267,7 +267,7 @@ export class AudioLipSyncEngine {
 		try {
 			await this.audioEl.play();
 		} catch (err) {
-			console.warn("[live2d] 播放 URL 失败:", err);
+			console.warn("[live2d] failed to play URL:", err);
 		}
 	}
 

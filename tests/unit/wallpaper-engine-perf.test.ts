@@ -198,7 +198,7 @@ describe("wallpaper-engine 性能优化与画质分级守卫测试", () => {
 		expect(styles).toContain("WALLPAPER_THEMES");
 		expect(styles).toContain("flow:");
 		expect(styles).toContain("isFlowTheme");
-		expect(styles).toContain("字级输入流系统");
+		expect(styles).toContain("Character-level inline stream");
 		expect(styles).toContain(".turn-tools-trail");
 		expect(styles).toContain(".thinking-status");
 		expect(styles).toContain(".thinking .thinking-summary-text");

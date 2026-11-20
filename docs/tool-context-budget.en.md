@@ -62,17 +62,19 @@ empty = factory default. Stored in `ClientSettings.toolPromptOverrides`; patches
 `_toolRegistry` (core built-ins / this project's tools / plugins / MCP all covered). See
 `server/tool-prompt-overrides.ts`.
 
-### 2.3 Lazy loading (this mechanism, **off by default**, can be enabled; allowlist-based)
+### 2.3 Lazy loading (this mechanism, **on by factory default**, can be disabled; allowlist-based)
 
 On: `load_tools` is resident; only tools in the **on-demand list** (`ClientSettings.toolOnDemandTools`, see §2.6) are lazy —
 in the `{{tools}}` section of the system prompt they have only **a name + a one-line summary** (the catalog), and their parameter schemas stay out of context. When the model needs one it first calls `load_tools(["patch","lsp"])`, that batch becomes active, and only then are the schemas dispatched.
 Tools outside the list (including the core `bash` / `read` / `edit` / `write`) stay resident under the switch/preset; an empty list means nothing is lazy
 (in that case `load_tools` is not mounted and the whole `{{tools}}` section is omitted, see §3).
 
-- Switch: Settings → Tools → "Load tools on demand" (`ClientSettings.toolLazyLoading`, **off by factory default**, i.e. the master switch for `load_tools`).
-  Why off by default: if the model forgets to load it first eats one `Tool <name> not found` (the SDK only knows the declared set), so out-of-the-box
-  usability wins; instances that need to save context turn it on themselves, and the deployment-level default can be set with the environment variable `PI_WEB_TOOL_LAZY_LOADING=1`
-  / `true` / `on` / `yes` (a default value only; a user's saved setting wins).
+- Switch: Settings → Tools → "Load tools on demand" (`ClientSettings.toolLazyLoading`, **on by factory default**, i.e. the master switch for `load_tools`).
+  Why on by default: the default tool surface is narrow — only the core four plus lightweight tools stay resident, while seven heavyweight tools (`terminal` /
+  `browser_page` / `browser_script` / `browser_design` / `agent_bot` / `schedule` / `compact_context`) are on demand, so the model calls `load_tools` before it gets their
+  schemas (the same list lives in §2.6 and in `DEFAULT_CLIENT_SETTINGS.toolOnDemandTools`). The cost: a forgotten load eats one `Tool <name> not found`
+  (the SDK only knows the declared set). Instances that want everything resident turn the switch off; the deployment-level default can be overridden with the
+  environment variable `PI_WEB_TOOL_LAZY_LOADING=0` / `false` / `off` / `no` (a default value only; a user's saved setting wins).
   Off = everything active per the switch/preset (matching the pi CLI, the list has no effect). **Only affects new sessions and later gating replays** —
   it never empties the tools of a conversation that is already running.
 - Gating: lazy loading **introduces no second gating path**. An unloaded on-demand tool = temporarily added to the disabled list
@@ -180,10 +182,12 @@ Total **27.9k → 16.9k characters (−39%)**; the 9 that were factory-default r
   merging saves only ~1.2k characters (~330 tokens), at the cost of collapsing two sets of services/approvals/settings rows/permission gates into one
   mixed 15-action enum, and it violates "one capability, one tool name".
 - **Do not flip defaults to make them lazy** (the conclusion at the time). Lazy loading is already provided by the global switch in §2.3; making
-  headline features like `canvas` / `sandbox` / `schedule` load-on-demand by default is a product decision, not a by-product of budget
-  optimization. The later product decision was to **turn `ls` / `patch` / `delegate_task` / `sandbox` / `worktree` / `canvas`
-  off by default** (catalog `defaultOn: false` + the same list in the factory `disabledAgentTools`), and the reason is no longer budget but a narrower
-  default tool surface; `plan_update` / `compact_context` / `schedule` stay on by default.
+  headline features like `canvas` / `sandbox` load-on-demand by default is a product decision, not a by-product of budget
+  optimization. The later product decision was to **turn 12 tools off by default**: `powershell` / `ls` / `delegate_task` / `phone` / `patch` / `lsp` / `eval` /
+  `tool_search` / `mcp_manage` / `sandbox` / `worktree` / `canvas` (catalog `defaultOn: false` + the same list in the factory `disabledAgentTools`); the reason is no
+  longer budget but a narrower default tool surface, and `plan_update` stays on. The latest decision moved three heavy tools from "off" to "on demand":
+  `terminal` (previously hard-off) and `schedule` / `compact_context` (previously on) — the factory `toolOnDemandTools` is those plus `browser_page` /
+  `browser_script` / `browser_design` / `agent_bot` (7 in total). On demand ≠ disabled: the model can still `load_tools` them.
 
 Guard: `tests/unit/tool-schema-slim.test.ts` now covers all 21 tools above (including `patternProperties`);
 any single decoration constraint or any field description outside the allowlist turns it red.
@@ -246,5 +250,5 @@ user-initiated, one-off costs that are acceptable; but **do not** change them in
 - Benefit: resident schema depends on the list size — when the list takes in all the heavyweight tools, 33k → **~7k** (core tools + load_tools + resident tools outside the list). Tools on the list that never get used never enter context;
   the system prompt itself also drops from ~8.6k to ~6.7k (guidelines hold only resident tools). With an empty list the switch is equivalent to off (nothing lazy, no `load_tools`, no on-demand section), so check some tools before turning the switch on.
 - Cost: the model takes one extra step, "load first, then use". The catalog (name + one-line summary) stays resident, so discoverability is not lost; a failed load
-  states the reason. Weak models may forget to load — which is why this switch **ships off by default** (see §2.3).
+  states the reason. Weak models may forget to load — which is the price of the switch **shipping on by default** (see §2.3).
   Also note the catalog **does not repeat resident tools** (especially the core four); their schemas are already in `tools`.

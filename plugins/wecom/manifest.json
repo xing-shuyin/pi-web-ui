@@ -2,7 +2,7 @@
 	"apiVersion": 2,
 	"name": "wecom",
 	"nameEn": "WeCom",
-	"version": "0.1.16",
+	"version": "0.1.17",
 	"alwaysOn": true,
 	"description": "企业微信工作台：群机器人 Webhook 推送、自建应用连接检查、内部会话桥接（双向对话需额外回调适配器），密钥加密存储。",
 	"descriptionEn": "WeCom workspace: group Webhook delivery, internal app connection checks, and scoped chat bridge (inbound chat requires a separate callback adapter). Encrypted secrets.",
@@ -18,6 +18,9 @@
 			{
 				"id": "wecom-open",
 				"label": "企业微信",
+				"labelEn": "WeCom",
+				"hint": "打开企业微信工作台",
+				"hintEn": "Open the WeCom workbench",
 				"icon": "💼",
 				"kind": "view",
 				"view": "plugin:wecom",
@@ -28,7 +31,9 @@
 			{
 				"id": "wecom-status",
 				"label": "💼 企微",
+				"labelEn": "💼 WeCom",
 				"hint": "点击打开企业微信工作台",
+				"hintEn": "Open the WeCom workbench",
 				"kind": "view",
 				"view": "plugin:wecom",
 				"order": 49

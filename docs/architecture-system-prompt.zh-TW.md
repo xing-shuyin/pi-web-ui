@@ -12,10 +12,11 @@
 
 ## 一、總覽：最終提示詞的組裝順序
 
-    最終提示詞 = 基礎提示詞(soul) + 工具列表(tools) + 行為準則(guidelines)
-              + Pi 文件指引(pi_docs) + 追加段(append) + pi-web-ui 引導
-              (markers) + 專案上下文(context) + 技能段(skills)
-              + 工作目錄行(cwd)
+    最終提示詞 = 基礎提示詞(soul) + 專案上下文(context) + 工具列表(tools)
+              + pi-web-ui 引導(markers) + 技能段(skills) + 工作目錄行(cwd)
+              + 追加段(append) + 外掛開發指南(plugin_dev，出廠停用)
+    以上順序就是**內建預設提示詞配置**（PROMPT_TOKENS / DEFAULT_PROMPT_TEMPLATE 的出廠順序）；
+    `{{guidelines}}`（行為準則）與 `{{pi_docs}}`（Pi 文件指引）已下線，不再進入預設提示詞。
     主會話啟用「組合模板」後，以上每一層都是一個 {{token}}：模板裡寫哪些 token、
     按什麼順序、穿插什麼自己的話，決定最終提示詞；每層未覆蓋時用**自動內容**
     （工具/上下文/技能等永遠由 SDK 用最新資料重新生成）。
@@ -23,18 +24,22 @@
 ## 二、組合模板與來源 token
 
     token 列表（server/prompt-composer.ts 的 PROMPT_TOKENS，預設順序即自然拼裝順序）：
-        {{soul}}        agent 人物設定（有 SYSTEM.md 時其內容，否則內建預設）
-        {{tools}}       Available tools 列表 + “In addition…” 句
-        {{guidelines}}  Guidelines：檔案探索引導 + 各工具 promptGuidelines + 固定兩行
-        {{pi_docs}}     Pi documentation 指引（指向已安裝 pi 包路徑）
-        {{append}}      追加段 = APPEND_SYSTEM.md 內容；覆蓋 = 自定義追加文字
-        {{markers}}     內建標記工具引導（markers 開啟時）
+        {{soul}}        角色（agent 人物設定；有 SYSTEM.md 時其內容，否則內建預設 =「六條工程準則」，**純英文**，所有介面語言同一份）
         {{context}}     <project_context>（AGENTS.md / CLAUDE.md 收集結果）
+        {{tools}}       按需工具列表（Available tools / On-demand tools）+ “In addition…” 句
+        {{markers}}     內建標記工具引導（markers 開啟時）
         {{skills}}      <available_skills> 技能清單
         {{cwd}}         Current working directory 行
+        {{append}}      追加段 = APPEND_SYSTEM.md 內容；覆蓋 = 自定義追加文字
+        {{plugin_dev}}  pi-web-ui 外掛開發指南（DEFAULT_PROMPT_DISABLED 出廠停用）
+    已下線來源：`{{guidelines}}` / `{{pi_docs}}`（連同 `{{terminal}}` / `{{persona}}` 一起進
+    LEGACY_PROMPT_TOKENS，存量模板裡殘留時渲染為空串，不留字面量）。
     每層可「單獨覆蓋」：overrides[token] 有內容時用你的文本替換自動內容；
-    留空 = 用自動內容。模板為空 = 預設模板（全部 token 自然順序），不配置任何
-    模板/覆蓋時執行完全等同 SDK 預設拼裝（零開銷，before_agent_start 返回空）。
+    留空 = 用自動內容。模板為空 = 預設模板（全部 token 按上面的順序），
+    而只有「模板 / 覆蓋 / 停用項全空」時才走零開銷分支（before_agent_start 返回空，
+    等同 SDK 預設拼裝）；出廠 `promptDisabled` 含 plugin_dev，所以預設走組合渲染。
+    存量設定收斂（server/client-state.ts 的 normalizePromptOverrides / normalizePromptDisabled）：
+    已下線來源鍵與停用項直接剔除；soul 覆蓋與內建預設逐字相同則丟掉（等於沒覆蓋）。
 
 ## 三、各來源自動內容從哪來（buildSystemPrompt 視角）
 
@@ -42,7 +47,8 @@
         1. 專案級：<cwd>/.pi/SYSTEM.md（受信任時）
         2. 全域性級：<agentDir>/SYSTEM.md
         3. 都沒有 → undefined → SDK 預設分支拼出內建模板（persona + tools +
-           guidelines + pi_docs）
+           guidelines + pi_docs）。注意：這段 SDK 自帶文本**不是** pi-web-ui 的內建預設，
+           內建預設（六條工程準則 + 上面那套順序）由組合渲染產出。
     組合模式下 systemPromptOverride 恆返回 base（= SYSTEM.md 原文，沒有就 undefined）
     → 組合模板啟用時 before_agent_start 整體換掉提示詞（`{{soul}}` 用同一份 base），
     組合模板未啟用時 SDK 預設分支據此保留 .pi/SYSTEM.md（TUI 同語義；舊實現恆返回

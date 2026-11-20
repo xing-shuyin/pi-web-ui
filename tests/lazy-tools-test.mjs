@@ -172,13 +172,14 @@ check("已切到 mock 模型", state?.model?.id === "lazy-tools-mock", `model=${
 ws.send(JSON.stringify({ type: "get_settings" }));
 for (let i = 0; i < 50 && typeof settings?.toolLazyLoading !== "boolean"; i++) await sleep(50);
 check(
-	"默认关：开箱即用只给出厂默认工具（重量级默认关闭），load_tools 不出现",
-	settings?.toolLazyLoading === false &&
+	"出厂默认：按需加载已开（load_tools 挂载、重量级工具不常驻）",
+	settings?.toolLazyLoading === true &&
 		Array.isArray(state?.tools) &&
-		!state.tools.includes("load_tools") &&
+		state.tools.includes("load_tools") &&
 		state.tools.includes("read") &&
 		state.tools.includes("bash") &&
-		!state.tools.includes("patch"),
+		!state.tools.includes("patch") &&
+		!state.tools.includes("terminal"),
 	`lazy=${settings?.toolLazyLoading} tools=${state?.tools?.join(",")}`,
 );
 // 本测试用 patch 当「按需加载」的样例工具，而它出厂默认关闭 —— 先全开工具，再验按需加载语义

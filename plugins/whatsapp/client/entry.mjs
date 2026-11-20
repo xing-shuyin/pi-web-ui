@@ -1,14 +1,41 @@
-import { makeT } from "./i18n.mjs";
+import { createPluginI18n } from "@pi-web-ui/plugin-sdk/client";
+import { DICT } from "./i18n.mjs";
 
-const t = makeT();
+// Panel copy: language resolution/fallback/interpolation lives in the SDK;
+// this view only picks words by the current host locale.
+const i18n = createPluginI18n(DICT);
+const t = (key, vars) => i18n.t(key, vars);
+
+/** Snapshot typed drafts so a locale re-render does not eat them. */
+function snapshotDrafts(root) {
+	const snap = {};
+	for (const node of root.querySelectorAll("input, textarea, select")) {
+		const key = node.className;
+		if (!key || node.type === "password") continue;
+		snap[key] = node.type === "checkbox" ? node.checked : node.value;
+	}
+	return snap;
+}
+
+/** Restore drafts captured by snapshotDrafts. */
+function restoreDrafts(root, snap) {
+	for (const node of root.querySelectorAll("input, textarea, select")) {
+		const key = node.className;
+		if (!key || !(key in snap)) continue;
+		if (node.type === "checkbox") node.checked = Boolean(snap[key]);
+		else node.value = String(snap[key] ?? "");
+	}
+}
 
 export default {
 	async mount(el, ctx) {
-		const sendHost = async (type, payload = {}) => {
-			return await ctx.send({ type, ...payload });
-		};
+		let disposed = false;
+		const run = async () => {
+			const sendHost = async (type, payload = {}) => {
+				return await ctx.send({ type, ...payload });
+			};
 
-		el.innerHTML = `
+			el.innerHTML = `
 			<div class="whatsapp-root" style="display: flex; flex-direction: column; height: 100%; box-sizing: border-box; background: var(--bg); color: var(--text); font-size: 13px;">
 				<!-- Topbar Header -->
 				<div style="padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--bg-elev);">
@@ -154,213 +181,228 @@ export default {
 			</div>
 		`;
 
-		const q = (sel) => el.querySelector(sel);
-		const statusBadge = q(".whatsapp-status-badge");
-		const metricState = q(".whatsapp-metric-state");
-		const metricPhone = q(".whatsapp-metric-phone");
-		const metricRecv = q(".whatsapp-metric-recv");
-		const metricSent = q(".whatsapp-metric-sent");
-		const modal = q(".whatsapp-modal-settings");
+			const q = (sel) => el.querySelector(sel);
+			const statusBadge = q(".whatsapp-status-badge");
+			const metricState = q(".whatsapp-metric-state");
+			const metricPhone = q(".whatsapp-metric-phone");
+			const metricRecv = q(".whatsapp-metric-recv");
+			const metricSent = q(".whatsapp-metric-sent");
+			const modal = q(".whatsapp-modal-settings");
 
-		const cfgPhoneId = q(".whatsapp-cfg-phoneid");
-		const cfgToken = q(".whatsapp-cfg-token");
-		const cfgDefaultRecipient = q(".whatsapp-cfg-default-recipient");
-		const cfgBotEnabled = q(".whatsapp-cfg-bot-enabled");
-		const cfgAllowedUsers = q(".whatsapp-cfg-allowed-users");
-		const cfgWorkspace = q(".whatsapp-cfg-workspace");
-		const cfgWsSelect = q(".whatsapp-cfg-ws-select");
-		const cfgWsBrowse = q(".whatsapp-cfg-ws-browse");
-		const cfgModel = q(".whatsapp-cfg-model");
-		const cfgModelBrowse = q(".whatsapp-cfg-model-browse");
-		const cfgThinking = q(".whatsapp-cfg-thinking");
+			const cfgPhoneId = q(".whatsapp-cfg-phoneid");
+			const cfgToken = q(".whatsapp-cfg-token");
+			const cfgDefaultRecipient = q(".whatsapp-cfg-default-recipient");
+			const cfgBotEnabled = q(".whatsapp-cfg-bot-enabled");
+			const cfgAllowedUsers = q(".whatsapp-cfg-allowed-users");
+			const cfgWorkspace = q(".whatsapp-cfg-workspace");
+			const cfgWsSelect = q(".whatsapp-cfg-ws-select");
+			const cfgWsBrowse = q(".whatsapp-cfg-ws-browse");
+			const cfgModel = q(".whatsapp-cfg-model");
+			const cfgModelBrowse = q(".whatsapp-cfg-model-browse");
+			const cfgThinking = q(".whatsapp-cfg-thinking");
 
-		let currentState = {};
+			let currentState = {};
 
-		async function refresh() {
-			const res = await sendHost("get_state");
-			if (!res) return;
-			currentState = res;
+			async function refresh() {
+				const res = await sendHost("get_state");
+				if (!res) return;
+				currentState = res;
 
-			const b = res.botStatus || {};
-			if (b.state === "connected") {
-				statusBadge.textContent = t("stateOnline");
-				statusBadge.style.color = "var(--green, #22c55e)";
-				metricState.textContent = t("stateConnected");
-				metricState.style.color = "var(--green, #22c55e)";
-			} else if (b.state === "connecting") {
-				statusBadge.textContent = t("stateConnecting");
-				statusBadge.style.color = "var(--amber, #eab308)";
-				metricState.textContent = t("stateConnectingDetail");
-				metricState.style.color = "var(--amber, #eab308)";
-			} else if (b.state === "error") {
-				statusBadge.textContent = t("stateError");
-				statusBadge.style.color = "var(--red, #ef4444)";
-				metricState.textContent = t("stateErrorDetail");
-				metricState.style.color = "var(--red, #ef4444)";
-			} else {
-				statusBadge.textContent = t("stateStopped");
-				statusBadge.style.color = "var(--text-dim)";
-				metricState.textContent = t("stateStopped");
-				metricState.style.color = "var(--text-dim)";
-			}
-
-			metricPhone.textContent = b.displayPhone || "--";
-			metricRecv.textContent = t("msgCount", { count: b.messagesReceived || 0 });
-			metricSent.textContent = t("msgCount", { count: b.messagesReplied || 0 });
-		}
-
-		q(".whatsapp-btn-config").addEventListener("click", () => {
-			const cfg = currentState.config || {};
-			cfgPhoneId.value = cfg.phoneNumberId || "";
-			cfgToken.value = "";
-			cfgToken.placeholder = cfg.hasAccessToken ? t("accessTokenSaved") : t("accessTokenEnter");
-			cfgDefaultRecipient.value = cfg.defaultRecipient || "";
-			cfgBotEnabled.checked = Boolean(cfg.botEnabled);
-			cfgAllowedUsers.value = Array.isArray(cfg.allowedUsers) ? cfg.allowedUsers.join(", ") : "";
-			cfgWorkspace.value = cfg.workspace || "";
-			cfgModel.value = cfg.model || "";
-			cfgThinking.value = cfg.thinkingLevel || "";
-
-			try {
-				const hostProjects = globalThis.window?.__piWebUiHost?.listProjects?.() ?? [];
-				cfgWsSelect.innerHTML = `<option value="">${t("quickPickProject")}</option>`;
-				for (const p of hostProjects) {
-					if (!p) continue;
-					const name =
-						p
-							.replace(/[\\/]+$/, "")
-							.split(/[\\/]/)
-							.pop() || p;
-					const opt = document.createElement("option");
-					opt.value = p;
-					opt.textContent = `${name} (${p})`;
-					cfgWsSelect.appendChild(opt);
-				}
-			} catch {}
-
-			modal.style.display = "flex";
-		});
-
-		q(".whatsapp-cfg-use-cwd")?.addEventListener("click", () => {
-			if (currentState.hostCwd) cfgWorkspace.value = currentState.hostCwd;
-		});
-		cfgWsSelect?.addEventListener("change", () => {
-			if (cfgWsSelect.value) cfgWorkspace.value = cfgWsSelect.value;
-		});
-		cfgWsBrowse?.addEventListener("click", async () => {
-			const host = globalThis.window?.__piWebUiHost;
-			if (typeof host?.pickDirectory !== "function") return;
-			const res = await host.pickDirectory({
-				title: t("pickWorkspaceTitle"),
-				initialPath: cfgWorkspace.value.trim() || currentState.hostCwd || "",
-			});
-			if (res?.ok && res.path) {
-				cfgWorkspace.value = res.path;
-			}
-		});
-		cfgModelBrowse?.addEventListener("click", async () => {
-			const host = globalThis.window?.__piWebUiHost;
-			if (typeof host?.pickModel !== "function") return;
-			const res = await host.pickModel({
-				currentModelId: cfgModel.value.trim() || undefined,
-			});
-			if (res?.ok && res.modelId) {
-				cfgModel.value = res.modelId;
-			}
-		});
-		q(".whatsapp-modal-close").addEventListener("click", () => (modal.style.display = "none"));
-		q(".whatsapp-modal-cancel").addEventListener("click", () => (modal.style.display = "none"));
-
-		q(".whatsapp-btn-test-cfg").addEventListener("click", async () => {
-			const btn = q(".whatsapp-btn-test-cfg");
-			btn.disabled = true;
-			btn.textContent = t("testing");
-			const testCfg = {
-				phoneNumberId: cfgPhoneId.value.trim(),
-				accessToken: cfgToken.value.trim(),
-			};
-			const res = await sendHost("test_config", { config: testCfg });
-			btn.disabled = false;
-			btn.textContent = t("testConnection");
-			// res.message 由服务端下发（服务端自有文案），仅在缺失时用本地兜底
-			alert?.(res?.message || (res?.success ? t("testPassed") : t("testFailed")));
-		});
-
-		q(".whatsapp-btn-save-cfg").addEventListener("click", async () => {
-			const btn = q(".whatsapp-btn-save-cfg");
-			btn.disabled = true;
-			btn.textContent = t("saving");
-
-			const newCfg = {
-				phoneNumberId: cfgPhoneId.value.trim(),
-				accessToken: cfgToken.value.trim(),
-				defaultRecipient: cfgDefaultRecipient.value.trim(),
-				botEnabled: Boolean(cfgBotEnabled.checked),
-				allowedUsers: cfgAllowedUsers.value
-					.split(/[,，\s]+/)
-					.map((s) => s.trim())
-					.filter(Boolean),
-				workspace: cfgWorkspace.value.trim(),
-				model: cfgModel.value.trim(),
-				thinkingLevel: cfgThinking.value,
-			};
-
-			const res = await sendHost("save_config", { config: newCfg });
-			btn.disabled = false;
-			btn.textContent = t("saveConfig");
-
-			if (res?.success) {
-				modal.style.display = "none";
-				refresh();
-			} else {
-				alert?.(t("saveFailed", { error: res?.message || t("unknownError") }));
-			}
-		});
-
-		q(".whatsapp-btn-toggle-bot").addEventListener("click", async () => {
-			const isRunning = currentState.botStatus?.state === "connected";
-			const action = isRunning ? "stop_bot" : "start_bot";
-			await sendHost(action);
-			refresh();
-		});
-
-		q(".whatsapp-btn-send").addEventListener("click", async () => {
-			const phoneInput = q(".whatsapp-send-phone");
-			const textInput = q(".whatsapp-send-text");
-			const text = textInput.value.trim();
-			const type = q(".whatsapp-send-kind").value;
-			const path = q(".whatsapp-send-path").value.trim();
-			if (type ? !path : !text) {
-				alert?.(type ? t("sendMissingPath") : t("sendMissingText"));
-				return;
-			}
-
-			const btn = q(".whatsapp-btn-send");
-			btn.disabled = true;
-			btn.textContent = t("sending");
-			try {
-				const res = await sendHost(type ? "send_media" : "send_message", {
-					to: phoneInput.value.trim(),
-					text,
-					mediaType: type,
-					path,
-					caption: text,
-					mimeType: q(".whatsapp-send-mime").value.trim(),
-				});
-				if (res?.success) {
-					alert?.(t("sendOk"));
-					textInput.value = "";
+				const b = res.botStatus || {};
+				if (b.state === "connected") {
+					statusBadge.textContent = t("stateOnline");
+					statusBadge.style.color = "var(--green, #22c55e)";
+					metricState.textContent = t("stateConnected");
+					metricState.style.color = "var(--green, #22c55e)";
+				} else if (b.state === "connecting") {
+					statusBadge.textContent = t("stateConnecting");
+					statusBadge.style.color = "var(--amber, #eab308)";
+					metricState.textContent = t("stateConnectingDetail");
+					metricState.style.color = "var(--amber, #eab308)";
+				} else if (b.state === "error") {
+					statusBadge.textContent = t("stateError");
+					statusBadge.style.color = "var(--red, #ef4444)";
+					metricState.textContent = t("stateErrorDetail");
+					metricState.style.color = "var(--red, #ef4444)";
 				} else {
-					alert?.(t("sendFailed", { error: res?.message || t("unknownError") }));
+					statusBadge.textContent = t("stateStopped");
+					statusBadge.style.color = "var(--text-dim)";
+					metricState.textContent = t("stateStopped");
+					metricState.style.color = "var(--text-dim)";
 				}
-			} catch (err) {
-				alert?.(t("sendFailed", { error: err.message }));
-			} finally {
-				btn.disabled = false;
-				btn.textContent = t("sendMessage");
-			}
-		});
 
-		await refresh();
+				metricPhone.textContent = b.displayPhone || "--";
+				metricRecv.textContent = t("msgCount", { count: b.messagesReceived || 0 });
+				metricSent.textContent = t("msgCount", { count: b.messagesReplied || 0 });
+			}
+
+			q(".whatsapp-btn-config").addEventListener("click", () => {
+				const cfg = currentState.config || {};
+				cfgPhoneId.value = cfg.phoneNumberId || "";
+				cfgToken.value = "";
+				cfgToken.placeholder = cfg.hasAccessToken ? t("accessTokenSaved") : t("accessTokenEnter");
+				cfgDefaultRecipient.value = cfg.defaultRecipient || "";
+				cfgBotEnabled.checked = Boolean(cfg.botEnabled);
+				cfgAllowedUsers.value = Array.isArray(cfg.allowedUsers) ? cfg.allowedUsers.join(", ") : "";
+				cfgWorkspace.value = cfg.workspace || "";
+				cfgModel.value = cfg.model || "";
+				cfgThinking.value = cfg.thinkingLevel || "";
+
+				try {
+					const hostProjects = globalThis.window?.__piWebUiHost?.listProjects?.() ?? [];
+					cfgWsSelect.innerHTML = `<option value="">${t("quickPickProject")}</option>`;
+					for (const p of hostProjects) {
+						if (!p) continue;
+						const name =
+							p
+								.replace(/[\\/]+$/, "")
+								.split(/[\\/]/)
+								.pop() || p;
+						const opt = document.createElement("option");
+						opt.value = p;
+						opt.textContent = `${name} (${p})`;
+						cfgWsSelect.appendChild(opt);
+					}
+				} catch {}
+
+				modal.style.display = "flex";
+			});
+
+			q(".whatsapp-cfg-use-cwd")?.addEventListener("click", () => {
+				if (currentState.hostCwd) cfgWorkspace.value = currentState.hostCwd;
+			});
+			cfgWsSelect?.addEventListener("change", () => {
+				if (cfgWsSelect.value) cfgWorkspace.value = cfgWsSelect.value;
+			});
+			cfgWsBrowse?.addEventListener("click", async () => {
+				const host = globalThis.window?.__piWebUiHost;
+				if (typeof host?.pickDirectory !== "function") return;
+				const res = await host.pickDirectory({
+					title: t("pickWorkspaceTitle"),
+					initialPath: cfgWorkspace.value.trim() || currentState.hostCwd || "",
+				});
+				if (res?.ok && res.path) {
+					cfgWorkspace.value = res.path;
+				}
+			});
+			cfgModelBrowse?.addEventListener("click", async () => {
+				const host = globalThis.window?.__piWebUiHost;
+				if (typeof host?.pickModel !== "function") return;
+				const res = await host.pickModel({
+					currentModelId: cfgModel.value.trim() || undefined,
+				});
+				if (res?.ok && res.modelId) {
+					cfgModel.value = res.modelId;
+				}
+			});
+			q(".whatsapp-modal-close").addEventListener("click", () => (modal.style.display = "none"));
+			q(".whatsapp-modal-cancel").addEventListener("click", () => (modal.style.display = "none"));
+
+			q(".whatsapp-btn-test-cfg").addEventListener("click", async () => {
+				const btn = q(".whatsapp-btn-test-cfg");
+				btn.disabled = true;
+				btn.textContent = t("testing");
+				const testCfg = {
+					phoneNumberId: cfgPhoneId.value.trim(),
+					accessToken: cfgToken.value.trim(),
+				};
+				const res = await sendHost("test_config", { config: testCfg });
+				btn.disabled = false;
+				btn.textContent = t("testConnection");
+				// res.message comes from the server (server-owned copy); fall back to local copy only when missing.
+				alert?.(res?.message || (res?.success ? t("testPassed") : t("testFailed")));
+			});
+
+			q(".whatsapp-btn-save-cfg").addEventListener("click", async () => {
+				const btn = q(".whatsapp-btn-save-cfg");
+				btn.disabled = true;
+				btn.textContent = t("saving");
+
+				const newCfg = {
+					phoneNumberId: cfgPhoneId.value.trim(),
+					accessToken: cfgToken.value.trim(),
+					defaultRecipient: cfgDefaultRecipient.value.trim(),
+					botEnabled: Boolean(cfgBotEnabled.checked),
+					allowedUsers: cfgAllowedUsers.value
+						.split(/[,，\s]+/)
+						.map((s) => s.trim())
+						.filter(Boolean),
+					workspace: cfgWorkspace.value.trim(),
+					model: cfgModel.value.trim(),
+					thinkingLevel: cfgThinking.value,
+				};
+
+				const res = await sendHost("save_config", { config: newCfg });
+				btn.disabled = false;
+				btn.textContent = t("saveConfig");
+
+				if (res?.success) {
+					modal.style.display = "none";
+					refresh();
+				} else {
+					alert?.(t("saveFailed", { error: res?.message || t("unknownError") }));
+				}
+			});
+
+			q(".whatsapp-btn-toggle-bot").addEventListener("click", async () => {
+				const isRunning = currentState.botStatus?.state === "connected";
+				const action = isRunning ? "stop_bot" : "start_bot";
+				await sendHost(action);
+				refresh();
+			});
+
+			q(".whatsapp-btn-send").addEventListener("click", async () => {
+				const phoneInput = q(".whatsapp-send-phone");
+				const textInput = q(".whatsapp-send-text");
+				const text = textInput.value.trim();
+				const type = q(".whatsapp-send-kind").value;
+				const path = q(".whatsapp-send-path").value.trim();
+				if (type ? !path : !text) {
+					alert?.(type ? t("sendMissingPath") : t("sendMissingText"));
+					return;
+				}
+
+				const btn = q(".whatsapp-btn-send");
+				btn.disabled = true;
+				btn.textContent = t("sending");
+				try {
+					const res = await sendHost(type ? "send_media" : "send_message", {
+						to: phoneInput.value.trim(),
+						text,
+						mediaType: type,
+						path,
+						caption: text,
+						mimeType: q(".whatsapp-send-mime").value.trim(),
+					});
+					if (res?.success) {
+						alert?.(t("sendOk"));
+						textInput.value = "";
+					} else {
+						alert?.(t("sendFailed", { error: res?.message || t("unknownError") }));
+					}
+				} catch (err) {
+					alert?.(t("sendFailed", { error: err.message }));
+				} finally {
+					btn.disabled = false;
+					btn.textContent = t("sendMessage");
+				}
+			});
+
+			await refresh();
+		};
+		const offLocale = i18n.onChange(() => {
+			if (disposed) return;
+			const drafts = snapshotDrafts(el);
+			void run()
+				.then(() => restoreDrafts(el, drafts))
+				.catch(() => {});
+		});
+		await run();
+		return () => {
+			disposed = true;
+			try {
+				offLocale();
+			} catch {}
+		};
 	},
 };

@@ -209,10 +209,11 @@ check(
 	`toolsSchema len=${client.settings?.toolsSchema?.length ?? 0}`,
 );
 check(
-	"effectiveSystemPrompt 含覆盖的 snippet / guideline",
+	"effectiveSystemPrompt = 会话真实提示词（{{guidelines}} 已下线：覆盖的 guideline 不再入参）",
 	typeof client.settings?.effectiveSystemPrompt === "string" &&
-		client.settings.effectiveSystemPrompt.includes(CUSTOM_SNIPPET) &&
-		client.settings.effectiveSystemPrompt.includes(CUSTOM_GUIDELINE),
+		client.settings.effectiveSystemPrompt.length > 0 &&
+		!client.settings.effectiveSystemPrompt.includes(CUSTOM_GUIDELINE) &&
+		!client.settings.effectiveSystemPrompt.includes("{{guidelines}}"),
 	`prompt len=${client.settings?.effectiveSystemPrompt?.length ?? 0}`,
 );
 
@@ -232,8 +233,8 @@ check(
 const sys = req?.messages?.find((m) => m.role === "system");
 const sysText = typeof sys?.content === "string" ? sys.content : JSON.stringify(sys?.content ?? "");
 check(
-	"系统提示词含覆盖的 snippet / guideline",
-	sysText.includes(CUSTOM_SNIPPET) && sysText.includes(CUSTOM_GUIDELINE),
+	"模型请求的系统提示词同样不带已下线的 guidelines 段",
+	!sysText.includes(CUSTOM_GUIDELINE) && !sysText.includes("{{guidelines}}"),
 	`system len=${sysText.length}`,
 );
 

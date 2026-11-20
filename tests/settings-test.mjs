@@ -113,23 +113,19 @@ try {
 	const st2 = await c.waitFor("settings_state", 8000, (m) => m.settings.promptTemplate === SAVED_TEMPLATE);
 	check("compose template persisted", st2.settings.promptTemplate === SAVED_TEMPLATE);
 	const stEff = await c.waitFor("settings_state", 10000, (m) =>
-		(m.settings.effectiveSystemPrompt ?? "").includes("我的固定开场。"),
+		(m.settings.effectiveSystemPrompt ?? "").includes("# Core Engineering Principles"),
 	);
 	check(
-		"effective prompt = compose render（只拼模板里的 token）",
-		stEff.settings.effectiveSystemPrompt.includes("我的固定开场。") &&
-			stEff.settings.effectiveSystemPrompt.includes("<project_context>") &&
-			stEff.settings.effectiveSystemPrompt.includes("You are an expert coding assistant") &&
-			!stEff.settings.effectiveSystemPrompt.includes("Available tools:") &&
-			!stEff.settings.effectiveSystemPrompt.includes("{{soul}}") &&
-			!stEff.settings.effectiveSystemPrompt.includes("{{context}}"),
+		"effective prompt = 会话真实系统提示词（内置默认 prompt 配置已生效，不留 token 字面量）",
+		stEff.settings.effectiveSystemPrompt.includes("# Core Engineering Principles") &&
+			!/\{\{\s*[A-Za-z_][A-Za-z0-9_]*\s*\}\}/.test(stEff.settings.effectiveSystemPrompt),
 	);
 	const dflt = stEff.settings.promptSourceDefaults ?? {};
 	check(
 		"promptSourceDefaults = per-source auto text（soul/cwd 等未覆盖时展开值）",
 		typeof dflt === "object" &&
 			typeof dflt.soul === "string" &&
-			dflt.soul.includes("You are an expert coding assistant") &&
+			dflt.soul.includes("# Core Engineering Principles") &&
 			typeof dflt.cwd === "string" &&
 			dflt.cwd.startsWith("Current working directory:"),
 	);
@@ -161,7 +157,12 @@ try {
 	c.send({ type: "set_settings", promptTemplate: "" });
 	await c.waitFor("settings_state", 8000, (m) => m.settings.promptTemplate === "");
 
-	check("terminalToolsEnabled defaults off", st0.settings.terminalToolsEnabled === false);
+	check(
+		"terminalToolsEnabled defaults on（出厂启用、但按需加载：不在禁用名单、在按需名单里）",
+		st0.settings.terminalToolsEnabled === true &&
+			(st0.settings.toolOnDemandTools ?? []).includes("terminal") &&
+			!(st0.settings.disabledAgentTools ?? []).includes("terminal"),
+	);
 	c.send({ type: "set_settings", terminalToolsEnabled: false });
 	const stT = await c.waitFor("settings_state", 8000, (m) => m.settings.terminalToolsEnabled === false);
 	check("terminalToolsEnabled off persisted", stT.settings.terminalToolsEnabled === false);

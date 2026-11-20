@@ -1,3 +1,8 @@
+import { makeT } from "./gen-i18n.mjs";
+
+/** 高级 JSON 字段的解析报错走生图词典 t()，语言跟随宿主全局设置。 */
+const gt = makeT();
+
 export function el(tag, props = {}, ...children) {
 	const node = document.createElement(tag);
 	const deferred = [];
@@ -79,9 +84,9 @@ export function parseJsonField(text, label) {
 	try {
 		v = JSON.parse(s);
 	} catch (err) {
-		throw new Error(`${label}: JSON 解析失败（${err instanceof Error ? err.message : String(err)}）`);
+		throw new Error(gt("svc.jsonParseFail", { label, error: err instanceof Error ? err.message : String(err) }));
 	}
-	if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error(`${label}: 需要一个 JSON 对象`);
+	if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error(gt("svc.jsonNeedObject", { label }));
 	return v;
 }
 

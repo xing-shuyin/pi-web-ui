@@ -294,12 +294,12 @@ ${
 }
 
 /* -------------------------------------------------------------
-   字级输入流系统（Character-Level Inline Stream）：
-   对话流就像一个输入框，每个工具调用、思考、附件就是一个字。
-   无折叠按钮，无任何换行，字字连贯，一点一点混排流进正文中。
+   Character-level inline stream:
+   The dialogue stream acts like an input box; each tool call, thought, or attachment is one character.
+   No collapse buttons, no line breaks; characters flow into the text one by one.
    ------------------------------------------------------------- */
 
-/* 1. 助手消息体：完全作为文字流容器，不设多余内外边距 */
+/* 1. Assistant message body: pure text-stream container, no extra margins */
 .turn-tools-trail {
 	display: flex !important;
 	flex-direction: row !important;
@@ -400,8 +400,8 @@ ${
 }
 
 /* 2. 工具调用、思考、附件徽标：Apple Vision 液态亚克力呼吸晶体微胶囊
-   胶囊不上 backdrop-filter：行内重复项每颗各占一个合成表面（300 颗 = 310 层），
-   而且壁纸底下是每帧都在变的视频/WebGL 画面，逐颗回读+12px 卷积是最贵的用法。 */
+   Capsules skip backdrop-filter: each inline item costs a compositing surface (300 items = 310 layers),
+   and the wallpaper underneath is a per-frame video/WebGL surface, so per-item readback plus a 12px convolution is the most expensive path. */
 .toolcall,
 .thinking {
 	display: inline-flex !important;
@@ -493,7 +493,7 @@ ${
 }
 
 /* 彻底隐藏流内图片缩略图，read 的图片绝不直接塞在流里破坏胶囊排布；
-   用户点击胶囊时由居中弹窗 Tool Inspector 完整展示高清大图与详情 */
+   Clicking a capsule opens the centered Tool Inspector popup with the full image and details */
 .toolcall-images,
 .toolcall-image,
 .toolcall .toolcall-images {
@@ -1628,7 +1628,7 @@ span.plugin-icon-svg,
 }
 
 /* 全界面所有图标矢量元素（SVG / Glyph / 胶囊图标）：统一定义唯一、精致、锐利的微黑锁边，绝不晕染；
-   注意：仅对叶子节点 SVG 或字符 Glyph 施加滤镜，绝对禁止在包含 SVG 的 span 容器上挂滤镜防嵌套双重阴影 */
+   Note: apply filters only to leaf SVGs or character glyphs; never attach a filter to a span wrapping an SVG (avoids nested double shadows) */
 svg.bar-item-icon,
 .bar-item-glyph,
 .bar-item-icon svg,

@@ -1,27 +1,12 @@
-import { getServerBlock, pick, type ServerLang } from "./i18n.js";
+import { pick, type ServerLang } from "./i18n.js";
 
-export const PROMPT_TOKENS = [
-	"soul",
-	"tools",
-	"guidelines",
-	"pi_docs",
-	"append",
-	"markers",
-	"plugin_dev",
-	"context",
-	"skills",
-	"cwd",
-] as const;
+/**
+ * 内置默认提示词配置的来源顺序（= 设置面板的行顺序 = DEFAULT_PROMPT_TEMPLATE 的拼装顺序）。
+ * 与出厂默认一致：人格 → 项目上下文 → 工具 → 行内标记引导 → 技能 → 工作目录 → 追加段 → 插件开发指南（默认停用）。
+ */
+export const PROMPT_TOKENS = ["soul", "context", "tools", "markers", "skills", "cwd", "append", "plugin_dev"] as const;
 
-export const READONLY_PROMPT_SOURCES = [
-	"tools",
-	"pi_docs",
-	"plugin_dev",
-	"markers",
-	"context",
-	"skills",
-	"cwd",
-] as const;
+export const READONLY_PROMPT_SOURCES = ["tools", "markers", "plugin_dev", "context", "skills", "cwd"] as const;
 
 export type PromptToken = (typeof PROMPT_TOKENS)[number];
 
@@ -32,16 +17,25 @@ export function isReadonlyPromptSource(token: string): boolean {
 }
 
 /**
- * 已下线的历史来源：`{{terminal}}`（终端工具引导）、`{{persona}}`（Windows 约束）。
- * 老模板/老预设里残留该 token 时渲染为空——不留 `{{terminal}}` / `{{persona}}` 字面量，也不复活该段文本。
+ * 已下线的历史来源：
+ * - `{{terminal}}`（终端工具引导）、`{{persona}}`（Windows 约束）；
+ * - `{{guidelines}}`（行为准则：工具 promptGuidelines 汇总）、`{{pi_docs}}`（pi 文档指引）。
+ * 老模板/老预设里残留这些 token 时渲染为空——不留字面量，也不复活该段文本。
  *
  * `{{persona}}` 下线理由：Windows / 远程工作区约束由宿主在 append 段无条件注入（`WINDOWS_PERSONA`），
  * 再挂一个可开关 token 只会让同一段文字注入两遍；设置面板也不该让用户去「启用」平台安全约束。
+ * `{{guidelines}}` / `{{pi_docs}}` 下线理由：内置默认提示词配置不再输出这两段（产品决定），
+ * 留空渲染以抵消存量模板里的引用，避免 `{{guidelines}}` 字面量直接漏进提示词。
  */
-export const LEGACY_PROMPT_TOKENS: readonly string[] = ["terminal", "persona"];
+export const LEGACY_PROMPT_TOKENS: readonly string[] = ["terminal", "persona", "guidelines", "pi_docs"];
 
 export function isLegacyPromptToken(token: string): boolean {
 	return LEGACY_PROMPT_TOKENS.includes(token);
+}
+
+/** 是否仍是当前在册的来源（存量设置里的已下线来源用这个判定剔除）。 */
+export function isPromptToken(token: string): boolean {
+	return (PROMPT_TOKENS as readonly string[]).includes(token);
 }
 
 export const DEFAULT_PROMPT_TEMPLATE = PROMPT_TOKENS.map((t) => `{{${t}}}`).join("\n\n");
@@ -75,10 +69,6 @@ export interface PromptComposerInputs {
 	catalogTools?: string[];
 	toolSnippets: Record<string, string>;
 	toolSignatures?: Record<string, string>;
-	toolGuidelines: string[];
-	piReadme: string;
-	piDocs: string;
-	piExamples: string;
 	pluginDocs?: string;
 	pluginSdk?: string;
 	pluginsDir?: string;
@@ -93,36 +83,23 @@ export interface PromptComposerInputs {
 	lang?: ServerLang;
 }
 
-export const BUILTIN_SOUL =
-	"You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
+/**
+ * 内置默认人格（= 出厂默认提示词配置的 {{soul}} 自动内容）：六条工程准则，**纯英文**。
+ * 所有界面语言共用同一份：不做中文对照版、也不走 locales 翻译（旧的单行 `prompt.soul` 已清掉）。
+ * 守卫：tests/unit/prompt-composer.test.ts。
+ */
+export const BUILTIN_SOUL = [
+	"# Core Engineering Principles",
+	"- **Think First, Zero Rework**: settle boundary conditions, data flow and side effects before writing code; lock the approach down first.",
+	"- **Root-Cause Over Patches**: never patch a symptom. Locate the architectural or logic root cause and fix it cleanly at the lowest layer.",
+	"- **Pragmatic Modernity**: prefer modern, community-proven practices and mainstream open-source solutions (lean on the mature GitHub ecosystem), balancing cutting-edge efficiency with system robustness.",
+	"- **KISS & High Cohesion**: keep the architecture minimal, cohesive and loosely coupled. No over-engineering in pursuit of formal perfection.",
+	"- **Scoped Refactoring**: keep code clean as you go, but confine refactors to the modules this task touches; never break stable interfaces.",
+	"- **Dispatch On Clear Boundaries**: when boundaries are enumerable, acceptance criteria executable, file sets non-overlapping, interfaces frozen, and 2+ units can run in parallel, split work into contract-bound tasks; each subtask gets only the minimal context and permissions it needs, returns executable evidence, and interface changes merge back at the dispatcher.",
+].join("\n");
 
-export const BUILTIN_SOUL_ZH =
-	"你是运行在 pi（一个编码智能体框架）中的专业编码助手。你通过读取文件、执行命令、编辑代码和新建文件来帮助用户。";
-
-export function buildPiDocsText(readme: string, docs: string, examples: string, lang: ServerLang = "en"): string {
-	if (lang === "zh") {
-		return [
-			"Pi 文档（仅当用户问及 pi 本身、其 SDK、扩展、主题、技能或 TUI 时阅读）：",
-			`- 主文档：${readme}`,
-			`- 更多文档：${docs}`,
-			`- 示例：${examples}（扩展、自定义工具、SDK）`,
-			"- 阅读 pi 文档或示例时，在「更多文档」下找 docs/...、在「示例」下找 examples/...，不要按当前工作目录解析",
-			"- 被问及以下主题时：扩展（docs/extensions.md、examples/extensions/）、主题（docs/themes.md）、技能（docs/skills.md）、提示词模板（docs/prompt-templates.md）、TUI 组件（docs/tui.md）、快捷键（docs/keybindings.md）、SDK 集成（docs/sdk.md）、自定义服务商（docs/custom-provider.md）、添加模型（docs/models.md）、pi 包（docs/packages.md）、环境变量（docs/environment-variables.md）",
-			"- 处理 pi 相关主题时，先阅读文档和示例，并跟随其中的 .md 交叉引用，再动手实现",
-			"- pi 的 .md 文件务必通读全文，并跟随其中指向相关文档的链接（例如 TUI API 细节见 tui.md）",
-		].join("\n");
-	}
-	return [
-		"Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):",
-		`- Main documentation: ${readme}`,
-		`- Additional docs: ${docs}`,
-		`- Examples: ${examples} (extensions, custom tools, SDK)`,
-		"- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory",
-		"- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md)",
-		"- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing",
-		"- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)",
-	].join("\n");
-}
+/** 与内置默认逐字相同的 soul 文案（存量覆盖归一用：等于它就没有覆盖的必要）。 */
+export const BUILTIN_SOUL_TEXTS: readonly string[] = [BUILTIN_SOUL];
 
 export function buildPluginDevText(inputs: PromptComposerInputs, lang: ServerLang = "en"): string {
 	const docsPath = inputs.pluginDocs || "docs/architecture-plugins.md";
@@ -156,36 +133,6 @@ export function buildPluginDevText(inputs: PromptComposerInputs, lang: ServerLan
 		"- Scaffolding: Use `pi-web-ui plugin create <id> --template <minimal|ui-slot|agent-tool|renderer>` if the CLI is available; otherwise write files directly to the target directory and copy SDK files",
 		"- Activation: Once files are written, advise the user to click Rescan in Settings -> Plugins or restart the app",
 	].join("\n");
-}
-
-function buildGuidelinesText(inputs: PromptComposerInputs): string {
-	const lang: ServerLang = inputs.lang ?? "en";
-	const selected = new Set(inputs.selectedTools);
-	const lines: string[] = [];
-	const add = (g: string) => {
-		const t = g.trim();
-		if (t && !lines.includes(t)) lines.push(t);
-	};
-	const has = (n: string) => selected.has(n);
-	if ((has("bash") || has("powershell")) && !has("grep") && !has("find") && !has("ls")) {
-		add(
-			has("bash") && has("powershell")
-				? pick(
-						lang,
-						"涉及列出、搜索、查找文件等文件操作时，使用 bash 或 PowerShell",
-						"Use bash or PowerShell for file operations like listing, searching, and finding files",
-						"prompt.guidelines.bash.powershell",
-					)
-				: pick(
-						lang,
-						"涉及 ls、rg、find 等文件操作时，使用 bash",
-						"Use bash for file operations like ls, rg, find",
-						"prompt.guidelines.bash.basic",
-					),
-		);
-	}
-	for (const g of inputs.toolGuidelines) add(g);
-	return `${pick(lang, "指导原则：", "Guidelines:", "prompt.guidelines.title")}\n${lines.map((l) => `- ${l}`).join("\n")}`;
 }
 
 export interface BuildSkillsTextOptions {
@@ -357,15 +304,10 @@ export function resolveSectionTexts(inputs: PromptComposerInputs): Record<Prompt
 	const lang: ServerLang = inputs.lang ?? "en";
 	const soulSource = inputs.systemPromptFile;
 	let soul = soulSource ? soulSource : inputs.builtinSoul;
-	if (lang === "zh" && soul === BUILTIN_SOUL) soul = BUILTIN_SOUL_ZH;
-	else if (soul === BUILTIN_SOUL)
-		soul = getServerBlock(lang, "prompt.soul", BUILTIN_SOUL_ZH.split("\n"), BUILTIN_SOUL.split("\n")).join("\n");
 	soul = `${soul}\nBe concise in your responses\nShow file paths clearly when working with files`;
 	return {
 		soul,
 		tools: buildToolsText(inputs),
-		guidelines: buildGuidelinesText(inputs),
-		pi_docs: buildPiDocsText(inputs.piReadme, inputs.piDocs, inputs.piExamples, lang),
 		append: inputs.appendFiles.join("\n\n"),
 		markers: inputs.markersGuidance,
 		plugin_dev: buildPluginDevText(inputs, lang),

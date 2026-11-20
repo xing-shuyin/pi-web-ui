@@ -104,6 +104,13 @@ describe("appendDraftAttachments", () => {
 		expect(out).toHaveLength(2);
 	});
 
+	it("终端对象引用按 terminalId 判重（同一个 tab 反复右键只留一条）", () => {
+		const term = (terminalId: string, name = "终端 1") =>
+			({ path: "", name, mode: "terminal", terminalId }) as DraftAttachment;
+		expect(appendDraftAttachments([term("t1")], [term("t1", "改过名的终端 1")])).toHaveLength(1);
+		expect(appendDraftAttachments([term("t1")], [term("t2")]).map((a) => a.terminalId)).toEqual(["t1", "t2"]);
+	});
+
 	it("带 key 的截图按 key 判重", () => {
 		const out = appendDraftAttachments([shot("pick-1")], [shot("pick-1"), shot("pick-2")]);
 		expect(out.map((a) => a.key)).toEqual(["pick-1", "pick-2"]);

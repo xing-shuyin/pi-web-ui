@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * 右上角下载悬浮圆钮的注入脚本（`browser/renderer/downloads.js`）。
+ * 下载圆钮（右下角悬浮球里那一颗）的注入脚本（`browser/renderer/downloads.js`）。
  *
  * 和 `dock.ts` 的取法一致：源码树、dist 产物、同目录三处找，装包后的布局不同也能命中。
  * 与 dock 不同的是这里**没有内联副本**——找不到就当没有（宁可不显示，也不维护两份会走样的脚本）。

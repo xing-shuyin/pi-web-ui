@@ -1,8 +1,9 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { appResourceCrossOrigin } from "../base-url";
-import { FiList, FiSquare, FiPaperclip, FiArrowUp, FiBookOpen, FiMic, FiCamera } from "react-icons/fi";
+import { FiList, FiSquare, FiPaperclip, FiArrowUp, FiBookOpen, FiMic, FiCamera, FiTarget } from "react-icons/fi";
 import type {
 	FileSearchResult,
+	GoalStatus,
 	ModelInfo,
 	ProviderKeyInfo,
 	ProviderStatus,
@@ -28,6 +29,7 @@ import {
 	registerInsertSink,
 	registerRemoveMentionSink,
 } from "../composer-bridge";
+import { setGoalCompose, useGoalCompose, useGoalPlan, useGoalRefine } from "../goal-compose";
 import { caretVisualLineFlags } from "../caret-visual-line";
 import { isRasterImage } from "../image-paste";
 import { collectClipboardFiles } from "../clipboard-files";
@@ -118,8 +120,9 @@ interface ChatInputProps {
 	attachments: {
 		path: string;
 		name: string;
-		mode?: "inline" | "reference" | "lines" | "page" | "conversation" | "quote" | "canvas";
+		mode?: "inline" | "reference" | "lines" | "page" | "conversation" | "quote" | "canvas" | "terminal";
 		quote?: import("../types").TextQuote;
+		terminalId?: string;
 		conversationId?: string;
 		sessionPath?: string;
 		isDir?: boolean;
@@ -167,6 +170,7 @@ interface ChatInputProps {
 	sessionDraft?: { text: string; ts: number } | null;
 	sessionId?: string;
 	preserveDraftAcrossConversations?: boolean;
+	goal?: GoalStatus | null;
 }
 
 export const ChatInput = memo(function ChatInput({
@@ -217,6 +221,7 @@ export const ChatInput = memo(function ChatInput({
 	sessionDraft,
 	sessionId,
 	preserveDraftAcrossConversations = false,
+	goal,
 }: ChatInputProps) {
 	const t = useT();
 	const localReady = useAppField("ready");
@@ -224,6 +229,11 @@ export const ChatInput = memo(function ChatInput({
 	const isDsh = useIsDsh();
 	const capabilities = useEngineCapabilities();
 	const effectivePlanMode = Boolean(planMode && capabilities.planMode);
+	const goalCompose = useGoalCompose();
+	const goalRefine = useGoalRefine();
+	const goalPlan = useGoalPlan();
+	const goalActive = Boolean(goal?.goal) || Boolean(goal?.wizard?.active);
+	const goalMode = !groupDevices && goalCompose && !goalActive;
 	const { locale } = useI18n();
 	const effectiveSendKey = useEffectiveSendKey(IS_TOUCH);
 	const isModEnter = effectiveSendKey === "mod-enter";
@@ -1110,7 +1120,8 @@ export const ChatInput = memo(function ChatInput({
 				path: a.path,
 				mode: a.mode,
 				...(a.lines ? { lines: a.lines } : {}),
-				...(a.mode === "page" || a.mode === "canvas" ? { name: a.name } : {}),
+				...(a.mode === "page" || a.mode === "canvas" || a.mode === "terminal" ? { name: a.name } : {}),
+				...(a.mode === "terminal" && a.terminalId ? { terminalId: a.terminalId } : {}),
 				...(a.mode === "conversation"
 					? {
 							name: a.name,
@@ -1190,6 +1201,47 @@ export const ChatInput = memo(function ChatInput({
 		}
 		if (!capabilities.conversationRef && attachments.some((a) => a.mode === "conversation")) {
 			onNotice("warning", t("chatInputConversationRefUnsupported"));
+			return;
+		}
+		if (goalMode) {
+			if (attachments.length > 0) {
+				onNotice("warning", t("goalAttachBlocked"));
+				return;
+			}
+			const prefsLocked = goal?.locked ?? true;
+			const prefsRounds = goal?.maxRounds ?? 0;
+			const prefsReview = (goal?.reviewModel ?? "").trim() ? (goal?.reviewModel as string) : "";
+			let ok = false;
+			if (goalRefine) {
+				ok = appSend({
+					type: "start_goal_wizard",
+					text: trimmed,
+					...(prefsReview ? { wizardModel: prefsReview } : {}),
+					maxRounds: prefsRounds,
+					locked: prefsLocked,
+				});
+			} else {
+				ok = appSend({
+					type: "set_goal",
+					goal: trimmed,
+					...(prefsReview ? { reviewModel: prefsReview } : {}),
+					maxRounds: prefsRounds,
+					locked: prefsLocked,
+				});
+			}
+			if (goalPlan) appSend({ type: "set_plan_mode", enabled: true });
+			if (ok) {
+				if (trimmed) pushPromptHistory(trimmed);
+				historyIndexRef.current = -1;
+				draftRef.current = "";
+				setText("");
+				clearDraftAfterConsume();
+				setGoalCompose(false);
+				onSent();
+				taRef.current?.focus();
+			} else {
+				onNotice("error", t("netDisconnected"));
+			}
 			return;
 		}
 		if (trimmed === "/help") {
@@ -1467,9 +1519,26 @@ export const ChatInput = memo(function ChatInput({
 	};
 
 	const canSteer = Boolean(capabilities.steer !== false && !isDsh);
+	const showGoalToggle = !groupDevices && !goalActive;
+	const goalToggle = showGoalToggle ? (
+		<button
+			type="button"
+			className={`btn goal-toggle${goalMode ? " active" : ""}`}
+			title={goalMode ? t("goalSendTip") : t("goalComposeEnter")}
+			aria-label={t("goalComposeEnter")}
+			aria-pressed={goalMode}
+			disabled={!connected}
+			onClick={() => {
+				setGoalCompose(!goalCompose);
+				requestAnimationFrame(() => taRef.current?.focus());
+			}}
+		>
+			<FiTarget />
+		</button>
+	) : null;
 	const renderActions = () => (
 		<div className="inputbox-actions">
-			{streaming ? (
+			{streaming && !goalMode ? (
 				canSubmit ? (
 					<div className={`split-send${!canSteer ? " single" : ""}`}>
 						<button
@@ -1506,20 +1575,22 @@ export const ChatInput = memo(function ChatInput({
 			) : (
 				<button
 					type="button"
-					className="btn send"
+					className={`btn send${goalMode ? " goal" : ""}`}
 					title={
-						!connected
-							? t("netDisconnected")
-							: !sessionReady
-								? t("sessionInitializingNotice")
-								: isModEnter
-									? t("sendTipMod")
-									: t("sendTip")
+						goalMode
+							? t("goalSendTip")
+							: !connected
+								? t("netDisconnected")
+								: !sessionReady
+									? t("sessionInitializingNotice")
+									: isModEnter
+										? t("sendTipMod")
+										: t("sendTip")
 					}
 					disabled={!canSubmit}
 					onClick={() => submit()}
 				>
-					<FiArrowUp />
+					{goalMode ? <FiTarget /> : <FiArrowUp />}
 				</button>
 			)}
 		</div>
@@ -1650,17 +1721,19 @@ export const ChatInput = memo(function ChatInput({
 										? t("attachPage", { name: a.name })
 										: a.mode === "canvas"
 											? `${t("canvasTab")} · ${a.name}`
-											: a.mode === "conversation"
-												? t("attachConversation", { name: a.name })
-												: a.mode === "reference"
-													? t("refOnly", { path: a.path })
-													: a.mode === "lines" && a.lines
-														? t("attachLines", {
-																path: a.path,
-																start: a.lines.start,
-																end: a.lines.end,
-															})
-														: t("attachContent", { path: a.path });
+											: a.mode === "terminal"
+												? t("attachTerminal", { name: a.name })
+												: a.mode === "conversation"
+													? t("attachConversation", { name: a.name })
+													: a.mode === "reference"
+														? t("refOnly", { path: a.path })
+														: a.mode === "lines" && a.lines
+															? t("attachLines", {
+																	path: a.path,
+																	start: a.lines.start,
+																	end: a.lines.end,
+																})
+															: t("attachContent", { path: a.path });
 						return (
 							<span
 								key={
@@ -1700,6 +1773,8 @@ export const ChatInput = memo(function ChatInput({
 									"🌐"
 								) : a.mode === "canvas" ? (
 									"◇"
+								) : a.mode === "terminal" ? (
+									"🖥"
 								) : a.mode === "conversation" ? (
 									"💬"
 								) : a.mode === "reference" ? (
@@ -1923,11 +1998,13 @@ export const ChatInput = memo(function ChatInput({
 									? isDsh
 										? t("placeholderStreamingQueued")
 										: t("placeholderStreaming")
-									: effectivePlanMode
-										? t("placeholderPlanMode")
-										: isModEnter
-											? t("placeholderIdleMod", { name: idleProjectName })
-											: t("placeholderIdle", { name: idleProjectName })
+									: goalMode
+										? t("goalBarPlaceholder")
+										: effectivePlanMode
+											? t("placeholderPlanMode")
+											: isModEnter
+												? t("placeholderIdleMod", { name: idleProjectName })
+												: t("placeholderIdle", { name: idleProjectName })
 								: t("placeholderConnecting")
 					}
 					disabled={!connected}
@@ -2030,6 +2107,7 @@ export const ChatInput = memo(function ChatInput({
 					) : composerWired ? (
 						<>
 							<div className="composer-tools-left">
+								{goalToggle}
 								{leadingActions.map(renderPluginAction)}
 								{composerGroups.start.map(renderComposerEntry)}
 							</div>
@@ -2041,6 +2119,7 @@ export const ChatInput = memo(function ChatInput({
 					) : (
 						<>
 							<div className="composer-tools-left">
+								{goalToggle}
 								{leadingActions.map(renderPluginAction)}
 								<button
 									type="button"

@@ -2,7 +2,7 @@
 	"apiVersion": 2,
 	"name": "telegram",
 	"nameEn": "Telegram",
-	"version": "0.2.8",
+	"version": "0.2.9",
 	"alwaysOn": true,
 	"description": "Telegram 机器人：出站长轮询双工对话（零公网 IP / 智能 Markdown 分块 / 多轮会话隔离）/ 用户白名单准入 / AI telegram 工具（密钥加密存储，零外部依赖）",
 	"descriptionEn": "Telegram Bot: outbound long-polling duplex chat (zero public IP, structure-aware Markdown chunks, isolated multi-turn sessions), access control whitelist, and AI telegram tool.",
@@ -18,9 +18,12 @@
 			{
 				"id": "telegram-open",
 				"label": "Telegram",
+				"labelEn": "Telegram",
 				"icon": "✈️",
 				"kind": "view",
 				"view": "plugin:telegram",
+				"hint": "打开 Telegram 机器人工作台",
+				"hintEn": "Open the Telegram bot workbench",
 				"order": 58
 			}
 		],
@@ -28,7 +31,9 @@
 			{
 				"id": "telegram-status",
 				"label": "✈️ Telegram",
+				"labelEn": "✈️ Telegram",
 				"hint": "点击打开 Telegram 工作台",
+				"hintEn": "Open the Telegram workbench",
 				"kind": "view",
 				"view": "plugin:telegram",
 				"order": 48

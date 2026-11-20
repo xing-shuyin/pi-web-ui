@@ -19,6 +19,7 @@ import { DeviceWorkspaceError, validateDeviceProject } from "./workspaces.js";
 import { createLocalDeviceHub } from "./local-hub.js";
 import { isLocalTaskRuntime } from "./local-task-bridge.js";
 import { createLocalBotRegistry, type LocalBotRegistry, type LocalBotInput } from "./bots.js";
+import { installSharedRoomRoutes } from "./shared-rooms.js";
 import { loadExecutionSettings, saveExecutionSettings, type DeviceExecutionSettings } from "./execution-settings.js";
 import type { TaskSchedulerSnapshot } from "./task-scheduler.js";
 import { hostWithoutPort, isLoopbackHost } from "../host-guard.js";
@@ -567,6 +568,12 @@ export async function installLocalDeviceCenter(options: Options) {
 			res.status(503).json({ code: "LOCAL_HUB_UNAVAILABLE", error: "Local collaboration could not start" });
 		}
 	});
+	// 跨设备共享群组：成员含其他设备时走配对远端 Hub（显式 shared-* 接口，不动本地链路）。
+	installSharedRoomRoutes(options.app, {
+		getPaired: () => config,
+		ensureReady: () => serialize(ensureLocalHub),
+		isClosed: () => closed,
+	});
 	const activeRequests = new Set<AbortController>();
 	let inFlight = 0;
 	let eventStreams = 0;
@@ -594,6 +601,8 @@ export async function installLocalDeviceCenter(options: Options) {
 		res.once("close", cancel);
 		req.once("aborted", cancel);
 		try {
+			// 房间事件流只打本机引擎：跨设备共享群组走显式 `shared-rooms/:id/events`（shared-rooms.ts），
+			// 这里不做透明回退——否则 local-first 会被「本机 404 就转发远端」破穿，本地流量也外泄。
 			const upstream = await fetch(
 				`${captured.hubUrl}/api/device-user/rooms/${encodeURIComponent(String(req.params.id))}/events`,
 				{
@@ -602,7 +611,7 @@ export async function installLocalDeviceCenter(options: Options) {
 					headers: { "X-Device-Id": captured.deviceId, Authorization: `Bearer ${captured.uiCredential}` },
 				},
 			);
-			if (!upstream.ok || !upstream.body || !upstream.headers.get("content-type")?.startsWith("text/event-stream")) {
+			if (!upstream.ok || !upstream.body) {
 				await upstream.body?.cancel();
 				res.sendStatus(502);
 				return;

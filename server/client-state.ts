@@ -13,7 +13,7 @@ import {
 } from "./tool-manager.js";
 import { normalizeToolPromptOverrides, type ToolPromptOverrideMap } from "./tool-prompt-overrides.js";
 import { UI_SLOTS } from "./plugin-ui-slots.js";
-import { DEFAULT_PROMPT_DISABLED } from "./prompt-composer.js";
+import { BUILTIN_SOUL_TEXTS, DEFAULT_PROMPT_DISABLED, isPromptToken } from "./prompt-composer.js";
 import { isPromptOnlyPreset } from "./preset-fields.js";
 import type { EngineId, QueueMode, ThinkingLevel, UiAlign, UiLayoutPrefs, UiSlotId } from "./protocol.js";
 import { mergeQuickAskSettings, normalizeQuickAskSettings, type QuickAskSettings } from "./quick-ask-settings.js";
@@ -31,11 +31,27 @@ export function normalizePromptDisabled(
 	if (!stored || stored.promptDisabled === undefined) {
 		return [...DEFAULT_PROMPT_DISABLED];
 	}
-	const list = [...stored.promptDisabled];
+	// 已下线的来源（guidelines / pi_docs 等）从存量名单里剔除，否则面板会一直显示一个不存在的停用项。
+	const list = stored.promptDisabled.filter((t) => typeof t === "string" && isPromptToken(t));
 	if (!stored._promptPluginDevConfigured && !list.includes("plugin_dev")) {
 		list.push("plugin_dev");
 	}
 	return list;
+}
+
+/**
+ * 存量覆盖收敛：
+ * - 已下线 / 不存在的来源键直接丢掉（否则永远删不掉的死子键）；
+ * - soul 文案与内置默认逐字相同 → 丢掉（等于没覆盖，走自动内容才不会在面板里假“已改”）。
+ */
+export function normalizePromptOverrides(overrides?: Record<string, string> | null): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const [key, value] of Object.entries(overrides ?? {})) {
+		if (typeof value !== "string" || !isPromptToken(key)) continue;
+		if (key === "soul" && BUILTIN_SOUL_TEXTS.includes(value.trim())) continue;
+		out[key] = value;
+	}
+	return out;
 }
 
 export const DEFAULT_RETRY_MAX_ATTEMPTS = 6;
@@ -434,8 +450,14 @@ export function normalizeSkillsCatalogBudget(v: unknown): number {
 	return DEFAULT_SKILLS_CATALOG_BUDGET;
 }
 
+/**
+ * 延迟加载总闸的出厂默认：**开**（2026-11 产品决定，按当前维护者的工具配置定稿）。
+ * 部署级可用环境变量 `PI_WEB_TOOL_LAZY_LOADING` 覆盖（1/true/on/yes → 开，0/false/off/no → 关），
+ * 只作默认值：用户已存盘的设置优先。名单为空时开与不开等价（没有任何工具可加载）。
+ */
 export const DEFAULT_TOOL_LAZY_LOADING = (() => {
 	const v = (process.env.PI_WEB_TOOL_LAZY_LOADING ?? "").trim().toLowerCase();
+	if (!v) return true;
 	return v === "1" || v === "true" || v === "on" || v === "yes";
 })();
 
@@ -567,21 +589,26 @@ export const DEFAULT_DARK_MINIMAL_SETTINGS: ClientSettings = Object.freeze({
 	disabledAgentTools: [
 		"powershell",
 		"ls",
-		"terminal",
 		"delegate_task",
-		"plan_update",
+		"phone",
 		"patch",
 		"lsp",
 		"eval",
 		"tool_search",
-		"schedule",
-		"compact_context",
 		"mcp_manage",
 		"sandbox",
 		"worktree",
 		"canvas",
 	],
-	toolOnDemandTools: [],
+	toolOnDemandTools: [
+		"terminal",
+		"browser_page",
+		"browser_script",
+		"browser_design",
+		"agent_bot",
+		"schedule",
+		"compact_context",
+	],
 	disabledPluginTools: [
 		"notes_add",
 		"notes_list",
@@ -707,15 +734,17 @@ export const DEFAULT_DARK_MINIMAL_SETTINGS: ClientSettings = Object.freeze({
 		"web_capture_clear",
 		"web_capture_report",
 	],
-	nativeCliInheritModel: {},
+	// Native CLIs inherit the conversation's model by default, so claude/codex need no own login;
+	// agy only accepts its own model names, so it stays opt-in.
+	nativeCliInheritModel: { claude: true, codex: true },
 	terminalToolsEnabled: false,
 	terminalBash: false,
 	terminalBashIdleMs: 15_000,
 	terminalBashMaxForegroundMs: 60_000,
-	toolWatchdogTimeoutMs: 2400000,
+	toolWatchdogTimeoutMs: DEFAULT_TOOL_WATCHDOG_TIMEOUT_MS,
 	readDirEnabled: true,
 	bgAutoCleanupMin: 0,
-	toolLazyLoading: false,
+	toolLazyLoading: DEFAULT_TOOL_LAZY_LOADING,
 	codemodeMode: "on",
 	codemodeInlineBudget: 3000,
 	toolApprovalEnabled: true,
@@ -916,7 +945,7 @@ export interface MarkerSettings {
 }
 
 /** 出厂默认关闭的内联标记（单源：客户端状态默认值、MarkerService 均取此处）。 */
-export const DEFAULT_DISABLED_MARKERS: readonly string[] = ["notify"];
+export const DEFAULT_DISABLED_MARKERS: readonly string[] = ["notify", "action", "suggest"];
 
 export interface ClientState {
 	lastCwd?: string;
@@ -1385,11 +1414,11 @@ export class ClientStateStore {
 		let promptOverrides: Record<string, string> = {};
 		if (stored?.promptTemplate !== undefined) {
 			promptTemplate = stored.promptTemplate ?? "";
-			promptOverrides = { ...stored?.promptOverrides };
+			promptOverrides = normalizePromptOverrides(stored?.promptOverrides);
 		} else if (stored && typeof stored.customSystemPrompt === "string" && stored.customSystemPrompt.trim()) {
-			promptOverrides = {
+			promptOverrides = normalizePromptOverrides({
 				[stored.promptMode === "replace" ? "soul" : "append"]: stored.customSystemPrompt,
-			};
+			});
 		} else if (!stored) {
 			promptOverrides = { ...DEFAULT_CLIENT_SETTINGS.promptOverrides };
 		}
@@ -1409,7 +1438,9 @@ export class ClientStateStore {
 					: stored
 						? legacyToDisabled(stored ?? {})
 						: [...DEFAULT_CLIENT_SETTINGS.disabledAgentTools],
-			toolOnDemandTools: normalizeToolOnDemandList(stored?.toolOnDemandTools),
+			toolOnDemandTools: normalizeToolOnDemandList(
+				stored?.toolOnDemandTools ?? (stored ? undefined : DEFAULT_CLIENT_SETTINGS.toolOnDemandTools),
+			),
 			disabledPluginTools:
 				stored?.disabledPluginTools !== undefined
 					? normalizeDisabledPluginTools(stored.disabledPluginTools)

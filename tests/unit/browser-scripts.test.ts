@@ -97,6 +97,7 @@ vi.mock("electron", async () => {
 	class View {
 		webContents = new Contents();
 		setBounds = vi.fn();
+		setBackgroundColor = vi.fn();
 		constructor(readonly options: any) {
 			mock.views.push(this);
 		}
@@ -133,6 +134,7 @@ function directory(): string {
 function setup() {
 	const window = Object.assign(new EventEmitter(), {
 		isDestroyed: () => false,
+		setBackgroundColor: vi.fn(),
 		contentView: { addChildView: vi.fn(), removeChildView: vi.fn() },
 	});
 	const manager = new BrowserManager({

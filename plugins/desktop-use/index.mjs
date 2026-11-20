@@ -209,7 +209,11 @@ export default {
 			}
 			st.depsInstalling = true;
 			host.log("info", `desktop-use: 安装输入依赖 ${DEPS.join(" ")}${auto ? "（自动）" : ""}`);
-			host.notify("info", "🖱️ 桌面控制：正在安装输入依赖（首次约需 1～3 分钟）…");
+			host.notify(
+				"info",
+				"🖱️ 桌面控制：正在安装输入依赖（首次约需 1～3 分钟）…",
+				"🖱️ Desktop Control: installing input dependencies (1–3 min on first run)…",
+			);
 			try {
 				writeFileSync(join(host.dir, INSTALL_LOCK), JSON.stringify({ at: Date.now(), pid: process.pid }));
 			} catch {}
@@ -237,6 +241,9 @@ export default {
 					ok
 						? "🖱️ 桌面控制输入依赖安装完成（nut-js 主用 + PowerShell 兜底）"
 						: `🖱️ 桌面控制输入依赖安装失败（${why}）——已自动降级为 PowerShell 兜底输入；也可手动在插件目录执行：npm install ${DEPS.join(" ")}`,
+					ok
+						? "🖱️ Desktop Control: input dependencies installed (nut-js primary + PowerShell fallback)"
+						: `🖱️ Desktop Control: input dependency install failed (${why}) — fell back to PowerShell input; or run manually in the plugin dir: npm install ${DEPS.join(" ")}`,
 				);
 				if (!ok) st.depsFailed = String(why || "unknown");
 			};
@@ -293,7 +300,11 @@ export default {
 						st.depsOk = true;
 						st.depsFailed = "";
 						host.log("info", "desktop-use: 后台重探成功，nut-js 已就绪");
-						host.notify("success", "🖱️ 桌面控制输入依赖已就绪（后台重探成功）");
+						host.notify(
+							"success",
+							"🖱️ 桌面控制输入依赖已就绪（后台重探成功）",
+							"🖱️ Desktop Control: input dependencies ready (background re-probe succeeded)",
+						);
 					}
 				});
 			}

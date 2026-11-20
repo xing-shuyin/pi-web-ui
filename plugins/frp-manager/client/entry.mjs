@@ -51,7 +51,7 @@ async function api(path, opts = {}) {
 	try {
 		return text ? JSON.parse(text) : {};
 	} catch {
-		throw new Error(`接口返回非 JSON（HTTP ${r.status}）：${String(text || "").slice(0, 200)}`);
+		throw new Error(t("apiBadJson", { status: r.status, body: String(text || "").slice(0, 200) }));
 	}
 }
 
@@ -65,6 +65,8 @@ function createApp(root) {
 	let editing = null; // 正在编辑的穿透名（null=新增态隐藏，""=新增）
 	let logRole = "frpc";
 	let logLines = [];
+	let offLocale = null;
+	let onLocaleEvent = null;
 
 	async function refresh(quiet) {
 		try {
@@ -133,39 +135,40 @@ function createApp(root) {
 			root.innerHTML = `<div class="frp-wrap">${t("probing")}</div>`;
 			return;
 		}
-		// 服务端未就绪/接口异常时 st 可能缺字段：用默认值兜底，绝不白屏
-		st.common = st.common || {};
-		st.frps = st.frps || {};
-		st.remote = st.remote || {};
-		st.proxies = Array.isArray(st.proxies) ? st.proxies : [];
-		st.frpc = st.frpc || {};
-		st.frpsLocal = st.frpsLocal || {};
-		const frpcRun = st.frpc?.running;
-		const frpsRun = st.frpsLocal?.running;
-		const tabs = [
-			["list", t("tabList")],
-			["client", t("tabClient")],
-			["frps", t("tabFrps")],
-			["remote", t("tabRemote")],
-			["logs", t("tabLogs")],
-		];
-		let body = "";
-		if (tab === "list") {
-			const rows = (st.proxies || [])
-				.map((p) => {
-					const off = p.enabled === false;
-					const target =
-						p.type === "http" || p.type === "https"
-							? esc(p.customDomains || p.subdomain || "-")
-							: `:${esc(p.remotePort || "-")}`;
-					return `<tr style="${off ? "opacity:.55" : ""}"><td class="frp-mono"><b>${esc(p.name)}</b>${off ? ` <span class="frp-dim">${t("disabled")}</span>` : ""}</td>
+		try {
+			// 服务端未就绪/接口异常时 st 可能缺字段：用默认值兜底，绝不白屏
+			st.common = st.common || {};
+			st.frps = st.frps || {};
+			st.remote = st.remote || {};
+			st.proxies = Array.isArray(st.proxies) ? st.proxies : [];
+			st.frpc = st.frpc || {};
+			st.frpsLocal = st.frpsLocal || {};
+			const frpcRun = st.frpc?.running;
+			const frpsRun = st.frpsLocal?.running;
+			const tabs = [
+				["list", t("tabList")],
+				["client", t("tabClient")],
+				["frps", t("tabFrps")],
+				["remote", t("tabRemote")],
+				["logs", t("tabLogs")],
+			];
+			let body = "";
+			if (tab === "list") {
+				const rows = (st.proxies || [])
+					.map((p) => {
+						const off = p.enabled === false;
+						const target =
+							p.type === "http" || p.type === "https"
+								? esc(p.customDomains || p.subdomain || "-")
+								: `:${esc(p.remotePort || "-")}`;
+						return `<tr style="${off ? "opacity:.55" : ""}"><td class="frp-mono"><b>${esc(p.name)}</b>${off ? ` <span class="frp-dim">${t("disabled")}</span>` : ""}</td>
 				<td>${esc(p.type)}</td><td class="frp-mono">${esc(p.localIP || "127.0.0.1")}:${esc(p.localPort)} → ${target}</td>
 				<td style="white-space:nowrap"><button class="frp-btn" data-op="toggle" data-name="${esc(p.name)}">${off ? t("enable") : t("disable")}</button>
 				<button class="frp-btn" data-op="edit" data-name="${esc(p.name)}">${t("edit")}</button>
 				<button class="frp-btn danger" data-op="del" data-name="${esc(p.name)}">${t("remove")}</button></td></tr>`;
-				})
-				.join("");
-			body = `
+					})
+					.join("");
+				body = `
 			<div class="frp-card"><div class="frp-row">
 				<span class="frp-dot ${frpcRun ? "ok" : ""}"></span><b>frpc ${frpcRun ? t("runningWithPid", { pid: st.frpc.pid }) : t("notRunning")}</b>
 				<span class="frp-dim">${t("serverSummary", {
@@ -180,9 +183,9 @@ function createApp(root) {
 			</div>${st.frpcBin ? "" : `<div class="frp-dim">${t("frpcMissing", { dir: esc(st.binDir) })}</div>`}</div>
 			${editing !== null && editing !== undefined ? proxyForm(editing === "" ? {} : st.proxies.find((p) => p.name === editing) || {}) : `<div class="frp-row"><button class="frp-btn" data-op="new">${t("newProxy")}</button><span class="frp-dim">${t("applyHint")}</span></div>`}
 			<div class="frp-card"><table class="frp-table"><tr><th>${t("colName")}</th><th>${t("colType")}</th><th>${t("colMapping")}</th><th>${t("colOps")}</th></tr>${rows || `<tr><td colspan="4" class="frp-dim">${t("emptyProxies")}</td></tr>`}</table></div>`;
-		} else if (tab === "client") {
-			const c = st.common;
-			body = `<div class="frp-card"><div class="frp-row"><b>${t("clientSection")}</b></div>
+			} else if (tab === "client") {
+				const c = st.common;
+				body = `<div class="frp-card"><div class="frp-row"><b>${t("clientSection")}</b></div>
 			<div class="frp-grid">
 				<label>serverAddr</label><input class="frp-in" data-c="serverAddr" value="${esc(c.serverAddr || "")}" placeholder="${t("addrPlaceholder")}">
 				<label>serverPort</label><input class="frp-in" data-c="serverPort" value="${esc(c.serverPort ?? 7000)}">
@@ -191,9 +194,9 @@ function createApp(root) {
 			</div>
 			<div class="frp-row" style="margin-top:8px"><button class="frp-btn primary" data-op="save_client">${t("save")}</button>
 			<span class="frp-dim">${t("clientSavedHint")}</span></div></div>`;
-		} else if (tab === "frps") {
-			const f = st.frps;
-			body = `<div class="frp-card"><div class="frp-row"><span class="frp-dot ${frpsRun ? "ok" : ""}"></span>
+			} else if (tab === "frps") {
+				const f = st.frps;
+				body = `<div class="frp-card"><div class="frp-row"><span class="frp-dot ${frpsRun ? "ok" : ""}"></span>
 				<b>${t("localFrps")} ${frpsRun ? t("runningWithPid", { pid: st.frpsLocal.pid }) : t("notRunning")}</b>
 				<span class="frp-dim">${t("frpsSummary")}</span><span style="flex:1"></span>
 				${frpsRun ? `<button class="frp-btn" data-op="frps_stop">${t("stop")}</button>` : `<button class="frp-btn primary" data-op="frps_start">${t("start")}</button>`}</div>
@@ -207,16 +210,16 @@ function createApp(root) {
 				<label>subdomainHost</label><input class="frp-in" data-s="subdomainHost" value="${esc(f.subdomainHost || "")}" placeholder="${t("subdomainHostPlaceholder")}">
 			</div>
 			<div class="frp-row" style="margin-top:8px"><button class="frp-btn primary" data-op="save_frps">${t("save")}</button></div></div>`;
-		} else if (tab === "remote") {
-			const r = st.remote,
-				f = st.frps;
-			const opts = (r.profiles || [])
-				.map(
-					(h) =>
-						`<option value="${esc(h.name)}" ${r.profile === h.name ? "selected" : ""}>${t("hostOption", { name: esc(h.name), user: esc(h.username), host: esc(h.host), port: esc(h.port) })}</option>`,
-				)
-				.join("");
-			body = `<div class="frp-card"><div class="frp-row"><b>${t("remoteSection")}</b></div>
+			} else if (tab === "remote") {
+				const r = st.remote,
+					f = st.frps;
+				const opts = (r.profiles || [])
+					.map(
+						(h) =>
+							`<option value="${esc(h.name)}" ${r.profile === h.name ? "selected" : ""}>${t("hostOption", { name: esc(h.name), user: esc(h.username), host: esc(h.host), port: esc(h.port) })}</option>`,
+					)
+					.join("");
+				body = `<div class="frp-card"><div class="frp-row"><b>${t("remoteSection")}</b></div>
 			<div class="frp-dim">${t("remoteDesc")}</div>
 			<div class="frp-row" style="margin-top:8px">
 				<label class="frp-dim">${t("remoteHost")}</label>
@@ -229,14 +232,14 @@ function createApp(root) {
 				<button class="frp-btn primary" data-op="deploy">${t("deploy")}</button>
 			</div>
 			<div class="frp-dim">${t("remoteDeployHint")}${t("remoteCurrent", { bindPort: esc(f.bindPort) })}${f.token ? t("tokenSet") : t("tokenUnset")}</div></div>`;
-		} else {
-			body = `<div class="frp-card"><div class="frp-row">
+			} else {
+				body = `<div class="frp-card"><div class="frp-row">
 				<button class="frp-tab ${logRole === "frpc" ? "on" : ""}" data-op="log_frpc">${t("logsFrpc")}</button>
 				<button class="frp-tab ${logRole === "frps" ? "on" : ""}" data-op="log_frps">${t("logsFrps")}</button>
 				<span style="flex:1"></span><button class="frp-btn" data-op="log_refresh">${t("refresh")}</button></div>
 				<div class="frp-code">${esc(logLines.join("\n") || t("logsEmpty"))}</div></div>`;
-		}
-		root.innerHTML = `<div class="frp-wrap">
+			}
+			root.innerHTML = `<div class="frp-wrap">
 			<div class="frp-row"><b style="font-size:15px">${t("title")}</b><span class="frp-dim">${t("subtitle")}</span>
 			<span style="flex:1"></span><button class="frp-btn" data-op="refresh">${t("refresh")}</button></div>
 			<div class="frp-tabs">${tabs.map(([k, l]) => `<button class="frp-tab ${tab === k ? "on" : ""}" data-op="tab" data-k="${k}">${l}</button>`).join("")}</div>
@@ -245,7 +248,7 @@ function createApp(root) {
 		} catch (err) {
 			// 渲染异常也要显示错误文案，决不留黑屏
 			try {
-				root.innerHTML = `<div class="frp-wrap"><div class="frp-card">页面渲染失败：${esc(err && err.message ? err.message : String(err))}<div class="frp-row" style="margin-top:8px"><button class="frp-btn" data-op="refresh">重试</button></div></div></div>`;
+				root.innerHTML = `<div class="frp-wrap"><div class="frp-card">${esc(t("renderFailed", { error: err && err.message ? err.message : String(err) }))}<div class="frp-row" style="margin-top:8px"><button class="frp-btn" data-op="refresh">${esc(t("retry"))}</button></div></div></div>`;
 			} catch {}
 		}
 	}
@@ -377,11 +380,36 @@ function createApp(root) {
 				if (!destroyed && tab !== "logs") void refresh(true);
 			}, 5000);
 			root.addEventListener("click", onClick);
+			// 宿主全局语言单源：首帧 t() 已按 locale.current() 取词，切语言后重渲染
+			try {
+				offLocale =
+					window.__piWebUiHost?.locale?.onChange?.(() => {
+						if (!destroyed) render();
+					}) ?? null;
+			} catch {
+				offLocale = null;
+			}
+			try {
+				onLocaleEvent = () => {
+					if (!destroyed) render();
+				};
+				window.addEventListener("pi-web-ui:locale", onLocaleEvent);
+			} catch {
+				onLocaleEvent = null;
+			}
 		},
 		destroy() {
 			destroyed = true;
 			if (timer) clearInterval(timer);
 			timer = null;
+			try {
+				offLocale?.();
+			} catch {}
+			try {
+				if (onLocaleEvent) window.removeEventListener("pi-web-ui:locale", onLocaleEvent);
+			} catch {}
+			offLocale = null;
+			onLocaleEvent = null;
 			try {
 				root.removeEventListener("click", onClick);
 			} catch {}

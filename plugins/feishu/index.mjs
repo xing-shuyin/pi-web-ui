@@ -772,20 +772,28 @@ export default async function activate(host) {
 	async function updateUnreadStatus() {
 		const { unread, status } = await countUnread(localConfig);
 		let label = "🐦 --";
+		let labelEn = "🐦 --";
 		let title = "点击打开飞书工作台";
+		let titleEn = "Open the Feishu workbench";
 
 		if (status === "unconfigured") {
 			label = "🐦 未配置";
+			labelEn = "🐦 Not configured";
 			title = "飞书插件尚未配置凭证或 Webhook";
+			titleEn = "Feishu plugin has no credentials or Webhook yet";
 		} else if (status === "webhook") {
 			label = "🐦 Webhook";
+			labelEn = "🐦 Webhook";
 			title = "已配置飞书自定义机器人 Webhook (单向推送)";
+			titleEn = "Custom Feishu bot Webhook configured (one-way push)";
 		} else if (status === "ok") {
 			label = unread > 0 ? `🐦 ${unread} 未读` : "🐦 ✓";
+			labelEn = unread > 0 ? `🐦 ${unread} unread` : "🐦 ✓";
 			title = unread > 0 ? `飞书有 ${unread} 条新消息` : "飞书消息已全部读完";
+			titleEn = unread > 0 ? `${unread} new Feishu messages` : "All Feishu messages read";
 		}
 
-		host.ui?.update?.("feishu-unread", { label, hint: title });
+		host.ui?.update?.("feishu-unread", { label, labelEn, hint: title, hintEn: titleEn });
 	}
 
 	async function pollNewMessages() {
@@ -801,7 +809,7 @@ export default async function activate(host) {
 				}
 			}
 			if (newlyArrived > 0) {
-				host.notify?.("info", `飞书收到 ${newlyArrived} 条新消息`);
+				host.notify?.("info", `飞书收到 ${newlyArrived} 条新消息`, `Feishu received ${newlyArrived} new messages`);
 				host.broadcast?.({ kind: "feishu-new-message", count: newlyArrived });
 			}
 			await updateUnreadStatus();

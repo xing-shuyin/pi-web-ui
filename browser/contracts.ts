@@ -161,4 +161,6 @@ export type BrowserShellAction =
 	| "scripts.list"
 	| "scripts.toggle"
 	| "scripts.remove"
-	| "download.open";
+	| "download.open"
+	/** 在系统文件管理器里定位已完成下载（只传 id，路径由主进程解析，不执行文件） */
+	| "download.reveal";

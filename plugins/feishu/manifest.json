@@ -2,7 +2,7 @@
 	"apiVersion": 2,
 	"name": "feishu",
 	"nameEn": "Feishu",
-	"version": "0.3.8",
+	"version": "0.3.9",
 	"alwaysOn": true,
 	"description": "飞书工作台与机器人：飞书 Bot 双工对话（出站长连接 / 智能 Markdown 分块 / 多轮会话隔离）/ 群聊与单聊会话列表 / 消息收发与撤回 / Webhook 卡片推送 / AI 飞书工具（密钥加密落盘，零外部依赖）",
 	"descriptionEn": "Feishu (Lark) workspace & Bot: Feishu Bot duplex chat (outbound long-connection, structure-aware Markdown chunks, isolated multi-turn sessions), chat management, Webhook cards, and AI feishu tool.",
@@ -18,6 +18,9 @@
 			{
 				"id": "feishu-open",
 				"label": "飞书",
+				"labelEn": "Feishu",
+				"hint": "打开飞书工作台",
+				"hintEn": "Open the Feishu workbench",
 				"icon": "🐦",
 				"kind": "view",
 				"view": "plugin:feishu",
@@ -28,7 +31,9 @@
 			{
 				"id": "feishu-unread",
 				"label": "🐦 --",
+				"labelEn": "🐦 --",
 				"hint": "点击打开飞书工作台",
+				"hintEn": "Open the Feishu workbench",
 				"kind": "view",
 				"view": "plugin:feishu",
 				"order": 46

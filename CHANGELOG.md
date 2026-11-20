@@ -18,6 +18,16 @@
 
 - **新设备默认跟随被控显示器的刷新率**：画质面板的帧率目标跟着被控屏幕标称刷新率（最高 240 FPS），刷新率未知时先要 60 FPS；已手选过帧率的设备保留原选择。连接信息显示被控显示器的标称刷新率。
 
+- **系统提示词改成「内置默认配置」**：出厂就是六条工程准则（soul）+ 项目上下文 + 按需工具列表 + 标记引导 + 技能 + 工作目录 + 追加段 + 插件开发指南（出厂停用），顺序即设置面板的行顺序；`{{guidelines}}`（行为准则）与 `{{pi_docs}}`（pi 文档指引）下线，存量模板里残留时渲染为空串、不留字面量，老设置的 `promptOverrides` / `promptDisabled` 在读取时自动剔除死键（`server/prompt-composer.ts`、`server/client-state.ts`，守卫 `tests/unit/prompt-settings-convergence.test.ts`）。
+
+- **按需加载出厂默认开**：全新用户默认挂 `load_tools`，`terminal` / `browser_*` / `schedule` / `agent_bot` / `compact_context` 这批重量级工具改成「先 load 再下发 schema」，出厂即有 7 个按需项且与禁用名单不重叠（`server/client-state.ts` 的 `toolOnDemandTools` / `toolLazyLoading`，守卫 `tests/unit/default-off-tools.test.ts`）。
+
+- **原生 CLI 默认继承会话模型**：claude / codex 默认走 `nativeCliInheritModel`（协议不匹配时不再静默回退到 CLI 自身登录），agy 只认自己的模型名因此保持 opt-in；新增 `server/native-cli-hooks.ts` 统一 hook 装配。
+
+- **设备中心共享群组**：成员含其他设备时走配对远端 Hub 的显式 `shared-bots` / `shared-rooms/*` 接口（`server/device-center/shared-rooms.ts`），群组信息改成「编辑」弹窗一次提交名称 + 成员（`web/src/components/DeviceGroupEditDialog.tsx`）；本地 `rooms/*` 链路保持纯本机，不做 404 透明回退。
+
+- **终端右键引用**：终端标签与输出文字都可以右键「引用」，作为 `mode: "terminal"` 附件按 id 现场解析标题 / cwd / 命令 / 输出（`web/src/terminal-quote.ts`、`web/src/components/TerminalContextMenu.tsx`、`server/attachments.ts`）。
+
 ### Changed
 
 - **子进程 / git / 引号 / 等待收敛成单源**：新增 `server/run-process.ts`（spawn + 超时与取消杀整棵进程树 + stdin 接地 + 行回调 + 输出上限，`NO_COLOR`/`windowsHide` 一次给全）与 `server/git-run.ts`（`runGit`/`runGitText`、`quotepath` 硬化、`GIT_TERMINAL_PROMPT=0` 环境、失败摘要取 stderr 首行），迁移掉 5 份重复的 `runGit`、6 份各自定义的超时常量与 6 处内联 `taskkill`（含 `eval-tool` 的 `execSync`，服务端同步子进程调用再少一处）；shell / PowerShell 引号收敛到 `server/shell-quote.ts`（CLI 用生成件 `bin/lib/shell-quote.mjs`，镜像件清单 `scripts/lib/bin-mirrors.mjs` + `npm run gen:bin-mirrors`），`sleep` 收敛到 `server/async-utils.ts`。`agent-service` 的自建 `runAsync`（50 行 spawn+超时杀树）与插件运行时依赖安装（`plugin-facilities` 的 `spawnSync` npm install、`plugin-assets` 的 `execFileSync` tar 解包）也一并收口 —— 后者原来会把服务端事件循环整段卡住几分钟；`runProcess` 新增 `windowsShell` 选项，统一「Windows 上 npm 这类 .cmd 包装器必须经 `cmd.exe /d /s /c`」的写法。同步子进程存量名单再缩短两行。连发布协议 `local-publication` 的 `runPublicationGit`（原来自己 spawn）也变成了单源特化：`runProcess` 新增 `stopTimeoutMs`（杀树后宽限内停不下来 → `unstopped`，而不是让 promise 永远挂着）、`overflow: "kill"`（输出超限立刻杀树）、`onSpawn(pid)`（按操作键登记活子进程）三个失败关闭（fail-closed）选项，`runGit` 新增 `globalArgs`（`--no-optional-locks` 这类全局开关）。规则与守卫：`docs/agent-rules.md` §四，`tests/unit/run-process.test.ts` / `git-run.test.ts` / `bin-mirror.test.ts` / `local-publication-git-primitive.test.ts`。
@@ -25,6 +35,12 @@
 - **同步子进程调用清零**：`plugins/bili-scroll`（2.10.3）的 `uv`/`python` 探测、Linux 桌面采集的 `xdpyinfo`/`xrandr` 尺寸探测都改成异步（插件跑在服务端主进程里，`spawnSync` 会把所有会话一起卡住）；macOS 的 `xcrun --find swift` 换成纯文件系统探测（`xcode-select` 的落点就是文件，顺便去掉「xcrun 卡在 Xcode 许可交互上钉死事件循环」的风险）。同一轮还把 `engine-probe` 的 npm 全局安装/卸载、`shell-env` 的登录 shell PATH 抓取换成 `runProcess`（前者的两段 80 行几乎相同的 spawn/超时/收输出代码合成一个 `runNpmGlobal`），并删掉 pi 扩展里 `execSync("where node")` 的阻塞探测（改纯 PATH 扫描）；再收掉 4 个漏网的一次性命令（`engine-cli` 的 `--version` 探测、hub 升级 worker 提交、macOS `swiftc` 编译 helper、H.264 编码器候选探测），它们原来各自手写「spawn + 超时 + 收输出」。同步子进程守卫的存量名单由此清空，扫描范围从 `server/` + `plugins/` 扩到 **`extensions/`**（pi 扩展跑在宿主主进程里），`tsconfig.extensions.json` 也补进了 `npm run typecheck` 门禁。
 
 - **常驻子进程也收敛成单源**：新增 `server/spawn-child.ts`（`spawnChild` / `spawnChildPiped` → `{ child, stop({graceMs,timeoutMs}) }`），把 LSP、MCP server、codex/claude/dsh 引擎驱动、eval 内核、bash job、插件作业、设备采集与编码、命名管道 supervisor、二进制 PNG 截图协议这些**常驻/交互式**子进程从「各写一遍 spawn + 各写一套杀树」统一到同一个出口；`stop()` 固定「先给 grace 让它自己退 → 再杀整棵树 → 确认 pid 消失」。配套守卫 `tests/unit/spawn-single-source-guard.test.ts` 规定：`server/` 内除两个出口（`run-process` / `spawn-child`）与基座（`process-utils`、node-pty、xdotool 输入队列）外，出现裸 `spawn(` / `execFile(` 直接红。
+
+- **内置插件英文态零中文**：内置插件的界面文案统一走各自的 `client/i18n.mjs`（image-ocr / live-preview / mermaid / response-speed / web-capture 等新增或补齐），英文界面下不再露中文；manifest 版本号同步递增。
+
+- **浏览器新建标签页不再白闪**：主进程侧按主题给出视图底色（`browser/runtime/palette.ts`，与 `browser.css` 的 `--pb-bg-main` 由 `tests/unit/browser-palette.test.ts` 锁成一份），首帧之前那块区域直接是主题色，而不是 Electron 的白色默认值。
+
+- **环境变量有了单源清单**：`server/env-registry.ts` 把 `PI_*` 按 scope 归类（用户可调 / 进程握手 / 构建期 / 测试管道 / 插件私有），新增变量由 `tests/unit/env-registry.test.ts` 拦住，`docs/env-vars.md` 与代码同源。
 
 ### Removed
 

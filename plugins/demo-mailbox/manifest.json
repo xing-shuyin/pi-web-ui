@@ -1,34 +1,43 @@
 {
 	"id": "demo-mailbox",
 	"name": "示例",
-	"version": "0.2.3",
+	"nameEn": "Demo Mailbox",
+	"version": "0.2.4",
 	"isolated": true,
 	"icon": "📮",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"22 12 16 12 14 15 10 15 8 12 2 12\"/><path d=\"M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z\"/></svg>",
 	"description": "示例插件：演示 pi-web-ui 可选界面组件的服务端入口 + 客户端视图 + 双向消息",
+	"descriptionEn": "Demo plugin: server entry + client view + two-way messaging for pi-web-ui optional UI components",
 	"settings": [
 		{
 			"key": "pollSec",
 			"type": "number",
 			"label": "轮询间隔(秒)",
+			"labelEn": "Poll interval (sec)",
 			"default": 60,
 			"min": 10,
 			"max": 600,
-			"hint": "新邮件检查间隔"
+			"hint": "新邮件检查间隔",
+			"hintEn": "How often to check for new mail"
 		},
 		{
 			"key": "notifyEnabled",
 			"type": "boolean",
 			"label": "新邮件通知",
-			"default": true
+			"labelEn": "New mail notification",
+			"default": true,
+			"hint": "收到新邮件时推送系统通知",
+			"hintEn": "Push a system notification when new mail arrives"
 		},
 		{
 			"key": "theme",
 			"type": "select",
 			"label": "界面主题",
+			"labelEn": "Color theme",
 			"default": "dark",
 			"options": ["dark", "light"],
-			"hint": "demo 演示 select"
+			"hint": "demo 演示 select",
+			"hintEn": "Demo select control"
 		}
 	]
 }

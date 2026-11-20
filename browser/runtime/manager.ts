@@ -16,6 +16,7 @@ import type { BrowserTab, BrowserDesignDocument, BrowserDesignKind, BrowserDesig
 import { BrowserStorage } from "../storage/index.js";
 import { isWebUrl, internalPageName, internalPageUrl, normalizeBrowserUrl, pickTabFavicon, webOrigin } from "./urls.js";
 import { BrowserCustomization } from "./customize.js";
+import { themeBackground } from "./palette.js";
 import { DOCK_SCRIPT, SCROLLBAR_CSS } from "./dock.js";
 import { TRANSLATE_SCRIPT } from "./translate.js";
 import { DOWNLOADS_SCRIPT, scriptLiteral } from "./downloads.js";
@@ -106,11 +107,11 @@ interface PasskeySession {
 }
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 /**
- * 页面右上角的下载圆钮只展示「进行中」与「刚刚结束」的：留着旧任务会让每打开一个页面
+ * 下载圆钮只展示「进行中」与「刚刚结束」的：留着旧任务会让每打开一个页面
  * 都把「上次那个已下完」再亮一遍，那就不叫提示了。
  */
 const DOWNLOAD_NOTICE_MS = 30_000;
-/** 圆钮一次最多列 8 条：再多也看不完，真正的全量列表在「下载」面板里。 */
+/** 圆钮一次最多列 8 条：再多也看不完，真正的全量列表在浏览器的「下载」面板里。 */
 const DOWNLOAD_NOTICE_LIMIT = 8;
 /** file:// URL → 本地路径；不是合法 file URL 就返回空串（恢复标签时遇到就丢掉）。 */
 function safeFilePath(url: string): string {
@@ -148,6 +149,9 @@ export class BrowserManager {
 	constructor(private readonly options: BrowserManagerOptions) {
 		this.storage = new BrowserStorage(options.dataDir, safeStorage);
 		this.customization = new BrowserCustomization(options.dataDir);
+		// 窗口自己也得有底色：外壳页 body 是透明的，视图没盖住的那些地方（启动首帧、分栏缝隙、
+		// 标签页切换的空档）露出来的就是它——不给值就是系统默认的白色。
+		this.paintChrome();
 		this.session = session.fromPath(path.resolve(options.dataDir, "session"));
 		this.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
 		this.session.setPermissionCheckHandler(() => false);
@@ -193,6 +197,8 @@ export class BrowserManager {
 				plugins: true,
 			},
 		});
+		// 页面画出第一帧之前，视图露的是自己的背景色（默认白）：先铺成主题底色，新标签页才不会白闪一下
+		view.setBackgroundColor(this.chromeBackground());
 		const state: BrowserTab = {
 			id,
 			url: target,
@@ -302,18 +308,22 @@ export class BrowserManager {
 			// 这些脚本会挂到它的滚动容器上，实测让 PDF 滚动明显卡顿。
 			const isLocalFile = current.startsWith("file:");
 			const isWebsite = isWebUrl(current);
-			if (!isLocalFile && !current.includes("shell.html") && !current.includes("newtab.html")) {
+			if (!isLocalFile && !this.isInternalPage(current)) {
 				try {
 					if (this.storage.getSettings().customScrollbar !== false) {
 						void wc.insertCSS(SCROLLBAR_CSS).catch(() => {});
 					}
 					// DOCK_SCRIPT 读不到时是空串（见 runtime/dock.ts 的单源说明），别白跑一次注入
 					if (DOCK_SCRIPT && this.storage.getSettings().smartDock !== false) {
-						void wc.executeJavaScript(DOCK_SCRIPT).catch(() => {});
+						void wc
+							.executeJavaScript(DOCK_SCRIPT)
+							.catch((error: unknown) => this.reportInjection(wc, "悬浮圆钮", error));
 					}
 					// 翻译脚本只对 http(s) 网站注入；preload 的 __piTranslate 窄桥也只在这些页面可用
 					if (isWebsite && TRANSLATE_SCRIPT) {
-						void wc.executeJavaScript(TRANSLATE_SCRIPT).catch(() => {});
+						void wc
+							.executeJavaScript(TRANSLATE_SCRIPT)
+							.catch((error: unknown) => this.reportInjection(wc, "网页翻译", error));
 					}
 				} catch {}
 				// 下载圆钮不受 smartDock 管：它是「文件下来了」的提示，不是导航玩具
@@ -333,17 +343,21 @@ export class BrowserManager {
 					} catch {}
 				}
 				const isLocalFile = current.startsWith("file:");
-				if (!isLocalFile && !current.includes("shell.html") && !current.includes("newtab.html")) {
+				if (!isLocalFile && !this.isInternalPage(current)) {
 					try {
 						if (DOCK_SCRIPT && this.storage.getSettings().smartDock !== false) {
-							void wc.executeJavaScript(DOCK_SCRIPT).catch(() => {});
+							void wc
+								.executeJavaScript(DOCK_SCRIPT)
+								.catch((error: unknown) => this.reportInjection(wc, "悬浮圆钮", error));
 						}
 						// 密码自动填充下拉：只对真网站注入（内部页没有登录表单，也不该拿到那条桥）
 						if (isWebUrl(current) && AUTOFILL_SCRIPT) {
 							void wc.executeJavaScript(AUTOFILL_SCRIPT).catch(() => {});
 						}
 						if (isWebUrl(current) && TRANSLATE_SCRIPT) {
-							void wc.executeJavaScript(TRANSLATE_SCRIPT).catch(() => {});
+							void wc
+								.executeJavaScript(TRANSLATE_SCRIPT)
+								.catch((error: unknown) => this.reportInjection(wc, "网页翻译", error));
 						}
 					} catch {}
 					this.injectDownloads(wc);
@@ -473,21 +487,31 @@ export class BrowserManager {
 		return [...this.downloads.values()].map(({ state }) => ({ ...state }));
 	}
 	/**
-	 * 注入右上角下载圆钮，并把当前状态补推给它：新文档里它是空的，不喂一次就不知道
-	 * 自己该不该出现（刚下来的文件在新页面上也该看得见）。
+	 * 注入失败不再静默：站点把桥挡住 / 脚本在页面里抛错时，主进程日志里至少留一条。
+	 * 以前全是 `.catch(() => {})`，用户报「某个站整颗钮看不见」时一点线索都没有。
+	 */
+	private reportInjection(contents: WebContents, what: string, error: unknown): void {
+		if (this.disposed) return;
+		const target = contents.isDestroyed() ? "（页面已关闭）" : contents.getURL();
+		console.warn(`[browser] ${what}注入失败 ${target}：${messageOf(error)}`);
+	}
+	/**
+	 * 注入下载圆钮（页面右下角悬浮球里那一颗），并把当前状态补推给它：新文档里它是空的，
+	 * 不喂一次就不知道自己该不该出现（刚下来的文件在新页面上也该看得见）。
 	 */
 	private injectDownloads(contents: WebContents): void {
 		if (!DOWNLOADS_SCRIPT || contents.isDestroyed()) return;
 		void contents
 			.executeJavaScript(DOWNLOADS_SCRIPT)
 			.then(() => this.pushDownloads(contents))
-			.catch(() => {});
+			.catch((error: unknown) => this.reportInjection(contents, "下载圆钮", error));
 	}
 	/**
 	 * 把下载状态推给页面里的圆钮（`browser/renderer/downloads.js`）。
 	 *
 	 * 只推一块视图：同一时刻只有活动标签的页面是可见的，后台标签等它被激活/重新加载时再补。
-	 * 方向是单向的（主进程 → 页面）：那段脚本跑在网站的主世界里，不给它任何反向能力。
+	 * 方向是单向的（主进程 → 页面）：显示面不接受任何反向请求，唯一的后向能力是按 id 走
+	 * `__piDownloads.reveal` 请宿主在文件管理器里定位（见 `desktop/browser-host.ts`）。
 	 */
 	private pushDownloads(contents = this.activeContents()): void {
 		if (this.disposed || !DOWNLOADS_SCRIPT || !contents || contents.isDestroyed()) return;
@@ -518,7 +542,10 @@ export class BrowserManager {
 		return this.storage.getSettings();
 	}
 	saveSettings(value: unknown): boolean {
+		const before = this.storage.getSettings().theme;
 		const result = this.storage.saveSettings(value);
+		// 换主题要连「还没画出来的那块」一起换：只改 CSS 的话，浅色主题下新建标签页仍会先闪一帧深色
+		if (this.storage.getSettings().theme !== before) this.paintChrome();
 		this.changed();
 		return result;
 	}
@@ -1073,6 +1100,19 @@ export class BrowserManager {
 	}
 	private ensureAlive(): void {
 		if (this.disposed) throw new Error("Browser manager is disposed");
+	}
+	/** 视图 / 窗口的基线底色：页面还没画出任何像素时露出来的就是这一块（单源见 `palette.ts`）。 */
+	private chromeBackground(): string {
+		return themeBackground(this.storage.getSettings().theme);
+	}
+	/** 把当前主题底色铺到窗口与所有标签视图上（建窗口时一次，换主题时再来一次）。 */
+	private paintChrome(): void {
+		if (this.disposed) return;
+		const background = this.chromeBackground();
+		if (!this.options.window.isDestroyed()) this.options.window.setBackgroundColor(background);
+		for (const record of this.tabs.values()) {
+			if (!record.view.webContents.isDestroyed()) record.view.setBackgroundColor(background);
+		}
 	}
 	private mount(): void {
 		if (this.disposed || this.options.window.isDestroyed()) return;

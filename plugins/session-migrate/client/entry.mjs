@@ -53,6 +53,31 @@ export default {
 		const uploadBtn = el("button", null, t("uploadImport"));
 		const upHint = el("span", "opacity:.7;font-size:12px;", t("uploadHint"));
 		upRow.append(fileInput, uploadBtn, upHint);
+		// 宿主全局语言单源：首帧按 locale.current() 取词，切语言后重涂静态文案
+		function applyStaticI18n() {
+			sel.innerHTML =
+				`<option value="all">${t("sourceAll")}</option>` +
+				CHUNK_KINDS.map((k) => `<option value="${k}">${t("onlyKind", { kind: k })}</option>`).join("");
+			scanBtn.textContent = t("scan");
+			cwdInput.placeholder = t("cwdPlaceholder");
+			importBtn.textContent = t("importSelected");
+			uploadBtn.textContent = t("uploadImport");
+			upHint.textContent = t("uploadHint");
+		}
+		applyStaticI18n();
+		let offLocale = null;
+		let onLocaleEvent = null;
+		try {
+			offLocale = window.__piWebUiHost?.locale?.onChange?.(() => applyStaticI18n()) ?? null;
+		} catch {
+			offLocale = null;
+		}
+		try {
+			onLocaleEvent = () => applyStaticI18n();
+			window.addEventListener("pi-web-ui:locale", onLocaleEvent);
+		} catch {
+			onLocaleEvent = null;
+		}
 
 		const list = el("div", "display:flex;flex-direction:column;gap:6px;overflow:auto;flex:1;min-height:60px;");
 		// 重名三选一：覆盖 / 另存副本 / 取消（只在 409 时出现）
@@ -208,6 +233,12 @@ export default {
 		};
 
 		return () => {
+			try {
+				offLocale?.();
+			} catch {}
+			try {
+				if (onLocaleEvent) window.removeEventListener("pi-web-ui:locale", onLocaleEvent);
+			} catch {}
 			rootEl.innerHTML = "";
 		};
 	},

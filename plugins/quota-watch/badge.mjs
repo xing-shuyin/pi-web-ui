@@ -120,37 +120,57 @@ export function tightestWindow(provider) {
 function describeProvider(provider, zh) {
 	const tightest = tightestWindow(provider);
 	const name = zh ? provider?.name : provider?.nameEn || provider?.name;
-	if (provider?.status === "signed-out") return { text: "—", detail: `${name}：未登录`, ok: false };
+	// 底栏 tooltip 单串双语：调用方按界面语言传 zh，中文走中文文案、英文走英文文案。
+	if (provider?.status === "signed-out")
+		return { text: "—", detail: zh ? `${name}：未登录` : `${name}: signed out`, ok: false };
 	if (provider?.status === "error")
-		return { text: "!", detail: `${name}：查询失败（${provider?.error ?? ""}）`, ok: false };
-	if (provider?.status === "expired") return { text: "≠", detail: `${name}：登录态已失效`, ok: false };
+		return {
+			text: "!",
+			detail: zh ? `${name}：查询失败（${provider?.error ?? ""}）` : `${name}: query failed (${provider?.error ?? ""})`,
+			ok: false,
+		};
+	if (provider?.status === "expired")
+		return { text: "≠", detail: zh ? `${name}：登录态已失效` : `${name}: login expired`, ok: false };
 	if (provider?.status === "network")
-		return { text: "⇅", detail: `${name}：网络不可达（开代理/VPN 再刷新）`, ok: false };
+		return {
+			text: "⇅",
+			detail: zh
+				? `${name}：网络不可达（开代理/VPN 再刷新）`
+				: `${name}: network unreachable (use proxy/VPN and refresh)`,
+			ok: false,
+		};
 	if (tightest) {
 		const pct = pctText(tightest.remaining);
 		const label = zh ? tightest.window?.label : tightest.window?.labelEn || tightest.window?.label;
-		return { text: `${pct}%`, detail: `${name} · ${label} 剩余 ${pct}%`, ok: true };
+		return {
+			text: `${pct}%`,
+			detail: zh ? `${name} · ${label} 剩余 ${pct}%` : `${name} · ${label} left ${pct}%`,
+			ok: true,
+		};
 	}
 	const balance = provider?.balance;
 	if (balance) {
 		const text = String(balance.text ?? "");
-		return { text, detail: `${name} 余额 ${text}`, ok: true };
+		return { text, detail: zh ? `${name} 余额 ${text}` : `${name} balance ${text}`, ok: true };
 	}
 	// OpenCode 这类「聚合登录态」来源：没有窗口/余额，只有 extra 里的各家登录态 —— 有条目即视为有效
 	const extras = Array.isArray(provider?.extra) ? provider.extra : [];
 	if (extras.length) {
 		const text = `●${extras.length}`;
+		const names = extras
+			.map((e) => (zh ? e?.label : e?.labelEn || e?.label))
+			.filter(Boolean)
+			.join(zh ? "、" : ", ")
+			.slice(0, 80);
 		return {
 			text,
-			detail: `${name}：已配置 ${extras.length} 家（${extras
-				.map((e) => e?.label)
-				.filter(Boolean)
-				.join("、")
-				.slice(0, 80)}）`,
+			detail: zh
+				? `${name}：已配置 ${extras.length} 家（${names}）`
+				: `${name}: ${extras.length} configured (${names})`,
 			ok: true,
 		};
 	}
-	return { text: "—", detail: `${name}：无额度数据`, ok: false };
+	return { text: "—", detail: zh ? `${name}：无额度数据` : `${name}: no quota data`, ok: false };
 }
 
 /**

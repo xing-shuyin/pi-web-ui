@@ -62,6 +62,7 @@ export const DICT = {
 		ungrouped: "未分组",
 		noEnvironment: "未标记环境",
 		requestFailedWithStatus: "请求失败 ({status})",
+		workbenchDisposed: "工作台已卸载",
 
 		// 主机资产
 		searchHosts: "🔍 搜索主机 IP / 名称 / 用户名...",
@@ -327,6 +328,7 @@ export const DICT = {
 		ungrouped: "未分組",
 		noEnvironment: "未標記環境",
 		requestFailedWithStatus: "請求失敗 ({status})",
+		workbenchDisposed: "工作台已卸載",
 
 		// 主机资产
 		searchHosts: "🔍 搜尋主機 IP / 名稱 / 使用者名稱...",
@@ -593,6 +595,7 @@ export const DICT = {
 		ungrouped: "Ungrouped",
 		noEnvironment: "No environment label",
 		requestFailedWithStatus: "Request failed ({status})",
+		workbenchDisposed: "Workbench disposed",
 
 		// Host inventory
 		searchHosts: "🔍 Search host IP / name / user...",

@@ -1,15 +1,41 @@
-import { makeT } from "./i18n.mjs";
+import { createPluginI18n } from "@pi-web-ui/plugin-sdk/client";
+import { DICT } from "./i18n.mjs";
 
-/** 面板文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。 */
-const t = makeT();
+// Panel copy: language resolution/fallback/interpolation lives in the SDK;
+// this view only picks words by the current host locale.
+const i18n = createPluginI18n(DICT);
+const t = (key, vars) => i18n.t(key, vars);
+
+/** Snapshot typed drafts so a locale re-render does not eat them. */
+function snapshotDrafts(root) {
+	const snap = {};
+	for (const node of root.querySelectorAll("input, textarea, select")) {
+		const key = node.className;
+		if (!key || node.type === "password") continue;
+		snap[key] = node.type === "checkbox" ? node.checked : node.value;
+	}
+	return snap;
+}
+
+/** Restore drafts captured by snapshotDrafts. */
+function restoreDrafts(root, snap) {
+	for (const node of root.querySelectorAll("input, textarea, select")) {
+		const key = node.className;
+		if (!key || !(key in snap)) continue;
+		if (node.type === "checkbox") node.checked = Boolean(snap[key]);
+		else node.value = String(snap[key] ?? "");
+	}
+}
 
 export default {
 	async mount(el, ctx) {
-		const sendHost = async (type, payload = {}) => {
-			return await ctx.send({ type, ...payload });
-		};
+		let disposed = false;
+		const run = async () => {
+			const sendHost = async (type, payload = {}) => {
+				return await ctx.send({ type, ...payload });
+			};
 
-		el.innerHTML = `
+			el.innerHTML = `
 			<div class="discord-root" style="display: flex; flex-direction: column; height: 100%; box-sizing: border-box; background: var(--bg); color: var(--text); font-size: 13px;">
 				<!-- Topbar Header -->
 				<div style="padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--bg-elev);">
@@ -146,200 +172,215 @@ export default {
 			</div>
 		`;
 
-		const q = (sel) => el.querySelector(sel);
-		const statusBadge = q(".discord-status-badge");
-		const metricState = q(".discord-metric-state");
-		const metricUsername = q(".discord-metric-username");
-		const metricRecv = q(".discord-metric-recv");
-		const metricSent = q(".discord-metric-sent");
-		const modal = q(".discord-modal-settings");
+			const q = (sel) => el.querySelector(sel);
+			const statusBadge = q(".discord-status-badge");
+			const metricState = q(".discord-metric-state");
+			const metricUsername = q(".discord-metric-username");
+			const metricRecv = q(".discord-metric-recv");
+			const metricSent = q(".discord-metric-sent");
+			const modal = q(".discord-modal-settings");
 
-		const cfgToken = q(".discord-cfg-token");
-		const cfgDefaultChannel = q(".discord-cfg-default-channel");
-		const cfgBotEnabled = q(".discord-cfg-bot-enabled");
-		const cfgAllowedUsers = q(".discord-cfg-allowed-users");
-		const cfgWorkspace = q(".discord-cfg-workspace");
-		const cfgWsSelect = q(".discord-cfg-ws-select");
-		const cfgWsBrowse = q(".discord-cfg-ws-browse");
-		const cfgModel = q(".discord-cfg-model");
-		const cfgModelBrowse = q(".discord-cfg-model-browse");
-		const cfgThinking = q(".discord-cfg-thinking");
+			const cfgToken = q(".discord-cfg-token");
+			const cfgDefaultChannel = q(".discord-cfg-default-channel");
+			const cfgBotEnabled = q(".discord-cfg-bot-enabled");
+			const cfgAllowedUsers = q(".discord-cfg-allowed-users");
+			const cfgWorkspace = q(".discord-cfg-workspace");
+			const cfgWsSelect = q(".discord-cfg-ws-select");
+			const cfgWsBrowse = q(".discord-cfg-ws-browse");
+			const cfgModel = q(".discord-cfg-model");
+			const cfgModelBrowse = q(".discord-cfg-model-browse");
+			const cfgThinking = q(".discord-cfg-thinking");
 
-		let currentState = {};
+			let currentState = {};
 
-		async function refresh() {
-			const res = await sendHost("get_state");
-			if (!res) return;
-			currentState = res;
+			async function refresh() {
+				const res = await sendHost("get_state");
+				if (!res) return;
+				currentState = res;
 
-			const b = res.botStatus || {};
-			if (b.state === "connected") {
-				statusBadge.textContent = t("online");
-				statusBadge.style.color = "var(--green, #22c55e)";
-				metricState.textContent = t("connectedOnline");
-				metricState.style.color = "var(--green, #22c55e)";
-			} else if (b.state === "connecting") {
-				statusBadge.textContent = t("connecting");
-				statusBadge.style.color = "var(--amber, #eab308)";
-				metricState.textContent = t("connectingDots");
-				metricState.style.color = "var(--amber, #eab308)";
-			} else if (b.state === "error") {
-				statusBadge.textContent = t("error");
-				statusBadge.style.color = "var(--red, #ef4444)";
-				metricState.textContent = t("connectError");
-				metricState.style.color = "var(--red, #ef4444)";
-			} else {
-				statusBadge.textContent = t("notStarted");
-				statusBadge.style.color = "var(--text-dim)";
-				metricState.textContent = t("notStarted");
-				metricState.style.color = "var(--text-dim)";
-			}
-
-			metricUsername.textContent = b.botUsername ? `@${b.botUsername}` : "--";
-			metricRecv.textContent = t("msgCount", { n: b.messagesReceived || 0 });
-			metricSent.textContent = t("msgCount", { n: b.messagesReplied || 0 });
-		}
-
-		q(".discord-btn-config").addEventListener("click", () => {
-			const cfg = currentState.config || {};
-			cfgToken.value = "";
-			cfgToken.placeholder = cfg.hasBotToken ? t("secretStoredPlaceholder") : t("botTokenFillPlaceholder");
-			cfgDefaultChannel.value = cfg.defaultChannelId || "";
-			cfgBotEnabled.checked = Boolean(cfg.botEnabled);
-			cfgAllowedUsers.value = Array.isArray(cfg.allowedUsers) ? cfg.allowedUsers.join(", ") : "";
-			cfgWorkspace.value = cfg.workspace || "";
-			cfgModel.value = cfg.model || "";
-			cfgThinking.value = cfg.thinkingLevel || "";
-
-			try {
-				const hostProjects = globalThis.window?.__piWebUiHost?.listProjects?.() ?? [];
-				cfgWsSelect.innerHTML = `<option value="">${t("selectProjectPlaceholder")}</option>`;
-				for (const p of hostProjects) {
-					if (!p) continue;
-					const name =
-						p
-							.replace(/[\\/]+$/, "")
-							.split(/[\\/]/)
-							.pop() || p;
-					const opt = document.createElement("option");
-					opt.value = p;
-					opt.textContent = `${name} (${p})`;
-					cfgWsSelect.appendChild(opt);
-				}
-			} catch {}
-
-			modal.style.display = "flex";
-		});
-
-		q(".discord-cfg-use-cwd")?.addEventListener("click", () => {
-			if (currentState.hostCwd) cfgWorkspace.value = currentState.hostCwd;
-		});
-		cfgWsSelect?.addEventListener("change", () => {
-			if (cfgWsSelect.value) cfgWorkspace.value = cfgWsSelect.value;
-		});
-		cfgWsBrowse?.addEventListener("click", async () => {
-			const host = globalThis.window?.__piWebUiHost;
-			if (typeof host?.pickDirectory !== "function") return;
-			const res = await host.pickDirectory({
-				title: t("pickDirTitle"),
-				initialPath: cfgWorkspace.value.trim() || currentState.hostCwd || "",
-			});
-			if (res?.ok && res.path) {
-				cfgWorkspace.value = res.path;
-			}
-		});
-		cfgModelBrowse?.addEventListener("click", async () => {
-			const host = globalThis.window?.__piWebUiHost;
-			if (typeof host?.pickModel !== "function") return;
-			const res = await host.pickModel({
-				currentModelId: cfgModel.value.trim() || undefined,
-			});
-			if (res?.ok && res.modelId) {
-				cfgModel.value = res.modelId;
-			}
-		});
-		q(".discord-modal-close").addEventListener("click", () => (modal.style.display = "none"));
-		q(".discord-modal-cancel").addEventListener("click", () => (modal.style.display = "none"));
-
-		q(".discord-btn-test-cfg").addEventListener("click", async () => {
-			const btn = q(".discord-btn-test-cfg");
-			btn.disabled = true;
-			btn.textContent = t("testing");
-			const testCfg = {
-				botToken: cfgToken.value.trim(),
-			};
-			const res = await sendHost("test_config", { config: testCfg });
-			btn.disabled = false;
-			btn.textContent = t("testConnection");
-			alert?.(res?.message || (res?.success ? t("testPassed") : t("testFailed")));
-		});
-
-		q(".discord-btn-save-cfg").addEventListener("click", async () => {
-			const btn = q(".discord-btn-save-cfg");
-			btn.disabled = true;
-			btn.textContent = t("saving");
-
-			const newCfg = {
-				botToken: cfgToken.value.trim(),
-				defaultChannelId: cfgDefaultChannel.value.trim(),
-				botEnabled: Boolean(cfgBotEnabled.checked),
-				allowedUsers: cfgAllowedUsers.value
-					.split(/[,，\s]+/)
-					.map((s) => s.trim())
-					.filter(Boolean),
-				workspace: cfgWorkspace.value.trim(),
-				model: cfgModel.value.trim(),
-				thinkingLevel: cfgThinking.value,
-			};
-
-			const res = await sendHost("save_config", { config: newCfg });
-			btn.disabled = false;
-			btn.textContent = t("saveConfig");
-
-			if (res?.success) {
-				modal.style.display = "none";
-				refresh();
-			} else {
-				alert?.(t("saveFailed", { error: res?.message || t("unknownError") }));
-			}
-		});
-
-		q(".discord-btn-toggle-bot").addEventListener("click", async () => {
-			const isRunning = currentState.botStatus?.state === "connected";
-			const action = isRunning ? "stop_bot" : "start_bot";
-			await sendHost(action);
-			refresh();
-		});
-
-		q(".discord-btn-send").addEventListener("click", async () => {
-			const channelInput = q(".discord-send-channelid");
-			const textInput = q(".discord-send-text");
-			const text = textInput.value.trim();
-			if (!text) {
-				alert?.(t("sendTextRequired"));
-				return;
-			}
-
-			const btn = q(".discord-btn-send");
-			btn.disabled = true;
-			btn.textContent = t("sending");
-			try {
-				const res = await sendHost("send_message", {
-					channelId: channelInput.value.trim(),
-					text,
-				});
-				if (res?.success) {
-					alert?.(t("sendSuccess"));
-					textInput.value = "";
+				const b = res.botStatus || {};
+				if (b.state === "connected") {
+					statusBadge.textContent = t("online");
+					statusBadge.style.color = "var(--green, #22c55e)";
+					metricState.textContent = t("connectedOnline");
+					metricState.style.color = "var(--green, #22c55e)";
+				} else if (b.state === "connecting") {
+					statusBadge.textContent = t("connecting");
+					statusBadge.style.color = "var(--amber, #eab308)";
+					metricState.textContent = t("connectingDots");
+					metricState.style.color = "var(--amber, #eab308)";
+				} else if (b.state === "error") {
+					statusBadge.textContent = t("error");
+					statusBadge.style.color = "var(--red, #ef4444)";
+					metricState.textContent = t("connectError");
+					metricState.style.color = "var(--red, #ef4444)";
 				} else {
-					alert?.(t("sendFailed", { error: res?.message || t("unknownError") }));
+					statusBadge.textContent = t("notStarted");
+					statusBadge.style.color = "var(--text-dim)";
+					metricState.textContent = t("notStarted");
+					metricState.style.color = "var(--text-dim)";
 				}
-			} finally {
-				btn.disabled = false;
-				btn.textContent = t("sendMessage");
-			}
-		});
 
-		await refresh();
+				metricUsername.textContent = b.botUsername ? `@${b.botUsername}` : "--";
+				metricRecv.textContent = t("msgCount", { n: b.messagesReceived || 0 });
+				metricSent.textContent = t("msgCount", { n: b.messagesReplied || 0 });
+			}
+
+			q(".discord-btn-config").addEventListener("click", () => {
+				const cfg = currentState.config || {};
+				cfgToken.value = "";
+				cfgToken.placeholder = cfg.hasBotToken ? t("secretStoredPlaceholder") : t("botTokenFillPlaceholder");
+				cfgDefaultChannel.value = cfg.defaultChannelId || "";
+				cfgBotEnabled.checked = Boolean(cfg.botEnabled);
+				cfgAllowedUsers.value = Array.isArray(cfg.allowedUsers) ? cfg.allowedUsers.join(", ") : "";
+				cfgWorkspace.value = cfg.workspace || "";
+				cfgModel.value = cfg.model || "";
+				cfgThinking.value = cfg.thinkingLevel || "";
+
+				try {
+					const hostProjects = globalThis.window?.__piWebUiHost?.listProjects?.() ?? [];
+					cfgWsSelect.innerHTML = `<option value="">${t("selectProjectPlaceholder")}</option>`;
+					for (const p of hostProjects) {
+						if (!p) continue;
+						const name =
+							p
+								.replace(/[\\/]+$/, "")
+								.split(/[\\/]/)
+								.pop() || p;
+						const opt = document.createElement("option");
+						opt.value = p;
+						opt.textContent = `${name} (${p})`;
+						cfgWsSelect.appendChild(opt);
+					}
+				} catch {}
+
+				modal.style.display = "flex";
+			});
+
+			q(".discord-cfg-use-cwd")?.addEventListener("click", () => {
+				if (currentState.hostCwd) cfgWorkspace.value = currentState.hostCwd;
+			});
+			cfgWsSelect?.addEventListener("change", () => {
+				if (cfgWsSelect.value) cfgWorkspace.value = cfgWsSelect.value;
+			});
+			cfgWsBrowse?.addEventListener("click", async () => {
+				const host = globalThis.window?.__piWebUiHost;
+				if (typeof host?.pickDirectory !== "function") return;
+				const res = await host.pickDirectory({
+					title: t("pickDirTitle"),
+					initialPath: cfgWorkspace.value.trim() || currentState.hostCwd || "",
+				});
+				if (res?.ok && res.path) {
+					cfgWorkspace.value = res.path;
+				}
+			});
+			cfgModelBrowse?.addEventListener("click", async () => {
+				const host = globalThis.window?.__piWebUiHost;
+				if (typeof host?.pickModel !== "function") return;
+				const res = await host.pickModel({
+					currentModelId: cfgModel.value.trim() || undefined,
+				});
+				if (res?.ok && res.modelId) {
+					cfgModel.value = res.modelId;
+				}
+			});
+			q(".discord-modal-close").addEventListener("click", () => (modal.style.display = "none"));
+			q(".discord-modal-cancel").addEventListener("click", () => (modal.style.display = "none"));
+
+			q(".discord-btn-test-cfg").addEventListener("click", async () => {
+				const btn = q(".discord-btn-test-cfg");
+				btn.disabled = true;
+				btn.textContent = t("testing");
+				const testCfg = {
+					botToken: cfgToken.value.trim(),
+				};
+				const res = await sendHost("test_config", { config: testCfg });
+				btn.disabled = false;
+				btn.textContent = t("testConnection");
+				alert?.(res?.message || (res?.success ? t("testPassed") : t("testFailed")));
+			});
+
+			q(".discord-btn-save-cfg").addEventListener("click", async () => {
+				const btn = q(".discord-btn-save-cfg");
+				btn.disabled = true;
+				btn.textContent = t("saving");
+
+				const newCfg = {
+					botToken: cfgToken.value.trim(),
+					defaultChannelId: cfgDefaultChannel.value.trim(),
+					botEnabled: Boolean(cfgBotEnabled.checked),
+					allowedUsers: cfgAllowedUsers.value
+						.split(/[,，\s]+/)
+						.map((s) => s.trim())
+						.filter(Boolean),
+					workspace: cfgWorkspace.value.trim(),
+					model: cfgModel.value.trim(),
+					thinkingLevel: cfgThinking.value,
+				};
+
+				const res = await sendHost("save_config", { config: newCfg });
+				btn.disabled = false;
+				btn.textContent = t("saveConfig");
+
+				if (res?.success) {
+					modal.style.display = "none";
+					refresh();
+				} else {
+					alert?.(t("saveFailed", { error: res?.message || t("unknownError") }));
+				}
+			});
+
+			q(".discord-btn-toggle-bot").addEventListener("click", async () => {
+				const isRunning = currentState.botStatus?.state === "connected";
+				const action = isRunning ? "stop_bot" : "start_bot";
+				await sendHost(action);
+				refresh();
+			});
+
+			q(".discord-btn-send").addEventListener("click", async () => {
+				const channelInput = q(".discord-send-channelid");
+				const textInput = q(".discord-send-text");
+				const text = textInput.value.trim();
+				if (!text) {
+					alert?.(t("sendTextRequired"));
+					return;
+				}
+
+				const btn = q(".discord-btn-send");
+				btn.disabled = true;
+				btn.textContent = t("sending");
+				try {
+					const res = await sendHost("send_message", {
+						channelId: channelInput.value.trim(),
+						text,
+					});
+					if (res?.success) {
+						alert?.(t("sendSuccess"));
+						textInput.value = "";
+					} else {
+						alert?.(t("sendFailed", { error: res?.message || t("unknownError") }));
+					}
+				} finally {
+					btn.disabled = false;
+					btn.textContent = t("sendMessage");
+				}
+			});
+
+			await refresh();
+		};
+		const offLocale = i18n.onChange(() => {
+			if (disposed) return;
+			const drafts = snapshotDrafts(el);
+			void run()
+				.then(() => restoreDrafts(el, drafts))
+				.catch(() => {});
+		});
+		await run();
+		return () => {
+			disposed = true;
+			try {
+				offLocale();
+			} catch {}
+		};
 	},
 };

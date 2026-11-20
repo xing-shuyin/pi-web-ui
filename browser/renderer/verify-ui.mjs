@@ -462,6 +462,13 @@ try {
 	assert.ok(
 		await page.evaluate(() => window.__calls.some((call) => call.action === "download.open" && call.args.id === "dl")),
 	);
+	// 「打开文件夹」也是同一份 id：路径永远由宿主自己的下载记录解析
+	await page.getByRole("button", { name: "Show in folder", exact: true }).click();
+	assert.ok(
+		await page.evaluate(() =>
+			window.__calls.some((call) => call.action === "download.reveal" && call.args.id === "dl"),
+		),
+	);
 	await page.keyboard.press("Escape");
 
 	// 窄窗口不横向溢出

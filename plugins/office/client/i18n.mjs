@@ -60,6 +60,7 @@ export const DICT = {
 
 		// 保存
 		copyNeedsNewPath: "另存为需要使用不同的新文件路径。",
+		readOnlySuffix: " 远程文档只读：需要保存请用「另存为」写回工作区。",
 		savedCopy: "副本已保存：",
 		savedToDisk: "已保存到磁盘：",
 		conflictTail: "；原文件冲突仍需重新加载处理。",
@@ -120,6 +121,7 @@ export const DICT = {
 
 		// 保存
 		copyNeedsNewPath: "另存為需要使用不同的新檔案路徑。",
+		readOnlySuffix: " 遠端文件唯讀：需要儲存請用「另存為」寫回工作區。",
 		savedCopy: "副本已儲存：",
 		savedToDisk: "已儲存到磁碟：",
 		conflictTail: "；原檔案衝突仍需重新載入處理。",
@@ -180,6 +182,7 @@ export const DICT = {
 
 		// Saving
 		copyNeedsNewPath: "Save as needs a different new file path.",
+		readOnlySuffix: " Read-only remote document: use \u201cSave as\u201d to write a copy back to the workspace.",
 		savedCopy: "Copy saved: ",
 		savedToDisk: "Saved to disk: ",
 		conflictTail: "; the original-file conflict still needs a reload.",

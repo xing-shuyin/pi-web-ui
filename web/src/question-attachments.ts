@@ -2,8 +2,9 @@ import { readTextQuote } from "../../server/text-quote.js";
 
 export interface EditPromptAttachment {
 	path: string;
-	mode?: "inline" | "reference" | "lines" | "page" | "conversation" | "quote" | "canvas";
+	mode?: "inline" | "reference" | "lines" | "page" | "conversation" | "quote" | "canvas" | "terminal";
 	quote?: import("../../server/protocol.js").TextQuote;
+	terminalId?: string;
 	conversationId?: string;
 	sessionPath?: string;
 	lines?: { start: number; end: number };

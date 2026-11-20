@@ -1092,13 +1092,21 @@ export default {
 			}
 			if (installLocked(host.dir)) {
 				host.log("install skipped: another install task holds the lock");
-				host.notify("info", "🗄️ 数据库插件：已有驱动安装任务在进行，稍等片刻再看…");
+				host.notify(
+					"info",
+					"🗄️ 数据库插件：已有驱动安装任务在进行，稍等片刻再看…",
+					"🗄️ Database plugin: a driver install is already running, please wait…",
+				);
 				return;
 			}
 			st.depsInstalling = true;
 			broadcastAll();
 			host.log(`installing deps: ${DEPS.join(" ")}${auto ? " (auto)" : ""}`);
-			host.notify("info", "🗄️ 数据库插件：开始安装驱动依赖（首次约需几分钟）…");
+			host.notify(
+				"info",
+				"🗄️ 数据库插件：开始安装驱动依赖（首次约需几分钟）…",
+				"🗄️ Database plugin: installing driver dependencies (a few minutes on first run)…",
+			);
 			try {
 				writeFileSync(join(host.dir, INSTALL_LOCK), JSON.stringify({ at: Date.now(), pid: process.pid }));
 			} catch {}
@@ -1147,6 +1155,9 @@ export default {
 					ok
 						? "🗄️ 数据库插件驱动安装完成"
 						: `🗄️ 数据库插件驱动安装失败（${why}${lastErr ? `：${lastErr}` : ""}）——请在插件目录手动执行：npm install ${DEPS.join(" ")}`,
+					ok
+						? "🗄️ Database plugin drivers installed"
+						: `🗄️ Database plugin driver install failed (${why}${lastErr ? `: ${lastErr}` : ""}) — run manually in the plugin dir: npm install ${DEPS.join(" ")}`,
 				);
 				broadcastAll();
 			}

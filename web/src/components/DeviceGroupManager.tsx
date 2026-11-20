@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { FiCheck, FiEdit2, FiMessageSquare, FiPlus, FiRefreshCw, FiTrash2, FiUsers, FiX } from "react-icons/fi";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
@@ -47,6 +48,7 @@ function DeviceGroupManagerContent() {
 	const [createPrimaryBotId, setCreatePrimaryBotId] = useState("");
 
 	const [managingRoomId, setManagingRoomId] = useState<string | null>(null);
+	const [editName, setEditName] = useState("");
 	const [memberBotIds, setMemberBotIds] = useState<string[]>([]);
 	const [memberPrimaryBotId, setMemberPrimaryBotId] = useState("");
 
@@ -150,6 +152,7 @@ function DeviceGroupManagerContent() {
 
 	function startManageMembers(room: Room) {
 		setManagingRoomId(room.id);
+		setEditName(room.name);
 		setMemberBotIds([...room.botIds]);
 		setMemberPrimaryBotId(room.primaryBotId ?? "");
 		setRenamingRoomId(null);
@@ -158,21 +161,36 @@ function DeviceGroupManagerContent() {
 		setNotice("");
 	}
 
-	async function handleSaveMembers(roomId: string) {
+	function closeEdit() {
+		setManagingRoomId(null);
+	}
+
+	/** 编辑弹窗保存：名称 + 成员一次提交，编辑自带管理成员。 */
+	async function handleSaveEdit(roomId: string) {
 		if (busy) return;
+		const room = rooms.find((r) => r.id === roomId);
+		if (!room) return;
+		const nextName = editName.trim();
+		if (!nextName) return;
 		setBusy(true);
 		setError("");
 		setNotice("");
 		const controller = startMutation();
 		try {
+			if (nextName !== room.name) {
+				await groupApi(`rooms/${encodeURIComponent(roomId)}/rename`, controller.signal, { name: nextName });
+				if (controller.signal.aborted) return;
+			}
 			const expectedPrimary = memberBotIds.includes(memberPrimaryBotId) ? memberPrimaryBotId : null;
 			const result = await groupApi<{ room: Room }>(`rooms/${encodeURIComponent(roomId)}/members`, controller.signal, {
 				botIds: memberBotIds,
 				primaryBotId: expectedPrimary,
 			});
 			if (controller.signal.aborted) return;
-			setRooms((prev) => prev.map((r) => (r.id === roomId ? result.room : r)));
-			setManagingRoomId(null);
+			// rename 接口不回房间体：以 members 回包为准再补上新名称。
+			const merged: Room = { ...result.room, name: nextName };
+			setRooms((prev) => prev.map((r) => (r.id === roomId ? merged : r)));
+			closeEdit();
 			setNotice(t("deviceGroupManagerMembersSaved"));
 			window.dispatchEvent(new CustomEvent(DEVICE_GROUPS_CHANGED));
 		} catch (cause) {
@@ -180,6 +198,10 @@ function DeviceGroupManagerContent() {
 		} finally {
 			if (!controller.signal.aborted) setBusy(false);
 		}
+	}
+
+	async function handleSaveMembers(roomId: string) {
+		return handleSaveEdit(roomId);
 	}
 
 	async function handleRename(roomId: string) {
@@ -218,7 +240,7 @@ function DeviceGroupManagerContent() {
 			if (controller.signal.aborted) return;
 			setSelectedPanel((previous) => (previous?.roomId === room.id ? null : previous));
 			setRooms((prev) => prev.filter((r) => r.id !== room.id));
-			if (managingRoomId === room.id) setManagingRoomId(null);
+			if (managingRoomId === room.id) closeEdit();
 			if (renamingRoomId === room.id) setRenamingRoomId(null);
 			setNotice(t("deviceGroupManagerDeleteSuccess"));
 			window.dispatchEvent(new CustomEvent(DEVICE_GROUPS_CHANGED));
@@ -410,117 +432,166 @@ function DeviceGroupManagerContent() {
 				</form>
 			)}
 
-			{managingRoomId && (
-				<div
-					className="dc-card"
-					style={{ marginBottom: "16px", background: "var(--bg)", border: "1px solid var(--border)" }}
-				>
-					<div className="dg-heading" style={{ marginBottom: "12px" }}>
-						<h3>
-							{t("deviceGroupManagerManageMembersTitle")} · {rooms.find((r) => r.id === managingRoomId)?.name}
-						</h3>
-						<button type="button" className="dc-button" onClick={() => setManagingRoomId(null)} disabled={busy}>
-							<FiX aria-hidden />
-							{t("close")}
-						</button>
-					</div>
-
-					<div style={{ marginBottom: "12px" }}>
-						<label style={{ display: "block", marginBottom: "6px", fontSize: "12px", color: "var(--text-dim)" }}>
-							{t("deviceGroupManagerSelectMembers")}
-						</label>
+			{(() => {
+				const effectiveEditId = managingRoomId;
+				if (!effectiveEditId) return null;
+				const editingRoom = rooms.find((r) => r.id === effectiveEditId);
+				return createPortal(
+					<div
+						className="modal-backdrop"
+						onClick={() => {
+							if (!busy) closeEdit();
+						}}
+					>
 						<div
-							style={{
-								display: "flex",
-								flexDirection: "column",
-								gap: "6px",
-								maxHeight: "160px",
-								overflowY: "auto",
-								border: "1px solid var(--border)",
-								borderRadius: "6px",
-								padding: "8px",
-								background: "var(--bg-elev)",
-							}}
+							className="dc-card device-group-create-dialog"
+							role="dialog"
+							aria-modal="true"
+							aria-label={`${t("edit")} · ${editingRoom?.name ?? effectiveEditId}`}
+							onClick={(event) => event.stopPropagation()}
+							style={{ minWidth: "min(480px, 92vw)" }}
 						>
-							{bots.length === 0 ? (
-								<p style={{ margin: 0, fontSize: "12px", color: "var(--text-faint)" }}>
-									{t("deviceGroupManagerNoBots")}
-								</p>
+							<div className="dg-heading" style={{ marginBottom: "12px" }}>
+								<h3>
+									{t("edit")} · {editingRoom?.name ?? effectiveEditId}
+								</h3>
+								<button type="button" className="dc-button" onClick={() => closeEdit()} disabled={busy}>
+									<FiX aria-hidden />
+									{t("close")}
+								</button>
+							</div>
+							{!editingRoom ? (
+								<p role="status">{t("loading")}</p>
 							) : (
-								bots.map((bot) => (
-									<label
-										key={bot.id}
-										style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "12px" }}
-									>
+								<>
+									<div className="dc-field" style={{ marginBottom: "12px" }}>
+										<label htmlFor="dg-manager-edit-name">{t("deviceGroupManagerNameLabel")}</label>
 										<input
-											type="checkbox"
-											checked={memberBotIds.includes(bot.id)}
+											id="dg-manager-edit-name"
+											type="text"
+											maxLength={80}
+											value={editName}
+											onChange={(e) => setEditName(e.target.value)}
 											disabled={busy}
-											onChange={(e) => {
-												setMemberBotIds((prev) =>
-													e.target.checked ? [...prev, bot.id] : prev.filter((id) => id !== bot.id),
-												);
+											placeholder={t("deviceGroupManagerRenamePlaceholder")}
+											style={{
+												width: "100%",
+												background: "var(--bg-elev)",
+												border: "1px solid var(--border)",
+												borderRadius: "6px",
+												padding: "6px 10px",
+												color: "var(--text)",
+												fontSize: "13px",
 											}}
 										/>
-										<span>
-											<strong>{bot.name}</strong>
-											<small style={{ color: "var(--text-faint)", marginInlineStart: "6px" }}>
-												{bot.online ? t("deviceHubOnline") : t("deviceHubOffline")}
-												{!bot.enabled ? t("deviceGroupManagerDisabledSuffix") : ""}
-											</small>
-										</span>
-									</label>
-								))
+									</div>
+									<div style={{ marginBottom: "12px" }}>
+										<label
+											style={{ display: "block", marginBottom: "6px", fontSize: "12px", color: "var(--text-dim)" }}
+										>
+											{t("deviceGroupManagerSelectMembers")}
+										</label>
+										<div
+											style={{
+												display: "flex",
+												flexDirection: "column",
+												gap: "6px",
+												maxHeight: "220px",
+												overflowY: "auto",
+												border: "1px solid var(--border)",
+												borderRadius: "6px",
+												padding: "8px",
+												background: "var(--bg-elev)",
+											}}
+										>
+											{bots.length === 0 ? (
+												<p style={{ margin: 0, fontSize: "12px", color: "var(--text-faint)" }}>
+													{t("deviceGroupManagerNoBots")}
+												</p>
+											) : (
+												bots.map((bot) => (
+													<label
+														key={bot.id}
+														style={{
+															display: "flex",
+															alignItems: "center",
+															gap: "8px",
+															cursor: "pointer",
+															fontSize: "12px",
+														}}
+													>
+														<input
+															type="checkbox"
+															checked={memberBotIds.includes(bot.id)}
+															disabled={busy}
+															onChange={(e) => {
+																setMemberBotIds((prev) =>
+																	e.target.checked ? [...prev, bot.id] : prev.filter((id) => id !== bot.id),
+																);
+															}}
+														/>
+														<span>
+															<strong>{bot.name}</strong>
+															<small style={{ color: "var(--text-faint)", marginInlineStart: "6px" }}>
+																{bot.online ? t("deviceHubOnline") : t("deviceHubOffline")}
+																{!bot.enabled ? t("deviceGroupManagerDisabledSuffix") : ""}
+															</small>
+														</span>
+													</label>
+												))
+											)}
+										</div>
+									</div>
+									{!editingRoom.router?.enabled && (
+										<div className="dc-field" style={{ marginBottom: "16px" }}>
+											<label htmlFor="dg-manager-edit-primary">{t("deviceGroupManagerLegacyPrimary")}</label>
+											<select
+												id="dg-manager-edit-primary"
+												value={memberBotIds.includes(memberPrimaryBotId) ? memberPrimaryBotId : ""}
+												onChange={(e) => setMemberPrimaryBotId(e.target.value)}
+												disabled={busy}
+												style={{
+													width: "100%",
+													background: "var(--bg-elev)",
+													border: "1px solid var(--border)",
+													borderRadius: "6px",
+													padding: "6px 10px",
+													color: "var(--text)",
+													fontSize: "13px",
+												}}
+											>
+												<option value="">{t("deviceGroupManagerNoPrimary")}</option>
+												{bots
+													.filter((bot) => memberBotIds.includes(bot.id))
+													.map((bot) => (
+														<option key={bot.id} value={bot.id}>
+															{bot.name}
+														</option>
+													))}
+											</select>
+										</div>
+									)}
+									<div className="dc-actions">
+										<button
+											type="button"
+											className="dc-button is-primary"
+											disabled={busy || !editName.trim()}
+											onClick={() => void handleSaveEdit(effectiveEditId)}
+										>
+											<FiCheck aria-hidden />
+											{busy ? t("saving") : t("deviceGroupManagerSaveMembers")}
+										</button>
+										<button type="button" className="dc-button" onClick={() => closeEdit()} disabled={busy}>
+											{t("cancel")}
+										</button>
+									</div>
+								</>
 							)}
 						</div>
-					</div>
-
-					{!rooms.find((room) => room.id === managingRoomId)?.router?.enabled && (
-						<div className="dc-field" style={{ marginBottom: "16px" }}>
-							<label htmlFor="dg-manager-edit-primary">{t("deviceGroupManagerLegacyPrimary")}</label>
-							<select
-								id="dg-manager-edit-primary"
-								value={memberBotIds.includes(memberPrimaryBotId) ? memberPrimaryBotId : ""}
-								onChange={(e) => setMemberPrimaryBotId(e.target.value)}
-								disabled={busy}
-								style={{
-									width: "100%",
-									background: "var(--bg-elev)",
-									border: "1px solid var(--border)",
-									borderRadius: "6px",
-									padding: "6px 10px",
-									color: "var(--text)",
-									fontSize: "13px",
-								}}
-							>
-								<option value="">{t("deviceGroupManagerNoPrimary")}</option>
-								{bots
-									.filter((bot) => memberBotIds.includes(bot.id))
-									.map((bot) => (
-										<option key={bot.id} value={bot.id}>
-											{bot.name}
-										</option>
-									))}
-							</select>
-						</div>
-					)}
-
-					<div className="dc-actions">
-						<button
-							type="button"
-							className="dc-button is-primary"
-							disabled={busy}
-							onClick={() => void handleSaveMembers(managingRoomId)}
-						>
-							<FiCheck aria-hidden />
-							{busy ? t("saving") : t("deviceGroupManagerSaveMembers")}
-						</button>
-						<button type="button" className="dc-button" onClick={() => setManagingRoomId(null)} disabled={busy}>
-							{t("cancel")}
-						</button>
-					</div>
-				</div>
-			)}
+					</div>,
+					document.body,
+				);
+			})()}
 
 			{loading && <p role="status">{t("loading")}</p>}
 
@@ -590,14 +661,9 @@ function DeviceGroupManagerContent() {
 								>
 									{t("deviceGroupManagerWorkItems")}
 								</button>
-								<button
-									type="button"
-									className="dc-button"
-									title={t("deviceGroupManagerManageMembersTitle")}
-									onClick={() => startManageMembers(room)}
-								>
+								<button type="button" className="dc-button" title={t("edit")} onClick={() => startManageMembers(room)}>
 									<FiUsers aria-hidden />
-									{t("deviceGroupManagerMembers")}
+									{t("edit")}
 								</button>
 								<button
 									type="button"

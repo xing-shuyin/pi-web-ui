@@ -170,10 +170,9 @@ export const fileHandlers = [
 			let iframe = null;
 			let disposeCanvas;
 			const hint = find(".office-hint");
-			const editingHint = hint.textContent;
-			// 远程文档（http/https）只下载到插件缓存里渲染：写回原位不可能，只能另存到工作区
+			let editingHint = t("editingHint");
 			const readOnly = /^https?:\/\//i.test(String(file.path ?? ""));
-			if (readOnly) hint.textContent = `${editingHint} 远程文档只读：需要保存请用「另存为」写回工作区。`;
+			if (readOnly) hint.textContent = `${editingHint}${t("readOnlySuffix")}`;
 			let loaded = false;
 			let opening = false;
 			let saving = false;
@@ -506,9 +505,59 @@ export const fileHandlers = [
 				}
 			};
 			root.addEventListener("keydown", onKeyDown);
+			function relabelFileView() {
+				if (disposed) return;
+				try {
+					editingHint = t("editingHint");
+					const inPreview = Boolean(main.querySelector(".office-preview"));
+					hint.textContent = inPreview
+						? t("previewHint")
+						: readOnly
+							? `${editingHint}${t("readOnlySuffix")}`
+							: editingHint;
+				} catch {}
+				try {
+					updateButtons();
+				} catch {}
+				try {
+					const label = copyForm.querySelector("label");
+					if (label?.firstChild) label.firstChild.textContent = t("copyPathLabel");
+				} catch {}
+				try {
+					copySubmit.textContent = t("saveCopy");
+				} catch {}
+				try {
+					find('[data-act="cancel-copy"]').textContent = t("cancel");
+				} catch {}
+				try {
+					copyBtn.textContent = t("saveAs");
+				} catch {}
+				try {
+					if (iframe) iframe.title = t("documentTitle", { name: file.name });
+				} catch {}
+			}
+			let offLocale = null;
+			let onLocaleEvent = null;
+			try {
+				offLocale = globalThis.window?.__piWebUiHost?.locale?.onChange?.(() => relabelFileView()) ?? null;
+			} catch {
+				offLocale = null;
+			}
+			try {
+				onLocaleEvent = () => relabelFileView();
+				globalThis.window?.addEventListener("pi-web-ui:locale", onLocaleEvent);
+			} catch {
+				onLocaleEvent = null;
+			}
 			void restart(false);
 			return () => {
 				disposed = true;
+				try {
+					offLocale?.();
+				} catch {}
+				try {
+					if (onLocaleEvent) globalThis.window?.removeEventListener("pi-web-ui:locale", onLocaleEvent);
+				} catch {}
 				scope.dispose();
 				removeFrame();
 				root.removeEventListener("keydown", onKeyDown);
@@ -562,9 +611,41 @@ export default {
 			body.dataset.tone = "";
 			void loadList();
 		};
+		const titleEl = root.querySelector(".office-name");
+		function relabelListView() {
+			if (disposed) return;
+			try {
+				if (titleEl) titleEl.textContent = t("listTitle");
+			} catch {}
+			try {
+				refresh.textContent = t("refresh");
+			} catch {}
+			try {
+				void loadList();
+			} catch {}
+		}
+		let offListLocale = null;
+		let onListLocaleEvent = null;
+		try {
+			offListLocale = globalThis.window?.__piWebUiHost?.locale?.onChange?.(() => relabelListView()) ?? null;
+		} catch {
+			offListLocale = null;
+		}
+		try {
+			onListLocaleEvent = () => relabelListView();
+			globalThis.window?.addEventListener("pi-web-ui:locale", onListLocaleEvent);
+		} catch {
+			onListLocaleEvent = null;
+		}
 		void loadList();
 		return () => {
 			disposed = true;
+			try {
+				offListLocale?.();
+			} catch {}
+			try {
+				if (onListLocaleEvent) globalThis.window?.removeEventListener("pi-web-ui:locale", onListLocaleEvent);
+			} catch {}
 			scope.dispose();
 			root.remove();
 		};

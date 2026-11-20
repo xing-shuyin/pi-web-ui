@@ -33,7 +33,9 @@ describe("全文翻译入口收进 Dock 展开菜单", () => {
 	});
 
 	it("五个按钮能展开下，翻译中按钮有呼吸态", () => {
-		expect(DOCK_JS).toContain("max-height: 230px");
+		// 展开上限默认 230px ≥ 5 个 32px 钮 + 4 个 6px 间距（184px）；窗口矮时上限被压小并可滚
+		expect(DOCK_JS).toContain("var(--dock-menu-max, 230px)");
+		expect(DOCK_JS).toContain("--dock-menu-max");
 		expect(DOCK_JS).toContain("dock-sub-btn.busy");
 		expect(DOCK_JS).toContain("dock-pulse");
 	});

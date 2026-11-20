@@ -1022,7 +1022,12 @@ async function downloadsPanel(container: HTMLElement): Promise<void> {
 					`${t(status)} · ${Math.round(entry.receivedBytes / 1024)} KB${total}`,
 				),
 			);
-			if (entry.state === "completed") row.append(button(t("open"), () => call("download.open", { id: entry.id })));
+			if (entry.state === "completed") {
+				row.append(
+					button(t("open"), () => call("download.open", { id: entry.id })),
+					button(t("openFolder"), () => call("download.reveal", { id: entry.id })),
+				);
+			}
 			list.append(row);
 		}
 		if (!entries.length) list.append(empty(t("noDownloads")));
