@@ -2610,6 +2610,8 @@
 		"schedulerManualBadge": "вручную",
 		"schedulerRunOk": "успех",
 		"schedulerRunFail": "ошибка",
+		"schedulerOpenConversation": "View chat",
+		"schedulerOpenConversationTip": "Open the conversation this run reported into (live: read-only; after it ends or the server restarts: opened from its session file)",
 		"schedulerConfirmDelete": "Удалить задачу по расписанию «{name}»? История удалится вместе с ней.",
 		"schedulerSave": "Сохранить задачу",
 		"schedulerCancelEdit": "Отменить правку",

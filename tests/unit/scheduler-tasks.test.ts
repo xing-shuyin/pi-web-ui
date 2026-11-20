@@ -249,6 +249,20 @@ describe("SchedulerStore", () => {
 		expect(v.lastRun!.manual).toBe(true);
 	});
 
+	it("运行记录带上会话文件，重读后仍能按文件打开历史对话", async () => {
+		const sessionFile = process.platform === "win32" ? "C:\\tmp\\s.jsonl" : "/tmp/s.jsonl";
+		const s = new SchedulerStore(dir, {
+			executor: async () => ({ ok: true, conversationId: "conv-1", sessionFile }),
+		});
+		s.upsert({ ...BASE, id: "a" });
+		await s.runNow("a");
+		expect(s.list()[0]!.lastRun!.sessionFile).toBe(sessionFile);
+
+		const restored = new SchedulerStore(dir);
+		restored.load();
+		expect(restored.list()[0]!.history[0]).toMatchObject({ conversationId: "conv-1", sessionFile });
+	});
+
 	it("画布持久化、编辑保留目标、拒绝会话重绑定并保留运行历史", async () => {
 		const s = new SchedulerStore(dir, {
 			executor: async () => ({ ok: false, runId: "run-1", graphId: "graph-1", error: "paused" }),

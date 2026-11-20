@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { resolve } from "node:path";
 import { AgentService } from "../../server/agent-service.js";
 import type { ElsewhereRunning } from "../../server/protocol.js";
+import { fakeAgentService, fakeClientSession } from "../helpers/fake-session.js";
 
 describe("ElsewhereRunning pseudo support (#426)", () => {
 	it("AgentService.isPseudoClientId 识别 scheduler: 和 plugin: 客户端", () => {
@@ -62,5 +64,39 @@ describe("ElsewhereRunning pseudo support (#426)", () => {
 
 		expect(isTakeoverMenuVisible({ kind: "elsewhere", id: "c1", owner: "client-a" })).toBe(true);
 		expect(isTakeoverMenuVisible({ kind: "elsewhere", id: "c1", owner: "scheduler:task-1", pseudo: true })).toBe(false);
+	});
+});
+
+describe("定时任务对话：直接打开（不走另一处）", () => {
+	it("conversationSessionFile 返回转录文件绝对路径（面板/历史按文件直接打开用）", () => {
+		const cs = fakeClientSession() as any;
+		cs.convs = new Map([["c1", { id: "c1", session: { sessionFile: "/proj/sessions/a.jsonl" } }]]);
+		expect(cs.conversationSessionFile("c1")).toBe(resolve("/proj/sessions/a.jsonl"));
+		expect(cs.conversationSessionFile("missing")).toBeUndefined();
+		cs.convs = new Map([["c1", { id: "c1", session: {} }]]);
+		expect(cs.conversationSessionFile("c1")).toBeUndefined();
+	});
+
+	it("releaseScheduledConversation：跑完放手可打开；还在跑就拒绝（不给第二个 writer）", async () => {
+		const daemon = fakeAgentService() as any;
+		daemon.clients = new Map();
+		const dismiss = vi.fn().mockResolvedValue(undefined);
+		let streaming = false;
+		daemon.clients.set("scheduler:t1", {
+			getConversation: (id: string) => (id === "c1" ? { session: { isStreaming: streaming } } : undefined),
+			dismissConversation: dismiss,
+		});
+
+		expect(await daemon.releaseScheduledConversation("scheduler:t1", "c1")).toBe(true);
+		expect(dismiss).toHaveBeenCalledWith("c1");
+
+		streaming = true;
+		expect(await daemon.releaseScheduledConversation("scheduler:t1", "c1")).toBe(false);
+
+		// 持有方/对话已经不在了：不需要释放，可以直接打开
+		expect(await daemon.releaseScheduledConversation("scheduler:gone", "c1")).toBe(true);
+		expect(await daemon.releaseScheduledConversation("scheduler:t1", "c9")).toBe(true);
+		// 非 scheduler 持有方不归它管
+		expect(await daemon.releaseScheduledConversation("client-a", "c1")).toBe(true);
 	});
 });

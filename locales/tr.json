@@ -2610,6 +2610,8 @@
 		"schedulerManualBadge": "elle",
 		"schedulerRunOk": "başarılı",
 		"schedulerRunFail": "başarısız",
+		"schedulerOpenConversation": "View chat",
+		"schedulerOpenConversationTip": "Open the conversation this run reported into (live: read-only; after it ends or the server restarts: opened from its session file)",
 		"schedulerConfirmDelete": "«{name}» zamanlanmış görevi silinsin mi? Geçmiş kayıtları da silinir.",
 		"schedulerSave": "Görevi kaydet",
 		"schedulerCancelEdit": "Düzenlemeyi iptal et",

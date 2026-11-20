@@ -2606,6 +2606,8 @@
 	"schedulerManualBadge": "手动",
 	"schedulerRunOk": "成功",
 	"schedulerRunFail": "失败",
+	"schedulerOpenConversation": "查看对话",
+	"schedulerOpenConversationTip": "直接打开这次运行汇报的对话（正常对话，可继续聊；这一轮还在跑时会提示等它结束）",
 	"schedulerConfirmDelete": "确定删除定时任务「{name}」吗？历史记录一并清除。",
 	"schedulerSave": "保存任务",
 	"schedulerCancelEdit": "取消编辑",

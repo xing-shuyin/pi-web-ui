@@ -14,7 +14,13 @@ import {
 	FiTrash2,
 	FiX,
 } from "react-icons/fi";
-import type { CanvasGraphSummary, SchedulerTaskInput, SchedulerTaskView, UiVisionBridgeModel } from "../types";
+import type {
+	CanvasGraphSummary,
+	SchedulerRunInfo,
+	SchedulerTaskInput,
+	SchedulerTaskView,
+	UiVisionBridgeModel,
+} from "../types";
 import { searchCanvasMentions } from "../canvas-mentions";
 import { useT } from "../i18n";
 import { appSend } from "../app-globals";
@@ -204,6 +210,24 @@ function formatTime(ts: number | null): string {
 	}
 }
 
+/**
+ * 这次运行能不能打开对应对话：有 convId（活会话 / 可只读共享）或有 sessionFile
+ * （服务重启、对话被回收后按历史会话打开）就给出入口。
+ */
+export function viewableRun(task: SchedulerTaskView): SchedulerRunInfo | null {
+	if ((task.target ?? (task.graphId ? "canvas" : "conversation")) !== "conversation") return null;
+	return task.history.find((h) => Boolean(h.conversationId || h.sessionFile)) ?? null;
+}
+
+export function runOpenMessage(taskId: string, run: SchedulerRunInfo) {
+	return {
+		type: "open_scheduled_conversation" as const,
+		taskId,
+		...(run.conversationId ? { conversationId: run.conversationId } : {}),
+		...(run.sessionFile ? { sessionFile: run.sessionFile } : {}),
+	};
+}
+
 export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 	const t = useT();
 	const [draft, setDraft] = useState<Draft | null>(null);
@@ -326,6 +350,19 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 										{t("schedulerHistory")} ({task.history.length})
 									</button>
 								)}
+								{viewableRun(task) && (
+									<button
+										type="button"
+										className="scheduler-link"
+										title={t("schedulerOpenConversationTip")}
+										onClick={() => {
+											const run = viewableRun(task);
+											if (run) appSend(runOpenMessage(task.id, run));
+										}}
+									>
+										<FiMessageSquare /> {t("schedulerOpenConversation")}
+									</button>
+								)}
 							</div>
 							{openHistory.has(task.id) && task.history.length > 0 && (
 								<ul className="scheduler-history">
@@ -338,6 +375,19 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 											{` · ${(h.durationMs / 1000).toFixed(0)}s`}
 											{h.manual ? ` · ${t("schedulerManualBadge")}` : ""}
 											{h.error ? ` · ${h.error}` : ""}
+											{(h.conversationId || h.sessionFile) && (
+												<>
+													{" · "}
+													<button
+														type="button"
+														className="scheduler-link"
+														title={t("schedulerOpenConversationTip")}
+														onClick={() => appSend(runOpenMessage(task.id, h))}
+													>
+														{t("schedulerOpenConversation")}
+													</button>
+												</>
+											)}
 										</li>
 									))}
 								</ul>

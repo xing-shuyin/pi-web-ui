@@ -2610,6 +2610,8 @@
 		"schedulerManualBadge": "手動",
 		"schedulerRunOk": "成功",
 		"schedulerRunFail": "失敗",
+		"schedulerOpenConversation": "查看對話",
+		"schedulerOpenConversationTip": "打开这次运行汇报的對話（运行中只看不能接管；已结束或服务重启后按会话檔案打开歷史）",
 		"schedulerConfirmDelete": "確定刪除定時任務「{name}」嗎？歷史記錄一併清除。",
 		"schedulerSave": "保存任務",
 		"schedulerCancelEdit": "取消編輯",

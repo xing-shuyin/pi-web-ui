@@ -61,6 +61,8 @@ export interface SchedulerRunRecord {
 	ok: boolean;
 	durationMs: number;
 	conversationId?: string;
+	/** 本次运行报告的会话文件：持有方没了也能打开历史对话 */
+	sessionFile?: string;
 	error?: string;
 	manual?: boolean;
 }
@@ -78,6 +80,7 @@ export interface SchedulerExecutorResult {
 	runId?: string;
 	ok: boolean;
 	conversationId?: string;
+	sessionFile?: string;
 	error?: string;
 }
 
@@ -298,6 +301,9 @@ function sanitizeHistory(v: unknown): SchedulerRunRecord[] {
 			ok: rec.ok === true,
 			durationMs: typeof rec.durationMs === "number" && Number.isFinite(rec.durationMs) ? rec.durationMs : 0,
 			...(typeof rec.conversationId === "string" && rec.conversationId ? { conversationId: rec.conversationId } : {}),
+			...(typeof rec.sessionFile === "string" && rec.sessionFile
+				? { sessionFile: rec.sessionFile.slice(0, 4096) }
+				: {}),
 			...(rec.target === "canvas" || rec.target === "conversation" ? { target: rec.target } : {}),
 			...(typeof rec.graphId === "string" && rec.graphId ? { graphId: rec.graphId.slice(0, 64) } : {}),
 			...(typeof rec.runId === "string" && rec.runId ? { runId: rec.runId.slice(0, 128) } : {}),
@@ -684,6 +690,7 @@ export class SchedulerStore {
 				...(task.graphId ? { graphId: task.graphId } : {}),
 				...(result.runId ? { runId: result.runId } : {}),
 				...(result.conversationId ? { conversationId: result.conversationId } : {}),
+				...(result.sessionFile ? { sessionFile: result.sessionFile } : {}),
 				...(result.error ? { error: result.error.slice(0, 500) } : {}),
 				...(manual ? { manual } : {}),
 			});

@@ -2606,6 +2606,8 @@
 	"schedulerManualBadge": "manual",
 	"schedulerRunOk": "ok",
 	"schedulerRunFail": "failed",
+	"schedulerOpenConversation": "View chat",
+	"schedulerOpenConversationTip": "Open the conversation this run reported into as a normal chat you can keep talking in (blocked while that run is still going)",
 	"schedulerConfirmDelete": "Delete scheduled task “{name}”? Its history goes with it.",
 	"schedulerSave": "Save task",
 	"schedulerCancelEdit": "Cancel edit",

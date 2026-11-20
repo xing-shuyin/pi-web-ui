@@ -5479,6 +5479,16 @@ export class ClientSession {
 		return `c${++this.convSeq}`;
 	}
 
+	/** 这条对话的转录文件（定时任务跑完后用它在面板/历史里直接打开）。 */
+	conversationSessionFile(id: string): string | undefined {
+		try {
+			const file = this.convs.get(id)?.session.sessionFile;
+			return file ? resolve(file) : undefined;
+		} catch {
+			return undefined;
+		}
+	}
+
 	private conversationViewers = new Map<Conversation, Set<() => void>>();
 	private sharedTerminalSinks = new Map<Conversation, Set<(message: ServerMessage) => void>>();
 
@@ -8655,6 +8665,8 @@ export class ClientSession {
 	allSubagentSessions: (() => ClientSession[]) | undefined = undefined;
 	findSessionOwner: ((targetPath: string) => SessionOwnerInfo | null) | undefined = undefined;
 	takeOverConversationElsewhere: ((ownerId: string, convId: string) => Promise<void>) | undefined = undefined;
+	/** 点开定时任务的对话时，让后台持有方先放手；返回 false = 还在跑，不要打开。 */
+	releaseSchedulerConversation: ((ownerId: string, convId: string) => Promise<boolean>) | undefined = undefined;
 	prepareBotSessionResume: ((targetPath: string) => Promise<void>) | undefined = undefined;
 	steerConversationElsewhere:
 		((id: string, text: string) => Promise<{ ok: boolean; error?: string } | undefined>) | undefined = undefined;
@@ -15513,23 +15525,28 @@ export class ClientSession {
 			}
 			const owner = this.findSessionOwner?.(targetPath);
 			if (owner && this.botExecution) throw new Error("Bot transcript still has an active owner");
-			if (owner && owner.isStreaming) {
-				this.emit({
-					type: "notice",
-					level: "warning",
-					text: `该对话正在另一处运行中（「${owner.title}」），为避免两个 agent 同时写同一份记录，已停止打开。请等它结束后再试，或回到原窗口继续。`,
-					textEn: `This conversation is running in another window ("${owner.title}"). Opening it here would create a second writer for the same transcript, so it was blocked. Wait for it to finish, or continue in the original window.`,
-				});
-				this.flushSnapshot();
-				return;
-			}
-			if (owner) {
-				if (owner.clientId.startsWith("scheduler:")) {
+			if (owner?.clientId.startsWith("scheduler:")) {
+				// 定时任务的报告对话就是一条普通对话：不拦，也不做成「另一处」只读行。
+				// 打开前让后台持有方放手（否则两个 writer 抢同一份转录）；正在跑就拒绝，
+				// 让用户等这一轮结束再来（面板/历史随时可以再点）。
+				const released = (await this.releaseSchedulerConversation?.(owner.clientId, owner.convId)) ?? false;
+				if (!released) {
 					this.emit({
 						type: "notice",
 						level: "warning",
-						text: `该对话正在由后台定时任务使用（「${owner.title}」），为避免并发写入，已停止打开。可在后台任务面板查看进度。`,
-						textEn: `This conversation is currently used by a background scheduled task ("${owner.title}"). Opening was blocked to prevent concurrent writes.`,
+						text: `这条对话正在被定时任务「${owner.title}」使用，等这一轮结束再打开（也可以到「定时任务」面板看进度）。`,
+						textEn: `A scheduled task ("${owner.title}") is still running in this conversation. Open it after this run finishes, or watch progress in the Scheduled tasks panel.`,
+					});
+					this.flushSnapshot();
+					return;
+				}
+			} else if (owner) {
+				if (owner.isStreaming) {
+					this.emit({
+						type: "notice",
+						level: "warning",
+						text: `该对话正在另一处运行中（「${owner.title}」），为避免两个 agent 同时写同一份记录，已停止打开。请等它结束后再试，或回到原窗口继续。`,
+						textEn: `This conversation is running in another window ("${owner.title}"). Opening it here would create a second writer for the same transcript, so it was blocked. Wait for it to finish, or continue in the original window.`,
 					});
 					this.flushSnapshot();
 					return;

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { CanvasGraphSummary, SchedulerTaskView } from "../../web/src/types";
-import { blankDraft, canSaveDraft, draftFromTask, taskInputFromDraft } from "../../web/src/components/SchedulerPanel";
+import {
+	blankDraft,
+	canSaveDraft,
+	draftFromTask,
+	runOpenMessage,
+	taskInputFromDraft,
+	viewableRun,
+} from "../../web/src/components/SchedulerPanel";
 
 const graphs = [{ id: "graph-1", name: "Daily workflow" }] as CanvasGraphSummary[];
 const canvasDraft = () => ({ ...blankDraft("/project"), name: "Daily", target: "canvas" as const, graphId: "graph-1" });
@@ -77,5 +84,43 @@ describe("scheduler panel targets", () => {
 		};
 		expect(taskInputFromDraft(draft)).toMatchObject({ target: "conversation", model: "p/m", thinkingLevel: "low" });
 		expect(taskInputFromDraft(draft)).not.toHaveProperty("graphId");
+	});
+});
+
+describe("scheduler panel: 打开某次运行的对话", () => {
+	it("取最近一次能打开的运行（会话 id 或会话文件任一有就行）", () => {
+		const task = existingTask({
+			history: [
+				{ at: 300, ok: true, durationMs: 1000 },
+				{ at: 200, ok: true, durationMs: 1000, sessionFile: "/sessions/a.jsonl" },
+				{ at: 100, ok: true, durationMs: 1000, conversationId: "c1" },
+			],
+		});
+		expect(viewableRun(task)?.at).toBe(200);
+		expect(viewableRun(existingTask({ history: [{ at: 1, ok: true, durationMs: 1 }] }))).toBeNull();
+	});
+
+	it("画布任务不给对话入口", () => {
+		const task = existingTask({
+			target: "canvas",
+			graphId: "graph-1",
+			history: [{ at: 1, ok: true, durationMs: 1, conversationId: "c1" }],
+		});
+		expect(viewableRun(task)).toBeNull();
+	});
+
+	it("消息带上会话 id 与会话文件（缺哪个就不带哪个）", () => {
+		expect(
+			runOpenMessage("task-1", { at: 1, ok: true, durationMs: 1, conversationId: "c1", sessionFile: "/a.jsonl" }),
+		).toEqual({
+			type: "open_scheduled_conversation",
+			taskId: "task-1",
+			conversationId: "c1",
+			sessionFile: "/a.jsonl",
+		});
+		expect(runOpenMessage("task-1", { at: 1, ok: true, durationMs: 1 })).toEqual({
+			type: "open_scheduled_conversation",
+			taskId: "task-1",
+		});
 	});
 });

@@ -2040,7 +2040,8 @@ export function useChat() {
 			((msg.type === "switch_conversation" ||
 				msg.type === "open_shared_conversation" ||
 				msg.type === "take_over_conversation") &&
-				msg.id)
+				msg.id) ||
+			msg.type === "open_scheduled_conversation"
 		) {
 			notifySessionSwitch();
 		}

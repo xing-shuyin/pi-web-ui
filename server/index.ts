@@ -1784,6 +1784,8 @@ export interface EngineService {
 		options?: { readOnly?: boolean },
 	): boolean;
 	closeSharedConversation?(viewerId: string): void;
+	/** 定时任务持有方那份对话的转录文件（活会话在内存里时可解析）。 */
+	scheduledConversationFile?(ownerId: string, convId: string): string | undefined;
 	sharedConversationTarget?(
 		viewerId: string,
 	): { conversationId: string; owner: DispatchSession; ownerClientId: string } | undefined;
@@ -2049,6 +2051,12 @@ const service: EngineService = {
 	closeSharedConversation(viewerId) {
 		ensureEngine(resolveClientEngine(viewerId)).closeSharedConversation?.(viewerId);
 	},
+	scheduledConversationFile(ownerId, convId) {
+		// 定时任务持有方固定在 pi 引擎（无头执行只有 pi 支持）。
+		return (
+			ensureEngine("pi") as unknown as { scheduledConversationFile?: (o: string, c: string) => string | undefined }
+		).scheduledConversationFile?.(ownerId, convId);
+	},
 	sharedConversationTarget(viewerId) {
 		return ensureEngine(resolveClientEngine(viewerId)).sharedConversationTarget?.(viewerId);
 	},
@@ -2295,7 +2303,7 @@ const scheduler = new SchedulerStore(DATA_DIR, {
 		if (task.target === "canvas") {
 			return executeScheduledCanvas(DATA_DIR, canvasOrchestrator, task);
 		}
-		let result: { ok: boolean; conversationId?: string; error?: string };
+		let result: { ok: boolean; conversationId?: string; sessionFile?: string; error?: string };
 		try {
 			const svc = ensureEngine("pi") as unknown as {
 				chatFromScheduler?: (t: {
@@ -2305,7 +2313,7 @@ const scheduler = new SchedulerStore(DATA_DIR, {
 					prompt: string;
 					model?: string;
 					thinkingLevel?: string;
-				}) => Promise<{ ok: boolean; conversationId?: string; error?: string }>;
+				}) => Promise<{ ok: boolean; conversationId?: string; sessionFile?: string; error?: string }>;
 				wakeConversation?: (
 					id: string,
 					text: string,
@@ -2333,7 +2341,12 @@ const scheduler = new SchedulerStore(DATA_DIR, {
 			if (typeof svc.chatFromScheduler !== "function" && typeof svc.wakeConversation !== "function") {
 				result = { ok: false, error: "当前引擎不支持定时任务（仅标准 pi 引擎）" };
 			} else {
-				const runHeadless = (): Promise<{ ok: boolean; conversationId?: string; error?: string }> =>
+				const runHeadless = (): Promise<{
+					ok: boolean;
+					conversationId?: string;
+					sessionFile?: string;
+					error?: string;
+				}> =>
 					svc.chatFromScheduler!({
 						id: task.id,
 						name: task.name,
@@ -2369,7 +2382,11 @@ const scheduler = new SchedulerStore(DATA_DIR, {
 									scheduler.rebind(task.id, { sessionFile: w.sessionFile });
 							} catch {}
 						}
-						result = { ok: true, conversationId: w.conversationId };
+						result = {
+							ok: true,
+							conversationId: w.conversationId,
+							...(w.sessionFile ? { sessionFile: w.sessionFile } : {}),
+						};
 					} else if (typeof svc.wakeViewportInCwd === "function") {
 						const fallbackText = `[定时任务 ${task.name}｜原对话不在，已转到本窗口继续] ${task.prompt}`;
 						let f: {
@@ -2398,7 +2415,11 @@ const scheduler = new SchedulerStore(DATA_DIR, {
 								`定时任务「${task.name}」原对话不在，已转到同项目的活跃对话继续（原绑定 ${target || "（未知）"}）。报告直接落在当前对话。`,
 								`Scheduled task "${task.name}" moved to the project's active conversation (was ${target || "unknown"}). The report lands in the current chat.`,
 							);
-							result = { ok: true, conversationId: f.conversationId };
+							result = {
+								ok: true,
+								conversationId: f.conversationId,
+								...(f.sessionFile ? { sessionFile: f.sessionFile } : {}),
+							};
 						} else {
 							pushNoticeToAll(
 								"warning",
@@ -3393,6 +3414,41 @@ wss.on("connection", (ws) => {
 						});
 					}
 					return;
+				case "open_scheduled_conversation": {
+					// 定时任务的对话就是一条普通对话：直接打开（走 switch_session，不再另做
+					// 「另一处 / 只读共享」）。打开前服务端会让后台持有方放手，避免两个 writer；
+					// 正在跑那一轮则拒绝，等它结束再开。
+					const taskId = String(msg.taskId ?? "").trim();
+					const owner = `scheduler:${taskId.replace(/[^A-Za-z0-9_-]/g, "") || "task"}`;
+					const task = taskId ? scheduler.list().find((t) => t.id === taskId) : undefined;
+					const recorded = new Set<string>();
+					if (task) {
+						for (const h of [task.lastRun, ...task.history]) {
+							if (h?.sessionFile) recorded.add(resolve(h.sessionFile));
+						}
+						if (task.sessionFile) recorded.add(resolve(task.sessionFile));
+					}
+					// sessionFile 只认该任务运行记录里真的记过的那个（不让这条消息变成任意会话打开器）；
+					// 老记录没有 sessionFile 时，才拿活会话反查文件。
+					let sessionFile = String(msg.sessionFile ?? "").trim();
+					if (sessionFile && !recorded.has(resolve(sessionFile))) sessionFile = "";
+					if (!sessionFile) {
+						const convId = String(msg.conversationId ?? "").trim();
+						const live = convId ? service.scheduledConversationFile?.(owner, convId) : undefined;
+						if (live && recorded.has(resolve(live))) sessionFile = live;
+					}
+					if (sessionFile) {
+						handleSessionLifecycleMessage({ type: "switch_session", path: sessionFile }, cs, send, service, clientId);
+						return;
+					}
+					send({
+						type: "notice",
+						level: "warning",
+						text: "这次运行还没有可打开的对话（既没有存活会话，也没记录会话文件）",
+						textEn: "This run has no conversation to open: the live session is gone and no session file was recorded.",
+					});
+					return;
+				}
 				case "take_over_conversation":
 					if (typeof service.takeOverConversation === "function") {
 						void service.takeOverConversation(clientId, msg.owner, msg.id);

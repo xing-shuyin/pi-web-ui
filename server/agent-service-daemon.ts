@@ -216,6 +216,7 @@ export class AgentService {
 				"new_cli_chat",
 				"switch_session",
 				"switch_conversation",
+				"open_scheduled_conversation",
 				"set_cwd",
 				"resume_session",
 				"close_shared_conversation",
@@ -1104,6 +1105,41 @@ export class AgentService {
 		this.pokeExternalRunning(clientId);
 	}
 
+	/** 定时任务那条对话的转录文件（活会话在内存里时才能解析）。 */
+	scheduledConversationFile(ownerClientId: string, convId: string): string | undefined {
+		if (!ownerClientId.startsWith("scheduler:") || !convId) return undefined;
+		const cs = this.clients.get(ownerClientId);
+		if (!cs) return undefined;
+		try {
+			const file = cs.getConversation(convId)?.session.sessionFile;
+			return file ? resolve(file) : undefined;
+		} catch {
+			return undefined;
+		}
+	}
+
+	/**
+	 * 用户要把定时任务的对话当普通对话打开：先让后台持有方放手（关掉这条对话的 runtime），
+	 * 否则两个 writer 抢同一份转录。正在跑的回合不抢（返回 false，让调用方拒绝打开）。
+	 * 转录留在盘上；后台任务下一次触发会开一条新会话（不再写入已归用户的这份）。
+	 */
+	async releaseScheduledConversation(ownerClientId: string, convId: string): Promise<boolean> {
+		if (!ownerClientId.startsWith("scheduler:") || !convId) return true;
+		const cs = this.clients.get(ownerClientId);
+		if (!cs) return true;
+		const conv = cs.getConversation(convId);
+		if (!conv) return true;
+		try {
+			if (conv.session.isStreaming) return false;
+		} catch {
+			return false;
+		}
+		try {
+			await cs.dismissConversation(convId);
+		} catch {}
+		return true;
+	}
+
 	pokeExternalRunning(excludeClientId: string): void {
 		const offlineCs = this.clients.get(excludeClientId);
 		if (offlineCs && !AgentService.isPseudoClientId(excludeClientId) && offlineCs.sinkCount() === 0) {
@@ -1258,7 +1294,7 @@ export class AgentService {
 		prompt: string;
 		model?: string;
 		thinkingLevel?: string;
-	}): Promise<{ ok: boolean; conversationId?: string; error?: string }> {
+	}): Promise<{ ok: boolean; conversationId?: string; sessionFile?: string; error?: string }> {
 		const safe = String(task.id ?? "task").replace(/[^A-Za-z0-9_-]/g, "") || "task";
 		const clientId = `scheduler:${safe}`;
 		const text = String(task.prompt ?? "");
@@ -1294,12 +1330,25 @@ export class AgentService {
 			if (conversationId && taskTitle) {
 				void cs.renameConversation(conversationId, taskTitle);
 			}
-			if (cs.readConversationForPlugins()?.isStreaming === true) {
+			// 无人值守持有方没人给它开浏览器，跑完的会话只靠任务记录里的 sessionFile 打开
+			// （面板「查看对话」/历史直接开），不再往侧栏「另一处」里透一条常驻行。
+			const sessionFileOf = (id: string): string | undefined => (id ? cs.conversationSessionFile(id) : undefined);
+			const done = (r: {
+				ok: boolean;
+				error?: string;
+			}): { ok: boolean; conversationId?: string; sessionFile?: string; error?: string } => {
+				// 跑这一轮的过程中对话可能已经被重建（用户打开即接手 → 后台客户端被收掉再建），
+				// 所以用「此刻的」对话 id 取文件，而不是起跑时抓到的那份。
+				const liveId = cs.readConversationForPlugins()?.conversationId || conversationId;
+				const sessionFile = sessionFileOf(liveId);
 				return {
-					ok: false,
-					conversationId: conversationId || undefined,
-					error: "上一轮后台任务仍在执行中，跳过本次触发",
+					...r,
+					...(liveId ? { conversationId: liveId } : {}),
+					...(sessionFile ? { sessionFile } : {}),
 				};
+			};
+			if (cs.readConversationForPlugins()?.isStreaming === true) {
+				return done({ ok: false, error: "上一轮后台任务仍在执行中，跳过本次触发" });
 			}
 			let promptError: string | undefined;
 			void cs.prompt(`[定时任务] ${text}`).catch((err) => {
@@ -1309,7 +1358,7 @@ export class AgentService {
 			for (;;) {
 				await sleep(2000);
 				if (promptError) {
-					return { ok: false, conversationId: conversationId || undefined, error: promptError };
+					return done({ ok: false, error: promptError });
 				}
 				let streaming = false;
 				let lastError: string | undefined;
@@ -1329,18 +1378,14 @@ export class AgentService {
 					streaming = false;
 				}
 				if (!streaming) {
-					if (lastError) return { ok: false, conversationId: conversationId || undefined, error: lastError };
-					return { ok: true, conversationId: conversationId || undefined };
+					if (lastError) return done({ ok: false, error: lastError });
+					return done({ ok: true });
 				}
 				if (Date.now() >= deadline) {
 					try {
 						await cs.abort();
 					} catch {}
-					return {
-						ok: false,
-						conversationId: conversationId || undefined,
-						error: "运行超时（10 分钟），已中止后台会话",
-					};
+					return done({ ok: false, error: "运行超时（10 分钟），已中止后台会话" });
 				}
 			}
 		} catch (err) {
@@ -1482,6 +1527,7 @@ export class AgentService {
 		cs.notifyExternalClients = (msg) => this.notifyClientsExcept(clientId, msg);
 		cs.onRunningChanged = () => this.pokeExternalRunning(clientId);
 		cs.steerConversationElsewhere = (id, text) => this.steerElsewhere(clientId, id, text);
+		cs.releaseSchedulerConversation = (ownerId, convId) => this.releaseScheduledConversation(ownerId, convId);
 		cs.schedulerStore = this.schedulerStore;
 	}
 

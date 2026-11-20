@@ -1436,6 +1436,16 @@ export type ClientMessage =
 			fresh?: boolean;
 	  }
 	| { type: "open_shared_conversation"; owner: string; id: string; readOnly?: boolean }
+	/**
+	 * 打开某次定时任务运行的对话：先按「活会话」只读共享打开（持有方还在、能看实时状态），
+	 * 否则按 sessionFile 打开历史会话（服务重启后仍然可看）。
+	 */
+	| {
+			type: "open_scheduled_conversation";
+			taskId: string;
+			conversationId?: string;
+			sessionFile?: string;
+	  }
 	| { type: "delete_message"; messageId: string; conversationId?: string }
 	| {
 			type: "edit_message";
@@ -2235,6 +2245,8 @@ export interface SchedulerRunInfo {
 	ok: boolean;
 	durationMs: number;
 	conversationId?: string;
+	/** 本次运行落盘的会话文件：持有方没了（服务重启/对话被回收）也能按文件打开历史 */
+	sessionFile?: string;
 	error?: string;
 	manual?: boolean;
 }
