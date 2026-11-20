@@ -51,7 +51,7 @@ export function mergeModelSamplingParamsIntoProviderPayload(
 	const requestChatTemplateKwargs = payload.chat_template_kwargs;
 	const overrideChatTemplateKwargs = overrideParams.chat_template_kwargs;
 
-	if (isRecord(modelChatTemplateKwargs) || isRecord(requestChatTemplateKwargs)) {
+	if (Object.keys(modelChatTemplateKwargs).length > 0 || isRecord(requestChatTemplateKwargs) || isRecord(overrideChatTemplateKwargs)) {
 		merged.chat_template_kwargs = {
 			...(isRecord(modelChatTemplateKwargs) ? modelChatTemplateKwargs : {}),
 			...(isRecord(requestChatTemplateKwargs) ? requestChatTemplateKwargs : {}),
