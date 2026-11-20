@@ -68,7 +68,7 @@ describe("provider payload sampling overrides", () => {
 		});
 	});
 
-	it("applies conversation sampling values while retaining request-level precedence", () => {
+	it("applies conversation sampling values over model and request defaults", () => {
 		const payload = { messages: [], temperature: 0.8, top_p: 0.9 };
 		const result = mergeModelSamplingParamsIntoProviderPayload(payload, {
 			api: "openai-completions",
@@ -84,8 +84,8 @@ describe("provider payload sampling overrides", () => {
 		});
 		expect(result).toEqual({
 			messages: [],
-			temperature: 0.8,
-			top_p: 0.9,
+			temperature: 0.4,
+			top_p: 0.95,
 			top_k: 48,
 			min_p: 0.05,
 			chat_template_kwargs: {
