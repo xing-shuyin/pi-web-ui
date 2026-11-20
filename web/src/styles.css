@@ -19184,7 +19184,12 @@
 	}
 
 	.goalbar-round > span {
-		flex: 0 0 auto;
+		flex: 0 1 auto;
+		/* 单位标签跟着界面语言变（「轮」/“rounds”/“Runden”）：长词只能收寄，不能把胶囊顶破 */
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 		color: var(--text-faint);
 	}
 
