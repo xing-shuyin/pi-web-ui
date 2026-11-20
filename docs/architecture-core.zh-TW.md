@@ -166,6 +166,25 @@ pi 的 `schedule` 建立任務時單獨持久化建立來源（穩定 SDK 會話
 
 任務完成通過 `conversation(action="complete", summary, evidence)` 登記，與傳送訊息分開；證據與轉錄對賬的規則見下一節。`spawn.notifyOnDone` 保留布林相容並支援 `"manual"`。manual 本輪退出但還有執行中下級、問卷、通訊或待投遞子結果時保持 taskPending，禁止提前通知、消費結果或結算工作樹；完成登記不能繞過這些條件。所有依賴收口後使用顯式 summary，未登記則以最終正文兜底。錯誤與取消繼續通知，自動喚醒不清除手動完成意圖。當前 manual 和通訊宿主為 pi 引擎，Universal 明確拒絕不支援的 manual 模式。
 
+## 壓縮期的入站投遞：一個門、一個佇列、一個排空點（issues/929）
+
+往一個對話裡塞文字只有四種可能：投進正在跑的一輪、開新一輪、**現在不能投（門關）**、對話沒了。壓縮是第三種——`session.prompt()` 在壓縮期間直接拋錯，而 `session.steer()` 只是把訊息塞進「只有活輪才會取」的 steering 佇列。舊實作讓十幾個呼叫點各自判斷這件事，於是每多出一種門（壓縮、等回話、過戶）都會漏掉幾處：子代理完成通知重試 8 秒後放棄、先把子代理記成「已通知」，`steer` 塞進一輪永遠不會發生的佇列，壓縮結束後沒人再送（issue #929 的兩個症狀）。
+
+現在只有兩處知道這件事：
+
+- `server/conversation-delivery.ts` 是純邏輯（不 import SDK、不碰 `Conversation`）：`deliveryMode()` 是唯一判定（`live / gated / idle / closed`），`ConversationDelivery` 是門關時唯一的去處（意圖佇列，按 tag 冪等、按 kind 合併）和門開時唯一的出口（`drain`：FIFO、可重入、撞上新關上的門就留著）。它允許用錯誤文案判定的**唯一**一處是 `isCompactionRejection()`。
+- `Conversation.compaction` 是門相位的**唯一寫者**，事件溯源：工具請求時置 `queued`（此刻 SDK 的 `isCompacting` 還是 false，正是舊實作漏掉的視窗），`compaction_start` 轉 `running`，`compaction_end`（含失敗/取消）清空。舊的 `pendingCompaction` / `compactionState` / `turn.compactionPending` 三個欄位合併成它；UI 橫幅與手機通知只讀投影（`compactionBanner()`）。
+
+五條不變量（動這裡之前先讀）：**門關不提交**；**門開必排空**（失敗與取消路徑同樣排空）；「已通知 / 輪次 +1 / 熔斷額度 −1」只在投遞被接受後寫（`commitIntent`，提交點副作用）；`steer` 只投給活輪，其餘入隊（回執 `queued` 才是承諾）；門相位的寫者唯一。
+
+排空點是一個閉集：`compaction_end`、`executeCompaction` 的 `finally`（`compact()` 拋錯時兜底開閘）、`agent_settled`、等回話解除（`setConsultWaiting(parent,false)`）、以及 `emitConversations()` 的對賬兜底。所以新增壓縮來源（軟上限自動壓縮、SDK 回合內自動壓縮、分支摘要）自動被覆蓋；新增一種門只需往 `deliveryMode()` 加一個謂詞，不必再碰投遞點。
+
+互動式 `prompt()` 在壓縮期間也不再讓人重發：**純文字進同一條意圖佇列**（`kind: "user-prompt"`，tag 用正文，重複傳送只排一條），`compaction_end` 排空時按「idle → 開新一輪」真送出去。語義跟直接傳送對齊：`conv.autonomousTurnsWithoutUser = 0`、`wakeReason = "user"` 這些狀態挪到提交點 `commitIntent`，壓縮期間不預支；排隊意圖被丟棄（對話被關掉等）時如實報一條 warning，絕不靜默。**帶附件 / 引用 / 圖片的不排隊**：`buildAttachmentMessages`、畫布引用、`@` 掃描都依賴當次會話狀態，沒法在排空時安全重放，仍當場拒絕並寫明「等壓縮結束後再發」。斜線命令（要當場執行）與派活、目標執行者的路由同理不排隊。
+
+前端因此多一條 ack：服務端入隊後發 `{ type: "prompt_queued", conversationId, text }`，`web/src/optimistic-queue.ts` 的 `markOptimisticPromptEchoQueued()` 把對應的樂觀回顯標記為「已入隊」。標記過的回顯不再按 15 秒 TTL 回收（壓縮常超過 15 秒，氣泡先消失再冒出來比直接報錯更糟），改由 `reconcileOptimisticPromptEchoes()` 在真正的 user 訊息落賬時按正文對賬收掉；只留一個 10 分鐘的安全上限，防止服務端丟意圖時留下永久幽靈氣泡。
+
+守衛：`tests/unit/delivery-gate-single-source.test.ts` 禁止別處直讀 `isCompacting`、禁止手寫 `deliverAs: "steer"`、禁止復活那三個舊欄位，並給直連 `sendUserMessage` 的站點設上限；`tests/unit/delivery-gate-929.test.ts` 覆蓋三個場景（父對話壓縮期間子代理完成 → `compaction_end` 後補投一次；子代理壓縮期間 `steer` → 門開後開新一輪；使用者自己發的文字在壓縮期間入隊、門開後只發一次，帶附件仍拒絕）；`tests/unit/optimistic-queue.test.ts` 覆蓋「已入隊回顯不再按 TTL 消失」。
+
 ## 子代理完成證據、結算邊沿與派發預算
 
 子代理自述「做完了」不算證據。`conversation(action="complete")` 除 `summary` 外要求同時給 `evidence`：`{files:[], commands:[]}`（改過的檔案、跑過的驗證命令）、`{none:true}`（只讀任務，宣告沒有檔案改動）或 `{blocked:"原因"}`（做不完，如實報）。歸一隻在 `server/subagent-evidence.ts`：路徑按 `/` 歸一、命令壓空白、去重並限量（50 檔案 / 20 命令 / 單條 400 字元），空物件判非法。
