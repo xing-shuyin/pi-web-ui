@@ -46,14 +46,16 @@ export function mergeModelSamplingParamsIntoProviderPayload(
 	}
 	if ((!isRecord(modelParams) || Object.keys(modelParams).length === 0) && Object.keys(overrideParams).length === 0) return payload;
 
-	const merged: Record<string, unknown> = { ...(isRecord(modelParams) ? modelParams : {}), ...overrideParams, ...payload };
-	const modelChatTemplateKwargs = { ...(isRecord(modelParams) && isRecord(modelParams.chat_template_kwargs) ? modelParams.chat_template_kwargs : {}), ...(isRecord(overrideParams.chat_template_kwargs) ? overrideParams.chat_template_kwargs : {}) };
+	const merged: Record<string, unknown> = { ...(isRecord(modelParams) ? modelParams : {}), ...payload, ...overrideParams };
+	const modelChatTemplateKwargs = isRecord(modelParams) && isRecord(modelParams.chat_template_kwargs) ? modelParams.chat_template_kwargs : {};
 	const requestChatTemplateKwargs = payload.chat_template_kwargs;
+	const overrideChatTemplateKwargs = overrideParams.chat_template_kwargs;
 
 	if (isRecord(modelChatTemplateKwargs) || isRecord(requestChatTemplateKwargs)) {
 		merged.chat_template_kwargs = {
 			...(isRecord(modelChatTemplateKwargs) ? modelChatTemplateKwargs : {}),
 			...(isRecord(requestChatTemplateKwargs) ? requestChatTemplateKwargs : {}),
+			...(isRecord(overrideChatTemplateKwargs) ? overrideChatTemplateKwargs : {}),
 		};
 	}
 
