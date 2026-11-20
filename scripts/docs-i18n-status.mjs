@@ -58,6 +58,10 @@ const missing = [];
 const excluded = [];
 const englishOnly = [];
 const stale = [];
+/** 繁中是可选译本：只报告，不进门槛。 */
+const optionalMissing = [];
+const optionalStale = [];
+const optionalCurrent = [];
 
 for (const file of tracked) {
 	if (EXCLUDED.some((re) => re.test(file))) {
@@ -70,21 +74,23 @@ for (const file of tracked) {
 	}
 	const en = variant(file, ".en.md");
 	const tw = variant(file, ".zh-TW.md");
-	const lacks = [];
-	if (!existsSync(en)) lacks.push(".en.md");
-	if (!existsSync(tw)) lacks.push(".zh-TW.md");
-	if (lacks.length) {
-		missing.push({ file, lacks });
+	// 英文译本必填且必须与原稿结构一致（门禁）。
+	if (!existsSync(en)) {
+		missing.push({ file, lacks: [".en.md"] });
 		continue;
 	}
 	const source = fingerprint(readFileSync(file, "utf8"));
-	for (const [path, name] of [
-		[en, "en"],
-		[tw, "zh-TW"],
-	]) {
-		const target = fingerprint(readFileSync(path, "utf8"));
-		const drift = Object.keys(source).filter((key) => source[key] !== target[key]);
-		if (drift.length) stale.push({ file, variant: name, drift });
+	const enTarget = fingerprint(readFileSync(en, "utf8"));
+	const enDrift = Object.keys(source).filter((key) => source[key] !== enTarget[key]);
+	if (enDrift.length) stale.push({ file, variant: "en", drift: enDrift });
+	// 繁体中文版是**可选**的尽力而为译本：没有不算缺，落后也不算门禁失败，只如实报告。
+	if (existsSync(tw)) {
+		const twTarget = fingerprint(readFileSync(tw, "utf8"));
+		const twDrift = Object.keys(source).filter((key) => source[key] !== twTarget[key]);
+		if (twDrift.length) optionalStale.push({ file, drift: twDrift });
+		else optionalCurrent.push(file);
+	} else {
+		optionalMissing.push(file);
 	}
 	translated.push(file);
 }
@@ -94,7 +100,7 @@ const htmlDocs = execSync('git ls-files "docs/*.html" "docs/**/*.html"', { encod
 	.filter(Boolean);
 
 console.log(`文档翻译覆盖度：`);
-console.log(`  已翻译（en + zh-TW 齐全且结构一致）：${translated.length}`);
+console.log(`  中文原稿（英文译本齐全且结构一致）：${translated.length}`);
 console.log(`  英文原稿（无需译本）：${englishOnly.length}`);
 console.log(
 	`  按政策不翻译：${excluded.length}（${excluded
@@ -102,15 +108,25 @@ console.log(
 		.slice(0, 3)
 		.join(", ")}${excluded.length > 3 ? ", …" : ""}）`,
 );
+console.log(
+	`  繁体中文（可选，尽力而为）：最新 ${optionalCurrent.length} / 落后 ${optionalStale.length} / 未译 ${optionalMissing.length}`,
+);
 console.log(`  HTML 设计稿（自带 en / zh-TW 版本，见 npm run docs:i18n:html）：${htmlDocs.length}`);
 if (missing.length) {
 	console.log(`\n缺少译本：${missing.length}`);
 	for (const m of missing) console.log(`  ${m.file}  缺少 ${m.lacks.join(" / ")}`);
 }
 if (stale.length) {
-	console.log(`\n结构落后于原稿：${stale.length}`);
+	console.log(`\n英文译本结构落后于原稿（门禁）：${stale.length}`);
 	for (const s of stale) console.log(`  ${s.file}  -> ${s.variant}（${s.drift.join(", ")}）`);
 }
-if (!missing.length && !stale.length) console.log("\n✓ 所有应当翻译的文档都有最新译本");
+if (optionalMissing.length || optionalStale.length) {
+	console.log(`\n繁体中文（可选，不阻塞）：`);
+	for (const file of optionalMissing) console.log(`  ${file}  未译（可接受）`);
+	for (const s of optionalStale) console.log(`  ${s.file}  结构落后（${s.drift.join(", ")}，可延后）`);
+}
+if (!missing.length && !stale.length) {
+	console.log("\n✓ 所有中文原稿都有结构一致的英文译本（繁体中文为可选）");
+}
 
 if (checkMode && (missing.length || stale.length)) process.exit(1);
