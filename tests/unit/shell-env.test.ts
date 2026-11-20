@@ -40,7 +40,7 @@ describe("交互式登录 shell 的 PATH 捕获", () => {
 	});
 	it("Windows 合并按大小写不敏感去重", () => {
 		const merged = mergeShellPath("C:\\Node;D:\\tools", "c:\\node;C:\\Other", "win32");
-		expect(merged.split(delimiter)).toEqual(["C:\\Node", "D:\\tools", "C:\\Other"]);
+		expect(merged.split(";")).toEqual(["C:\\Node", "D:\\tools", "C:\\Other"]);
 	});
 	posixOnly("真起一次交互式登录 shell 也能干净取到 PATH（stderr 噪声不影响）", async () => {
 		const fake = join(root, "fake-login-shell");

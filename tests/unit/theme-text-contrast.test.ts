@@ -79,7 +79,7 @@ describe("主题文字令牌可读性", () => {
 			expect(
 				failures,
 				`${file} 的语义文字色太浅，状态文字/chip 会看不清：\n${failures.join("\n")}\n` +
-					`修法：给这套主题声明更深的同名令牌（生成器 make-light-theme.mjs 的 TEXT_FLOORS 会自动压暗）。`,
+					`修法：给这套主题声明更深的同名令牌（生成器 scripts/make-light-theme.mjs 的 TEXT_FLOORS 会自动压暗）。`,
 			).toEqual([]);
 		});
 	}

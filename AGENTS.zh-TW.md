@@ -50,6 +50,7 @@ pi 編碼智慧體（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天介�
 | 本地化 / 模組字典 / 語言包同步 | `web/src/i18n/catalog.ts`★ · `web/src/i18n/messages/` · `scripts/lib/i18n-catalog.mjs` | [`i18n.md`](docs/i18n.md) |
 | UI 佈局 / 主題 / 樣式紅線 | `web/src/styles.css` · `themes/` | [`agent-rules.md`](docs/agent-rules.md#三ui-佈局與樣式規範) |
 | 目錄結構與全量檔案清單 | — | [`directory-reference.md`](docs/directory-reference.md) |
+| 檔案落位 / 暫存產物（根目錄白名單、指令碼落點） | `.gitignore` · `scripts/` | [`agent-rules.md`](docs/agent-rules.zh-TW.md#八檔案落位與暫存產物) |
 
 ## 2. 工程流
 

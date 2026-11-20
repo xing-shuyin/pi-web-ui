@@ -25,7 +25,6 @@ pi-web-ui/
 │   └── README.md               # 桌面版说明：跑起来 / 约定 / 发布 / 签名（SignPath）
 ├── deploy/                     # 部署示例：launchd plist / systemd unit / Windows 任务 XML
 ├── themes/                     # 内置主题（完整样式表：:root 变量 + 任意选择器/布局覆盖皆可，styles.css 只是共享基线）
-├── make-light-theme.mjs        # 主题生成器（从 styles.css 的 :root 变量清单生成纯调色板）
 ├── tests/                      # 全部测试脚本（自包含：独立端口 ≥8900 + 临时 data-dir）
 │   ├── run-smoke.mjs           # 零 token 协议冒烟聚合跑器（ALL 列表；插件后台作业/目录同步 plugin-jobs-test、多根工作区
 │   │                           #   workspace-roots-test 都在里面）
@@ -37,6 +36,8 @@ pi-web-ui/
 │   │                           #     context-menu-ui-test（右键菜单槽位）/ ui-layout-ui-test（布局页 ↔ 界面一致性）/ plugin-settings-page-test（插件设置页）/ plugin-settings-select-ui-test（插件设置下拉）/ plugin-topbar-ui-test（顶栏条目 + 面板内后台卸载）/ elsewhere-click-takeover-ui-test（「另一处」行左键两段确认过户）
 │   └── scratch/                # 一次性调试脚本（gitignore，不入库）
 ├── scripts/check-protocol-sync.mjs  # 守护 types.ts shim 单源机制 + protocol.ts 纯类型约束
+├── scripts/bench-remote-scan.mjs # SFTP 远程扫描基准（mock SSH 宽树：层级 × 每层目录数）
+├── scripts/make-light-theme.mjs # 主题生成器（从 styles.css 的 :root 变量清单生成纯调色板）
 ├── scripts/build-desktop-runtime.mjs  # 双层模型 P1：打 core tar.zst + 写 runtime-<p>-<a>.json + ed25519 签名（--keygen 出密钥）
 ├── scripts/verify-desktop-runtime.mjs # 双层模型 P1：清单↔归档↔签名互验 + 归档条目白名单逐条过（CI 干跑）
 ├── scripts/safe-exec.mjs       # 跨平台防卡死执行器：stdin 接地 + 硬超时/空闲超时杀进程树（复用 killPidTree）+ 日志落盘 + --detach 守护进程托管 + --wait/--status(JSON) 轮询；日志落 .safe-exec/（gitignore）

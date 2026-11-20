@@ -27,7 +27,7 @@ describe("theme generation and inherited button colors", () => {
 	it("reproduces shipped palettes without freezing shared defaults", () => {
 		const out = mkdtempSync(join(tmpdir(), "pi-theme-generation-"));
 		try {
-			execFileSync(process.execPath, [join(ROOT, "make-light-theme.mjs")], {
+			execFileSync(process.execPath, [join(ROOT, "scripts/make-light-theme.mjs")], {
 				cwd: ROOT,
 				env: { ...process.env, PI_THEMES_OUT_DIR: out },
 			});
