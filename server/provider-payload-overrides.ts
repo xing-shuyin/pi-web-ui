@@ -17,6 +17,7 @@ export function getConversationSamplingOverrides(conversationId?: string, parent
 }
 
 type ProviderModelLike = {
+	id?: string;
 	api?: string;
 	samplingParams?: Record<string, unknown>;
 } | undefined;
@@ -42,9 +43,11 @@ export function mergeModelSamplingParamsIntoProviderPayload(
 	// Keep the boolean check explicit: false is a real setting, not an absent value.
 	// Gemma's llama.cpp chat template expects all three controls inside
 	// chat_template_kwargs, including reasoning_effort while thinking is disabled.
+	const isGemma4Model = /(?:^|[-_/])gemma[-_]?4(?:[-_/]|$)/i.test(model?.id ?? "");
+	const hasModelChatTemplate = isRecord(modelParams) && isRecord(modelParams.chat_template_kwargs);
 	const usesChatTemplateThinking = model?.api === "openai-completions"
-		&& overrides?.profile === "gemma4"
-		&& typeof overrides.thinkingEnabled === "boolean";
+		&& (overrides?.profile === "gemma4" || isGemma4Model || hasModelChatTemplate)
+		&& typeof overrides?.thinkingEnabled === "boolean";
 	if (usesChatTemplateThinking) {
 		overrideParams.chat_template_kwargs = {
 			enable_thinking: overrides.thinkingEnabled,
