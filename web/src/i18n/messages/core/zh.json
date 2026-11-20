@@ -3958,5 +3958,14 @@
 	"scmTagPush": "推送标签",
 	"scmTagPushConfirm": "把所有本地标签推到远端？",
 	"scmCommitNothingStaged": "勾选文件后才会进入本次提交",
-	"scmCommitMetaCount": "{count} 个文件"
+	"scmCommitMetaCount": "{count} 个文件",
+	"kernelStatusTitle": "内核（服务进程）",
+	"kernelStatusSupervised": "托管",
+	"kernelStatusStandalone": "独立进程（随桌面应用退出）",
+	"kernelStatusUnknown": "状态未知（旧版内核）",
+	"kernelStatusHint": "内核负责定时任务、Bot 与 QQ 等渠道；由系统托管时关掉浏览器也会继续运行。",
+	"kernelUptimeUnderMinute": "不到 1 分钟",
+	"kernelUptimeMinutes": "{minutes} 分钟",
+	"kernelUptimeHours": "{hours} 小时 {minutes} 分钟",
+	"kernelUptimeDays": "{days} 天 {hours} 小时"
 }

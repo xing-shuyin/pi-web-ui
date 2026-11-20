@@ -3958,5 +3958,14 @@
 	"scmTagPush": "Push tags",
 	"scmTagPushConfirm": "Push all local tags to the remote?",
 	"scmCommitNothingStaged": "Check files to include them in this commit",
-	"scmCommitMetaCount": "{count} files"
+	"scmCommitMetaCount": "{count} files",
+	"kernelStatusTitle": "Kernel (server)",
+	"kernelStatusSupervised": "supervised",
+	"kernelStatusStandalone": "standalone (stops with the desktop app)",
+	"kernelStatusUnknown": "unknown (older kernel)",
+	"kernelStatusHint": "The kernel runs scheduled tasks, bots and channels such as QQ. When supervised it keeps running after you close the browser.",
+	"kernelUptimeUnderMinute": "under a minute",
+	"kernelUptimeMinutes": "{minutes} min",
+	"kernelUptimeHours": "{hours} h {minutes} min",
+	"kernelUptimeDays": "{days} d {hours} h"
 }
