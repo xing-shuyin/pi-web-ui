@@ -62,7 +62,11 @@ export function mergeModelSamplingParamsIntoProviderPayload(
 		return payload;
 	}
 
-	const merged: Record<string, unknown> = { ...(isRecord(modelParams) ? modelParams : {}), ...payload, ...overrideParams };
+	const merged: Record<string, unknown> = {
+		...(isRecord(modelParams) ? modelParams : {}),
+		...payload,
+		...overrideParams,
+	};
 	const modelChatTemplateKwargs = isRecord(modelParams) && isRecord(modelParams.chat_template_kwargs)
 		? modelParams.chat_template_kwargs
 		: {};
