@@ -1270,10 +1270,6 @@ export interface CanvasGraphSummary {
 
 export interface SamplingOverrides {
 	profile?: "default" | "gemma4";
-	temperature?: number;
-	min_p?: number;
-	top_p?: number;
-	top_k?: number;
 	thinkingEnabled?: boolean;
 	thinkingEffort?: "low" | "medium" | "high";
 	preserveThinking?: boolean;
