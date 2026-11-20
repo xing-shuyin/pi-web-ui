@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { appUrl } from "./base-url";
 import { withToken } from "./auth-token";
 import { isZhLocale, pickLocale } from "./pick-locale.js";
-import { announceUiLocale, initializeUiLocale } from "./ui-locale.js";
+import { announceUiLocale, initializeUiLocale, readLocaleCookie, writeLocaleCookie } from "./ui-locale.js";
 import { zh, en } from "./i18n/catalog.js";
 
 export { isZhLocale, zh, en };
@@ -101,6 +101,10 @@ interface I18nContextValue {
 const I18nContext = createContext<I18nContextValue | null>(null);
 
 function savedLocale(): string | null {
+	// cookie 优先：主界面每次切语言都会同时写 localStorage 与 cookie，因此两者不一致只可能是
+	// 「用户刚在口令页选过语言」（登录页写不了 localStorage，见 issue #955）—— 那次选择更新，应当赢。
+	const fromCookie = readLocaleCookie();
+	if (fromCookie && fromCookie.trim()) return fromCookie;
 	try {
 		return localStorage.getItem(STORAGE_KEY);
 	} catch {
@@ -124,6 +128,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 		try {
 			localStorage.setItem(STORAGE_KEY, l);
 		} catch {}
+		// 同步写 cookie：退出/口令失效后重新打开时，服务端渲染的口令页也是这个语言
+		writeLocaleCookie(l);
 		announceUiLocale(l);
 	}, []);
 

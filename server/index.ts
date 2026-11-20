@@ -124,7 +124,7 @@ import { buildPiWebTokenCookie, decodeCookieToken, isTlsRequest } from "./auth-c
 import { AUTH_ERROR_PARAM, AUTH_LOGIN_PATH, loginFailureLocation, sanitizeNextPath } from "./auth-login.js";
 import { isLoopbackAddress, loadServerFileConfig, saveServerFileConfig, tokenWarning } from "./server-config.js";
 import { renderSetupHtml } from "./setup-page.js";
-import { renderUnauthorizedHtml } from "./unauthorized-page.js";
+import { buildLangCookie, readLangCookie, renderUnauthorizedHtml, resolvePageLang } from "./unauthorized-page.js";
 import { formatStartupBannerLines } from "./startup-banner.js";
 import { getAppVersion, getPkgRoot } from "./pkg-info.js";
 import {
@@ -569,13 +569,38 @@ app.use((req, res, next) => {
 		res.status(401);
 		res.setHeader("Content-Type", "text/html; charset=utf-8");
 		res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+		// 登录页的语言：?lang= > cookie > Accept-Language > zh（cookie 是登录前唯一能读到的偏好，见 issue #955）
+		const installedLangs = listPacks(DATA_DIR)
+			.filter((pack) => pack.installed)
+			.map((pack) => ({ code: pack.code, nativeName: pack.nativeName }));
+		const availableLangs = [
+			{ code: "zh", nativeName: "简体中文" },
+			{ code: "en", nativeName: "English" },
+			...installedLangs,
+		];
+		const resolvedLang = resolvePageLang({
+			query: req.query?.lang,
+			cookie: readLangCookie(req.headers.cookie),
+			acceptLanguage: req.headers["accept-language"],
+			available: availableLangs.map((l) => l.code),
+		});
+		if (resolvedLang.explicit) {
+			const prior = res.getHeader("Set-Cookie");
+			const cookies = Array.isArray(prior) ? [...prior] : prior ? [String(prior)] : [];
+			cookies.push(buildLangCookie(resolvedLang.lang));
+			res.setHeader("Set-Cookie", cookies);
+		}
+		const nextTarget = new URL(req.originalUrl ?? "/", "http://localhost");
+		nextTarget.searchParams.delete("lang");
 		res.send(
 			renderUnauthorizedHtml({
 				isLoopback,
 				isStaleCookie: Boolean(cookie),
 				port: PORT,
 				authFailed: req.query?.[AUTH_ERROR_PARAM] !== undefined,
-				nextPath: sanitizeNextPath(req.originalUrl ?? "/"),
+				nextPath: sanitizeNextPath(nextTarget.pathname + nextTarget.search),
+				lang: resolvedLang.lang,
+				langs: availableLangs,
 			}),
 		);
 		return;

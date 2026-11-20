@@ -6,6 +6,8 @@
  * `POST /__pi/auth` 校验并 303 回跳——只有这样浏览器密码管理器才会提示保存密码。
  * 不要再改成 JS `preventDefault()` + `?token=` 跳转（那样永远不弹保存提示）。
  */
+import { pick } from "./i18n.js";
+
 export interface UnauthorizedPageOptions {
 	isLoopback: boolean;
 	isStaleCookie: boolean;
@@ -14,6 +16,89 @@ export interface UnauthorizedPageOptions {
 	authFailed?: boolean;
 	/** 登录成功后的回跳路径（已由 `sanitizeNextPath` 清洗）。 */
 	nextPath?: string;
+	/** 渲染语言（zh / en / 已安装语言包代码）。缺省 zh。 */
+	lang?: string;
+	/** 语言切换器里列出的语言（code + 原生名）。缺省只给 zh / en。 */
+	langs?: { code: string; nativeName: string }[];
+}
+
+/** 登录页语言 cookie：localStorage 在登录前读不到，cookie 是唯一能从服务端读到的语言偏好。 */
+export const LANG_COOKIE = "pi_web_lang";
+export const DEFAULT_LANGS: { code: string; nativeName: string }[] = [
+	{ code: "zh", nativeName: "简体中文" },
+	{ code: "en", nativeName: "English" },
+];
+
+function normalizeLangCode(raw: unknown): string | null {
+	if (typeof raw !== "string") return null;
+	const code = raw.trim();
+	if (!code || code.length > 20) return null;
+	if (!/^[a-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})?$/.test(code)) return null;
+	return code.replace(/_/g, "-");
+}
+
+/** 从 `Accept-Language` 里取第一个可用语言（浏览器默认偏好）。 */
+function fromAcceptLanguage(header: string | null | undefined, available: readonly string[]): string | null {
+	if (!header) return null;
+	const wanted = header
+		.split(",")
+		.map((part) => part.split(";")[0]!.trim().replace(/_/g, "-"))
+		.filter(Boolean);
+	for (const tag of wanted) {
+		const exact = available.find((code) => code.toLowerCase() === tag.toLowerCase());
+		if (exact) return exact;
+		const base = tag.split("-")[0]!.toLowerCase();
+		const baseHit = available.find((code) => code.toLowerCase() === base);
+		if (baseHit) return baseHit;
+	}
+	return null;
+}
+
+/**
+ * 登录页语言：显式 `?lang=` > cookie（上次选过的）> Accept-Language > zh。
+ * 只认 available 里的代码，避免被任意字符串影响渲染。
+ */
+export function resolvePageLang(input: {
+	query?: unknown;
+	cookie?: string | null;
+	acceptLanguage?: string | null;
+	available?: readonly string[];
+}): { lang: string; explicit: boolean } {
+	const available = input.available && input.available.length > 0 ? input.available : DEFAULT_LANGS.map((l) => l.code);
+	const query = normalizeLangCode(input.query);
+	if (query) {
+		const hit = available.find((code) => code.toLowerCase() === query.toLowerCase());
+		if (hit) return { lang: hit, explicit: true };
+	}
+	const cookie = normalizeLangCode(input.cookie);
+	if (cookie) {
+		const hit = available.find((code) => code.toLowerCase() === cookie.toLowerCase());
+		if (hit) return { lang: hit, explicit: false };
+	}
+	const fromHeader = fromAcceptLanguage(input.acceptLanguage, available);
+	if (fromHeader) return { lang: fromHeader, explicit: false };
+	return { lang: "zh", explicit: false };
+}
+
+/** 生成语言 cookie（一年有效，SameSite=Lax：登录页与主界面同源）。 */
+export function buildLangCookie(lang: string): string {
+	return `${LANG_COOKIE}=${encodeURIComponent(lang)}; Path=/; Max-Age=31536000; SameSite=Lax`;
+}
+
+/** 从 Cookie 头里取语言 cookie。 */
+export function readLangCookie(header: string | null | undefined): string | null {
+	if (!header) return null;
+	for (const part of header.split(";")) {
+		const index = part.indexOf("=");
+		if (index < 0) continue;
+		if (part.slice(0, index).trim() !== LANG_COOKIE) continue;
+		try {
+			return decodeURIComponent(part.slice(index + 1).trim());
+		} catch {
+			return part.slice(index + 1).trim();
+		}
+	}
+	return null;
 }
 
 function escapeAttr(value: string): string {
@@ -22,13 +107,36 @@ function escapeAttr(value: string): string {
 
 export function renderUnauthorizedHtml(options: UnauthorizedPageOptions): string {
 	const { isLoopback, isStaleCookie, authFailed = false, nextPath = "/" } = options;
-	const title = isStaleCookie ? "访问口令已失效" : "需要访问口令";
+	const lang = options.lang || "zh";
+	const langs = options.langs && options.langs.length > 0 ? options.langs : DEFAULT_LANGS;
+	// 统一走服务端文案单源：zh 内联、其它语言先查已安装语言包（server/i18n.ts 的 pick），再回落英文。
+	const tx = (zh: string, en: string, key: string) => pick(lang, zh, en, key);
+	const title = isStaleCookie
+		? tx("访问口令已失效", "Access token expired", "auth.page.titleExpired")
+		: tx("需要访问口令", "Access token required", "auth.page.title");
 	const desc = isStaleCookie
-		? "服务端口令已变更，浏览器中保存的旧凭证已失效并已自动清除。请输入当前有效口令以重新进入系统。"
-		: "当前 pi-web-ui 实例已配置安全口令鉴权 (PI_WEB_TOKEN)。请输入口令以访问工作区。";
+		? tx(
+				"服务端口令已变更，浏览器中保存的旧凭证已失效并已自动清除。请输入当前有效口令以重新进入系统。",
+				"The server token changed, so the stale credentials saved in this browser were cleared. Enter the current token to get back in.",
+				"auth.page.descStale",
+			)
+		: tx(
+				"当前 pi-web-ui 实例已配置安全口令鉴权 (PI_WEB_TOKEN)。请输入口令以访问工作区。",
+				"this pi-web-ui instance requires an access token (PI_WEB_TOKEN). Enter it to open the workspace.",
+				"auth.page.desc",
+			);
+	const langOptions = langs
+		.map(
+			(item) =>
+				`<option value="${escapeAttr(item.code)}"${item.code === lang ? " selected" : ""}>${escapeAttr(
+					item.nativeName,
+				)}</option>`,
+		)
+		.join("");
+	const pageLang = /^zh/.test(lang) ? "zh-CN" : escapeAttr(lang);
 
 	return `<!doctype html>
-<html lang="zh-CN">
+<html lang="${pageLang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -232,6 +340,27 @@ body {
 	transition: background 0.15s;
 }
 .btn-setup:hover { background: rgba(255, 255, 255, 0.14); }
+.lang-switch { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.lang-switch select {
+	background: var(--input-bg);
+	border: 1px solid var(--input-border);
+	color: var(--text-muted);
+	border-radius: var(--radius);
+	padding: 5px 8px;
+	font-size: 12.5px;
+	cursor: pointer;
+	max-width: 140px;
+}
+.lang-switch select:hover { border-color: var(--input-focus); color: var(--text); }
+.lang-switch button {
+	background: transparent;
+	border: 1px solid var(--input-border);
+	color: var(--text-muted);
+	border-radius: var(--radius);
+	padding: 5px 8px;
+	font-size: 12.5px;
+	cursor: pointer;
+}
 </style>
 <script>
 (function() {
@@ -258,8 +387,16 @@ body {
 		</div>
 		<div class="title-group">
 			<h1>${title}</h1>
-			<div class="sub">pi-web-ui 安全访问控制</div>
+			<div class="sub">${tx("pi-web-ui 安全访问控制", "pi-web-ui secure access", "auth.page.subtitle")}</div>
 		</div>
+		<form class="lang-switch" method="get">
+			<select name="lang" aria-label="${escapeAttr(
+				tx("界面语言", "Interface language", "auth.page.langLabel"),
+			)}" onchange="this.form.submit()">
+				${langOptions}
+			</select>
+			<noscript><button type="submit">${tx("切换", "Switch", "auth.page.langApply")}</button></noscript>
+		</form>
 	</div>
 
 	${
@@ -270,26 +407,40 @@ body {
 			<line x1="12" y1="8" x2="12" y2="12"/>
 			<line x1="12" y1="16" x2="12.01" y2="16"/>
 		</svg>
-		<div><strong>服务端口令已变更</strong>：原登录凭据已失效，请输入当前生效的访问口令。</div>
+		<div><strong>${tx("服务端口令已变更", "Server token changed", "auth.page.staleTitle")}</strong>${tx(
+			"：原登录凭据已失效，请输入当前生效的访问口令。",
+			": the saved credentials are no longer valid. Enter the current token.",
+			"auth.page.staleBody",
+		)}</div>
 	</div>`
 			: ""
 	}
 
-	${authFailed ? `<div class="auth-error"><strong>口令不正确</strong>：请核对终端或服务端配置里当前的 PI_WEB_TOKEN 后重试。</div>` : ""}
+	${
+		authFailed
+			? `<div class="auth-error"><strong>${tx("口令不正确", "Incorrect token", "auth.page.wrongTitle")}</strong>${tx(
+					"：请核对终端或服务端配置里当前的 PI_WEB_TOKEN 后重试。",
+					": check the current PI_WEB_TOKEN in the terminal or server config and try again.",
+					"auth.page.wrongBody",
+				)}</div>`
+			: ""
+	}
 
 	<p class="desc">${desc}</p>
 
 	<form id="auth-form" method="post" action="/__pi/auth">
 		<input type="hidden" name="next" value="${escapeAttr(nextPath)}">
 		<div class="input-row">
-			<label for="username-input">账户</label>
+			<label for="username-input">${tx("账户", "Account", "auth.page.account")}</label>
 			<input id="username-input" name="username" type="text" autocomplete="username" value="pi-web-ui" spellcheck="false" autocapitalize="off">
 		</div>
 		<div class="input-row">
-			<label for="token-input">访问口令 (Token)</label>
+			<label for="token-input">${tx("访问口令 (Token)", "Access token", "auth.page.token")}</label>
 			<div class="input-wrapper">
-				<input id="token-input" name="token" type="password" autofocus autocomplete="current-password" placeholder="请输入口令或从终端复制">
-				<button type="button" id="btn-toggle-eye" class="btn-toggle" title="显示/隐藏口令">
+				<input id="token-input" name="token" type="password" autofocus autocomplete="current-password" placeholder="${escapeAttr(
+					tx("请输入口令或从终端复制", "Enter the token or copy it from the terminal", "auth.page.tokenPlaceholder"),
+				)}">
+				<button type="button" id="btn-toggle-eye" class="btn-toggle" title="${escapeAttr(tx("显示/隐藏口令", "Show/hide token", "auth.page.toggleToken"))}">
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 						<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
 						<circle cx="12" cy="12" r="3"/>
@@ -303,7 +454,7 @@ body {
 				<polyline points="10 17 15 12 10 7"/>
 				<line x1="15" y1="12" x2="3" y2="12"/>
 			</svg>
-			进入工作区
+			${tx("进入工作区", "Open workspace", "auth.page.submit")}
 		</button>
 	</form>
 
@@ -311,13 +462,17 @@ body {
 		isLoopback
 			? `<div class="divider"></div>
 	<div class="loopback-box">
-		<p>💡 <strong>本机访问特权</strong>：服务运行在您的本机，您可在启动终端中直接点击带 Token 的链接，或进入配置中心管理口令：</p>
+		<p>💡 <strong>${tx("本机访问特权", "Local access", "auth.page.loopbackTitle")}</strong>${tx(
+			"：服务运行在您的本机，您可在启动终端中直接点击带 Token 的链接，或进入配置中心管理口令：",
+			": the server runs on this machine. Click the tokenised link in the startup terminal, or manage the token in the setup page:",
+			"auth.page.loopbackBody",
+		)}</p>
 		<a href="/setup" class="btn-setup">
 			<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 				<circle cx="12" cy="12" r="3"/>
 				<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
 			</svg>
-			打开本机配置中心 (/setup)
+			${tx("打开本机配置中心 (/setup)", "Open local setup (/setup)", "auth.page.loopbackButton")}
 		</a>
 	</div>`
 			: ""
