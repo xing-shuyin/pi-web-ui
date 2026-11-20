@@ -225,6 +225,22 @@ function buildFake(proto: object, defaults: Record<string, unknown>, overrides: 
 	return target;
 }
 
+/**
+ * Extended UI facade fake with the members exercised by tests.
+ * Keep forConversation consistent with the real shared UI registry.
+ */
+export function fakeWebUi(overrides: Loose = {}): Loose {
+	const ui: Loose = {
+		refresh: () => {},
+		dispose: () => {},
+		snapshot: () => [],
+		statusSnapshot: () => [],
+		cancelPendingDialogs: () => {},
+	};
+	ui.forConversation = () => ui;
+	return { ...ui, ...overrides };
+}
+
 export function fakeClientSession(overrides: Loose = {}): FakeSession {
 	return buildFake(ClientSession.prototype, instanceFieldDefaults("ClientSession"), overrides) as FakeSession;
 }
