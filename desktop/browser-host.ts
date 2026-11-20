@@ -77,6 +77,7 @@ import {
 	type BrowserMode,
 	type BrowserPageRequest,
 	type BrowserState,
+	type KernelEnvironmentView,
 } from "../browser/contracts.js";
 import {
 	browserLayout,
@@ -195,6 +196,9 @@ async function fitBrowserActionPopup(popup: BrowserActionPopup): Promise<void> {
 /** 内核运维动作（主进程注入；宿主只负责转发渲染层请求）。 */
 export interface KernelBridge {
 	refresh: () => Promise<BrowserKernelState | undefined>;
+	environment: () => Promise<KernelEnvironmentView>;
+	upgrade: () => Promise<{ ok: boolean; message: string }>;
+	installNode: () => Promise<{ ok: boolean; message: string }>;
 	install: () => Promise<{ ok: boolean; message: string }>;
 	restart: () => Promise<{ ok: boolean; message: string }>;
 }
@@ -1301,6 +1305,15 @@ export class DesktopBrowserHost {
 			case "kernel.restart":
 				if (!this.kernelBridge) throw new Error("Kernel actions are unavailable");
 				return await this.kernelBridge.restart();
+			case "kernel.env":
+				if (!this.kernelBridge) throw new Error("Kernel actions are unavailable");
+				return await this.kernelBridge.environment();
+			case "kernel.upgrade":
+				if (!this.kernelBridge) throw new Error("Kernel actions are unavailable");
+				return await this.kernelBridge.upgrade();
+			case "kernel.installNode":
+				if (!this.kernelBridge) throw new Error("Kernel actions are unavailable");
+				return await this.kernelBridge.installNode();
 			case "bookmarks.list":
 				return this.browser.listBookmarks().children ?? [];
 			case "bookmarks.save":

@@ -62,6 +62,18 @@ export interface BrowserKernelState {
 }
 
 /**
+ * 内核环境（面板的“环境检测”区）：node 够不够、全局包能不能升、服务配置装没装。
+ * 判定与命令生成都在 `desktop/kernel-env.ts` / `desktop/kernel-upgrade.ts`，这里只定义跨层形状。
+ */
+export interface KernelEnvironmentView {
+	node: { ok: boolean; version: string };
+	global: { installed: boolean; version?: string; latest?: string; upgradeCommand: string; canUpgrade: boolean };
+	service: { state: "installed" | "absent" | "unknown" };
+	/** 缺 node 时给用户的命令（GUI 里不硬跑的平台只给这条）。 */
+	nodeInstall: { command: string; url: string; canRun: boolean };
+}
+
+/**
  * 外壳面板名单：宿主校验 `panel` 请求、渲染层 `Panel` 类型都取自这里。
  * 每个面板在自己的一块浮层视图里渲染（`panel.html`），页面在它周围照常可见。
  */
@@ -150,6 +162,10 @@ export type BrowserShellAction =
 	| "kernel.status"
 	| "kernel.install"
 	| "kernel.restart"
+	/** 内核环境：node 装没装、全局包版本与可升级性、服务配置状态 */
+	| "kernel.env"
+	| "kernel.upgrade"
+	| "kernel.installNode"
 	| "bookmarks.list"
 	| "bookmarks.save"
 	/** 从别的浏览器导出的书签文件导入：宿主自己开原生选文件对话框、读盘、解析再合并，回执只有条数 */

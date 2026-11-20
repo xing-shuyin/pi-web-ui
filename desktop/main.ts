@@ -11,7 +11,11 @@ import { dirname, extname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DesktopBrowserHost } from "./browser-host.js";
 import { DEFAULT_THEME_BACKGROUND } from "../browser/runtime/palette.js";
-import { BROWSER_EXTENSION_PARTITION, type BrowserKernelState } from "../browser/contracts.js";
+import {
+	BROWSER_EXTENSION_PARTITION,
+	type BrowserKernelState,
+	type KernelEnvironmentView,
+} from "../browser/contracts.js";
 import { createHubBrowser } from "./hub-browser.js";
 import { setupPortableMode } from "./portable.js";
 import {
@@ -29,6 +33,13 @@ import { buildDesktopLoadUrl, DEFAULT_DESKTOP_PORT, resolveHealthTimeoutMs, wait
 import { decideKernelMode, probeKernel, toKernelState, type KernelMode } from "./kernel-mode.js";
 import { buildServiceInstallArgs, buildServiceLifecycleArgs, runKernelCli } from "./kernel-install.js";
 import { readKernelLock } from "../server/instance-lock.js";
+import {
+	fetchLatestVersion,
+	nodeInstallLaunch,
+	planUpgrade,
+	readGlobalPackageVersion,
+	runCommand,
+} from "./kernel-upgrade.js";
 import {
 	DEFAULT_ASSOCIATION_EXTENSIONS,
 	applyRegistryActions,
@@ -838,6 +849,85 @@ async function installKernelService(): Promise<{ ok: boolean; message: string }>
 	return { ok: true, message: message || `已安装并启动系统服务：${serviceUrl}` };
 }
 
+/** 内核环境的唯一读法：面板点开时现算一次（会问 npm registry，5s 超时）。 */
+async function readKernelEnvironment(): Promise<KernelEnvironmentView> {
+	const node = describeNodeRuntime({ execPath: process.execPath, nodeVersion: process.versions.node });
+	const prefix = await currentNpmPrefix();
+	const globalRoot = prefix ? globalKernelRoot(prefix) : null;
+	const installed = globalRoot ? readGlobalPackageVersion(globalRoot) : null;
+	const latest = await fetchLatestVersion({});
+	const plan = planUpgrade({ current: installed, latest });
+	const guide = nodeInstallGuide(process.platform);
+	return {
+		node: { ok: node.ok, version: node.version },
+		global: {
+			installed: installed !== null,
+			...(installed ? { version: installed } : {}),
+			...(latest ? { latest } : {}),
+			upgradeCommand: "npm i -g pi-web-ui@latest",
+			canUpgrade: plan.kind === "upgrade",
+		},
+		service: {
+			state: readServiceInstallState({
+				platform: process.platform,
+				env: process.env,
+				home: homedir(),
+				exists: existsSync,
+			}),
+		},
+		nodeInstall: { command: guide.command, url: guide.url, canRun: nodeInstallLaunch(process.platform) !== null },
+	};
+}
+
+/** npm 全局前缀：先看缓存（`kernel-authority.json`），没有再问 npm。 */
+async function currentNpmPrefix(): Promise<string | null> {
+	const cached = readAuthorityCache(readTextFile(authorityCachePath(app.getPath("userData"))), Date.now());
+	if (cached) return cached;
+	const prefix = await queryNpmGlobalPrefix();
+	if (prefix) {
+		try {
+			writeFileSync(authorityCachePath(app.getPath("userData")), buildAuthorityCache(prefix, Date.now()));
+		} catch {}
+	}
+	return prefix;
+}
+
+/**
+ * 「升级内核」：`npm i -g pi-web-ui@latest` → 重启内核。
+ * 只有一步成功才算成功；npm 失败时原内核仍在跑（不重启），用户不会点完变没。
+ */
+async function upgradeKernel(): Promise<{ ok: boolean; message: string }> {
+	const result = await runCommand("npm", ["i", "-g", "pi-web-ui@latest"], { timeoutMs: 300_000 });
+	const output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n").slice(-2000);
+	if (result.code !== 0)
+		return {
+			ok: false,
+			message: result.timedOut ? `升级超时（npm 仍在跑？）\n${output}` : output || `升级失败（退出码 ${result.code}）`,
+		};
+	const restarted = await restartKernel();
+	return {
+		ok: restarted.ok,
+		message: restarted.ok ? `已升级并重启内核\n${output}` : `已升级，但重启失败：${restarted.message}`,
+	};
+}
+
+/** 「安装 node」：Win 走 winget、mac 走 brew（都会弹系统授权）；Linux 只给命令。 */
+async function installNodeRuntime(): Promise<{ ok: boolean; message: string }> {
+	const launch = nodeInstallLaunch(process.platform);
+	const guide = nodeInstallGuide(process.platform);
+	if (!launch) return { ok: false, message: `自带的 bun 不足以运行全局包，请先在终端执行：${guide.command}` };
+	const result = await runCommand(launch.command, launch.args, { timeoutMs: 600_000 });
+	const output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n").slice(-2000);
+	if (result.code !== 0)
+		return {
+			ok: false,
+			message: result.timedOut
+				? `安装超时\n${output}`
+				: `${output || `安装失败（退出码 ${result.code}）`}\n也可以手动执行：${guide.command}`,
+		};
+	return { ok: true, message: `node 已安装，重开桌面应用即可用全局包内核\n${output}` };
+}
+
 /** 「重启内核」：服务托管时交给服务管理器，本地 sidecar 才自己杀重生。 */
 async function restartKernel(): Promise<{ ok: boolean; message: string }> {
 	if (kernelMode === "external") {
@@ -929,6 +1019,9 @@ async function createWindow(): Promise<void> {
 		},
 		install: installKernelService,
 		restart: restartKernel,
+		environment: readKernelEnvironment,
+		upgrade: upgradeKernel,
+		installNode: installNodeRuntime,
 	});
 	const openHub = createHubBrowser();
 	ipcMain.removeHandler("pi-desktop:open-hub");

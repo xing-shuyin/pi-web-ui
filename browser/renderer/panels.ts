@@ -23,8 +23,15 @@ import {
 	type Settings,
 } from "./common.js";
 import { t, tf, type MessageKey } from "./i18n.js";
-import { describeKernelState, kernelActions, kernelPersistenceHint, SHELL_CAPABILITY } from "../kernel-view.js";
-import type { BrowserKernelState } from "../contracts.js";
+import {
+	describeKernelEnvironment,
+	describeKernelState,
+	kernelActions,
+	kernelEnvironmentActions,
+	kernelPersistenceHint,
+	SHELL_CAPABILITY,
+} from "../kernel-view.js";
+import type { BrowserKernelState, KernelEnvironmentView } from "../contracts.js";
 import { vaultPanel, type VaultTab } from "./vault.js";
 import type {
 	BrowserDesignDocument,
@@ -501,6 +508,12 @@ async function kernelSectionView(): Promise<HTMLElement> {
 	const terminalCommand = element("code", "pb-muted");
 	terminalCommand.hidden = true;
 	const restartButton = button(t("kernelRestart"), () => void runAction("kernel.restart"));
+	const envLine = element("p", "pb-muted");
+	envLine.hidden = true;
+	const upgradeButton = button(t("kernelUpgrade"), () => void runAction("kernel.upgrade"));
+	upgradeButton.hidden = true;
+	const installNodeButton = button(t("kernelInstallNode"), () => void runAction("kernel.installNode"));
+	installNodeButton.hidden = true;
 
 	const applyActions = (state: BrowserKernelState | null): void => {
 		const actions = kernelActions({ state, platform, shellCapability: SHELL_CAPABILITY });
@@ -535,15 +548,36 @@ async function kernelSectionView(): Promise<HTMLElement> {
 		} catch (error) {
 			reportError(error);
 		}
+		void refreshEnv();
+	};
+	const SUCCESS_TEXT: Partial<Record<string, MessageKey>> = {
+		"kernel.install": "kernelInstalled",
+		"kernel.restart": "kernelRestarted",
+		"kernel.upgrade": "kernelUpgraded",
+		"kernel.installNode": "kernelNodeInstalled",
+	};
+	const refreshEnv = async (): Promise<void> => {
+		try {
+			const env = await call<KernelEnvironmentView>("kernel.env");
+			envLine.textContent = describeKernelEnvironment(env);
+			envLine.hidden = !envLine.textContent;
+			const actions = kernelEnvironmentActions(env);
+			upgradeButton.hidden = !actions.upgrade;
+			installNodeButton.hidden = !actions.installNode;
+		} catch {
+			// 环境探测失败不影响内核状态展示（registry 不可达时静默）
+		}
 	};
 	let busy = false;
-	const runAction = async (action: "kernel.install" | "kernel.restart"): Promise<void> => {
+	const runAction = async (
+		action: "kernel.install" | "kernel.restart" | "kernel.upgrade" | "kernel.installNode",
+	): Promise<void> => {
 		if (busy) return;
 		busy = true;
 		detail.textContent = t("kernelBusy");
 		try {
 			const result = await call<{ ok: boolean; message: string }>(action);
-			if (result?.ok) notify(action === "kernel.install" ? t("kernelInstalled") : t("kernelRestarted"));
+			if (result?.ok) notify(SUCCESS_TEXT[action] ? t(SUCCESS_TEXT[action]!) : t("kernelRestarted"));
 			else detail.textContent = [t("kernelFailed"), String(result?.message ?? "")].filter(Boolean).join("：");
 		} catch (error) {
 			detail.textContent = [t("kernelFailed"), error instanceof Error ? error.message : ""].filter(Boolean).join("：");
@@ -558,7 +592,8 @@ async function kernelSectionView(): Promise<HTMLElement> {
 		status,
 		detail,
 		warning,
-		toolbar(installButton, restartButton),
+		toolbar(installButton, restartButton, upgradeButton, installNodeButton),
+		envLine,
 		terminalHint,
 		terminalCommand,
 	);

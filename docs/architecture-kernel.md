@@ -152,11 +152,13 @@ pi-web-ui server status                          # 服务装没装、起没起
 用全局包当内核时，**内核进程用系统 node 启动**（不是 Electron 的 node）：全局包里的原生模块按系统 node ABI 编译，
 塞进 `ELECTRON_RUN_AS_NODE` 可能加载失败；找不到 node 才退回 Electron 自带运行时并在日志里说清。
 
-### 9.2 环境探测只回答"缺什么、怎么办"
+### 9.2 环境探测 + 一键装 node / 升级内核
 
 `desktop/kernel-env.ts` 答三件事：node 够不够新（≥22）、服务配置装没装（三平台各一处路径）、
 缺 node 时该跑哪条命令（`winget install OpenJS.NodeJS.LTS` / `brew install node@22` / `apt install nodejs npm`）。
-**不替用户下载**：这些命令一律标 `needsTerminal`，因为 GUI 里没有 TTY，交互式安装必然失败。
+**Win 用 winget、mac 用 brew 直接跑**（会弹系统授权）；**Linux 只给命令**（要 sudo + TTY，GUI 里必然失败）。
+升级内核是两步且顺序不能反：`npm i -g pi-web-ui@latest` 成功后才重启内核 —— npm 失败时旧内核仍在跑，
+用户不会"点完变没"。版本比对/命令生成在 `desktop/kernel-upgrade.ts`（纯函数，有单测）。
 
 Linux 上「安装为系统服务」直接返回命令而不是硬跑：`server install` 在 Linux 要写 `/etc/systemd/system`，
 GUI 里 `sudo` 拿不到终端（`a terminal is required`），硬跑只会得到一条没用的失败。面板那边同样只给命令行。
@@ -176,7 +178,7 @@ GUI 里 `sudo` 拿不到终端（`a terminal is required`），硬跑只会得�
 
 | 缺口                  | 现状                                  | 方向                                                                                 |
 | --------------------- | ------------------------------------- | ------------------------------------------------------------------------------------ |
-| 「安装 Node」自动下载 | 只给命令与官网链接（`needsTerminal`） | `node-downloader-helper` + 官方 `SHASUMS256.txt` 校验后装到 `<userData>/kernel/node` |
+| Node 免包管理器安装 | Win 走 winget / mac 走 brew；Linux 只给命令 | `node-downloader-helper` + 官方 `SHASUMS256.txt` 校验后装到 `<userData>/kernel/node` |
 | 全局包升级入口        | 能显示版本，升级仍靠 `npm i -g`       | 面板给"升级内核"按钮 → 跑同一个 CLI                                                  |
 | Web 端只读状态卡      | 只有桌面壳面板                        | 复用 `/api/health.kernel`，在设置里加一行                                            |
 | 多用户同机            | 锁按数据目录，不按用户                | 每用户独立 `--data-dir`（本文已按此约定）                                            |

@@ -4,7 +4,7 @@
  * 状态从哪来（外壳判定 / `/api/health`）是 `desktop/kernel-mode.ts` 的事；
  * 这里只管"怎么把事实说成一句人话"，免得主进程和面板各写一套措辞。
  */
-import type { BrowserKernelState } from "./contracts.js";
+import type { BrowserKernelState, KernelEnvironmentView } from "./contracts.js";
 
 export function formatUptime(ms: number): string {
 	const totalMinutes = Math.floor(ms / 60_000);
@@ -79,4 +79,32 @@ export function kernelActions(input: {
 		else if (platform === "darwin" || platform === "win32") install = { kind: "enabled" };
 	}
 	return { install, restart: { kind: "enabled" }, ...(warning ? { warning } : {}) };
+}
+
+/** 环境一行的摘要：`node v26.13.1 · 全局包 v0.121.3（可升到 0.121.4） · 服务配置：已安装`。 */
+export function describeKernelEnvironment(env: KernelEnvironmentView | null): string {
+	if (!env) return "";
+	const parts: string[] = [];
+	parts.push(env.node.ok ? `node v${env.node.version}` : "未检测到可用 node");
+	const g = env.global;
+	if (!g.installed) parts.push("未装全局包");
+	else if (g.canUpgrade && g.latest && g.version) parts.push(`全局包 v${g.version} → v${g.latest}`);
+	else parts.push(`全局包 v${g.version ?? "?"}`);
+	parts.push(
+		env.service.state === "installed"
+			? "服务配置：已安装"
+			: env.service.state === "absent"
+				? "服务配置：未安装"
+				: "服务配置：未知",
+	);
+	return parts.join(" · ");
+}
+
+/** 环境区两个按钮该不该出现：只在真能改善的时候给，点了没意义就不显示。 */
+export function kernelEnvironmentActions(env: KernelEnvironmentView | null): {
+	upgrade: boolean;
+	installNode: boolean;
+} {
+	if (!env) return { upgrade: false, installNode: false };
+	return { upgrade: env.global.canUpgrade, installNode: !env.node.ok && env.nodeInstall.canRun };
 }
