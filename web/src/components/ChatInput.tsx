@@ -86,6 +86,17 @@ const COMPOSER_MIN_H = 40;
 const COMPOSER_MAX_H = 320;
 const COMPOSER_H_KEY = "pi-web-ui:composer-height";
 
+const DEFAULT_SAMPLING_OVERRIDES: import("../types").SamplingOverrides = {
+	profile: "default",
+	temperature: 0.8,
+	min_p: 0.03,
+	top_p: 0.95,
+	top_k: 64,
+	thinkingEnabled: false,
+	thinkingEffort: "medium",
+	preserveThinking: true,
+};
+
 function getComposerSafeMaxH(): number {
 	if (typeof window === "undefined") return COMPOSER_MAX_H;
 	return Math.max(160, Math.min(COMPOSER_MAX_H, Math.floor(window.innerHeight * 0.42)));
@@ -285,15 +296,15 @@ export const ChatInput = memo(function ChatInput({
 		try {
 			const key = conversationId ? `pi-web-ui:sampling:${conversationId}` : null;
 			const raw = key ? localStorage.getItem(key) : null;
-			return raw ? JSON.parse(raw) as import("../types").SamplingOverrides : { thinkingEnabled: false, thinkingEffort: "medium", preserveThinking: true };
+			return raw ? { ...DEFAULT_SAMPLING_OVERRIDES, ...JSON.parse(raw) } : { ...DEFAULT_SAMPLING_OVERRIDES };
 		} catch {
-			return { thinkingEnabled: false, thinkingEffort: "medium", preserveThinking: true };
+			return { ...DEFAULT_SAMPLING_OVERRIDES };
 		}
 	});
 	useEffect(() => {
 		try {
 			const raw = samplingStorageKey ? localStorage.getItem(samplingStorageKey) : null;
-			setSamplingOverrides(raw ? JSON.parse(raw) as import("../types").SamplingOverrides : { thinkingEnabled: false, thinkingEffort: "medium", preserveThinking: true });
+			setSamplingOverrides(raw ? { ...DEFAULT_SAMPLING_OVERRIDES, ...JSON.parse(raw) } : { ...DEFAULT_SAMPLING_OVERRIDES });
 		} catch {
 			setSamplingOverrides({ thinkingEnabled: false, thinkingEffort: "medium", preserveThinking: true });
 		}
