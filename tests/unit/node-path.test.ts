@@ -56,8 +56,11 @@ describe("node PATH augmentation", () => {
 		expect(augmentNodePath(options)).toEqual([]);
 	});
 	it("prefers the persistent fnm versions newest-first when no multishell path is exported", () => {
-		const oldVersion = install(join(root, "fnm", "node-versions", "v18.0.0", "installation"));
-		const newVersion = install(join(root, "fnm", "node-versions", "v22.11.0", "installation"));
+		// fnm 的真实布局：posix 下二进制在 `<store>/<version>/installation/bin`，Windows 下直接是 `installation`。
+		const fnmInstall = (version: string) =>
+			install(join(root, "fnm", "node-versions", version, ...(windows ? ["installation"] : ["installation", "bin"])));
+		const oldVersion = fnmInstall("v18.0.0");
+		const newVersion = fnmInstall("v22.11.0");
 		options.env = { ...options.env, FNM_DIR: join(root, "fnm") };
 		expect(resolveNodeDirs(options).slice(0, 2)).toEqual([newVersion, oldVersion]);
 	});

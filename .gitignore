@@ -25,6 +25,10 @@ bin/ffmpeg/
 
 plugins/*/node_modules/
 plugins/*/package-lock.json
+# 例外：这两个插件的 lock 是仓库自带的构建输入（CI 的「plugin bundle 是最新的」门禁要 npm ci），
+# 必须留痕。没有例外时，`git add -A` 从空索引快照会静默把它们删掉。
+!plugins/db-client/package-lock.json
+!plugins/vscode-editor/package-lock.json
 plugins/voice-input/package*.json
 plugins/voice-input/whisper-cache/
 
@@ -60,6 +64,11 @@ plugin-registry/
 
 dev/wechat-shot*.png
 *.png
+# 例外：仓库自带、被追踪的图（PWA 图标与 dev 预览图）。`*.png` 只收新截图，不能连老资产一起吞。
+!web/public/icons/*.png
+!dev/search-1.png
+!dev/search-2.png
+!dev/notice-preview-dark.png
 *.jpg
 *.jpeg
 !assets/**

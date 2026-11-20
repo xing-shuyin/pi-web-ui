@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>移动端响应式预览演示</title>
+		<style>
+			:root {
+				--bg: #0f172a;
+				--card-bg: rgba(30, 41, 59, 0.7);
+				--accent-grad: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
+				--text: #f8fafc;
+				--text-dim: #94a3b8;
+				--border: rgba(148, 163, 184, 0.15);
+			}
+			* {
+				box-sizing: border-box;
+				margin: 0;
+				padding: 0;
+			}
+			body {
+				font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+				background: var(--bg);
+				color: var(--text);
+				min-height: 100vh;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				line-height: 1.6;
+			}
+			/* 顶端通栏：直观测试左边缘 0px 到 右边缘 100% 是否完全贴边无黑缝 */
+			.banner {
+				width: 100%;
+				background: var(--accent-grad);
+				color: #fff;
+				padding: 10px 16px;
+				font-size: 13px;
+				font-weight: 600;
+				text-align: center;
+				box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+			}
+			.banner-dot {
+				width: 8px;
+				height: 8px;
+				border-radius: 50%;
+				background: #4ade80;
+				box-shadow: 0 0 8px #4ade80;
+			}
+			.container {
+				width: 100%;
+				max-width: 680px;
+				padding: 20px 16px;
+				display: flex;
+				flex-direction: column;
+				gap: 16px;
+			}
+			.header {
+				text-align: center;
+				padding: 10px 0;
+			}
+			.badge {
+				display: inline-block;
+				padding: 4px 12px;
+				border-radius: 9999px;
+				background: rgba(139, 92, 246, 0.2);
+				border: 1px solid rgba(139, 92, 246, 0.4);
+				color: #c084fc;
+				font-size: 12px;
+				font-weight: 500;
+				margin-bottom: 8px;
+			}
+			h1 {
+				font-size: 24px;
+				font-weight: 700;
+				background: var(--accent-grad);
+				-webkit-background-clip: text;
+				-webkit-text-fill-color: transparent;
+				margin-bottom: 6px;
+			}
+			p.sub {
+				color: var(--text-dim);
+				font-size: 13px;
+			}
+			.card {
+				background: var(--card-bg);
+				border: 1px solid var(--border);
+				border-radius: 14px;
+				padding: 16px;
+				backdrop-filter: blur(12px);
+				box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+			}
+			.card-title {
+				font-size: 15px;
+				font-weight: 600;
+				margin-bottom: 12px;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+			.grid {
+				display: grid;
+				grid-template-columns: repeat(3, 1fr);
+				gap: 8px;
+			}
+			.stat-item {
+				background: rgba(15, 23, 42, 0.6);
+				border: 1px solid var(--border);
+				border-radius: 10px;
+				padding: 10px 6px;
+				text-align: center;
+			}
+			.stat-num {
+				font-size: 18px;
+				font-weight: 700;
+				color: #38bdf8;
+				margin-bottom: 2px;
+			}
+			.stat-label {
+				font-size: 11px;
+				color: var(--text-dim);
+			}
+			.interactive-btn {
+				width: 100%;
+				padding: 12px;
+				background: var(--accent-grad);
+				color: #fff;
+				border: none;
+				border-radius: 10px;
+				font-size: 14px;
+				font-weight: 600;
+				cursor: pointer;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				gap: 8px;
+			}
+			.interactive-btn:active {
+				transform: scale(0.98);
+				opacity: 0.9;
+			}
+			.demo-box {
+				margin-top: 12px;
+				padding: 10px;
+				border-radius: 8px;
+				background: rgba(0, 0, 0, 0.3);
+				font-family: monospace;
+				font-size: 12px;
+				color: #34d399;
+				text-align: center;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="banner">
+			<div class="banner-dot"></div>
+			<span>◀ 0px 左贴边 · 100% 满屏无缝渲染 · 右贴边 0px ▶</span>
+			<div class="banner-dot"></div>
+		</div>
+
+		<div class="container">
+			<div class="header">
+				<span class="badge">0 边距全屏适配</span>
+				<h1>自适应 HTML 预览</h1>
+				<p class="sub">外层相框与内边距已清零 · 支持新标签页独立运行</p>
+			</div>
+
+			<div class="card">
+				<div class="card-title">📱 视口自适应指标</div>
+				<div class="grid">
+					<div class="stat-item">
+						<div class="stat-num" id="vp-w">-</div>
+						<div class="stat-label">视口宽度</div>
+					</div>
+					<div class="stat-item">
+						<div class="stat-num" id="vp-h">-</div>
+						<div class="stat-label">视口高度</div>
+					</div>
+					<div class="stat-item">
+						<div class="stat-num" id="dpr">1x</div>
+						<div class="stat-label">DPR</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="card">
+				<div class="card-title">✨ 交互体验</div>
+				<button class="interactive-btn" onclick="handleClick()">
+					<span>点击测试交互响应</span>
+				</button>
+				<div class="demo-box" id="click-feedback">点击按钮测试 HTML 交互与脚本运行状态</div>
+			</div>
+		</div>
+
+		<script>
+			function updateMetrics() {
+				document.getElementById("vp-w").textContent = window.innerWidth + "px";
+				document.getElementById("vp-h").textContent = window.innerHeight + "px";
+				document.getElementById("dpr").textContent = (window.devicePixelRatio || 1) + "x";
+			}
+			updateMetrics();
+			window.addEventListener("resize", updateMetrics);
+
+			let count = 0;
+			function handleClick() {
+				count++;
+				const el = document.getElementById("click-feedback");
+				el.textContent = "🎉 按钮已被点击 " + count + " 次！交互流畅！";
+				el.style.color = "#f472b6";
+				setTimeout(() => {
+					el.style.color = "#34d399";
+				}, 300);
+			}
+		</script>
+	</body>
+</html>
