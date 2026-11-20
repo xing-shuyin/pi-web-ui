@@ -88,6 +88,40 @@ export default defineView({
 
 Note that `select`'s change value is the second argument: `onUiAction("my-plugin:tone", (itemId, value) => …)`.
 
+## Plugin UI language (follow the host, never store your own preference)
+
+There is exactly one source of truth for the UI language: the host's global locale. A plugin **must not** keep a language preference of its own — supply a Chinese and an English dictionary through `createPluginI18n()` and you are done:
+
+```js
+import { defineView, createPluginI18n } from "./sdk/client.mjs";
+
+const i18n = createPluginI18n({
+	zh: { title: "笔记", empty: "还没有笔记", count: "共 {count} 条" },
+	en: { title: "Notes", empty: "No notes yet", count: "{count} total" },
+});
+
+export default defineView({
+	mount(el) {
+		render(el);
+		// Redraw after the host switches language; call i18n.destroy() on unmount to drop the subscription.
+		const off = i18n.onChange(() => render(el));
+		return () => {
+			off();
+			i18n.destroy();
+		};
+	},
+});
+
+function render(el) {
+	el.textContent = i18n.t("count", { count: 3 });
+}
+```
+
+- Host languages `zh` / `zh-CN` / `zh-TW` all map to `zh`, every other language (de / ja / ru…) maps to `en` — a plugin dictionary only ever has these two branches, no third one;
+- A missing key falls back to the same key in the other language and then to the key itself (the UI never goes blank);
+- Interpolation accepts `{name}` / `{{name}}` / `${name}`;
+- Under the hood this is the host bridge's `locale.current()` + `locale.onChange()` (needs host API ≥ 19); `onLocale()` is the legacy alias, and you can call those two directly if you write your own render logic.
+
 ## Local unit tests (createMockHost)
 
 Plugin authors can test `activate` without starting a server: `testing.mjs` provides `createMockHost(overrides?)` (depends only on Node built-ins; works with `node --test` / vitest):
