@@ -31,7 +31,7 @@ function goalSetup() {
 		clientId: "test",
 		agentDir: tmpdir(),
 		stateStore: { getGoalPrefs: () => null, saveGoalPrefs: vi.fn() },
-		webUi: { cancelPendingDialogs: vi.fn() },
+		webUi: { forConversation: vi.fn(() => ({})), cancelPendingDialogs: vi.fn() },
 		emit: vi.fn(),
 		flushSnapshot: vi.fn(),
 		isDisposed: () => false,
