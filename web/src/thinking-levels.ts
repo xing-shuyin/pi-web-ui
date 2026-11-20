@@ -31,6 +31,7 @@ export interface ThinkingPresetProfile {
 	type: "budget" | "effort" | "fixed" | "full";
 	thinkingFormat?: string;
 	chatTemplateKwargs?: Record<string, unknown>;
+	customExtraBody?: string;
 	map: Partial<Record<ThinkingValue, string | null>>;
 }
 
@@ -135,6 +136,11 @@ export const THINKING_PRESET_PROFILES: ThinkingPresetProfile[] = [
 			reasoning_effort: { $var: "thinking.effort", omitWhenOff: true },
 			preserve_thinking: true,
 		},
+		customExtraBody: JSON.stringify({
+			temperature: 0.8,
+			top_k: 64,
+			top_p: 0.95,
+		}, null, 2),
 		map: {
 			off: "none",
 			low: "low",
