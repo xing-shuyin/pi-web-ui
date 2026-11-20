@@ -35,10 +35,6 @@ export function mergeModelSamplingParamsIntoProviderPayload(
 
 	const modelParams = model?.samplingParams;
 	const overrideParams: Record<string, unknown> = {};
-	if (typeof overrides?.temperature === "number") overrideParams.temperature = overrides.temperature;
-	if (typeof overrides?.min_p === "number") overrideParams.min_p = overrides.min_p;
-	if (typeof overrides?.top_p === "number") overrideParams.top_p = overrides.top_p;
-	if (typeof overrides?.top_k === "number") overrideParams.top_k = overrides.top_k;
 
 	// Keep the boolean check explicit: false is a real setting, not an absent value.
 	// Gemma's llama.cpp chat template expects all three controls inside
