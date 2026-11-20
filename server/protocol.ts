@@ -1269,6 +1269,7 @@ export interface CanvasGraphSummary {
 }
 
 export interface SamplingOverrides {
+	profile?: "default" | "gemma4";
 	temperature?: number;
 	min_p?: number;
 	top_p?: number;
