@@ -2072,7 +2072,10 @@ export const ChatInput = memo(function ChatInput({
 								type="checkbox"
 								checked={samplingOverrides.thinkingEnabled ?? false}
 								onChange={(e) =>
-									setSamplingOverrides((current) => ({ ...current, thinkingEnabled: e.target.checked }))
+									setSamplingOverrides((current) => ({
+										...current,
+										thinkingEnabled: e.target.checked,
+									}))
 								}
 							/>
 							Thinking
@@ -2099,7 +2102,10 @@ export const ChatInput = memo(function ChatInput({
 								type="checkbox"
 								checked={samplingOverrides.preserveThinking ?? true}
 								onChange={(e) =>
-									setSamplingOverrides((current) => ({ ...current, preserveThinking: e.target.checked }))
+									setSamplingOverrides((current) => ({
+										...current,
+										preserveThinking: e.target.checked,
+									}))
 								}
 							/>
 							Preserve thinking

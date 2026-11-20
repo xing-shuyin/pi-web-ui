@@ -2,7 +2,10 @@ import type { SamplingOverrides } from "./protocol.js";
 
 const conversationSamplingOverrides = new Map<string, SamplingOverrides>();
 
-export function setConversationSamplingOverrides(conversationId: string, overrides?: SamplingOverrides): void {
+export function setConversationSamplingOverrides(
+	conversationId: string,
+	overrides?: SamplingOverrides,
+): void {
 	if (!conversationId) return;
 	if (!overrides) {
 		conversationSamplingOverrides.delete(conversationId);
@@ -58,10 +61,7 @@ export function mergeModelSamplingParamsIntoProviderPayload(
 		};
 	}
 
-	if (
-		(!isRecord(modelParams) || Object.keys(modelParams).length === 0) &&
-		Object.keys(overrideParams).length === 0
-	) {
+	if ((!isRecord(modelParams) || Object.keys(modelParams).length === 0) && Object.keys(overrideParams).length === 0) {
 		return payload;
 	}
 
@@ -70,8 +70,9 @@ export function mergeModelSamplingParamsIntoProviderPayload(
 		...payload,
 		...overrideParams,
 	};
-	const modelChatTemplateKwargs =
-		isRecord(modelParams) && isRecord(modelParams.chat_template_kwargs) ? modelParams.chat_template_kwargs : {};
+	const modelChatTemplateKwargs = isRecord(modelParams) && isRecord(modelParams.chat_template_kwargs)
+		? modelParams.chat_template_kwargs
+		: {};
 	const requestChatTemplateKwargs = payload.chat_template_kwargs;
 	const overrideChatTemplateKwargs = overrideParams.chat_template_kwargs;
 

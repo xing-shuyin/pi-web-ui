@@ -133,17 +133,18 @@ export const THINKING_PRESET_PROFILES: ThinkingPresetProfile[] = [
 		thinkingFormat: "chat-template",
 		chatTemplateKwargs: {
 			enable_thinking: { $var: "thinking.enabled" },
-			reasoning_effort: {
-				$var: "thinking.effort",
-				omitWhenOff: true,
-			},
+			reasoning_effort: { $var: "thinking.effort", omitWhenOff: true },
 			preserve_thinking: true,
 		},
-		customExtraBody: JSON.stringify({
-			temperature: 0.8,
-			top_k: 64,
-			top_p: 0.95,
-		}, null, 2),
+		customExtraBody: JSON.stringify(
+			{
+				temperature: 0.8,
+				top_k: 64,
+				top_p: 0.95,
+			},
+			null,
+			2,
+		),
 		map: {
 			off: "none",
 			low: "low",
