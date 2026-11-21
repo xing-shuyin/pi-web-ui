@@ -79,7 +79,36 @@ const bootText = element("p", "pb-boot-text", t("bootingAgent"));
 const bootError = element("p", "pb-boot-error", "");
 const bootAction = button(t("switchToBrowser"), () => call("mode", { mode: "browser" }).then(() => {}, reportError));
 bootAction.classList.add("pb-boot-action");
-boot.append(bootIcon, bootText, bootError, bootAction);
+/**
+ * “本机还没有内核”时的修复出口（纯壳包首次启动）：安装内核 / 安装 Node / 重试。
+ * 三个动作全走已有的内核通道（`kernel.upgrade` = npm i -g + 重启，`kernel.installNode` = winget/brew），
+ * 不另开一套：同一件事只能有一个实现（`docs/architecture-kernel.md` §纯壳包）。
+ */
+const bootRepair = element("div", "pb-boot-actions");
+bootRepair.hidden = true;
+let bootBusy = false;
+async function runRepair(action: "kernel.upgrade" | "kernel.installNode" | "kernel.restart"): Promise<void> {
+	if (bootBusy) return;
+	bootBusy = true;
+	bootError.textContent = t("kernelMissingBusy");
+	try {
+		const result = await call<{ ok: boolean; message: string }>(action);
+		if (!result?.ok) bootError.textContent = String(result?.message ?? t("agentUnavailable"));
+		// 成功时主进程会自己重启内核并推送新 state（`listenState`），这里不用再刷新。
+	} catch (error) {
+		bootError.textContent = error instanceof Error ? error.message : String(error);
+	} finally {
+		bootBusy = false;
+	}
+}
+const installKernelBtn = button(t("kernelMissingInstall"), () => void runRepair("kernel.upgrade"));
+const installNodeBtn = button(t("kernelMissingInstallNode"), () => void runRepair("kernel.installNode"));
+const retryBtn = button(t("kernelMissingRetry"), () => void runRepair("kernel.restart"));
+installKernelBtn.classList.add("pb-boot-action");
+installNodeBtn.classList.add("pb-boot-action");
+retryBtn.classList.add("pb-boot-action");
+bootRepair.append(installNodeBtn, installKernelBtn, retryBtn);
+boot.append(bootIcon, bootText, bootError, bootRepair, bootAction);
 app.append(boot);
 
 function renderBoot(next: BrowserState, left: number): void {
@@ -88,10 +117,21 @@ function renderBoot(next: BrowserState, left: number): void {
 	if (!waiting) return;
 	boot.style.left = "0px";
 	boot.style.width = next.mode === "split" ? `${Math.max(0, left)}px` : "100%";
+	const missing = next.kernelMissing;
 	boot.classList.toggle("pb-boot-failed", Boolean(next.agentError));
 	bootIcon.style.display = next.agentError ? "none" : "";
-	bootText.textContent = next.agentError ? t("agentUnavailable") : t("bootingAgent");
-	bootError.textContent = next.agentError || "";
+	bootText.textContent = missing
+		? t("kernelMissingTitle")
+		: next.agentError
+			? t("agentUnavailable")
+			: t("bootingAgent");
+	// 有内核但起不来 = 只给“重试 + 去浏览器”；还没有内核 = 给“安装 Node / 安装内核 / 重试”。
+	bootRepair.hidden = !missing;
+	if (missing) {
+		installNodeBtn.hidden = missing.nodeOk;
+		installKernelBtn.hidden = !missing.nodeOk;
+	}
+	if (!bootBusy) bootError.textContent = next.agentError && !missing ? next.agentError : "";
 }
 
 const modeBtn = iconButton(splitModeIcon(13), "模式切换 (Ctrl+Alt+M)", async () => {
@@ -297,9 +337,7 @@ function watchPageTranslation(started: string): void {
 			if (timedOut) return;
 			if (state?.pageState === "translated")
 				notify(
-					state.failed
-						? `${t("translateDone")} · ${t("translateFailedParts")}: ${state.failed}`
-						: t("translateDone"),
+					state.failed ? `${t("translateDone")} · ${t("translateFailedParts")}: ${state.failed}` : t("translateDone"),
 				);
 			else notify(t("translateFailed"), true);
 		})();

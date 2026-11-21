@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // 第一行 import：装上「Windows 不弹控制台」进程级开关（git/npm/tar/powershell 一律不再新建控制台窗口）。
-// 单一实现见 server/hide-console-windows.ts，这里是它的编译产物搬运件。
+// 单一实现见 shared/hide-console-windows.ts，这里是它的编译产物搬运件。
 import "./lib/hide-console-windows.mjs";
 import { spawn, spawnSync } from "node:child_process";
 // shell / PowerShell 引号单源在 server/shell-quote.ts（生成件 bin/lib/shell-quote.mjs）。

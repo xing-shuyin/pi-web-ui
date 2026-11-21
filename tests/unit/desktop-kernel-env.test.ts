@@ -33,6 +33,10 @@ describe("pickKernelSource（权威链优先级）", () => {
 		});
 	});
 
+	it("三档全无 → null（纯壳包 + 机器上没装内核）", () => {
+		expect(pickKernelSource({ globalEntry: null, runtimeEntry: null, bundledEntry: null })).toBeNull();
+	});
+
 	it("全局包入口按 <root>/dist/server/index.js 推导", () => {
 		expect(globalKernelEntry("/usr/lib/node_modules/pi-web-ui").replace(/\\/g, "/")).toBe(
 			"/usr/lib/node_modules/pi-web-ui/dist/server/index.js",

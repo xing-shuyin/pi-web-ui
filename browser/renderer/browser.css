@@ -445,6 +445,22 @@ body.pb-panel-layer [hidden] {
 	display: inline-flex;
 }
 
+/* 缺内核时的修复按钮组：三个按钮一行，窄窗口换行；[hidden] 必须能压过上面的 display:inline-flex */
+.pb-boot-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	justify-content: center;
+}
+
+.pb-boot-actions[hidden] {
+	display: none;
+}
+
+.pb-boot-actions .pb-boot-action[hidden] {
+	display: none;
+}
+
 /* 多标签栏 */
 .pb-tabs {
 	display: flex;

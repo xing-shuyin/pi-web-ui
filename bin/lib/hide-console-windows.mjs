@@ -1,7 +1,7 @@
 // AUTO-GENERATED FILE — 不要手改。
-// 来源：server/hide-console-windows.ts（npm run build:server 编译产物整份搬运）
+// 来源：shared/hide-console-windows.ts（npm run build:server 编译产物整份搬运）
 // 重新生成：npm run gen:bin-mirrors（npm run build:server 末尾也会跑）
-// 守卫：tests/unit/bin-mirror.test.ts 与 dist/server/hide-console-windows.js 逐字节比对，漂移即红。
+// 守卫：tests/unit/bin-mirror.test.ts 与 dist/shared/hide-console-windows.js 逐字节比对，漂移即红。
 /**
  * Windows 下从「没有控制台」的进程（Electron 主进程、`ELECTRON_RUN_AS_NODE` 起的 server/插件作业、
  * 被 GUI 拉起的 CLI）spawn 控制台程序时，系统会给子进程**新建一个控制台窗口** —— 用户看到的就是

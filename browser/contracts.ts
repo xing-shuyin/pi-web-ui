@@ -39,6 +39,11 @@ export interface BrowserState {
 	agentError?: string;
 	/** 内核状态：这个地址上跑的是谁、关掉壳之后还在不在（见 docs/architecture-kernel.md）。 */
 	kernel?: BrowserKernelState;
+	/**
+	 * 本机没有任何可用内核（纯壳包首次启动就是这样）：覆盖层据此弹「安装内核 / 安装 Node / 重试」。
+	 * 与 `agentError` 的区别：后者可能是“内核在、但挂了”；这个专门表示“还没有内核可跑”。
+	 */
+	kernelMissing?: { nodeOk: boolean; nodeVersion: string | null; platform: string };
 }
 
 /**
@@ -58,6 +63,13 @@ export interface BrowserKernelState {
 	uptimeMs?: number;
 	/** 内核要求的最低壳能力版本（`SHELL_CAPABILITY_VERSION` 对比用，见 version-gate）。 */
 	minShell?: number;
+	/** 内核上报的协议版本（`/api/health.kernel.protocol`）。 */
+	protocol?: number;
+	/**
+	 * 壳 ↔ 内核的兼容结论（`desktop/kernel-compat.ts` 判定，渲染层只展示不重算）。
+	 * 纯壳包里这两者本是两个独立安装物，不匹配是常态而不是异常，所以必须能就地说出“该升级哪一边”。
+	 */
+	compat?: { kind: "ok" | "upgrade-kernel" | "upgrade-shell" | "unknown-kernel"; message: string };
 	error?: string;
 }
 

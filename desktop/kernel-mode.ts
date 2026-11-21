@@ -8,6 +8,8 @@
  * 本模块**不 import electron**：纯函数 + 可注入 fetch，方便单测（tests/unit/desktop-kernel-mode.test.ts）。
  */
 import type { BrowserKernelState, KernelInstallKind } from "../browser/contracts.js";
+import { compareKernelCompat, describeKernelCompat } from "./kernel-compat.js";
+import { SHELL_CAPABILITY_VERSION } from "./runtime-config.js";
 
 export { describeKernelState, formatUptime } from "../browser/kernel-view.js";
 
@@ -23,6 +25,7 @@ export interface HealthProbeBody {
 		installKind?: unknown;
 		uptimeMs?: unknown;
 		minShell?: unknown;
+		protocol?: unknown;
 		lock?: unknown;
 	};
 }
@@ -36,6 +39,8 @@ export interface KernelProbeResult {
 	uptimeMs?: number;
 	/** 内核要求的最低壳能力版本（高过本壳就提示先更新壳）。 */
 	minShell?: number;
+	/** 内核自己上报的协议版本（与壳构建期锁定的值比对，不等就提示升级全局包）。 */
+	protocol?: number;
 	/** 不可达时的原因（展示给用户，不要吞掉）。 */
 	error?: string;
 }
@@ -93,6 +98,7 @@ export async function probeKernel(
 			serviceName: typeof kernel.serviceName === "string" ? kernel.serviceName : null,
 			uptimeMs: typeof kernel.uptimeMs === "number" ? kernel.uptimeMs : undefined,
 			minShell: typeof kernel.minShell === "number" ? kernel.minShell : undefined,
+			protocol: typeof kernel.protocol === "number" ? kernel.protocol : undefined,
 		};
 	} catch (error) {
 		const message = (error as Error)?.name === "AbortError" ? "探测超时" : ((error as Error)?.message ?? "连接失败");
@@ -142,6 +148,15 @@ export function toKernelState(input: {
 	probe: KernelProbeResult | null;
 }): BrowserKernelState {
 	const { decision, url, probe } = input;
+	// 兼容结论只在“真的连上了”时才有意义；探不到内核时算出来只会是误导。
+	const verdict = probe?.reachable
+		? compareKernelCompat({
+				kernelProtocol: probe.protocol,
+				kernelMinShell: probe.minShell,
+				shellCapability: SHELL_CAPABILITY_VERSION,
+			})
+		: null;
+	const compat = verdict ? { kind: verdict.kind, message: describeKernelCompat(verdict) } : null;
 	return {
 		mode: decision.mode,
 		reason: decision.reason,
@@ -153,6 +168,8 @@ export function toKernelState(input: {
 		...(probe?.serviceName ? { serviceName: probe.serviceName } : {}),
 		...(typeof probe?.uptimeMs === "number" ? { uptimeMs: probe.uptimeMs } : {}),
 		...(typeof probe?.minShell === "number" ? { minShell: probe.minShell } : {}),
+		...(typeof probe?.protocol === "number" ? { protocol: probe.protocol } : {}),
+		...(compat ? { compat } : {}),
 		...(probe?.error ? { error: probe.error } : {}),
 	};
 }

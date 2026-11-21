@@ -17,6 +17,7 @@
 	"include": [
 		"tests/unit/**/*.ts",
 		"server/**/*.ts",
+		"shared/**/*.ts",
 		"web/src/skill-block.ts",
 		"web/src/components/scroll-classify.ts",
 		"web/src/build-id.d.ts",

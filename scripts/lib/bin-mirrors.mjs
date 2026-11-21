@@ -3,9 +3,9 @@
 // 每新增一件镜像：这里加一行，生成脚本与 `tests/unit/bin-mirror.test.ts` 自动跟上。
 export const MIRRORS = [
 	{
-		distPath: "dist/server/hide-console-windows.js",
+		distPath: "dist/shared/hide-console-windows.js",
 		targetPath: "bin/lib/hide-console-windows.mjs",
-		source: "server/hide-console-windows.ts",
+		source: "shared/hide-console-windows.ts",
 		guard: "tests/unit/bin-mirror.test.ts",
 	},
 	{
