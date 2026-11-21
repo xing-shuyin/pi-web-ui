@@ -1,13 +1,16 @@
 ; pi-web-ui NSIS 自定义安装逻辑（electron-builder `nsis.include` 单源引入）。
 ;
 ; 背景（见 docs/architecture-desktop-update.md §十二）：
-; 桌面主进程会起一个 server 侧车子进程（desktop/main.ts `serverProc`）：内核来自全局 npm 包时，
-; 它是**系统 node.exe**（镜像路径在安装目录之外），只因命令行里带了安装目录下的 asar 入口而与
-; 安装目录产生文件锁。electron-builder 自带的 CHECK_APP_RUNNING 只按“镜像名 = 主 exe”
-; （cmd 分支）或“镜像路径在 $INSTDIR 下”（PowerShell 分支）匹配，两边都看不见这个侧车：
-; 主 exe 被关掉了，侧车还抱着 app.asar / app.asar.unpacked 里的原生模块 → 覆盖写文件时
-; 报“Error opening file for writing”，安装卡在进度条上。MSI 当年是同一起因，走的是应用内
-; “退出并安装本地 MSI”看门狗（desktop/msi-quit-install.ts）；NSIS 这边在安装器侧补齐。
+; 覆盖安装卡住，锁文件的从来不是主 exe 本身（股票逻辑按镜像名能关掉它），而是三类“自家人”：
+; ① node-pty 解压在 app.asar.unpacked 下的 console helper（winpty-agent.exe / OpenConsole.exe，
+;    异镜像）：主进程被强杀（will-quit 来不及跑）后成孤儿，继续抱着 unpacked 原生模块；
+; ② resolveKernelPkgRoot() 指回安装目录时跑起来的 bin CLI（服务安装/状态查询等，命令行带安装目录）；
+; ③ bundled 内核的 ELECTRON_RUN_AS_NODE 侧车（同镜像，PS 分支能杀，cmd 分支只能看到主 exe）。
+; electron-builder 自带的 CHECK_APP_RUNNING 在 cmd 分支（PowerShell 不可用/被策略禁掉时）只按
+; “镜像名 = 主 exe”匹配，①②③一个都看不见；PS 分支按镜像路径前缀匹配，能看见①③但看不见
+; “镜像在外、命令行指向安装目录”的② → 覆盖写文件时报“Error opening file for writing”，安装卡在进度条。
+; MSI 当年是同一起因，走的是应用内“退出并安装本地 MSI”看门狗（desktop/msi-quit-install.ts）；
+; NSIS 这边在安装器侧补齐。
 ;
 ; 策略（先礼后兵，只动自家目录，绝不按裸镜像名杀 node.exe——那会误伤用户的开发服务）：
 ; 1. 可执行路径落在 $INSTDIR 下的进程：全是自家文件，直接关（主 exe 股票逻辑也会关一遍，重复无害）。
