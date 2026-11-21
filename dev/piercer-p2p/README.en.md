@@ -2,7 +2,7 @@
 
 # P2P access validation for Piercer and pi-web-ui
 
-Status: **this directory keeps the original transport-feasibility prototype**. The production implementation lives in `native/device-p2p/` and `server/device-center/device-p2p.ts`, see [the access documentation](../../docs/device-center.en.md#p2p-device-access). The prototype never connects to a user's Hub, never reads device credentials and never starts real desktop capture; its two WebRTC PeerConnections live in one process and use loopback UDP candidates only. It validates protocol compatibility and the existing authorization boundary, not public-internet hole-punching success rates or full remote throughput.
+Status: **this directory keeps the original transport-feasibility prototype**. The production implementation lives in `native/device-p2p/` and `server/device-center/device-p2p.ts`, see [the access documentation](../../docs/device-center.md). The prototype never connects to a user's Hub, never reads device credentials and never starts real desktop capture; its two WebRTC PeerConnections live in one process and use loopback UDP candidates only. It validates protocol compatibility and the existing authorization boundary, not public-internet hole-punching success rates or full remote throughput.
 
 ## Verified
 

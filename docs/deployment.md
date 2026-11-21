@@ -1,5 +1,3 @@
-[English](./deployment.en.md) · **简体中文** · [繁體中文](./deployment.zh-TW.md)
-
 # 部署
 
 pi-web-ui 是纯 Web 服务（Node + Express + WebSocket）；另有 **Electron 桌面壳**（`desktop/`，见 `desktop/README.md`）—— 随机空闲口起同一个 server + BrowserWindow，网页版零改动，三平台安装包（Windows/macOS/Linux）随 GitHub Release 发布（CI 出包，当前未签名）。
@@ -50,7 +48,7 @@ PI_WEB_ENGINE=dsh pi-web-ui --port 9000 --cwd /path   # 环境变量后备
 - **运行中可切换**：界面中的引擎选择器可在 pi、DSH、Claude Code、Codex 与 Durable 间切换；启动参数设置默认引擎。
 - **共用界面协议**：各引擎共用 `server/protocol.ts`，支持的目标、审查、工具及会话操作由能力声明控制。
 - DSH 架构与差异见 `docs/dsh-engine.md`。
-- **Codex**：先运行 `npm i -g @openai/codex` 和 `codex login`，然后在选择器中切换，或使用 `pi-web-ui --engine codex --cwd /path` 启动。沿用本机 Codex 配置与认证；详情见 `docs/architecture-core.md` 的 Codex CLI 引擎章节。
+- **Codex**：先运行 `npm i -g @openai/codex` 和 `codex login`，然后在选择器中切换，或使用 `pi-web-ui --engine codex --cwd /path` 启动。沿用本机 Codex 配置与认证；详情见 `docs/architecture-runtime.md` 的 Codex CLI 引擎章节。
 
 前台启动的其它设置也都是 flag：`--port` / `--cwd` / `--data-dir` / `--host` /
 `--agent-dir`（flag 优先，环境变量后备）。

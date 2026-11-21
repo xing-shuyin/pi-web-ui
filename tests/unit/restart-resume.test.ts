@@ -10,13 +10,21 @@ import {
 import { serializeMessage } from "../../server/serialize.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
 
+// `conv.session` 是 `runtime.session` 的只读投影（唯一事实源在 runtime）：
+// getter 让假体与原模型同构——替换会话只能写 `runtime.session`。
 function conversation(id: string) {
-	return {
-		id,
+	const runtime = {
 		session: {
 			sessionFile: resolve(`restart-resume-${id}.jsonl`),
 			isIdle: true,
 			sendCustomMessage: vi.fn().mockResolvedValue(undefined),
+		},
+	};
+	return {
+		id,
+		runtime,
+		get session() {
+			return this.runtime.session;
 		},
 		promptInFlight: false,
 		promptedSinceActive: false,
@@ -62,7 +70,14 @@ describe("restart continuation", () => {
 			vi.spyOn(session.agent, "prompt").mockImplementation(async (messages) => {
 				captured.push(...(Array.isArray(messages) ? messages : [messages]));
 			});
-			const conv = { id: "restored", session, promptInFlight: false, viewOnly: true, promptedSinceActive: false };
+			const conv = {
+				id: "restored",
+				runtime: { session },
+				session,
+				promptInFlight: false,
+				viewOnly: true,
+				promptedSinceActive: false,
+			};
 			const client = clientFor([conv]);
 
 			await client.continueResumedConversation(session.sessionFile);
@@ -161,7 +176,7 @@ describe("restart continuation", () => {
 		const target = conversation("target");
 		const client = clientFor([target]);
 		target.session.sendCustomMessage.mockImplementation(async () => {
-			target.session = conversation("replacement").session;
+			target.runtime.session = conversation("replacement").session;
 			throw new Error("old session failed");
 		});
 

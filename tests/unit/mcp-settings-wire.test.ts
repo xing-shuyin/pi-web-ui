@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { handleSettingsMessage } from "../../server/dispatch-domain-handlers.js";
 import type { ClientMessage } from "../../server/protocol.js";
-import type { DispatchSession } from "../../server/index.js";
+import type { DispatchSession } from "../../server/engine-service.js";
 
 describe("MCP 设置消息分发 (handleSettingsMessage)", () => {
 	it("分发 save_mcp_server 消息", () => {

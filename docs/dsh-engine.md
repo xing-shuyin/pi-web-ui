@@ -1,5 +1,3 @@
-[English](./dsh-engine.en.md) · **简体中文** · [繁體中文](./dsh-engine.zh-TW.md)
-
 # pi-web-ui × DeepSeek Harness（dsh）双引擎改造 —— 工作交接文档
 
 > 本文档是**跨对话交接**用：记录已定决策、已完成工作、进行中/受阻状态、剩余计划与所有环境事实。
@@ -7,6 +5,18 @@
 > 当前时间：2026-09-01 凌晨（对话推进到 dsh 引擎核心对话全链路验证通过）。
 
 ---
+
+## 目录
+
+- [0. 目标（用户拍板的三项决策）](#0-目标用户拍板的三项决策)
+- [1. 环境事实（实测，勿重查）](#1-环境事实实测勿重查)
+- [2. DSH 研究结论（关键，决定实现策略）](#2-dsh-研究结论关键决定实现策略)
+- [3. 已完成的工作](#3-已完成的工作)
+- [4. 下一步做什么（按序）](#4-下一步做什么按序)
+- [5. 任务清单状态](#5-任务清单状态)
+- [6. 坑与备忘（避免重复踩）](#6-坑与备忘避免重复踩)
+- [7. 相关文件清单（新对话必读）](#7-相关文件清单新对话必读)
+- [8. 后续优化路线图（用户待办，按优先级）](#8-后续优化路线图用户待办按优先级)
 
 ## 0. 目标（用户拍板的三项决策）
 
@@ -238,7 +248,7 @@ E:/pi-web-ui/server/dsh/
 
 ### 3.2 引擎分发 + 前端徽标
 
-- `server/index.ts`：`ENGINE = PI_WEB_ENGINE === "dsh" ? "dsh" : "pi"`；`new DshAgentService(CWD, stateFile, DATA_DIR, getAgentDir())` vs `new AgentService(...)`；定义 `DispatchSession`（dispatch 表契约）与 `EngineService` 接口，pi/dsh 两引擎结构兼容。**agentDir 贯通**：auth.json 读写与 DshRuntime 的 key 读取都尊重 PI_CODING_AGENT_DIR（smoke 测试的临时 agent 目录才能隔离）。
+- `server/index.ts`：`ENGINE = PI_WEB_ENGINE === "dsh" ? "dsh" : "pi"`；`new DshAgentService(CWD, stateFile, DATA_DIR, getAgentDir())` vs `new AgentService(...)`。契约（`DispatchSession` / `EngineService` / `TerminalManagerLike`）住在 `server/engine-service.ts`，五个引擎都 `implements EngineService`，pi/dsh 两引擎结构兼容。**agentDir 贯通**：auth.json 读写与 DshRuntime 的 key 读取都尊重 PI_CODING_AGENT_DIR（smoke 测试的临时 agent 目录才能隔离）。
 - `/api/health` 返回 `engine` 字段；`ready` 消息带 `engine`。
 - `server/control-socket.ts`：startControlServer 的 service 类型放宽为 `ControlService`（Pick serviceStatus/quiesce/unquiesce）。
 - `server/protocol.ts`：ready 加 `engine?: string`；`dsh_patches_list`/`dsh_patches_rescan`（客户端）+ `dsh_patches`（服务端）协议消息；types.ts shim 自动同步（check:protocol ✓）。
@@ -400,7 +410,8 @@ E:/pi-web-ui/server/dsh/
 | `E:/pi-web-ui/tests/dsh-ui-test.mjs`                     | dsh 浏览器 UI E2E（零 key Playwright：引擎徽标/目标条/DSH 补丁区块/技能说明，5/5）             |
 | `E:/pi-web-ui/web/src/components/QuestionDialog.tsx`     | 模型提问对话框（单选/多选/自定义文本 + `Markdown(rawHtml)` 富渲染 + 选项 `preview` 预览框）    |
 | `E:/pi-web-ui/dev/dsh-probes/probe-patch-seam.mjs`       | 用户 patch 层 probe（会话根重定向验证）                                                        |
-| `E:/pi-web-ui/server/index.ts`                           | 引擎分发（ENGINE/EngineService/DispatchSession）+ dispatch 表 + dsh_patches 分支               |
+| `E:/pi-web-ui/server/index.ts`                           | 引擎分发（ENGINE）+ dispatch 表 + dsh_patches 分支                                             |
+| `E:/pi-web-ui/server/engine-service.ts`                  | 引擎契约唯一事实源（EngineService / DispatchSession / TerminalManagerLike）                    |
 | `E:/pi-web-ui/server/protocol.ts`                        | wire 协议唯一事实源（ready.engine + dsh_patches 消息）                                         |
 | `E:/pi-web-ui/scripts/copy-dsh-runtime.mjs`              | build:dsh-runtime（拷贝 .mjs/.yml 到 dist）                                                    |
 | `E:/pi-web-ui/server/agent-service.ts`                   | pi 引擎（协议对齐参照；QuiesceRejectedError 定义处）                                           |

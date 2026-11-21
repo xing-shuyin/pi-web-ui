@@ -14,4 +14,4 @@ node scripts/link-plugins.mjs hongguo
 
 Then reload plugins in settings. First access installs the plugin's standalone dependencies automatically. MP4 files are uniformly transcoded to the compatible H.264 + AAC format and old caches migrate automatically, avoiding audio with a black screen on some clients. Video processing and HEIC covers need FFmpeg; enter the executable path in the plugin settings.
 
-Full installation, API, cache, permissions, third-party sources and acceptance notes: [hongguo plugin docs](../../docs/plugin-hongguo.en.md).
+Full installation, API, cache, permissions, third-party sources and acceptance notes: [hongguo plugin docs](../../docs/plugin-hongguo.md).

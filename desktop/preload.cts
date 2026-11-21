@@ -108,6 +108,14 @@ contextBridge.exposeInMainWorld("piDesktop", {
 		openDefaultApps: (): Promise<boolean> => ipcRenderer.invoke("pi-desktop:system-integration-open-defaults"),
 		openWithSystem: (path: string): Promise<boolean> => ipcRenderer.invoke("pi-desktop:open-with-system", path),
 	},
+	// 浏览器标签页 → 输入框：外壳的右键菜单在主进程转一手，推到 Agent 页（只有 Agent 页会订阅）
+	// 浏览器标签页 / 选中文字 → 输入框：外壳的右键菜单在主进程转一手，推到 Agent 页（只有 Agent 页会订阅）
+	onBrowserReference: (cb: (payload: { tabId?: string; url?: string; title?: string; text?: string }) => void) => {
+		const listener = (_event: IpcRendererEvent, payload: unknown) =>
+			cb((payload ?? {}) as { tabId?: string; url?: string; title?: string; text?: string });
+		ipcRenderer.on("pi-desktop:browser-reference", listener);
+		return () => ipcRenderer.removeListener("pi-desktop:browser-reference", listener);
+	},
 	// 双击关联文件 / 点链接时主进程推过来的目标
 	onOpenFiles: (cb: (payload: { files: string[] }) => void): (() => void) => {
 		const listener = (_event: IpcRendererEvent, payload: { files?: string[] }) =>

@@ -23,6 +23,11 @@ export interface Settings {
 	defaultMode?: string;
 	agentUrl?: string;
 	theme?: string;
+	/** 网页翻译引擎（tencent / google）与目标语言（zh-CN 等），见 browser/runtime/translate-engines.ts */
+	translateEngine?: string;
+	translateTarget?: string;
+	/** 页面语言与目标语言不同时是否自动询问是否翻译（Edge 式提示） */
+	translateAutoPrompt?: boolean;
 	[key: string]: unknown;
 }
 export interface FileResult {
@@ -331,6 +336,42 @@ export function reloadIcon(size = 12): SVGSVGElement {
 	return createSvg(size, size, "0 0 16 16", [
 		svgPath("M13 8a5 5 0 1 1-1.7-3.7", "1.4", "round"),
 		svgPath("M13 1.6v3.6h-3.6", "1.4", "round", "round"),
+	]);
+}
+
+/** 后退：工具栏导航组左箭头。 */
+export function backIcon(size = 13): SVGSVGElement {
+	return createSvg(size, size, "0 0 16 16", [svgPath("M10 3L5 8l5 5", "1.5", "round", "round")]);
+}
+
+/** 前进：工具栏导航组右箭头。 */
+export function forwardIcon(size = 13): SVGSVGElement {
+	return createSvg(size, size, "0 0 16 16", [svgPath("M6 3l5 5-5 5", "1.5", "round", "round")]);
+}
+
+/** 书签列表：工具栏的书签面板入口（比星形多一条「一排」的意思，与「收藏此页」区分开）。 */
+export function bookmarksIcon(size = 13): SVGSVGElement {
+	return createSvg(size, size, "0 0 16 16", [svgPath("M4 2h8v12l-4-3-4 3z", "1.25", "round", "round")]);
+}
+
+/** 复制 Markdown：工具栏的「整页正文复制」入口。 */
+export function markdownIcon(size = 13): SVGSVGElement {
+	return createSvg(size, size, "0 0 16 16", [
+		svgPath("M2.5 12.5v-9", "1.3", "round"),
+		svgPath("M2.5 3.5L6 8l3.5-4.5", "1.3", "round", "round"),
+		svgPath("M6 8v4.5", "1.3", "round"),
+		svgPath("M10.5 12.5V5.5l3 3.5", "1.3", "round", "round"),
+	]);
+}
+
+/** 翻译：工具栏的整页翻译开关。 */
+export function translateIcon(size = 13): SVGSVGElement {
+	return createSvg(size, size, "0 0 16 16", [
+		svgPath("M2 4h6", "1.3", "round"),
+		svgPath("M5 2.5v1.5c0 2.4-1.4 4.4-3.4 5.4", "1.3", "round"),
+		svgPath("M3.6 6.2c.9 1.9 2.4 3.4 4.6 4.1", "1.3", "round"),
+		svgPath("M8.6 14L11.8 6.5 15 14", "1.3", "round", "round"),
+		svgPath("M9.8 11.4h4", "1.3", "round"),
 	]);
 }
 

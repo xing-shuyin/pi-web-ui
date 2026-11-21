@@ -1,8 +1,20 @@
-[English](./architecture-browser.en.md) · **简体中文** · [繁體中文](./architecture-browser.zh-TW.md)
-
 # 内置浏览器与桌面 Agent
 
 桌面应用将浏览器与现有 pi-web-ui Agent 组合在一个窗口，支持 browser、agent、split 三种模式。启动模式由设置项 `defaultMode` 决定，新用户默认 agent（本地 Agent sidecar 并行启动，就绪前由 shell 显示启动占位）；Agent 失败时可在占位上一键切到浏览器。npm/纯 Web 服务入口继续使用现有路径。
+
+## 目录
+
+- [模块与边界](#模块与边界)
+- [窗口、模式与生命周期](#窗口模式与生命周期)
+- [本地与远端 Web Agent](#本地与远端-web-agent)
+- [权限与数据](#权限与数据)
+- [书签导入（其他浏览器 → 内置浏览器）](#书签导入其他浏览器--内置浏览器)
+- [页面脚本注入（Agent → 网页）](#页面脚本注入agent--网页)
+- [凭据保险库（密码 + TOTP）](#凭据保险库密码--totp)
+- [Passkey（WebAuthn）](#passkeywebauthn)
+- [自定义新标签页与主题覆盖（用户改 / Agent 设计）](#自定义新标签页与主题覆盖用户改--agent-设计)
+- [网页翻译（划词 / 全页）](#网页翻译划词--全页)
+- [构建与验证](#构建与验证)
 
 ## 模块与边界
 
@@ -22,7 +34,7 @@
 
 BrowserWindow 的 webContents 加载本地 shell.html，标签与专用 Agent 使用 WebContentsView。
 
-- **browser 模式**：全宽完整浏览器，顶部 88px 浏览器外壳（标签栏与地址栏），下方为网页视图；右上角提供模式切换回 Agent / 分栏；
+- **browser 模式**：全宽完整浏览器，顶部 80px 浏览器外壳（标签栏 + 固定工具行），下方为网页视图；右上角提供模式切换回 Agent / 分栏；
   标签栏的每页图标跟站点走：主进程监听 `page-favicon-updated`，只收 http(s) 与小尺寸 `data:image`（`pickTabFavicon`，超长 data URL 与 `javascript:`/`file:` 一律丢掉），主框架导航开始时先清空；外壳渲染成 `<img class="pb-tab-favicon">`，加载失败或没有图标回退地球图标，内部页仍是 `π`。
 - **agent 模式**：Agent 全尺寸全高占据整个视口（y: 0 开始），不显示任何浏览器标签与地址栏，保持与无结合时一致的纯净桌面体验与窗口控制/拖拽，并在顶栏提供浏览器切换按钮；
 - **split 模式**：左右独立并列。左侧为完整的 Agent 视图（从顶到底 y: 0），右侧为独立的浏览器（右侧上方为局部的浏览器外壳，下方为网页视图），效果类似在桌面并列开了 Agent 窗口与浏览器窗口。
@@ -155,37 +167,32 @@ Agent 可以给网页注入脚本：`browser_script` 工具（`server/browser-sc
 - **写回只走细粒度动作**：`passwords.upsert { id?, name, url, username, password? }`（`id` 存在即更新，`password` 留空表示沿用旧密码；`username` 可以留空——路由器这类登录框只要密码）与 `passwords.remove { id }`。渲染层拿不到整份明文，所以不能让它 `save` 全量列表——旧的 `passwords.save` 只保留给冒烟测试/迁移用。
 - **整份 CSV 导入走主进程**：工具条的导入图标发 `passwords.import`（无参数），宿主自己 `dialog.showOpenDialog` 选文件、读盘、解析后合并，回执只有 `{ imported, updated, duplicate, skipped }` 四个数字——这份 500 行明文从不经过渲染层，与「list 不下发明文」同一条口径。解析/合并纯逻辑在 `browser/runtime/credentials-csv.ts`（`parseCredentialCsv` / `mergeCredentials`）：RFC 4180 引号与 `""` 转义、BOM、CRLF、制表符分隔、表头同义词白名单（Chrome / Edge / Bitwarden / 1Password / LastPass 的列名）都会被认，认不出表头就按 `名称,网址,账号,密码` 的位置取；缺密码或网址不是 http(s) 的整行算 `skipped`，绝不半条入库。**同网址同账号（大小写不敏感）就是同一条**：密码不同视为「文件里的更新」覆盖旧值并计入 `updated`，完全一致计入 `duplicate`。文件上限 8MB / 5000 行。
 - **填密码校验同源**：`passwords.fill` → `fillCredential()`，要求当前标签页与条目 `url` 的 **origin 完全相等**，且页面上只有一个可见密码框；填完只发 `input`/`change`，由用户自己点提交。账号框的站位顺序：`autocomplete="username"` → `type=email` → **密码框前面最近的那个文本框**；不能按文档里第一个文本框挑（页头搜索框会被当成账号框）。
-- **点输入框就出下拉（浏览器式自动填充）**：页面注入脚本 `browser/renderer/autofill.js`（`browser/runtime/autofill.ts` 读源码、`manager.ts` 在 `dom-ready`/`did-finish-load` 只对 http(s) 页面注入，与 `dock.js` 同一条路），聚焦账号/密码框时发 `lookup()` → 主进程按**发送方 frame 的 origin** 过滤出候选，只回 `{ id, name, username }`（无明文）；点一条就 `pick(id)` → 主进程用同一个 `fillCredential()` 填。两条口径不破：**明文永不下到页面脚本**（页面只能主动“请主进程填”），且只认 `isTrusted` 的焦点/点击（合成事件一律不弹、不填）。桥在 `browser/preload.cts`（`__piAutofill`）——网页拿到它也只能填自己这个 origin 的凭据，主进程两边都再校一次 session + frame origin。
+- **点输入框就出下拉（浏览器式自动填充）**：页面注入脚本 `browser/renderer/autofill.js`（`browser/runtime/autofill.ts` 读源码、`manager.ts` 在 `dom-ready`/`did-finish-load` 只对 http(s) 页面注入，与 `translate.js` 同一条路），聚焦账号/密码框时发 `lookup()` → 主进程按**发送方 frame 的 origin** 过滤出候选，只回 `{ id, name, username }`（无明文）；点一条就 `pick(id)` → 主进程用同一个 `fillCredential()` 填。两条口径不破：**明文永不下到页面脚本**（页面只能主动“请主进程填”），且只认 `isTrusted` 的焦点/点击（合成事件一律不弹、不填）。桥在 `browser/preload.cts`（`__piAutofill`）——网页拿到它也只能填自己这个 origin 的凭据，主进程两边都再校一次 session + frame origin。
 - 加密仍然走 `BrowserStorage` 的 `enc:<safeStorage>`，`passwords.available`（= `isEncryptionAvailable()`）为假时面板显示保险库锁定。
 
-### 悬浮 Dock（右下角刷新圆钮）
+### 外壳工具行（标签页下方那一条）
 
-注入在每个页面右下角的一颗圆钮：单击刷新、悬停展开前进/后退/收藏/复制 Markdown，可拖动（位置存 `localStorage.__aib_dock_pos`），`smartDock` 开关可整体关掉。**功能不难，难的是「某些网站上看不见」**——六条底线都写在 `browser/renderer/dock.js` 头部注释里：
+外壳只占两行 40px：第一行是标签页与窗口按钮，第二行是**固定的工具行**（`browser/renderer/shell.ts` 的 `.pb-tool-row`）。页面视图从 y=80 开始（`desktop/browser-policy.ts` 的 `BROWSER_TOOLBAR_HEIGHT`），面板浮层的默认顶边也跟这个常量走。
 
-- **宿主挂在 top layer**：`popover="manual"` + `showPopover()`，圆钮不参与页面的层叠上下文，所以站点的 z-index 战争（包括同样用 `2147483647` 的全屏遮罩）、祖先 `transform`/`filter`/`contain` 造成的「`position:fixed` 退化成相对定位」、`overflow:hidden` 的裁剪统统影响不到它。UA 给 popover 的 `fit-content`/`margin:auto`/`overflow:auto` 一律用 inline `!important` 盖回「铺满视口 + `pointer-events:none`」；**开不出来就摘掉 `popover` 属性**退回普通 `fixed`（否则 `[popover]:not(:popover-open){display:none}` 反而会把钮藏掉）。
-- **全屏之后重排**：`fullscreenchange` 里 `hidePopover()` / `showPopover()`，圆钮即排到顶层末尾，压在视频/全屏元素之上（看门狗每秒补一次，防页面吞掉事件）。
-- **被摘掉就挂回去**：MutationObserver 盯 `documentElement` 与 `body` 的直接子节点（SPA 清空 body、换掉整个 body），加 1 秒一次的看门狗：页面 `hidePopover()`、`remove()` 宿主、把宿主 inline 样式改成 `display:none`，最迟下一拍自己恢复。
-- **不碰 `innerHTML`、不建 TT policy**：Google 系站点开着 `require-trusted-types-for 'script'` 且限制 policy 名，`createPolicy()` 也建不出来——旧实现 `setMarkup()` 一失败整颗钮连按钮都没有（这才是「某些网站看不见」最常见的原因）。现在整段 DOM 走 `createElement`/`createElementNS`；样式优先 `adoptedStyleSheets`（构造式样式表不吃页面 CSP `style-src`），拿不到才退回 `<style>`。
-- **位置按当前视口夹一遍**：拖出来的坐标按 origin 存在 `localStorage.__aib_dock_pos`，宽窗口拖到右下、换窄窗口（分栏 / 还原 / 小屏）恢复时就成了屏幕外——**「只有某个站整颗钮看不见」最常见的成因**。恢复与拖动都走同一个 `clampPosition()`，`resize` 之后再夹一次并写回。
-- **一列钮一样大、悬停不放大、不被边缘切掉**：主钮 / 展开菜单钮 / 插槽里的下载钮（`.pi-dl-fab`）统一 32px、图标统一 15px，悬停只换底色，`transform: scale()` 从 hover 和 `dock-pulse` 呼吸态里全删（列宽一抖就点不准）。纵向摆位跟着视口算：默认主钮在下、菜单往上长；主钮贴顶边时整列翻转（`.dock-flip` 的 `column-reverse` + 把锚点从 `bottom` 换成 `top`），主钮留在原处、菜单往下长；两边都装不下（窗口比一列还矮）才把 `--dock-menu-max` 压到真实空间并让菜单自己滚——**任何状态下都不把按钮交给视口边缘去切**。翻不翻转只由 `place()` 一处裁定，拖动 / `resize` / 下载钮冒出来（`reposition()`）都走它；回归：`tests/unit/browser-dock-layout.test.ts`。
-- **可见性自愈**：看门狗每秒不只查「还在 DOM 里」，还查 `getBoundingClientRect()` 有没有面积、`display/visibility/opacity` 有没有被站点改过；看不见就先按标准样式重建一次，再不行摘掉 `popover` 退回普通 `fixed`。
-- **不透明**：`.dock-container` 以前空闲态 `opacity: 0.35`，在浅色站上几乎看不见；刷新钮是要被找到并点的，现在恒为全不透明。
-- **内部页判据连协议一起判**：`location.protocol === "file:" && /(?:^|/)(?:shell|newtab).html$/i`——只看 pathname 会把 `github.com/<owner>/<repo>/blob/main/browser/renderer/shell.html` 这类正常网页当成内部页（主进程侧的注入闸门同一口径，见 `manager.ts` 的 `isInternalPage()`）。
-- **插槽**：`window.__AIB_DOCK__.slot(id)` 给下载圆钮留位（见下一节），让它和刷新钮同列、一起拖动。
-- **残留边界**：站点 `showModal()` 的 `<dialog>` 打开期间，页面把其他内容设成 inert——圆钮仍画在它上面，但点不动，`dialog` 一关就恢复；这是 Chromium 的定数，页面注入赢不了。
-- **单源**：注入源码只有 `browser/renderer/dock.js` 一份，`browser/runtime/dock.ts` 只负责按候选路径读文件（读不到返回空串 + 告警），不再留会跑偏的内联复制品；`scripts/build-browser.mjs` 的 `filesToCopy` 必须带上它。回归：`tests/unit/browser-dock.test.ts`。
+- **为什么搬进来**：以前后退/前进/刷新/收藏/复制 Markdown/翻译/下载是注入在每个页面右下角的一颗悬浮圆钮（`dock.js`，已删除；`smartDock` 开关随之失效）。它跟着站点背景漂、会被站点自己的层级压住、换个站还得重新找——刷新钮经常找不到。现在这些入口钉在外壳里，位置永远不变，站点怎么折腾都影响不到。
+- **行内分三组**：`后退 前进 刷新`｜`收藏 书签 下载 历史 翻译 复制Markdown`｜`验证器 扩展 设置`（最右一组靠右对齐，组间一条竖分隔）。后退/前进按活动标签的 `canGoBack`/`canGoForward` 置灰；下载按钮的徽标 = 进行中数量（`downloads.list` 里 `state === "progressing"`），下完不亮，全量列表在下载面板（`download.open` / `download.reveal`）。
+- **页面级动作只走一条窄路**：`page.translate` 与 `page.markdown` 由主进程在活动标签页里 `executeJavaScript` 跑一小段固定脚本（翻译开关点的是 `translate.js` 注入的 `__PI_TRANSLATE__`，Markdown 取页面自己的 `body.innerText` 前 30000 字），文案由主进程 `clipboard.writeText()` 落地——页面自己写剪贴板受焦点/权限影响，不可靠。脚本是常量、不接受任何参数，所以外壳并没有拿到任意求值能力。
+- **标签页右键 = 原生菜单**：`tabs.menu { id, x, y }` 用 `Menu.popup()`（DOM 浮层会被原生内容视图盖住）。菜单项：引用到输入框 / 复制链接 / 重新加载 / 关闭标签页 / 关闭其他标签页。
+- **两个「引用到输入框」入口**：①标签页右键（`tabs.menu`）；②页面里选中文字后的原生右键菜单（`showPageContextMenu`，选中非空时才出现）——选段一定跟着它所在的标签页（标题 + 地址）一起走，不否则模型不知道这段话出自哪个页面。
+- **「引用到输入框」跨视图**：外壳（`shell.html`）/ 页面脚本与 Agent 页是两个 `WebContentsView`，只能由主进程转一手：`pi-desktop:browser-reference` → `desktop/preload.cts` 的 `onBrowserReference` → `web/src/App.tsx` 用 `insertTextAtCursor()` 把 `web/src/browser-tab-reference.ts` 生成的引用块插到光标处：
 
-### 下载圆钮（并进右下角悬浮球）
+  ```
+  页面引用：标题 — https://…
+  选中内容：
+  > 第一行
+  > 第二行
+  ```
 
-站内点下载时主进程直接落盘，页面上一点反馈都没有：用户既不知道下没下完，也不知道存哪去了。现在下载钮**住在右下角悬浮球那一列**：
+  选段去行尾空白、去首尾空行、每行加 `> `，超 6000 字按行边界截断并标注（主进程 `QUOTE_MAX_CHARS` 也是同一量级）。只带标题、地址与选段，不带整页正文：Agent 有自己的浏览器工具，要全文自己读。Agent 未就绪时降级成「已复制到剪贴板」，不假装成功；纯浏览器模式下引用成功会自动切成分栏，用户能直接看到那一行。
 
-- **摆在哪**：`browser/renderer/downloads.js` 通过 `window.__AIB_DOCK__.slot("downloads")`（`browser/renderer/dock.js` 暴露的插槽）把自己挂进刷新钮上方，跟着刷新钮一起摆、一起拖动；`smartDock` 关掉时退回自建宿主（仍在右下角），功能不受影响。**没有下载任务就整颗收起**，有任务才和刷新钮一起出现。
-- **谁注入**：`browser/runtime/downloads.ts` 按 dock 的同一套候选路径读源码，`manager.ts` 在 `dom-ready` / `did-finish-load` 注入。它**不受 `smartDock` 开关管**——那是导航玩具的开关，这是「文件下来了」的状态提示；内部页不注入，与 dock 同一口径（判据是 `manager.ts` 的 `isInternalPage()` 与页面里的 `location.protocol === "file:"`，**不再拿 pathname 子串判**，否则 `github.com/<owner>/<repo>/blob/main/browser/renderer/shell.html` 这种正常网页会被误杀）。`scripts/build-browser.mjs` 的 `filesToCopy` 要带上这份文件，漏了装包后就没有提示。
-- **显示什么**：角标 = 进行中数量；点开列最近 8 条（文件名 + 进度条 + 状态）。新任务出现时自动亮出面板，几秒后自己收起。已完成的行给两颗药丸：**打开文件夹**（在系统文件管理器里定位）与**复制路径**（剪贴板被站点策略挡住就把路径摊开显示，不假装成功）。
-- **状态是单向下推**：`manager.ts` 的 `pushDownloads()` 只推当前活动标签（同一时刻只有它那块视图可见），切标签与「新文档注入完」各补推一次；已结束的任务只在 30 秒内继续推（`DOWNLOAD_NOTICE_MS`），否则每打开一个页面都会把上次那个「已完成」再亮一遍。载体是 `executeJavaScript` 里的一句 `window.__PI_DOWNLOADS__.update(<json>)`，字面量经 `scriptLiteral()` 转义（文件名是网站给的，` ` / `<` 这类字符必须在这里消化）。
-- **能力边界（一条窄桥）**：脚本跑在网站的主世界，网页任何脚本都能调它，所以反向只有一个动作——`window.__piDownloads.reveal(id)`（`browser/preload.cts` 暴露）。**只传 id**：路径由主进程按自己的下载记录解析，只认 `state === "completed"`，发送方必须是浏览器 session 里的网站 frame（`browser-host.ts` 的 `webFrameOrigin()`），落点固定是 `shell.showItemInFolder()`——页面既拿不到任意路径，也没有执行文件的能力。可信外壳的「下载」面板另有 `download.open`（执行）与 `download.reveal`（定位）两个动作。
-- 注入失败不再静默：`manager.ts` 的 `reportInjection()` 把「某站注入失败 + URL + 原因」写进主进程日志，用户报「某站看不见」时有据可查。
-- 回归：`tests/unit/browser-downloads-notice.test.ts`（注入脚本可取 / 打包清单 / 插槽挂载 / 无 innerHTML / 窄桥只收 id / 内部页判据 / 只推活动标签 / 字面量转义）。
+- **新标签页不再重复这排按钮**：书签/下载/历史/设置原本在首页右上角也有一份，工具行固定之后删掉了重复入口（`newtab.ts` 只留时钟、搜索条与书签网格）。
+- **首页书签网格不限高、带站点图标**：收藏有多少铺多少（`.unified-nav-grid` 不再有 `max-height` 小滚动窗口，页面自己滚），每个书签取站点自己的 `/favicon.ico`（`img-src` 因此放开到 `https: http:`），拿不到就退回首字母方块——不经过第三方图标服务，不把浏览记录送给别人。
+- 回归：`tests/unit/browser-tool-row.test.ts`（行高常量 / 五个入口 / 页面级动作 / 菜单与跨视图通道）、`tests/unit/browser-tab-reference.test.ts`（引用文本整理）。
 
 ### TOTP
 
@@ -229,17 +236,35 @@ Agent 可以给网页注入脚本：`browser_script` 工具（`server/browser-sc
 
 ## 网页翻译（划词 / 全页）
 
-**复用随手问引擎，不另建翻译服务**：服务端 `server/browser-translate.ts` 的 `POST /api/translate` 用 `quickAsk*` 设置 + `createQuickAskRuntime`，输入 `{ texts, target?, style? }` 输出 `{ translations[] }`——无会话历史、无附件、不污染随手问话题。多段文本用 `[[n]]…[[/n]]` 标记一次批量翻译，解析时宽松兜底：漏段/错标记一律回原文，数组长度恒等（防模型幻觉把坏译文写回页面）。长度/条数有硬上限（64 段 / 单段 2000 字 / 总量 16000 字），prompt 明确把段间文本当数据而非指令。
+**不再用大模型**：整页翻译是几十次请求、几十秒的事，模型成本与延迟都不划算。现在只接两个免费引擎（都只在**主进程**里 fetch）：
 
-**一条窄桥，不给网页任何多余能力**：`browser/preload.cts` 的 `__piTranslate.translate(texts, target?, style?)` 只把文本送主进程拿译文字符串。`desktop/translate-bridge.ts` 做纯函数校验：目标地址由主进程从 `agentUrl` 派生（`translateEndpoint`：只留 origin + token，丢掉 Agent 的 path/hash），页面传来的任何 URL 一概不接受；`browser-host.ts` 的 `pi-browser:translate` 复用 `autofillOrigin` 那套校验——只认 browser session 里的 http(s) frame，命中不了直接拒绝。页面拿不到 sidecar 地址、模型配置或其它标签的内容。
+- `tencent`（默认）：腾讯翻译的前端端点 `POST https://transmart.qq.com/api/imt`（`header.fn=auto_translation` + 公开的 `client_key`），请求体是一次性的 `text_list`，源语言交给引擎自己判断。国内可直连，所以设为默认。**限制在服务端是一整批的**：单请求累计 >6000 字就整批 `outOfLimit`（一条超了所有条一起失败），所以按 5000 字/120 条切块、3 路并发，超长单条先按句子边界切开再拼回（`tencentPieces` / `tencentChunks`）。
+- 已下线的 `edge`（微软翻译）：靠匿名 `edge.microsoft.com/translate/auth` 取 JWT，该端点 **2026-11 起由服务端直接 404**（不是网络问题）。它曾表现为「翻译一直失败」的唯一根因，现在设置里的旧值 `edge` 会在 `normalizeTranslateEngine` 里静默迁到 `tencent`，代码里不再保留这条路。
+- `google`：谷歌网页翻译的前端端点 `translate_a/single?client=gtx&sl=auto&tl=<lang>&dt=t`（不需要 key），待译文本走 **POST 表单 body**（长段落塞进 query string 会被 URL 长度上限截断），逐段请求、4 路并发。需要能访问谷歌。
 
-**页面侧脚本单源**：`browser/renderer/translate.js`（由 `browser/runtime/translate.ts` 读取注入、`scripts/build-browser.mjs` 复制进 dist），只在 http(s) 网站注入——内部页、新标签页、`file://` 全部跳过（`file://` 注入脚本正是之前 PDF 滚动卡的根因）。划词浮层由主进程右键菜单触发；**全页翻译的入口收在悬浮 Dock 的展开菜单里**（`dock.js` 的 `btn-translate`，之前页面右下角的独立徽标按钮已删掉，它和 Dock 重叠还没有进度反馈）：DOM 文本节点按块级元素聚合，跳过 `script/style/code/pre/textarea` 与 `.notranslate/[translate=no]`，按 1200 字分批、最多 3 路并发翻译（翻完一段立刻回填一段，页面边翻边变，不等全翻完；并发数封顶，不打爆模型），原文存 `WeakMap`，点「显示原文」瞬时还原不重新请求。注入靠 `window.__PI_TRANSLATE__` 占位幂等。
+引擎与目标语言都在**浏览器设置**里（设置面板「网页翻译」段）：`translateEngine`（`tencent` / `google`）、`translateTarget`（白名单见 `TRANSLATE_TARGETS`，默认 `zh-CN`）、`translateAutoPrompt`（是否自动询问是否翻译，默认开）。中文按厂商习惯分别映射成 `zh`/`zh-TW`（腾讯）与 `zh-CN`/`zh-TW`（Google）。设置值非法一律退回默认，不让 settings.json 决定行为。
 
-**翻译过程看得见**：`translate.js` 用 `getState()` / `onState(cb)` 对外发布 `{ pageState, done, total, failed, model }`，点了按钮立刻 Toast「正在翻译全文（共 N 段）…」；翻译中按钮进呼吸态，悬停 title 实时显示 `done/total`，翻译中再点只报进度不重复开工；完成报模型与失败段数（失败段保留原文），再点一次显示原文。Dock 与翻译脚本同属页面主世界，直接读 `window.__PI_TRANSLATE__`，不经过任何新桥。
+**一个引擎挂了不等于翻译挂了**：`translateTexts` 先走设置里的引擎，整批失败就换另一个再试一次（`engineOrder`，次数固定为 1），返回的 `model` 是**实际生效**的引擎标签；两个都失败才整批抛错。这条回退就是「厂商下线端点 / 单边网络不通」时的兜底，不再需要等发版。
 
-**目标语言跟随手问走**：复用 `quickAskTranslateTarget` / `quickAskTranslateStyle` / `quickAskTranslatePrompt`，浏览器不另设一套语言设置；浮层与徽标的文案是注入脚本内的固定中文（与 dock.js 同口径，不进 i18n 字典）。**模型默认跟随手问，可在设置里单独指定**：`quickAskTranslateModel` 为空时跟随 `quickAskModel`，非空时须为 `provider/id`；`POST /api/translate` 按「独立翻译模型 → 随手问模型 → 第一个可用模型」解析。
+**一条窄桥，不给网页任何多余能力**：`browser/preload.cts` 的 `__piTranslate` 只有两个只读口子——`translate(texts, target?)` 送文本拿译文字符串，`config()` 拿 `{ target, autoPrompt }`；引擎、JWT 与厂商地址全在主进程。`browser/runtime/translate-engines.ts` 里是纯函数部分——`parseTranslateBridgeRequest`（1–120 段、单段 ≤12000 字、总量 ≤24000 字，`target` 只收白名单值，`auto` 落到设置值）、`tencentBody`/`googleEndpoint`（语言映射）、`parseTencentResponse`/`parseGoogleResponse`（认不出就抛错，调用方保留原文，绝不写半截译文）。`browser-host.ts` 的 `pi-browser:translate` 与 `pi-browser:translate-config` 都复用 `autofillOrigin` 那套校验：只认 browser session 里的 http(s) frame。
 
-回归：`tests/unit/browser-translate-server.test.ts`（请求校验、prompt 防注入、解析兜底）、`tests/unit/browser-translate-bridge.test.ts`（URL 派生、桥参数校验）。
+**页面侧脚本单源**：`browser/renderer/translate.js`（由 `browser/runtime/translate.ts` 读取注入、`scripts/build-browser.mjs` 复制进 dist），只在 http(s) 网站注入——内部页、新标签页、`file://` 全部跳过（`file://` 注入脚本正是之前 PDF 滚动卡的根因）。DOM 文本节点按块级元素聚合，跳过 `script/style/code/pre/textarea` 与 `.notranslate/[translate=no]`，原文存 `WeakMap`，点「显示原文」瞬时还原不重新请求。注入靠 `window.__PI_TRANSLATE__` 占位幂等。
+
+**和 Edge 一样：点一下、异步铺满**。三条一起才叫「一键」：
+
+1. **入口只有一键**：外壳工具行的翻译按钮（`page.translate` → `__PI_TRANSLATE__.togglePage()`）就是全部——不再需要选段落、选语言、点确认。目标语言来自设置，页面无权选。
+2. **一次请求翻一大片**：每段 5000 字 / 最多 60 个节点 / **4 段并行**（`BATCH_CHARS` / `MAX_BATCH_NODES` / `BATCH_CONCURRENCY`）。一个引擎请求的 5000 字上限正好对上这里的分段，所以一页通常 2–4 个请求就翻完；每段回来立刻写回 DOM，页面边翻边变，不等整页完成。翻译中再点按钮只报进度、不重复开工；「显示原文 / 取消」用 `runToken` 作废当前这一轮，在途结果回来也不写回页面。
+3. **页面里有状态胶囊**（Edge 那种小条）：`#pi-translate-pill-host` 是 Shadow DOM 里的一颗胶囊，固定在页面顶部居中，翻译中显示 `正在翻译 3/12 段…`、完成显示 `已翻译 · 腾讯翻译`（有失败段则标注，7 秒后自动消失）、失败显示 `翻译失败，已保留原文` + 重试；右边始终有一个「显示原文」。Shadow DOM + 高 z-index，站点 CSS 碰不到它。
+4. **跟翻新内容**：页面处于「已翻译」时，`MutationObserver`（`childList` + `subtree`）在新内容出现后 700ms 把**没翻过**的文本节点排队补翻（无限滚动 / SPA 换块）。两个前提保证不自我循环：我们自己的回填是 `characterData` 写入（不在监听范围），已翻过的节点都记在 `originals` 里（`collectFreshNodes` 直接跳过）。
+5. **取消是真的取消**：`runToken` 在 `restorePage()` 里自增，在途批量的结果回来时发现 token 变了就不再写回 DOM——点「显示原文」是即时的，不会被迟到的译文再改回去。
+
+**自动询问（Edge 的「此页面是英文，要翻译吗？」）**：脚本初始化时通过 `config()` 拿 `{ target, autoPrompt }`，若 `autoPrompt` 开着、页面 `lang`（或 `content-language` meta）与目标语言不同且本页还没提示过，就在页面顶部弹一颗 `此页面是 EN，要翻译吗？ · 翻译此页 / ×` 的胶囊（首屏静 900ms 再弹，避免盖住加载动画）。**读不到语言就不猜**——宁可没有提示，也不要对中文页面乱弹。
+
+**外壳侧的反馈靠轮询**：翻译是页面里的异步活，IPC 不能阻塞等它跑完，所以工具栏按钮点完只拿一句开头语，随后每秒发一次 `page.translateState`（页面 `getState()` 的快照）——翻译中不刷屏，完成（`translated`）或全段失败（`original`）才再报一句，最多轮 120 秒。页面里的胶囊是主反馈，这条轮询是外壳这一侧的回执。
+
+**翻译过程可观测**：`translate.js` 用 `getState()` / `onState(cb)` 对外发布 `{ pageState, done, total, failed, model }`；`model` 字段保留原名，值现在是引擎标签（`腾讯翻译` / `Google 翻译`）。
+
+回归：`tests/unit/browser-translate-engines.test.ts`（请求校验与上限、语言映射、腾讯切块与超长切分、两种响应解析、跨引擎回退、整批失败即抛错）。页面脚本与桥的接线由 `tests/unit/browser-tool-row.test.ts` 守着。
 
 ## 构建与验证
 

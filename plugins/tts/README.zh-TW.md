@@ -22,7 +22,7 @@
 
 引擎在外掛服務端通過 `host.tts.registerEngine()` 註冊，無需開啟外掛頁面。網頁「設定 → 聲音與語音」、本外掛試聽面板、QQ 語音設定都從中心讀取引擎與音色。`builtin` 系統引擎由宿主提供，外掛註冊 `doubao-tts` 與 `deepseek-tts`。
 
-AI `tts` 工具支援 `action: "list"` 查詢全部引擎，帶 `engine` 查詢對應音色；合成時可選擇系統或其他外掛註冊的引擎。舊 `doubao` / `deepseek` 引數繼續可用。解除安裝外掛會撤銷引擎註冊並取消進行中的請求。介面與遷移說明見 [`docs/architecture-tts.md`](../../docs/architecture-tts.zh-TW.md)。
+AI `tts` 工具支援 `action: "list"` 查詢全部引擎，帶 `engine` 查詢對應音色；合成時可選擇系統或其他外掛註冊的引擎。舊 `doubao` / `deepseek` 引數繼續可用。解除安裝外掛會撤銷引擎註冊並取消進行中的請求。介面與遷移說明見 [`docs/architecture-tts.md`](../../docs/architecture-tts.md)。
 
 ## 特性亮點
 

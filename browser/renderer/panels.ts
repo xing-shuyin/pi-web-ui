@@ -514,6 +514,42 @@ async function settingsPanel(container: HTMLElement): Promise<void> {
 	startupMode.value =
 		settings.defaultMode === "browser" || settings.defaultMode === "split" ? settings.defaultMode : "agent";
 	const agentUrl = input(settings.agentUrl || currentState?.agentUrl || "", "url", "http://127.0.0.1:3000");
+	// 翻译引擎：腾讯翻译（国内可直连，默认）/ Google 网页翻译；目标语言两边共用一份白名单
+	const translateEngine = element("select", "pb-input");
+	for (const [value, text] of [
+		["tencent", t("translateTencent")],
+		["google", t("translateGoogle")],
+	]) {
+		const option = element("option", "", text);
+		option.value = value;
+		translateEngine.append(option);
+	}
+	translateEngine.value = settings.translateEngine === "google" ? "google" : "tencent";
+	const translateTarget = element("select", "pb-input");
+	for (const [value, text] of [
+		["zh-CN", "简体中文 / zh-CN"],
+		["zh-TW", "繁體中文 / zh-TW"],
+		["en", "English / en"],
+		["ja", "日本語 / ja"],
+		["ko", "한국어 / ko"],
+		["fr", "Français / fr"],
+		["de", "Deutsch / de"],
+		["es", "Español / es"],
+		["ru", "Русский / ru"],
+		["pt", "Português / pt"],
+		["it", "Italiano / it"],
+		["tr", "Türkçe / tr"],
+	]) {
+		const option = element("option", "", text);
+		option.value = value;
+		translateTarget.append(option);
+	}
+	translateTarget.value = typeof settings.translateTarget === "string" ? settings.translateTarget : "zh-CN";
+	// Edge 式自动提示：页面语言与目标语言不一致时，在页面里弹一颗「要翻译吗？」胶囊
+	const translateAutoPrompt = input("", "checkbox");
+	translateAutoPrompt.checked = settings.translateAutoPrompt !== false;
+	const translateAutoPromptRow = element("label", "pb-switch");
+	translateAutoPromptRow.append(translateAutoPrompt, element("span", "", t("translateAutoPrompt")));
 	const connection = element(
 		"p",
 		"pb-muted",
@@ -561,6 +597,9 @@ async function settingsPanel(container: HTMLElement): Promise<void> {
 				searchEngine: engine.value,
 				newTabOpenMode: openMode.value,
 				defaultMode: startupMode.value,
+				translateEngine: translateEngine.value,
+				translateTarget: translateTarget.value,
+				translateAutoPrompt: translateAutoPrompt.checked,
 				allowScripts: allowScripts.checked,
 				...Object.fromEntries([...switches].map(([key, control]) => [key, control.checked])),
 			},
@@ -607,6 +646,15 @@ async function settingsPanel(container: HTMLElement): Promise<void> {
 		}),
 	);
 	const vault = element("section", "pb-section");
+	// 网页翻译：引擎与目标语言。翻译请求只在主进程出入，页面脚本只拿译文
+	const translateSection = element("section", "pb-section");
+	translateSection.append(
+		element("h3", "", t("translate")),
+		element("p", "pb-muted", t("translateEngineHelp")),
+		label(t("translateEngine"), translateEngine),
+		label(t("translateTarget"), translateTarget),
+		translateAutoPromptRow,
+	);
 	const design = element("section", "pb-section");
 	design.append(
 		element("h3", "", t("design")),
@@ -623,6 +671,7 @@ async function settingsPanel(container: HTMLElement): Promise<void> {
 	container.replaceChildren(
 		form,
 		agentSection,
+		translateSection,
 		vault,
 		design,
 		extensions,

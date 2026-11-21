@@ -1,5 +1,3 @@
-[English](./agent-rules.en.md) · **简体中文** · [繁體中文](./agent-rules.zh-TW.md)
-
 # 编码红线细则（原 AGENTS.md §9 全文）
 
 > `AGENTS.md` 只保留「功能 → 事实源文件 → 文档」的映射与一行红线索引；**细则全在这里**。
@@ -47,7 +45,7 @@
 
 ## 三、UI 布局与样式规范
 
-> 共享基线是 `web/src/styles.css`；主题见 [`architecture-core.md`](architecture-core.md)「主题切换」。
+> 共享基线是 `web/src/styles.css`；主题见 [`architecture-ui.md`](architecture-ui.md)「主题切换」。
 
 - **项目选中态只跟随当前打开的项目**：运行中、未读状态通过项目徽标表达，不得为其他项目标题添加状态底色；保留普通悬停反馈。
 
@@ -74,7 +72,7 @@
 - **拖拽与触控交互标准**：
   - 图标编辑与拖拽必须监听 Pointer 事件，严禁使用 HTML5 DnD（移动端触屏不触发）；内置图标须在 `host-icon.tsx` 登记；菜单行文字统一 12.5px（守卫：`host-icon.test.ts`、`topbar-overflow-menu.test.ts`）。
   - 手机端横滑手势（`swipe-drawer.ts`）必须避开系统侧滑区，手势期间直写内联 transform 禁用动画过渡，松手后清理内联值交由 CSS 类过渡；移动端遮罩常驻（守卫：`swipe-drawer.test.ts`）。
-- **消息操作语义**：提示悬浮即显且简短；重新提问和编辑后重问在当前会话截断原问题及后续内容后重发；分叉包含所选消息并创建新对话；回退打开对应用户问题的编辑框，提交后在当前会话重问，取消不改历史。详见 [`architecture-core.md`](architecture-core.md)「消息操作」。
+- **消息操作语义**：提示悬浮即显且简短；重新提问和编辑后重问在当前会话截断原问题及后续内容后重发；分叉包含所选消息并创建新对话；回退打开对应用户问题的编辑框，提交后在当前会话重问，取消不改历史。详见 [`architecture-ui.md`](architecture-ui.md)「消息操作」。
 - **新会话初始化交互**：切换或新建会话须经 `focusComposer()` 聚焦（触屏除外），非 chat 视图自动切回，待发附件 chips 随新会话清空（守卫：`composer-draft.test.ts`）。
 
 ## 四、架构与运行态约束
@@ -103,7 +101,7 @@
 - **服务端禁同步子进程调用（`spawnSync` / `execSync` / `execFileSync`）**：这三个 API 在事件循环线程上 fork+exec，并**一直阻塞到子进程结束**。子进程如果卡在 `exec()` 之前（Termux/Android 上实测能稳定复现），主线程就永远停在 spawn 错误管道的 `read()` 上——定时器、socket、`/api/health` 全部停摆，只能靠外部 watchdog 杀进程。异步 `spawn` / `execFile` 不会被拖到子进程结束，`timeout` 也只对异步版有意义（同步版根本回不到超时处理）。两条可行路线：换成异步 spawn + 超时；或者把答案**静态推导**出来（`server/global-loader.ts` 的 npm prefix、`server/dsh/runtime/runtime-root.mjs` 的计算式前缀都是这么改的）。扫描范围包含**插件主进程代码**（`server/plugins.ts` 用 `import()` 把 `plugins/<id>/index.mjs` 载进主进程，与服务器共用事件循环）与 **`extensions/`**（pi 扩展同样跑在宿主主进程里；`tsconfig.extensions.json` 也已进 `npm run typecheck` 门禁）；`bin/`、`assets/`、`build.mjs` 这类独立进程的东西除外。**存量已清零**（守卫名单为空，`server/` 与 `plugins/` 一个同步子进程调用都没有）：插件里的 `uv`/`python` 版本探测、Linux 的 `xdpyinfo`/`xrandr` 尺寸探测都改成了异步 `runProcess`；macOS 的 `xcrun --find swift` 干脆换成了**纯文件系统探测**（`xcode-select` 的落点就是文件，还顺手去掉了「xcrun 卡在 Xcode 许可交互上钉死事件循环」的风险）。新代码一律异步或静态推导，名单不再接受新登记（守卫：`tests/unit/sync-child-process-guard.test.ts`，来源 `#830`）。
 - **发布出去的 npm 包必须自带 bin 可执行位**：`npm publish <目录>` 内部会重新 `npm pack`，而 Windows 打包机上 fs 没有 x 位，tarball 里的 `bin/` 只有 0644；npm 的 bin 链接只在**新建符号链接**时补 x 位（`bin-links` 的 `fixBin`），链接已存在、目标文件被重新解压时会跳过——用户就 `Permission denied`（`#922`）。所以发布一律走 `npm run release:npm`（= `scripts/pack-npm.mjs`：`npm pack` → 按条目改写 tarball 头的 mode → 复查「声明的 bin 存在 + 有 shebang + 0755」），候选包同样走 `npm run pack:npm`；不要裸 `npm publish`，也不要指望在源码树里 `chmod`（Windows 上不生效、Linux 上又会把权限位交给安装器运气）。单源 `scripts/lib/npm-tarball.mjs`，文档 [`release.md`](release.md)（守卫：`tests/unit/npm-tarball-modes.test.ts`）。
 
-- **环境变量必须登记单源清单 `server/env-registry.ts`**：代码里出现的每个 `PI_*` 都要在 `ENV_SPECS` 归入 `public` / `internal` / `plugin` / `build` / `test` / `deprecated` 之一——「变量到底有多少、哪些是配置」由这张表回答，不再靠 grep 数数。规则：①`public` 必须同时写进 `docs/env-vars.md`（Hub 用 `doc: docs/device-center.md`）；②`env-vars` 三种语言的变量名集合必须**完全一致**（只改中文漏掉英文/繁中现在是 CI 红，历史上已漂移过 8 个）；③`deprecated` 不许留在主表（不宣传待删开关，如鉴权三兄弟 `PI_WEB_REQUIRE_AUTH` / `PI_WEB_INSECURE_NO_AUTH` / `PI_WEB_ALLOW_INSECURE_NO_AUTH`）；④`docOnly`（文档承诺、代码未实现）由守卫**反向**盯住，实现后必须摘标记。新增读取点而不登记 = 红（守卫：`tests/unit/env-registry.test.ts`）。
+- **环境变量必须登记单源清单 `server/env-registry.ts`**：代码里出现的每个 `PI_*` 都要在 `ENV_SPECS` 归入 `public` / `internal` / `plugin` / `build` / `test` / `deprecated` 之一——「变量到底有多少、哪些是配置」由这张表回答，不再靠 grep 数数。规则：①`public` 必须同时写进 `docs/env-vars.md`（Hub 用 `doc: docs/device-center.md`）；②`env-vars.md` 是唯一表（文档只有中文单版本）；③`deprecated` 不许留在主表（不宣传待删开关，如鉴权三兄弟 `PI_WEB_REQUIRE_AUTH` / `PI_WEB_INSECURE_NO_AUTH` / `PI_WEB_ALLOW_INSECURE_NO_AUTH`）；④`docOnly`（文档承诺、代码未实现）由守卫**反向**盯住，实现后必须摘标记。新增读取点而不登记 = 红（守卫：`tests/unit/env-registry.test.ts`）。
 
 ## 五、其余边界（只在别处维护，见链接）
 
@@ -169,7 +167,7 @@
 | 应用运行数据（会话、设置、缓存） | `.pi-web/`、`.pi/`、`durable/`（gitignore）                       | 否   |
 | 可复用的开发脚本                 | `scripts/` + `package.json` 里给一个入口                          | 是   |
 | 一次性调试脚本                   | `.scratch/`，用完即删；**要留就按上一条搬进 `scripts/`**          | 否   |
-| 文档、设计稿、审查证据           | `docs/`；HTML 提案进 `docs/proposals/`                            | 是   |
+| 文档、设计稿                       | `docs/`；提案进 `docs/proposals/`（只收 markdown）                   | 是   |
 | README 及其译本                  | 仓库根（仅这几个：`README*`、`AGENTS*`、`CHANGELOG`、`LICENSE`）  | 是   |
 | 测试夹具的临时目录               | `mkdtemp(os.tmpdir())`，**不许落进仓库**                          | —    |
 
@@ -177,5 +175,6 @@
 
 - **根目录白名单制**：根级条目必须命中白名单（`package.json`、`tsconfig.*`、`vitest.*`、`Dockerfile`、`docker-compose.yml`、`.gitignore` 等仓库级文件与一级目录）。新增根级文件前先问：它能不能进 `docs/`、`scripts/` 或 `.scratch/`？能就进那里。
 - **禁止模式**：`*.log`、`debug.*`、`.tmp-*`、`*.bak`、`preview-*.html`、`*.apk`、`*.msi` 一律不许出现在未忽略的未跟踪清单里；`.gitignore` 已覆盖这些模式，命中说明位置放错了。
-- **脚本搬家要一次改完**：移动脚本时，`package.json` 入口、测试里的路径、`docs/directory-reference*.md` 三语条目必须同一次改掉；脚本若从根搬进 `scripts/`，自身 `import.meta.url` 推出来的仓库根要上跳一层（`make-light-theme.mjs` 踩过）。
+- **脚本搬家要一次改完**：移动脚本时，`package.json` 入口、测试里的路径、`docs/directory-reference.md` 条目必须同一次改掉；脚本若从根搬进 `scripts/`，自身 `import.meta.url` 推出来的仓库根要上跳一层（`make-light-theme.mjs` 踩过）。
+- **文档只有中文单版本**：除 `README`（`README.en.md` / `README.zh-TW.md` 可保留）外，markdown 与 `docs/*.html` 设计稿都不再出英文 / 繁体译本，文档顶部也不放语言切换行；在 README 之外新增 `*.en.md` / `*.zh-TW.md` / `*.en.html` / `*.zh-TW.html` 一律算违规（守卫：`tests/unit/repo-hygiene.test.ts`）。翻译工作量省下来的精力用在把中文原稿写清楚。
 - **临时目录用完即收**：`mkdtemp` 出来的目录在同一用例里 `afterEach` 删；仓库内的 `.scratch/` 任务结束就清，不留过期草稿。

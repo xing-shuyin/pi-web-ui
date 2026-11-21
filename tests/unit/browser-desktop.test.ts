@@ -36,7 +36,7 @@ describe("desktop browser composition", () => {
 	it("keeps the browser and Agent in the same usable viewport when switching modes", () => {
 		const browser = browserLayout(1200, 800, "browser", 0.5);
 		const agent = browserLayout(1200, 800, "agent", 0.5);
-		expect(browser.browser).toEqual({ x: 0, y: 40, width: 1200, height: 760 });
+		expect(browser.browser).toEqual({ x: 0, y: 80, width: 1200, height: 720 });
 		expect(agent.agent).toEqual({ x: 0, y: 0, width: 1200, height: 800 });
 		expect(browser.showBrowser).toBe(true);
 		expect(browser.showAgent).toBe(false);
@@ -48,7 +48,7 @@ describe("desktop browser composition", () => {
 		expect(split.agent.width + split.browser.width).toBe(1201);
 		expect(split.browser.x).toBe(split.agent.width);
 		expect(split.agent.height).toBe(800);
-		expect(split.browser.height).toBe(760);
+		expect(split.browser.height).toBe(720);
 		expect(browserLayout(1200, 20, "split", Infinity).agent.height).toBe(20);
 		expect(browserLayout(1200, 20, "split", Infinity).browser.height).toBe(0);
 		expect(browserLayout(1200, 800, "split", 10).agent.width).toBe(1200 * MAX_SPLIT_RATIO);

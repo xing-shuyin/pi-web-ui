@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { WebSocket } from "ws";
 import type { ClientMessage, ServerMessage } from "./protocol.js";
-import type { DispatchSession } from "./index.js";
+import type { DispatchSession } from "./engine-service.js";
 import type { PluginManager } from "./plugins.js";
 import { buildPluginJobArgs, inspectInstallSpec, type PluginInstaller } from "./plugin-installer.js";
 import { syncPluginCatalog } from "./plugin-catalog-sync.js";

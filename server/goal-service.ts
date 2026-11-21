@@ -10,6 +10,7 @@ import {
 	type AgentSession,
 } from "@earendil-works/pi-coding-agent";
 import type { GoalHistoryEntry, GoalStatus, PlanState, PlanStep, ServerMessage } from "./protocol.js";
+import { promptSession } from "./session-turns.js";
 import type { ClientStateStore } from "./client-state.js";
 import { getServerString, pick, type ServerLang } from "./i18n.js";
 import { parseModelSpec } from "./attachments.js";
@@ -1941,7 +1942,7 @@ export class GoalService {
 					"goal.review.pass",
 					{ round: round, goalText: goalText, feedback: feedback },
 				);
-				await conv.session.sendUserMessage(passText, {
+				await promptSession(conv.session, passText, {
 					deliverAs: conv.session.isStreaming ? "steer" : "followUp",
 				});
 			} catch {}
@@ -1969,7 +1970,8 @@ export class GoalService {
 			try {
 				const capped = budget > 0 ? budget : "不限";
 				const cappedEn = budget > 0 ? budget : "unlimited";
-				await conv.session.sendUserMessage(
+				await promptSession(
+					conv.session,
 					pick(
 						this.lang(),
 						`❌ 目标未通过审查（第 ${round}/${capped} 轮）。\n\n目标：${goalText}\n\n审查意见：${feedback}`,
@@ -2004,7 +2006,8 @@ export class GoalService {
 			textEn: "⚠️ Goal blocked: delegated execution paused (set the goal again to continue)",
 		});
 		try {
-			await conv.session.sendUserMessage(
+			await promptSession(
+				conv.session,
 				pick(
 					this.lang(),
 					`⚠️ 目标执行受阻（${roundsZh}）。\n\n目标：${goalText}\n\n原因：${reason}\n\n（委托执行已暂停，不会自己重新派活。要彻底退出目标模式：点目标条右侧的 ■ 停止目标（取消）；想继续就重新设定目标。）`,

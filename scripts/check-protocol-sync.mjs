@@ -34,14 +34,21 @@ if (runtimeExports.length > 0) {
 const serverVerSrc = readFileSync(join(root, "server/protocol-version.ts"), "utf8");
 const webVerSrc = readFileSync(join(root, "web/src/protocol-version.ts"), "utf8");
 const mServer = serverVerSrc.match(/PROTOCOL_VERSION\s*=\s*(\d+)/);
-const mWeb = webVerSrc.match(/PROTOCOL_VERSION\s*=\s*(\d+)/);
-if (!mServer || !mWeb || mServer[1] !== mWeb[1]) {
+// 版本号只写一处：前端必须是 server 的 re-export，不许再写一个数字（写两份时只改一边就悄悄错位）。
+const webReExports =
+	/export\s*\{\s*PROTOCOL_VERSION\s*\}\s*from\s*"\.\.\/\.\.\/server\/protocol-version(?:\.js)?"/.test(webVerSrc);
+if (!mServer) {
 	console.error(
-		`✗ 协议版本号不一致：server=${mServer?.[1] ?? "?"} web=${mWeb?.[1] ?? "?"} —— 改协议时必须同步 bump 两份 PROTOCOL_VERSION。`,
+		"✗ server/protocol-version.ts 没有 `export const PROTOCOL_VERSION = <数字>`——桌面壳按这个格式现读版本号。",
+	);
+	failed = true;
+} else if (!webReExports) {
+	console.error(
+		"✗ web/src/protocol-version.ts 不再是 server/protocol-version.ts 的 re-export —— 协议版本必须单源，不许两端各写一份数字。",
 	);
 	failed = true;
 } else {
-	console.log(`✓ 双端 PROTOCOL_VERSION 一致 (v${mServer[1]})`);
+	console.log(`✓ 协议版本单源 (v${mServer[1]})：前端 re-export server/protocol-version.ts`);
 }
 
 {

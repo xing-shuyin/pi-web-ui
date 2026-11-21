@@ -112,6 +112,13 @@ export type BrowserShellAction =
 	| "tabs.create"
 	| "tabs.activate"
 	| "tabs.close"
+	/** 标签页右键菜单（原生）：`{ id, x, y }`，菜单里可选「引用到输入框」等 */
+	| "tabs.menu"
+	/** 页面级动作：在活动标签页里跑一段固定脚本（翻译开关 / 整页 Markdown） */
+	| "page.translate"
+	/** 读一次页面翻译状态（进度/完成），外壳拿它给按钮做反馈 */
+	| "page.translateState"
+	| "page.markdown"
 	| "navigate"
 	| "back"
 	| "forward"

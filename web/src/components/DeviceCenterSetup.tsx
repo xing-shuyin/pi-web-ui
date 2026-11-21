@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { HubLink } from "./HubLink";
-import { appUrl } from "../base-url";
-import { withToken } from "../auth-token";
+import { apiFetch, readApiFailure } from "../api-client";
 import { useT } from "../i18n";
 import type { createPluginHostApi } from "../plugin-host";
 import {
@@ -70,10 +69,7 @@ export function DeviceCenterSetup({
 		setLoaded(false);
 		setMetadataError(false);
 		try {
-			const response = await fetch(withToken(appUrl("/api/device-center/setup")), {
-				credentials: "same-origin",
-				signal: request.signal,
-			});
+			const response = await apiFetch("/api/device-center/setup", { signal: request.signal });
 			if (!response.ok) throw new Error();
 			const data = (await response.json()) as DeviceCenterSetupInfo;
 			if (
@@ -126,11 +122,8 @@ export function DeviceCenterSetup({
 		const request = new AbortController();
 		controller.current = request;
 		try {
-			const response = await fetch(withToken(appUrl("/api/device-center/setup")), {
-				credentials: "same-origin",
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ ...input, allowRegistration: true }),
+			const response = await apiFetch("/api/device-center/setup", {
+				body: { ...input, allowRegistration: true },
 				signal: request.signal,
 			});
 			if (response.status === 409) {
@@ -141,8 +134,8 @@ export function DeviceCenterSetup({
 				return;
 			}
 			if (!response.ok) {
-				const failure = await response.json().catch(() => ({}));
-				throw new Error(typeof failure.error === "string" ? failure.error.slice(0, 4096) : `HTTP ${response.status}`);
+				const failure = await readApiFailure(response);
+				throw new Error(failure.error.slice(0, 4096));
 			}
 			const data = (await response.json()) as { publicUrl: string; output: string };
 			if (!validateHubSetup({ ...input, publicUrl: data.publicUrl }) || typeof data.output !== "string")
@@ -169,15 +162,10 @@ export function DeviceCenterSetup({
 		const request = new AbortController();
 		controller.current = request;
 		try {
-			const response = await fetch(withToken(appUrl("/api/device-center/setup/update")), {
-				credentials: "same-origin",
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				signal: request.signal,
-			});
+			const response = await apiFetch("/api/device-center/setup/update", { method: "POST", signal: request.signal });
 			if (!response.ok) {
-				const failure = await response.json().catch(() => ({}));
-				throw new Error(typeof failure.error === "string" ? failure.error.slice(0, 4096) : `HTTP ${response.status}`);
+				const failure = await readApiFailure(response);
+				throw new Error(failure.error.slice(0, 4096));
 			}
 			const data = (await response.json()) as { success: boolean; output: string };
 			if (!request.signal.aborted) {

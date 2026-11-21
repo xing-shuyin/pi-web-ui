@@ -3,7 +3,7 @@
 # mobile/local-engine
 
 手機本機引擎（Android）：APK 內自帶 Linux rootfs + Node + pi-web-ui，前臺服務託管，proot 免 root 執行。
-設計文件與事實源：[`docs/mobile-local-engine.md`](../../../docs/mobile-local-engine.zh-TW.md)。
+設計文件與事實源：[`docs/mobile-local-engine.md`](../../../docs/mobile-local-engine.md)。
 
 ## 目錄
 

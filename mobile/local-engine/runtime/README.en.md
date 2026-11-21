@@ -2,7 +2,7 @@
 
 # mobile/local-engine
 
-On-device mobile engine (Android): the APK bundles a Linux rootfs + Node + pi-web-ui, hosted by a foreground service and run through proot without root. Design doc and source of truth: [`docs/mobile-local-engine.md`](../../../docs/mobile-local-engine.en.md).
+On-device mobile engine (Android): the APK bundles a Linux rootfs + Node + pi-web-ui, hosted by a foreground service and run through proot without root. Design doc and source of truth: [`docs/mobile-local-engine.md`](../../../docs/mobile-local-engine.md).
 
 ## Directory
 

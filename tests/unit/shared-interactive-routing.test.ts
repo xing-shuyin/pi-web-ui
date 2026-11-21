@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { handleInteractiveResponseMessage } from "../../server/dispatch-domain-handlers.js";
-import type { DispatchSession } from "../../server/index.js";
+import type { DispatchSession } from "../../server/engine-service.js";
 
 describe("shared conversation interactive responses", () => {
 	it("routes a global questionnaire answer to its original owner", () => {

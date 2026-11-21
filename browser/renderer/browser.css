@@ -292,13 +292,13 @@ body.pb-panel-layer [hidden] {
 	box-shadow: 0 0 10px rgba(91, 140, 255, 0.2);
 }
 
-/* Chrome 外壳与顶栏布局 (固定高度 88px) */
+/* Chrome 外壳与顶栏布局 (两行，共 80px；页面视图从 y=80 开始，见 desktop/browser-policy.ts) */
 .pb-chrome {
 	position: fixed;
 	top: 0;
 	left: 0;
 	width: 100%;
-	height: 40px;
+	height: 80px;
 	z-index: 20;
 	background: var(--pb-header-bg, #1c1d21);
 	border-bottom: 1px solid var(--pb-line, #2a2c33);
@@ -328,6 +328,51 @@ body.pb-panel-layer [hidden] {
 	   唯一拖拽区交给 .pb-drag-area（空白条）。 */
 	-webkit-app-region: no-drag;
 	padding-right: var(--pb-ctl-gap);
+	border-bottom: 1px solid var(--pb-line, #2a2c33);
+}
+
+/* 第二行：固定工具栏（导航 + 页面动作 + 工具入口）。不随站点漂、不被页面压住、位置永不变 */
+.pb-tool-row {
+	background: var(--pb-header-bg, #1c1d21);
+	height: 40px;
+	padding: 0 6px;
+	gap: 8px;
+	-webkit-app-region: no-drag;
+	box-sizing: border-box;
+}
+
+.pb-tool-group {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	flex: 0 0 auto;
+	min-width: 0;
+}
+
+/* 右侧入口（验证器 / 扩展 / 设置）靠右对齐：左手操作区与右手入口区分开 */
+.pb-tool-group-end {
+	margin-left: auto;
+}
+
+/* 组间一条竖分隔：三组按钮不靠“看得见的空白”去区分（窄窗口也不会扥到一起） */
+.pb-tool-group + .pb-tool-group:not(.pb-tool-group-end)::before,
+.pb-tool-group + .pb-tool-group-end::before {
+	content: "";
+	width: 1px;
+	height: 16px;
+	margin: 0 4px 0 2px;
+	background: var(--pb-line, #2a2c33);
+	flex: 0 0 auto;
+}
+
+.pb-tool-row .pb-tool-btn:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+
+.pb-tool-row .pb-tool-btn:disabled:hover {
+	background: transparent;
+	color: var(--pb-fg-dim, #8b90a0);
 }
 
 .pb-tab-row button,
@@ -1117,17 +1162,16 @@ body.pb-panel-layer [hidden] {
 	flex: 0 0 auto;
 }
 
-/* 面板弹窗 (From E:\ai-browser\src\style.css .search-modal-card)
-   非模态浮层：不遮罩、不接管整窗（见 panels.ts 的 show()），所以层级得自己给 */
+/* 面板浮层默认位置：外壳现在有两行（标签页 + 工具栏，共 80px），旧值 48px 会被工具栏遮住 */
 .pb-dialog {
 	position: fixed;
-	inset: 48px 14px 14px auto;
+	inset: 88px 14px 14px auto;
 	z-index: 150;
 	margin: 0;
 	padding: 0;
 	width: min(650px, calc(100vw - 28px));
-	height: min(760px, calc(100dvh - 60px));
-	max-height: calc(100dvh - 60px);
+	height: min(760px, calc(100dvh - 102px));
+	max-height: calc(100dvh - 102px);
 	max-width: calc(100vw - 28px);
 	border: 1px solid var(--pb-border-subtle);
 	border-radius: 14px;
@@ -1159,10 +1203,10 @@ body.pb-panel-layer [hidden] {
 
 /* 小浮层（扩展面板）：高矮跟着列表走，不铺满整块屏幕 */
 .pb-dialog-compact {
-	inset: 48px 14px auto auto;
+	inset: 88px 14px auto auto;
 	width: min(360px, calc(100vw - 28px));
 	height: auto;
-	max-height: min(560px, calc(100dvh - 60px));
+	max-height: min(560px, calc(100dvh - 102px));
 }
 
 .pb-dialog-compact .pb-dialog-header {
@@ -1929,10 +1973,18 @@ body.pb-panel-layer [hidden] {
 	align-content: flex-start;
 	gap: 8px;
 	width: 100%;
-	/* 收藏很多时网格自己滚：不把时钟和搜索条顶出首屏 */
-	max-height: min(38vh, 320px);
-	overflow-y: auto;
+	/* 不限制高度：收藏有多少就铺多少，不再套一层小滚动窗口。
+	   页面本身可纵向滚动（.pb-start 的 min-height + body 滚动），时钟与搜索条就在最上面。 */
 	padding: 2px;
+}
+
+/* 书签的站点图标（站点自己的 /favicon.ico）：和首字母方块同一尺寸，加载不到就换回字母 */
+.unified-tile-favicon {
+	width: 18px;
+	height: 18px;
+	border-radius: 4px;
+	object-fit: contain;
+	pointer-events: none;
 }
 
 .unified-tile {

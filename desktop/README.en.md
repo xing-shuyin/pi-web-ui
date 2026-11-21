@@ -18,7 +18,7 @@ The built-in Agent connects to the local service automatically. To use a remote 
 
 Office supports text/CSV editing plus read-only content preview for DOCX/XLSX/PPTX; complex layout, images and formula calculation are outside the current preview scope. Binary documents are never saved over as text. Local documents must be opened through the file picker first.
 
-Module boundaries, permissions and build instructions are in [built-in browser architecture](../docs/architecture-browser.en.md).
+Module boundaries, permissions and build instructions are in [built-in browser architecture](../docs/architecture-browser.md).
 
 ## Device Center integrated browser
 
@@ -61,9 +61,9 @@ In non-portable mode, Electron's own state lives in the system's Electron `userD
 | `PI_WEB_HEALTH_TIMEOUT_MS` | Milliseconds to wait for `/api/health`, default `60000`; a positive value is at least `1000`, invalid or non-positive values fall back to the default                                  |
 | Access-token env var       | Sets the service access token; the desktop window loads with `?token=` once to authenticate, after which the frontend strips the token from the URL                                    |
 | `PI_WEB_DESKTOP_URL`       | Development mode only: points the window at an existing service; ignored in packaged builds, see the integration workflow below                                                        |
-| `PI_WEB_SDK=bundled`       | Forces the bundled pi SDK; by default it follows a newer pi copy detected on the machine, see [environment variables](../docs/env-vars.en.md)                                          |
+| `PI_WEB_SDK=bundled`       | Forces the bundled pi SDK; by default it follows a newer pi copy detected on the machine, see [environment variables](../docs/env-vars.md)                                          |
 
-A fixed port keeps Chromium's Origin stable, which helps preserve localStorage settings such as theme and panel widths; after falling back to a random port, those per-origin UI states may differ. The desktop sidecar always listens on `127.0.0.1`; for remote deployment see the [deployment guide](../docs/deployment.en.md).
+A fixed port keeps Chromium's Origin stable, which helps preserve localStorage settings such as theme and panel widths; after falling back to a random port, those per-origin UI states may differ. The desktop sidecar always listens on `127.0.0.1`; for remote deployment see the [deployment guide](../docs/deployment.md).
 
 - When used alongside the CLI/web version, the shared `~/.pi/agent` by default contains session records, so two services won't operate the same conversation at once; set `PI_CODING_AGENT_DIR` to isolate them. Don't let two services write the same WebUI data-dir at the same time.
 - `browser_page` depends on the browser page-picker extension and isn't available in the Electron window; open the service address in a browser that supports the extension and authorize the page there. Other browser tools have their own operating conditions.
@@ -159,4 +159,4 @@ The current Windows CI also runs `make-portable.mjs --skip-pack --zip --with-git
 
 Windows CI is wired to SignPath, but the signing step is allowed to fail and the current config uses `test-signing`; not every Release artifact can be treated as trusted-signed. The portable directory is assembled before the signature replaces the installer, so the installer's signature doesn't tell you the signing state of the app inside the ZIP.
 
-Local electron-builder can take a signing certificate via `CSC_LINK` and `CSC_KEY_PASSWORD`. macOS Developer ID signing and notarization need the corresponding Apple credentials and environment, e.g. `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`; check the build output and the actual artifacts for success. SignPath doesn't replace macOS signing/notarization, and a self-signed certificate doesn't equal system trust. The full release flow is in the [release guide](../docs/release.en.md).
+Local electron-builder can take a signing certificate via `CSC_LINK` and `CSC_KEY_PASSWORD`. macOS Developer ID signing and notarization need the corresponding Apple credentials and environment, e.g. `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`; check the build output and the actual artifacts for success. SignPath doesn't replace macOS signing/notarization, and a self-signed certificate doesn't equal system trust. The full release flow is in the [release guide](../docs/release.md).

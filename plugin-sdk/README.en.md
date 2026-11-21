@@ -6,7 +6,7 @@
 
 All voice engines register on the server through `host.tts.registerEngine({ id, label, getVoices, synthesize })`. The host provides the system `builtin` engine; uninstalling a plugin automatically revokes its registration and cancels synthesis. Browsers no longer offer `ttsProviders.register()`.
 
-Callers use `host.tts.listEngines()`, `await host.tts.listVoices(engineId)` and `await host.tts.synthesize({ text, engine, voice, rate, signal })` to get `{ buffer, format }` audio. Fixed-rate engines declare `supportsRate: false`. Engine and voice IDs come from one central catalog, shared by QQ, web playback and AI tools. Full interface, limits and migration: [`docs/architecture-tts.md`](../docs/architecture-tts.en.md).
+Callers use `host.tts.listEngines()`, `await host.tts.listVoices(engineId)` and `await host.tts.synthesize({ text, engine, voice, rate, signal })` to get `{ buffer, format }` audio. Fixed-rate engines declare `supportsRate: false`. Engine and voice IDs come from one central catalog, shared by QQ, web playback and AI tools. Full interface, limits and migration: [`docs/architecture-tts.md`](../docs/architecture-tts.md).
 
 ## Scaffolding: `pi-web-ui plugin create`
 

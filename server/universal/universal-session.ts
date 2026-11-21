@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { DispatchSession, TerminalManagerLike } from "../index.js";
+import type { DispatchSession, TerminalManagerLike } from "../engine-service.js";
 import type {
 	ClientMessage,
 	CommandDef,

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { appUrl } from "../base-url";
-import { withToken } from "../auth-token";
+import { requestJson } from "../api-client";
 import { useT } from "../i18n";
 import { useEscapeKey } from "../shortcut-stack";
 import { useOverlayZIndex } from "../overlay-stack";
@@ -35,15 +34,11 @@ type MemorySnapshot = {
 };
 
 async function call<T>(path: string, body?: object): Promise<T> {
-	const response = await fetch(withToken(appUrl(`/api/device-center/local-bots/${path}`)), {
-		method: body ? "POST" : "GET",
-		credentials: "same-origin",
+	return requestJson<T>(`/api/device-center/local-bots/${path}`, {
+		body,
 		signal: AbortSignal.timeout(20_000),
-		...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+		errorFor: (failure) => new Error(failure.serverError || failure.code || failure.error),
 	});
-	const data = (await response.json().catch(() => ({}))) as T & { error?: string; code?: string };
-	if (!response.ok) throw new Error(data.error || data.code || String(response.status));
-	return data;
 }
 
 /** 搜索只看界面已有的三段文本，不发请求。 */

@@ -9,7 +9,7 @@
  *
  * 1. 代码里读到的每个 `PI_*` 必须在这里登记（新增变量 = 必须分类，不能悄悄出现）；
  * 2. `public` 必须能在文档里查到（用户能调的东西必须写下来）；
- * 3. `env-vars.*.md` 三种语言的变量名集合必须一致（防只改中文漏掉英文）；
+ * 3. `env-vars.md` 是中文单版本的唯一表（不再有 `env-vars.en.md` / `.zh-TW.md`）；
  * 4. `deprecated` 不允许再出现在 `env-vars.md`（不宣传待删开关）；
  * 5. `docOnly` 必须确实**不在**代码里（文档承诺了没实现的开关，反过来也提醒实现后摘标记）。
  *
@@ -22,7 +22,7 @@
  * - `deprecated`：待合并/删除的遗留名（`note` 写清归宿）。
  * - `docOnly`：文档已承诺、代码尚未实现的开关（当前实现后请摘标记并改 scope）。
  *
- * 新增变量的正确姿势：先想清楚它属于哪一档；`public` 就同时补 `docs/env-vars.md` 三语表。
+ * 新增变量的正确姿势：先想清楚它属于哪一档；`public` 就同时补 `docs/env-vars.md`。
  */
 export type EnvScope = "public" | "internal" | "plugin" | "build" | "test" | "deprecated";
 

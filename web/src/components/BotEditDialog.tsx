@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { appUrl } from "../base-url";
-import { withToken } from "../auth-token";
+import { requestJson } from "../api-client";
 import { useT } from "../i18n";
 import { useEscapeKey } from "../shortcut-stack";
 import { useOverlayZIndex } from "../overlay-stack";
@@ -16,12 +15,10 @@ import "./agent-bots.css";
  * 拼出来的表单一旦保存就会把没显示的字段清空。读取走既有的 `GET /local-bots/:id`（单源）。
  */
 async function fetchBot(botId: string, signal: AbortSignal): Promise<Bot> {
-	const response = await fetch(withToken(appUrl(`/api/device-center/local-bots/${encodeURIComponent(botId)}`)), {
-		credentials: "same-origin",
+	const data = await requestJson<{ bot?: Bot }>(`/api/device-center/local-bots/${encodeURIComponent(botId)}`, {
 		signal,
 	});
-	const data = (await response.json().catch(() => ({}))) as { bot?: Bot; error?: string };
-	if (!response.ok || !data.bot) throw new Error(data.error || String(response.status));
+	if (!data.bot) throw new Error("Bot not found");
 	return data.bot;
 }
 

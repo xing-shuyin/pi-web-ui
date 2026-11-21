@@ -109,7 +109,7 @@ describe("环境变量单源清单", () => {
 		expect(
 			missing,
 			"这些环境变量在代码里被读取但没进 server/env-registry.ts：新增变量必须归入 public/internal/plugin/build/test 之一；\n" +
-				"若 public，同时补 docs/env-vars.md 三语表格。\n" +
+				"若 public，同时补 docs/env-vars.md。\n" +
 				missing.join("\n"),
 		).toEqual([]);
 	});
@@ -126,18 +126,6 @@ describe("环境变量单源清单", () => {
 			undocumented,
 			"public 变量是用户要调的开关，必须写进文档（没写就等于猜）：\n" + undocumented.join("\n"),
 		).toEqual([]);
-	});
-
-	it("env-vars 三种语言的变量名集合一致", () => {
-		const zh = documentedNames("docs/env-vars.md");
-		const variants = ["docs/env-vars.en.md", "docs/env-vars.zh-TW.md"];
-		const drift: string[] = [];
-		for (const file of variants) {
-			const other = documentedNames(file);
-			for (const name of zh) if (!other.has(name)) drift.push(`${file} 缺少 ${name}`);
-			for (const name of other) if (!zh.has(name)) drift.push(`docs/env-vars.md 缺少 ${name}（${file} 有）`);
-		}
-		expect(drift, `环境变量表已漂移，三种语言必须同名：\n${drift.join("\n")}`).toEqual([]);
 	});
 
 	it("deprecated 变量不出现在主表中（不宣传待删开关）", () => {

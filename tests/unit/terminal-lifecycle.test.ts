@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { TerminalManager } from "../../server/terminals.js";
 import { handleTerminalMessage } from "../../server/dispatch-domain-handlers.js";
-import type { DispatchSession } from "../../server/index.js";
+import type { DispatchSession } from "../../server/engine-service.js";
 import type { ServerMessage } from "../../server/protocol.js";
 
 describe("terminal attachment and ownership", () => {

@@ -13,6 +13,7 @@ import { useOverlayZIndex } from "../overlay-stack";
 import "./group-share.css";
 import type { GroupRouterConfig } from "./GroupRouterSettings";
 import { GroupSteerModal } from "./GroupSteerModal";
+import { requestJson } from "../api-client";
 import { appUrl } from "../base-url";
 import { openGroupEventStream, taskProgressMatches, acceptTaskProgress } from "../group-event-stream";
 import { randomUuid } from "../uuid";
@@ -42,16 +43,11 @@ class GroupRequestError extends Error {
 	}
 }
 async function request<T>(path: string, signal: AbortSignal, body?: object): Promise<T> {
-	const response = await fetch(withToken(appUrl(`/api/device-center/${path}`)), {
-		method: body ? "POST" : "GET",
-		credentials: "same-origin",
+	return requestJson<T>(`/api/device-center/${path}`, {
+		body,
 		signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
-		...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+		errorFor: (failure) => new GroupRequestError(failure.status, failure.error, failure.code),
 	});
-	const data = await response.json().catch(() => ({}));
-	if (!response.ok)
-		throw new GroupRequestError(response.status, data.error || String(response.status), data.code ?? "");
-	return data;
 }
 const emptyMap = new Map();
 const noop = () => {};

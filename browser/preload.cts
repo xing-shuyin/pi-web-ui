@@ -43,12 +43,15 @@ void ipcRenderer
 			lookup: () => ipcRenderer.invoke("pi-browser:autofill-lookup"),
 			pick: (id: unknown) => ipcRenderer.invoke("pi-browser:autofill-pick", typeof id === "string" ? id : ""),
 		});
-		// 网页翻译窄桥：只能把待译文本送到主进程拿回译文字符串，
-		// 主进程按发送方 origin 校验、目标地址由 agentUrl 派生，页面碰不到 sidecar 地址或任何凭据。
+		// 网页翻译窄桥：只能把待译文本送到主进程拿回译文字符串。
+		// 引擎（Edge 微软翻译 / Google 网页翻译）与目标语言都在主进程按设置决定，页面无权选；
+		// 请求凭据、厂商地址与其它标签页的内容都不会沿这条桥回到页面。
 		contextBridge.exposeInMainWorld("__piTranslate", {
 			version: 1,
-			translate: (texts: unknown, target?: unknown, style?: unknown) =>
-				ipcRenderer.invoke("pi-browser:translate", { texts, target, style }),
+			translate: (texts: unknown, target?: unknown) =>
+				ipcRenderer.invoke("pi-browser:translate", { texts, target }),
+			// 目标语言与「自动提示是否要翻译」的开关（只读，页面无权改）
+			config: () => ipcRenderer.invoke("pi-browser:translate-config"),
 		});
 	})
 	.catch(() => {});
@@ -61,10 +64,10 @@ contextBridge.exposeInMainWorld("__piPasskey", {
 	confirm: (kind: unknown) => ipcRenderer.invoke("pi-browser:passkey-confirm", kind === "create" ? "create" : "get"),
 });
 
-// 下载圆钮（`browser/renderer/downloads.js`）的窄桥：**只收 id**，让宿主在文件管理器里
+// 下载的「打开所在文件夹」窄桥（`__piDownloads.reveal`）：**只收 id**，让宿主在文件管理器里
 // 定位这个下载（`shell.showItemInFolder`）。路径与命令一个字都不从页面过——主进程按自己的
-// 下载记录解析、只认已完成项，并按发送方 session/origin 再卡一遍，所以这里同步暴露（圆钮可能
-// 比 trust 往返更早注入）。
+// 下载记录解析、只认已完成项，并按发送方 session/origin 再卡一遍。悬浮球已下线，外壳自己的
+// 下载面板走 `download.reveal`；这条桥留着不为旧页面断功能。
 contextBridge.exposeInMainWorld("__piDownloads", {
 	version: 1,
 	reveal: (id: unknown) => ipcRenderer.invoke("pi-browser:downloads-reveal", typeof id === "string" ? id : ""),

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { FiCheck, FiEdit2, FiExternalLink, FiMonitor, FiRefreshCw, FiX } from "react-icons/fi";
+import { requestJson } from "../api-client";
 import { appUrl } from "../base-url";
 import { openDeviceAccess } from "../device-access";
 import { withToken } from "../auth-token";
@@ -93,19 +94,10 @@ export function DeviceDirectory({
 		setSavingId(deviceId);
 		const trimmed = text.trim();
 		try {
-			const response = await fetch(
-				withToken(appUrl(`/api/device-center/devices/${encodeURIComponent(deviceId)}/remark`)),
-				{
-					method: "POST",
-					credentials: "same-origin",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ remark: trimmed }),
-				},
-			);
-			if (!response.ok) {
-				const data = await response.json().catch(() => ({}));
-				throw new Error(data.error || t("deviceDirectory.saveRemarkFailed"));
-			}
+			await requestJson(`/api/device-center/devices/${encodeURIComponent(deviceId)}/remark`, {
+				body: { remark: trimmed },
+				errorFor: (failure) => new Error(failure.serverError || t("deviceDirectory.saveRemarkFailed")),
+			});
 			setDevices((prev) => prev.map((d) => (d.id === deviceId ? { ...d, remark: trimmed || undefined } : d)));
 			setEditingId(null);
 			setError("");

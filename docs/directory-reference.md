@@ -1,5 +1,3 @@
-[English](./directory-reference.en.md) · **简体中文** · [繁體中文](./directory-reference.zh-TW.md)
-
 # 目录树参考（directory-reference）
 
 > 来源：2026-09 精简前的 `AGENTS.md` §3 全文（备份见 `AGENTS.md.bak`）＋ 之后新增文件的补齐。
@@ -49,11 +47,13 @@ pi-web-ui/
 │   └── catalog.json            # ★ 插件市场内置列表（随包发布；只收本仓库自带的 plugins/<id>，第三方插件走社区清单仓库）
 ├── dev/                        # 本地开发辅助（notice/search 预览等，不入 npm 包）
 ├── Dockerfile / docker-compose.yml
-├── docs/                       # 详细文档（architecture-core / architecture-attachments / architecture-terminal /
-│                               #   architecture-plugins / architecture-system-prompt / goal-conversation-design /
-│                               #   tool-context-budget / agent-rules（编码红线细则）/
-│                               #   device-center / device-collaboration / architecture-canvas / architecture-sandbox /
-│                               #   development / release / deployment / dsh-engine / antigravity-proxy / env-vars ＋ 本文件）
+├── docs/                       # 详细文档（architecture-core / architecture-ui / architecture-runtime /
+│                               #   architecture-plugins / architecture-plugin-ui / architecture-plugin-host-api /
+│                               #   architecture-plugin-market / architecture-browser / architecture-terminal /
+│                               #   architecture-attachments / architecture-system-prompt / tool-context-budget /
+│                               #   agent-rules（编码红线细则）/ device-center / device-collaboration /
+│                               #   architecture-canvas / architecture-sandbox / goal-conversation-design /
+│                               #   development / release / deployment / dsh-engine / official-providers / env-vars ＋ 本文件）
 └── tsconfig.server.json / tsconfig.extensions.json / tsconfig.tests.json / web/tsconfig.json
 ```
 
@@ -197,7 +197,7 @@ web/src/
 ├── use-chat.ts         # ★ useChat()：WebSocket 连接管理、reducer 状态机、终端 bridge
 ├── app-globals.ts      # ★ 全局运行态 store（engine/managed/tabs/版本号 + 全局发送器 appSend）
 ├── types.ts            # ★ wire 协议 re-export shim（export type * from "../../server/protocol"）
-├── protocol-version.ts # 协议版本常量
+├── protocol-version.ts # 协议版本 re-export（单源在 server/protocol-version.ts）
 ├── i18n.tsx            # ★ 多语文案（核心 zh/en；新 key 两处都加；value 只许字符串字面量，见 docs/agent-rules.md「三、UI 布局与样式规范」）
 ├── pick-locale.ts      # 语言选择辅助
 ├── styles.css          # ★ 全部样式（按组件分区，带注释分隔线）；也是默认深色主题本体

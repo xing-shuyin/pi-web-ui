@@ -6,18 +6,21 @@
  *      这一条必须直接扫文件系统 —— 只查 git 会漏掉 `debug.log` 这类"已被忽略、但确实堆在根目录"的东西。
  *   2. **已入库的产物**：`git ls-files` 里不许出现日志 / 备份 / 一次性对比页 / 安装包（防 `git add -f`）。
  *   3. **忽略覆盖**：临时与构建落点必须被 `.gitignore` 命中，否则它们会顺手被提交。
- *   4. **文档锚点**：规则正文还在，且三语文件都在（文档被改名/搬走时守卫要响）。
+ *   4. **文档锚点**：规则正文还在，且除 README 外的文档只有中文单版本（不再出英文/繁体译本）。
  *
  * 只看「根级」：子目录各有一级归属（`docs/`、`scripts/`、`server/`…），逐目录白名单会把正常演进
  * 卡成改白名单游戏，反而催生绕过。
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, readdirSync } from "node:fs";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
+
+/** 构建产物 / 依赖目录里的副本不算文档（不扫）。 */
+const SKIP_DIRS = new Set(["node_modules", "release", "dist", "build", "artifacts", "coverage", "vendor"]);
 
 /**
  * 根级白名单（登记制）。两类：
@@ -76,9 +79,7 @@ const ROOT_ALLOWLIST = new Set([
 	".oxlintrc.json",
 	".prettierignore",
 	".prettierrc.json",
-	"AGENTS.en.md",
 	"AGENTS.md",
-	"AGENTS.zh-TW.md",
 	"CHANGELOG.md",
 	"Dockerfile",
 	"LICENSE",
@@ -163,13 +164,28 @@ describe("文件落位守卫", () => {
 		expect(missing, `以下落点没被 .gitignore 覆盖，临时产物会顺手被提交：${missing.join(", ")}`).toEqual([]);
 	});
 
-	it("规则正文与三语文档都在位", () => {
+	it("规则正文在位，且文档只有中文单版本", () => {
 		const rules = readFileSync(join(ROOT, "docs/agent-rules.md"), "utf8");
 		expect(rules).toContain("## 八、文件落位与临时产物");
 		expect(rules).toContain("根目录白名单制");
 		expect(rules).toContain("repo-hygiene.test.ts");
-		expect(existsSync(join(ROOT, "docs/agent-rules.en.md"))).toBe(true);
-		expect(existsSync(join(ROOT, "docs/agent-rules.zh-TW.md"))).toBe(true);
+		// 除 README 外，markdown / 设计稿 html 不再出英文与繁体译本（中文是唯一版本）。
+		const variants: string[] = [];
+		const walk = (dir: string) => {
+			for (const entry of readdirSync(dir, { withFileTypes: true })) {
+				if (entry.name.startsWith(".") || SKIP_DIRS.has(entry.name)) continue;
+				const abs = join(dir, entry.name);
+				if (entry.isDirectory()) {
+					walk(abs);
+					continue;
+				}
+				if (!/\.(md|html)$/.test(entry.name)) continue;
+				if (/^README\.(en|zh-TW|zh-CN)\.md$/.test(entry.name)) continue;
+				if (/\.(en|zh-TW|zh-CN)\.(md|html)$/.test(entry.name)) variants.push(relative(ROOT, abs));
+			}
+		};
+		walk(ROOT);
+		expect(variants, `除 README 外的文档只能是中文单版本，删掉这些译本：${variants.join(", ")}`).toEqual([]);
 		// AGENTS.md 只做索引：必须有指向该章节的映射行
 		const agents = readFileSync(join(ROOT, "AGENTS.md"), "utf8");
 		expect(agents).toContain("agent-rules.md#八文件落位与临时产物");

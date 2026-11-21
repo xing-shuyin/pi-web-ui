@@ -1,6 +1,7 @@
 import {
 	app,
 	BrowserWindow,
+	clipboard,
 	dialog,
 	ipcMain,
 	Menu,
@@ -91,7 +92,7 @@ import {
 	MIN_SPLIT_RATIO,
 	MAX_SPLIT_RATIO,
 } from "./browser-policy.js";
-import { parseTranslateBridgeRequest, translateEndpoint } from "./translate-bridge.js";
+import { parseTranslateBridgeRequest, translateTexts } from "../browser/runtime/translate-engines.js";
 
 const TEXT_EXTENSIONS = new Set([
 	".txt",
@@ -117,6 +118,35 @@ const MAX_CREDENTIAL_CSV_BYTES = 8 * 1024 * 1024;
 const object = (value: unknown): Record<string, unknown> =>
 	value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 const text = (value: unknown): string => (typeof value === "string" ? value : "");
+
+/** 引用选段的上限：再长就不是「引用」而是「搬正文」了，剩下的让 Agent 自己去页面读。 */
+const QUOTE_MAX_CHARS = 6000;
+
+/**
+ * 页面级动作的脚本：翻译开关必须在站点自己的文档里点（`translate.js` 注入的 `__PI_TRANSLATE__`），
+ * 主进程只负责转达。返回字符串就是外壳上 toast 要显示的那句话。
+ */
+const PAGE_TRANSLATE_SCRIPT = `(() => {
+	const api = window.__PI_TRANSLATE__;
+	if (!api || typeof api.togglePage !== "function") return "当前页面不支持全文翻译";
+	const state = typeof api.getState === "function" ? api.getState().pageState : "";
+	if (state === "translating") return "翻译进行中…";
+	void api.togglePage();
+	return state === "translated" ? "已恢复原文" : "正在翻译此页…";
+})()`;
+
+/** 页面翻译状态：`getState()` 快照，读不到（脚本未注入）时返回 `null` 字面量。 */
+const PAGE_TRANSLATE_STATE_SCRIPT = `(() => {
+	const api = window.__PI_TRANSLATE__;
+	if (!api || typeof api.getState !== "function") return "null";
+	return JSON.stringify(api.getState());
+})()`;
+
+/** 整页 Markdown：正文只能由页面自己取（只有它知道 DOM），剪贴板由主进程写。 */
+const PAGE_MARKDOWN_SCRIPT = `(() => {
+	const body = document.body ? document.body.innerText : "";
+	return "# " + (document.title || location.href) + "\\n\\n来源：" + location.href + "\\n\\n" + body.slice(0, 30000);
+})()`;
 
 /**
  * 库实例是进程级的：`electron-chrome-extensions` 每个 session 只允许一个实例（内部会注册
@@ -250,6 +280,7 @@ export class DesktopBrowserHost {
 		"pi-desktop:browser-create-tab",
 		"pi-browser:capture-visible-tab",
 		"pi-browser:translate",
+		"pi-browser:translate-config",
 		"pi-browser:downloads-reveal",
 	];
 
@@ -413,23 +444,25 @@ export class DesktopBrowserHost {
 				.filter((entry) => webOrigin(entry.url) === origin)
 				.map((entry) => ({ id: entry.id, name: entry.name, username: entry.username }));
 		});
-		// 网页划词/全页翻译：只认 browser session 的 http(s) frame，按 origin 校验，
-		// 目标地址由主进程从 agentUrl 派生，页面传来的任何 URL 一律不接受。
+		// 网页划词 / 全页翻译：只认 browser session 的 http(s) frame，按 origin 校验。
+		// 引擎在国内可直连的腾讯翻译（默认）与 Google 网页翻译之间二选一，凭据全在主进程，
+		// 主引擎整批失败会自动换另一个再试一次（translate-engines 的 fallback），
+		// 页面只拿译文字符串（AI 翻译已下线：整页要几十次请求，模型成本/延迟都不划算）。
 		ipcMain.handle("pi-browser:translate", async (event, payload: unknown) => {
 			this.webFrameOrigin(event);
-			const request = parseTranslateBridgeRequest(payload);
-			if (!this.agentUrl) throw new Error("Agent runtime is not connected yet");
-			const response = await fetch(translateEndpoint(this.agentUrl), {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(request),
-				signal: AbortSignal.timeout(70_000),
+			const settings = this.browser.getSettings();
+			const request = parseTranslateBridgeRequest(payload, settings.translateTarget);
+			return await translateTexts({
+				texts: request.texts,
+				target: request.target,
+				engine: settings.translateEngine,
 			});
-			if (!response.ok) {
-				const detail = await response.text().catch(() => "");
-				throw new Error(detail.slice(0, 300) || `Translation failed (HTTP ${response.status})`);
-			}
-			return (await response.json()) as { translations: string[]; model: string };
+		});
+		// 翻译配置（目标语言 / 是否自动提示）：页面脚本初始化时问一次，不必把设置塞进注入源码
+		ipcMain.handle("pi-browser:translate-config", (event) => {
+			this.webFrameOrigin(event);
+			const settings = this.browser.getSettings();
+			return { target: settings.translateTarget, autoPrompt: settings.translateAutoPrompt !== false };
 		});
 		ipcMain.handle("pi-browser:passkey-confirm", async (event) => {
 			const origin = this.webFrameOrigin(event);
@@ -444,9 +477,9 @@ export class DesktopBrowserHost {
 			await fillCredential(event.sender, entry);
 			return true;
 		});
-		// 下载圆钮的「打开所在文件夹」（`browser/renderer/downloads.js` → `__piDownloads.reveal`）：
-		// 页面只给 id，路径由主进程自己的下载记录解析。这里不给页面任何「打开任意路径」的能力——
-		// 最差情况也只是把一次它自己刚触发的下载在文件管理器里标出来。
+		// 下载的「打开所在文件夹」（`__piDownloads.reveal`）：页面只给 id，路径由主进程自己的下载记录解析。
+		// 悬浮球已下线，「下载」入口挪到外壳工具栏的下载面板（`download.reveal`）；这条窄桥留着是为了
+		// 不破坏已经加载的旧页面 / 扩展里对 `__piDownloads` 的调用，能力边界一字未改。
 		ipcMain.handle("pi-browser:downloads-reveal", (event, id: unknown) => {
 			this.webFrameOrigin(event);
 			const item = this.browser.getDownloads().find((entry) => entry.id === id && entry.state === "completed");
@@ -881,6 +914,12 @@ export class DesktopBrowserHost {
 			template.push({ role: "cut" }, { role: "copy" }, { role: "paste" }, { type: "separator" }, { role: "selectAll" });
 		} else if (params.selectionText.trim()) {
 			template.push({ role: "copy" });
+			// 选中文字 → 输入框：把选段连同它所在的标签页（标题 + 地址）一起推给 Agent，
+			// 只说「这段文字」，模型不知道它在哪个页面就没法继续看上下文。
+			template.push({
+				label: "引用到输入框 / Quote to input",
+				click: () => this.quoteSelectionToAgent(contents, params.selectionText),
+			});
 			// 划词翻译：内容脚本注入了 showSelection，调它弹出译文浮层；
 			// 脚本尚未注入时用 selectionText 兜底，直接把译文塞进浮层做不到——故只在该帧加菜单项。
 			template.push({
@@ -1240,6 +1279,14 @@ export class DesktopBrowserHost {
 			case "tabs.close":
 				this.browser.closeTab(text(args.id));
 				return true;
+			case "tabs.menu":
+				return await this.showTabMenu(text(args.id), object(args));
+			case "page.translate":
+				return await this.runPageCommand(PAGE_TRANSLATE_SCRIPT);
+			case "page.translateState":
+				return await this.pageTranslateState();
+			case "page.markdown":
+				return await this.copyPageMarkdown();
 			case "navigate":
 				await this.browser.navigate(text(args.url));
 				return true;
@@ -1761,6 +1808,125 @@ export class DesktopBrowserHost {
 	 * 扩展行右键菜单：菜单项由渲染层给（文案、勾选态、可用态都在前端），
 	 * 主进程只负责弹原生菜单并把选中项 id 回传（关掉菜单返回 null），不在这里做业务判断。
 	 */
+	/** 在活动标签页里跑一小段脚本：翻译开关这类事只能在站点文档里做，外壳不能直接摸 DOM。 */
+	private async runPageCommand(script: string): Promise<string> {
+		const contents = this.browser.getWebContents(this.browser.getActiveTabId() ?? "");
+		if (!contents || contents.isDestroyed()) throw new Error("当前没有可操作的网页");
+		const result: unknown = await contents.executeJavaScript(script, true);
+		return typeof result === "string" ? result : "";
+	}
+
+	/**
+	 * 页面翻译状态（`__PI_TRANSLATE__.getState()`）：翻译是页面里的异步活，
+	 * IPC 不能阻塞等它跑完，所以外壳点完按钮后轮询这个口子拿进度/完成。
+	 */
+	private async pageTranslateState(): Promise<{
+		pageState?: string;
+		done?: number;
+		total?: number;
+		failed?: number;
+	} | null> {
+		try {
+			const raw = await this.runPageCommand(PAGE_TRANSLATE_STATE_SCRIPT);
+			const parsed: unknown = raw ? JSON.parse(raw) : null;
+			return parsed && typeof parsed === "object" ? (parsed as { pageState?: string }) : null;
+		} catch {
+			// 脚本未注入 / 页面已经跳走：就当没状态，调用方自己收尾
+			return null;
+		}
+	}
+
+	/** 整页 Markdown：页面取正文 → 主进程写剪贴板（页面自己写受焦点/权限影响，不可靠）。 */
+	private async copyPageMarkdown(): Promise<string> {
+		const markdown = await this.runPageCommand(PAGE_MARKDOWN_SCRIPT);
+		if (!markdown.trim()) throw new Error("当前页面没有可复制的正文");
+		clipboard.writeText(markdown);
+		return "已复制页面 Markdown";
+	}
+
+	/**
+	 * 标签页右键菜单（原生）：DOM 浮层会被原生内容视图盖住，只有原生菜单能稳定压在最上面。
+	 * 「引用到输入框」把这一页的标题 + 地址推给 Agent 视图的输入框（跨视图只能走主进程）。
+	 */
+	private async showTabMenu(id: string, anchor: Record<string, unknown>): Promise<string | null> {
+		const tabs = this.browser.getTabs();
+		const tab = tabs.find((item) => item.id === id);
+		if (!tab) throw new Error("Unknown tab");
+		const webTab = isWebUrl(tab.url);
+		let picked: string | null = null;
+		const pick = (choice: string) => () => {
+			picked = choice;
+		};
+		const template: Electron.MenuItemConstructorOptions[] = [
+			{ id: "quote", label: "引用到输入框", enabled: webTab, click: pick("quote") },
+			{ id: "copy-url", label: "复制链接", enabled: webTab, click: pick("copy-url") },
+			{ type: "separator" },
+			{ id: "reload", label: "重新加载", click: pick("reload") },
+			{ id: "close", label: "关闭标签页", click: pick("close") },
+			{ id: "close-others", label: "关闭其他标签页", enabled: tabs.length > 1, click: pick("close-others") },
+		];
+		const x = Number(anchor.x);
+		const y = Number(anchor.y);
+		const choice = await new Promise<string | null>((resolveMenu) => {
+			Menu.buildFromTemplate(template).popup({
+				window: this.window,
+				...(Number.isFinite(x) && Number.isFinite(y) ? { x: Math.round(x), y: Math.round(y) } : {}),
+				// 关闭（含点空白/取消）一定回调，这里统一收口
+				callback: () => resolveMenu(picked),
+			});
+		});
+		if (choice === "quote") return this.quoteTabToAgent(tab);
+		if (choice === "copy-url") {
+			clipboard.writeText(tab.url);
+			return "已复制链接";
+		}
+		if (choice === "reload") {
+			// reload() 只作用于当前标签，先切过去再刷
+			this.browser.activateTab(id);
+			this.browser.reload();
+		}
+		if (choice === "close") this.browser.closeTab(id);
+		if (choice === "close-others") for (const item of tabs) if (item.id !== id) this.browser.closeTab(item.id);
+		return null;
+	}
+
+	/** 标签页 → Agent 输入框：Agent 视图与外壳是两个视图，只能由主进程转一手。 */
+	private quoteTabToAgent(tab: { id: string; url: string; title: string }): string {
+		return this.sendBrowserReference({ tabId: tab.id, url: tab.url, title: tab.title || tab.url }, tab.url);
+	}
+
+	/**
+	 * 页面选中文字 → Agent 输入框：选段跟着它所在的标签页（标题 + 地址）一起走。
+	 * 只给标题/地址与选中的文字，不给整页内容——Agent 有自己的浏览器工具，要全文自己读。
+	 */
+	private quoteSelectionToAgent(contents: WebContents, raw: string): string {
+		const text = String(raw || "")
+			.trim()
+			.slice(0, QUOTE_MAX_CHARS);
+		if (!text) return "";
+		const tab = this.browser.getTabs().find((item) => this.browser.getWebContents(item.id) === contents);
+		return this.sendBrowserReference(
+			{
+				...(tab ? { tabId: tab.id, url: tab.url, title: tab.title || tab.url } : { url: contents.getURL() }),
+				text,
+			},
+			text,
+		);
+	}
+
+	/** 跨视图投递的唯一出口：Agent 未就绪就退回剪贴板，不假装成功。 */
+	private sendBrowserReference(payload: Record<string, unknown>, fallbackCopy: string): string {
+		const target = this.agent?.webContents;
+		if (!target || target.isDestroyed() || !this.agentReady) {
+			clipboard.writeText(fallbackCopy);
+			return "Agent 未就绪，已复制到剪贴板";
+		}
+		target.send("pi-desktop:browser-reference", payload);
+		// 纯浏览器模式下看不到输入框：引用完切成分栏，用户立刻能看到插进去的那一段
+		if (this.mode === "browser") this.setMode("split");
+		return "已引用到 Agent 输入框";
+	}
+
 	private async showExtensionMenu(items: unknown[], anchor: Record<string, unknown>): Promise<string | null> {
 		let picked: string | null = null;
 		const template: Electron.MenuItemConstructorOptions[] = [];

@@ -27,6 +27,7 @@
  */
 import { registerBashProcessPatch } from "./patch-bash-process.js";
 import { registerExecutableLookupPatch } from "./patch-executable-lookup.js";
+import { registerExtensionRunnerPatch } from "./patch-extension-runner.js";
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { dirname, join } from "node:path";
@@ -183,6 +184,7 @@ export function registerGlobalSdkPreference(mode = process.env.PI_WEB_SDK, fromF
 
 registerBashProcessPatch();
 registerExecutableLookupPatch();
+registerExtensionRunnerPatch();
 const used = registerGlobalSdkPreference();
 if (used) {
 	console.log(

@@ -18,7 +18,7 @@
 
 Office 支援文本/CSV 編輯，以及 DOCX/XLSX/PPTX 的只讀內容預覽；複雜排版、圖片與公式計算不在當前預覽範圍。二進位制文件不會被當作文本覆蓋儲存。本地文件必須先通過檔案選擇器開啟。
 
-模組邊界、許可權和構建說明見 [內建瀏覽器架構](../docs/architecture-browser.zh-TW.md)。
+模組邊界、許可權和構建說明見 [內建瀏覽器架構](../docs/architecture-browser.md)。
 
 ## 裝置中心整合瀏覽器
 
@@ -61,9 +61,9 @@ open -a /Applications/pi-web-ui-desktop.app
 | `PI_WEB_HEALTH_TIMEOUT_MS` | 等待 `/api/health` 的毫秒數，預設 `60000`；正數最少 `1000`，非法值或非正數回落預設值                        |
 | 訪問口令環境變數           | 設定服務訪問口令；桌面視窗首次載入時帶 `?token=` 完成鑑權，隨後前端清除 URL 中的 token                      |
 | `PI_WEB_DESKTOP_URL`       | 僅開發模式可將視窗指向已有服務；打包版忽略，見下文聯調方式                                                  |
-| `PI_WEB_SDK=bundled`       | 強制使用自帶 pi SDK；預設會在檢測到機器上更新的 pi 副本時跟隨，詳情見 [環境變數](../docs/env-vars.zh-TW.md) |
+| `PI_WEB_SDK=bundled`       | 強制使用自帶 pi SDK；預設會在檢測到機器上更新的 pi 副本時跟隨，詳情見 [環境變數](../docs/env-vars.md) |
 
-固定埠讓 Chromium 的 Origin 保持穩定，有助於保留主題、面板寬度等 localStorage 設定；回落隨機埠後，這些按 Origin 儲存的介面狀態可能不同。桌面 sidecar 固定監聽 `127.0.0.1`；需要遠端部署請參考[部署文件](../docs/deployment.zh-TW.md)。
+固定埠讓 Chromium 的 Origin 保持穩定，有助於保留主題、面板寬度等 localStorage 設定；回落隨機埠後，這些按 Origin 儲存的介面狀態可能不同。桌面 sidecar 固定監聽 `127.0.0.1`；需要遠端部署請參考[部署文件](../docs/deployment.md)。
 
 - 與 CLI/網頁版並用時，預設共享的 `~/.pi/agent` 包含會話記錄，避免兩個服務同時操作同一對話；要隔離可設定 `PI_CODING_AGENT_DIR`。不要讓兩個服務同時寫同一 WebUI data-dir。
 - `browser_page` 依賴瀏覽器 page-picker 擴充套件，在 Electron 視窗中不可用；請在支援該擴充套件的瀏覽器中開啟服務地址並授權頁面。其他瀏覽器工具有各自的執行條件。
@@ -159,4 +159,4 @@ Electron 主程序（desktop/main.ts）
 
 Windows CI 已接入 SignPath，但簽名步驟允許失敗，且當前配置使用 `test-signing`；不能把所有 Release 產物視為已受信任簽名。便攜目錄在簽名替換安裝器之前組裝，也不能從安裝器簽名推斷 ZIP 內應用的簽名狀態。
 
-本地 electron-builder 可通過 `CSC_LINK` 和 `CSC_KEY_PASSWORD` 提供簽名證書。macOS 的 Developer ID 簽名和公證需要相應 Apple 憑據與環境，例如 `APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`；是否成功應檢查構建輸出及實際產物。SignPath 不替代 macOS 簽名/公證，自簽名證書也不等於獲得系統信任。完整發布流程見[釋出文件](../docs/release.zh-TW.md)。
+本地 electron-builder 可通過 `CSC_LINK` 和 `CSC_KEY_PASSWORD` 提供簽名證書。macOS 的 Developer ID 簽名和公證需要相應 Apple 憑據與環境，例如 `APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`；是否成功應檢查構建輸出及實際產物。SignPath 不替代 macOS 簽名/公證，自簽名證書也不等於獲得系統信任。完整發布流程見[釋出文件](../docs/release.md)。

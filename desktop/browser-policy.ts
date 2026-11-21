@@ -2,7 +2,13 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { BrowserMode } from "../browser/contracts.js";
 
-export const BROWSER_TOOLBAR_HEIGHT = 40;
+/**
+ * 外壳自己的高度：两行 —— 标签页行 40px + 工具栏行 40px。
+ * 页面视图从这下面开始（`browserLayout()`），面板浮层的默认顶边也跟它走。
+ */
+export const BROWSER_TAB_ROW_HEIGHT = 40;
+export const BROWSER_TOOL_ROW_HEIGHT = 40;
+export const BROWSER_TOOLBAR_HEIGHT = BROWSER_TAB_ROW_HEIGHT + BROWSER_TOOL_ROW_HEIGHT;
 export const MIN_SPLIT_RATIO = 0.2;
 export const MAX_SPLIT_RATIO = 0.8;
 

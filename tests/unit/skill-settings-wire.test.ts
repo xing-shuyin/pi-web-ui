@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { handleSettingsMessage } from "../../server/dispatch-domain-handlers.js";
 import type { ClientMessage } from "../../server/protocol.js";
-import type { DispatchSession } from "../../server/index.js";
+import type { DispatchSession } from "../../server/engine-service.js";
 import { PUBLIC_SKILLS, SKILL_MARKETS } from "../../web/src/skill-catalog.js";
 import { MCP_MARKETS, PUBLIC_MCP_SERVERS } from "../../web/src/mcp-catalog.js";
 

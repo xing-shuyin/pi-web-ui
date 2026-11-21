@@ -25,7 +25,15 @@ function setup() {
 			steer: vi.fn().mockResolvedValue(undefined),
 		},
 	};
-	const parent: any = { id: "parent", suspendedSubagents: new Set([child]) };
+	const parent: any = {
+		id: "parent",
+		suspendedSubagents: new Set([child]),
+		runtime: {},
+		// `conv.session` 是 `runtime.session` 的只读投影：换会话一律写 runtime。
+		get session() {
+			return this.runtime.session;
+		},
+	};
 	const host: any = Object.assign(fakeClientSession(), {
 		convs: new Map([
 			[child.id, child],
@@ -128,7 +136,7 @@ describe("idle subagent revision rounds (#784)", () => {
 
 	it("delivers a fresh completion for each revision and honors notifyOnDone=false", async () => {
 		const { child, parent, host, steer, resolve } = setup();
-		parent.session = { sendUserMessage: vi.fn().mockResolvedValue(undefined) };
+		parent.runtime.session = { sendUserMessage: vi.fn().mockResolvedValue(undefined) };
 		child.session.getLastAssistantText = () => "Revision complete";
 		host.getLang = () => "en";
 		host.checkSubagentWakeCircuitBreaker = () => null;

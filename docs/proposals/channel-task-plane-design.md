@@ -240,7 +240,7 @@ accepted ──┴──► running ────┘
 
 1. **正文 ≤ 1500 字**，超长结论转附件或 web 深链；`details` 仍受 64KB 红线约束。
 2. **每任务最多 6 条**（start + 4 进度 + 1 终态），超出只更新不新增（渠道发新消息要花额度/配额）。
-3. **必须带可执行指令**：`/open t-7f3a`（→ `host.sessions.open(conversationId)`，`docs/architecture-plugins.md#项目--会话-api`）、`/stop t-7f3a`。
+3. **必须带可执行指令**：`/open t-7f3a`（→ `host.sessions.open(conversationId)`，`docs/architecture-plugin-host-api.md#项目--会话-apihostopensession--hostsessionsissue-146`）、`/stop t-7f3a`。
 4. **可达性降级**（`proactive` 能力）：
 
 | `proactive`                       | 报告怎么发                                                                                                                                      |

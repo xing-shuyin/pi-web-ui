@@ -6,6 +6,7 @@ import {
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { parseModelSpec } from "./attachments.js";
+import { runTurn } from "./session-turns.js";
 
 export interface PluginLlmRequest {
 	prompt: string;
@@ -176,7 +177,7 @@ export async function completeWithIsolatedSession(env: PluginLlmEnv, req: Plugin
 			if (images.length && !srv.session.model?.input?.includes("image"))
 				return fail("llm.complete: selected model does not support image inputs");
 			const text = system.trim() ? `系统指令：${system.trim()}\n\n---\n\n任务：${prompt}` : prompt;
-			await srv.session.prompt(text, { expandPromptTemplates: false, ...(images.length ? { images } : {}) });
+			await runTurn(srv.session, text, { expandPromptTemplates: false, ...(images.length ? { images } : {}) });
 			if (stopped) return stopped;
 			const raw = srv.session.getLastAssistantText() ?? "";
 			let usage: { input: number; output: number } | undefined;

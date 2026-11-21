@@ -1,5 +1,3 @@
-[English](./goal-conversation-design.en.md) · **简体中文** · [繁體中文](./goal-conversation-design.zh-TW.md)
-
 # 目标模式 2.0 设计：把「目标审查」变成对话
 
 > **状态**：**已实施，且只剩一条路径**。目标模式 2.0 = 服务端驱动 + 执行对话干活 + **当前对话当审查者**（本文的 Plan A，下文简称「执行对话模式」）。v1 的隐藏隔离审查会话与自治标记路径（`runGoalReview` / `isAutonomous` / `GOAL_COMPLETION_RE`）已按产品决策**删除**；Plan B（审查者=角色子代理）与 `reviewMode` 开关**不再实现**。实施细节与偏差见 §11。
@@ -12,6 +10,21 @@
 > - v1：Plan A（主对话=审查者）/ Plan B（主对话=执行者）两案并列。
 
 ---
+
+## 目录
+
+- [0. 现状与痛点](#0-现状与痛点)
+- [1. 结论（TL;DR）](#1-结论tldr)
+- [2. 底座事实（已逐条核实；❗=对 v1 的纠正）](#2-底座事实已逐条核实❗对-v1-的纠正)
+- [3. 分层原则（先定，否则 A/B 各写一遍）](#3-分层原则先定否则-ab-各写一遍)
+- [4. 推荐的统一循环（v2 核心）](#4-推荐的统一循环v2-核心)
+- [5. 三种配置](#5-三种配置)
+- [6. 决策结论（v1 §9 待决点 + 新增决策）](#6-决策结论v1-9-待决点--新增决策)
+- [7. 改动清单（对齐仓库硬约束）](#7-改动清单对齐仓库硬约束)
+- [8. 里程碑](#8-里程碑)
+- [9. 风险与回滚](#9-风险与回滚)
+- [10. 参考](#10-参考)
+- [11. 实施记录：Plan A（🧭 `delegated`）已落地](#11-实施记录plan-a🧭-delegated已落地)
 
 ## 0. 现状与痛点
 
@@ -416,7 +429,7 @@ export interface GoalStatus {
 - 协议：`server/protocol.ts`（目标消息族 `:729-745`、`switch_conversation:533`、`dismiss_conversation:1048`、`GoalStatus:1382`、`PlanStep:1220`、`UiState.plan:208`）
 - 前端：`web/src/components/GoalBar.tsx`（`GOAL_DEFAULT_ORDER` + slot 合并）、`web/src/components/SettingsModal.tsx:3718`、`web/src/i18n.tsx`
 - Issue：#385（AI 提炼超时，PR #386 待合）、#389（Goal & Plan）
-- 主题文档：`docs/architecture-core.md`（快照驱动 / 协议单源）、`docs/architecture-plugins.md`（UI 扩展点与 slot 兼容）、`docs/agent-rules.md`（禁令清单）
+- 主题文档：`docs/architecture-core.md`（快照驱动 / 协议单源）、`docs/architecture-plugin-ui.md`（UI 扩展点与 slot 兼容）、`docs/agent-rules.md`（禁令清单）
 
 ---
 

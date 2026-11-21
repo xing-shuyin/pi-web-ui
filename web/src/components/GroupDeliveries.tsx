@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { artifactRefsMatch, deliveryReviewMatches } from "../../../server/device-center/delivery-subject";
-import { appUrl } from "../base-url";
-import { withToken } from "../auth-token";
+import { requestJson } from "../api-client";
 import { isZhLocale, useI18n, useT } from "../i18n";
 import { randomUuid } from "../uuid";
 import { groupAttention, groupAttentionKey } from "../group-attention";
@@ -10,15 +9,10 @@ import type { DeviceDelivery, DeviceIntegration, DeviceReview, DeviceReviewReque
 import { GroupIntegration } from "./GroupIntegration";
 
 async function request<T>(path: string, signal: AbortSignal, body?: object): Promise<T> {
-	const response = await fetch(withToken(appUrl(`/api/device-center/${path}`)), {
-		method: body ? "POST" : "GET",
-		credentials: "same-origin",
+	return requestJson<T>(`/api/device-center/${path}`, {
+		body,
 		signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
-		...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
 	});
-	const data = await response.json().catch(() => ({}));
-	if (!response.ok) throw new Error(data.error || String(response.status));
-	return data;
 }
 
 export function GroupDeliveries({

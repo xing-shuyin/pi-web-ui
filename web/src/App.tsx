@@ -97,7 +97,8 @@ import {
 import { setFenceSend, syncFenceRenderers, syncMessageWidgets } from "./plugin-fence";
 import { findFileHandler, syncFileHandlers, type FileHandlerPlugin } from "./plugin-file-handlers";
 const PiSetupModal = lazy(() => import("./components/PiSetupModal").then((m) => ({ default: m.PiSetupModal })));
-import { getDesktopOpenFilesBridge, isDesktopShell } from "./desktop";
+import { getDesktopBrowserReferenceBridge, getDesktopOpenFilesBridge, isDesktopShell } from "./desktop";
+import { browserReferenceInsertion } from "./browser-tab-reference";
 const ModelConfigModal = lazy(() =>
 	import("./components/ModelConfigModal").then((m) => ({ default: m.ModelConfigModal })),
 );
@@ -506,6 +507,15 @@ export function App() {
 			}
 		});
 	}, [openFile]);
+	// 内置浏览器的标签页右键「引用到输入框」→ 主进程转一手推过来，插在当前对话的输入框里
+	useEffect(() => {
+		const subscribe = getDesktopBrowserReferenceBridge();
+		if (!subscribe) return;
+		return subscribe((payload) => {
+			const insertion = browserReferenceInsertion(payload);
+			if (insertion) insertTextAtCursor(insertion);
+		});
+	}, []);
 	const [lightboxImage, setLightboxImage] = useState<ImageLightboxTarget | null>(null);
 	const lightboxOpenRef = useRef(false);
 	useEffect(() => {

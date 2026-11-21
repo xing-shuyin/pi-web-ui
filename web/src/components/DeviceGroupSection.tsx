@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { FiChevronDown, FiChevronUp, FiPlus, FiUsers } from "react-icons/fi";
-import { appUrl } from "../base-url";
+import { requestJson } from "../api-client";
 import { DeviceGroupMembers } from "./DeviceGroupMembers";
 import { DeviceGroupBotDialog } from "./DeviceGroupBotDialog";
 import { DeviceGroupEditDialog } from "./DeviceGroupEditDialog";
-import { withToken } from "../auth-token";
 import { useT } from "../i18n";
 import { openContextMenu } from "../context-menu-state";
 import type { UiSlotEntry } from "../ui-slots";
@@ -56,21 +55,16 @@ function mayCarryDetail(path: string): boolean {
 }
 
 export async function deviceGroupRequest<T>(path: string, signal: AbortSignal, body?: object): Promise<T> {
-	const response = await fetch(withToken(appUrl(`/api/device-center/${path}`)), {
+	return requestJson<T>(`/api/device-center/${path}`, {
+		body,
 		signal: AbortSignal.any([
 			signal,
 			AbortSignal.timeout(mayCarryDetail(path) ? BOT_DRAFT_REQUEST_TIMEOUT_MS : DEVICE_REQUEST_TIMEOUT_MS),
 		]),
-		...(body === undefined
-			? {}
-			: { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+		// 只有本地接口允许把 detail 展示给用户；Hub 上游的 error 永远不落到这里。
+		errorFor: (failure) =>
+			new DeviceGroupRequestError(failure.status, failure.code, mayCarryDetail(path) ? failure.detail.trim() : ""),
 	});
-	const data = await response.json().catch(() => ({}));
-	if (!response.ok) {
-		const detail = mayCarryDetail(path) && typeof data?.detail === "string" ? data.detail.trim() : "";
-		throw new DeviceGroupRequestError(response.status, typeof data?.code === "string" ? data.code : "", detail);
-	}
-	return data as T;
 }
 
 export function deviceGroupErrorKind(error: unknown): "bind" | "running" | "forbidden" | "failed" {

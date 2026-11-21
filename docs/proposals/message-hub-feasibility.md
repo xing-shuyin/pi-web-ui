@@ -243,7 +243,7 @@ host.messaging: {
 
 1. **`peerId` 不透明**。宿主与 AI 从不解析它，因此不需要"跨平台地址统一"这个无解题。想按原始 handle 发（如"发给 +8613800…"）时先 `listPeers({query})` 查目录，查不到就诚实报错——不做模糊匹配。
 2. **`proactive` 是一等能力**（你这次提的问题直接催生的设计）。`action=channels` 会逐渠道返回 `proactive` / `history`；对 `windowed` 渠道，`send` 失败必须带 `reason`，AI 才能说"QQ 的被动窗口过期了，得让用户先发一条或换渠道"，而不是笼统报"发送失败"。
-3. **`observe` 是旁路**。放在插件自己的入站回调里，白名单与命令解析之后、投递前后皆可。**不新增 `host.chat` 字段**，不触碰 issue #929 的投递门（`docs/architecture-core.md#压缩期的入站投递一个门一个队列一个排空点issues929`）。
+3. **`observe` 是旁路**。放在插件自己的入站回调里，白名单与命令解析之后、投递前后皆可。**不新增 `host.chat` 字段**，不触碰 issue #929 的投递门（`docs/architecture-runtime.md#压缩期的入站投递一个门一个队列一个排空点issues929`）。
 4. **发送不重试**。`send` 失败把 `retryable` 交给模型/用户；平台级重试仍归插件（QQ 已用 `host.delivery`）。飞书插件目前**没有显式 429 退避**，这是实现缺口，交给 hub 侧的 `rate_limited` 分类 + 退避（复用 `server/plugin-delivery.ts` 的分类语义），不是给平台加窗口。
 5. **飞书的历史回补是特例而非通则**。`readHistory` 只给 `history:"platform"` 的渠道实现；飞书直接复用已有的 `chats/list/read`（`plugins/feishu/index.mjs:844`），不用重写平台调用。
 

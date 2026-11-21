@@ -289,6 +289,15 @@ import {
 	formatCommunicationMessage,
 } from "./conversation-communication.js";
 import { requestContextExtension, enableRequestEvidence } from "./request-context.js";
+import { staleSafe } from "./extension-guards.js";
+import {
+	isRetiredSession,
+	guardSession,
+	promptSession,
+	steerSession,
+	runTurn,
+	SessionRetiredError,
+} from "./session-turns.js";
 import {
 	removeContextEvidence,
 	withContextEvidenceRead,
@@ -729,7 +738,11 @@ export interface Conversation {
 	transferring?: boolean;
 	bashKills?: Set<AbortController>;
 	runtime: AgentSessionRuntime;
-	session: AgentSession;
+	/**
+	 * `runtime.session` 的只读投影（#958）：唯一事实源是 `runtime`，禁止单独赋值。
+	 * 对象字面量里是 getter（实时读 `this.runtime.session`），reset/bindSession 后自动跟随。
+	 */
+	readonly session: AgentSession;
 	cwd: string;
 	createdAt: number;
 	touchSidecarCount?: number;
@@ -916,6 +929,32 @@ export function isAbortedTurnBoundaryError(err: unknown): boolean {
 		return true;
 	}
 	return false;
+}
+
+/**
+ * 扩展报错去重策略（#958）。
+ *
+ * 同一个「扩展 · 钩子 · 报错」在**一个会话内**只在首次带堆栈打一条，之后每跨一个数量级补一条不带堆栈的计数行。
+ * 原先是先 `console.error` 再判重：长会话里被复读的同一个错误按「每轮每扩展一条」线性膨胀
+ * （实测单会话 3,659 条、9.7 MB 日志、单核 53% 的时间耗在拼堆栈 + 写日志上），而判重只挡了界面通知。
+ */
+export function extensionErrorLogPlan(count: number): { log: boolean; withStack: boolean } {
+	if (count <= 0) return { log: false, withStack: false };
+	if (count === 1) return { log: true, withStack: true };
+	// 10 / 100 / 1000 …：复读再久，日志行数也是 O(log n)。
+	const zeros = count < 10 ? 0 : (String(count).match(/^1(0+)$/)?.[1].length ?? 0);
+	return { log: zeros > 0, withStack: false };
+}
+
+/** 单个会话内允许记住的「不同报错」上限；超过就重置计数（防止报错文案带变量时把内存吃满）。 */
+export const EXTENSION_ERROR_KEY_CAP = 128;
+
+/** 记一次扩展报错并返回它在本会话内的序号；键数超上限时重置（仅防无界增长，不静默丢报错）。 */
+export function countExtensionError(counts: Map<string, number>, key: string, cap = EXTENSION_ERROR_KEY_CAP): number {
+	if (!counts.has(key) && counts.size >= cap) counts.clear();
+	const count = (counts.get(key) ?? 0) + 1;
+	counts.set(key, count);
+	return count;
 }
 
 export { processTreeKillPlan, resolveCwdTarget };
@@ -1156,6 +1195,8 @@ export class ClientSession {
 	onRunEvent: ((ev: PluginRunEvent) => void) | undefined = undefined;
 	onNotificationEvent: MobileNotificationCallback | undefined = undefined;
 	private notifiedQuestions = new Set<string>();
+	/** 扩展报错去重计数：**按会话**存，跨 `bindSession` / reload 不重置（#958）。 */
+	private extensionErrorCounts = new Map<string, Map<string, number>>();
 	onConversationChanged: (() => void) | undefined = undefined;
 	onClientModelChanged: ((snap: PluginConversationSnapshot) => void) | undefined = undefined;
 	pluginToolsProvider: ((cwd?: string) => PluginAgentTool[]) | undefined = undefined;
@@ -1508,14 +1549,13 @@ export class ClientSession {
 		if (!conv || this.disposed) return;
 		if (!conv.runtime.session.isStreaming) return;
 		const seconds = Math.max(1, Math.round(idleMs / 1000));
-		void conv.runtime.session
-			.sendUserMessage(
-				`（系统自动提醒：你启动的终端「${title}」（id=${terminalId}）已连续 ${seconds} 秒没有任何新输出。` +
-					`进程可能在等待输入、卡住或已挂起。\n最近输出：\n${lastLines || "（无输出）"}\n` +
-					`请用 terminal(action="read", terminalId="${terminalId}") 查看/搜索它的当前状态；` +
-					`若在等交互就用 terminal(action="input"/"key") 回应；确认不再需要就 terminal(action="close") 关掉它。）`,
-			)
-			.catch(() => {});
+		void promptSession(
+			conv.runtime.session,
+			`（系统自动提醒：你启动的终端「${title}」（id=${terminalId}）已连续 ${seconds} 秒没有任何新输出。` +
+				`进程可能在等待输入、卡住或已挂起。\n最近输出：\n${lastLines || "（无输出）"}\n` +
+				`请用 terminal(action="read", terminalId="${terminalId}") 查看/搜索它的当前状态；` +
+				`若在等交互就用 terminal(action="input"/"key") 回应；确认不再需要就 terminal(action="close") 关掉它。）`,
+		).catch(() => {});
 	}
 
 	private notifyTerminalBashDone(
@@ -1538,7 +1578,7 @@ export class ClientSession {
 			`最后输出：\n${stripAnsi(tail).trim() || "（无输出）"}）`;
 		const session = conv.runtime.session;
 		if (session.isStreaming) {
-			void session.sendUserMessage(text).catch(() => {});
+			void promptSession(session, text).catch(() => {});
 		} else {
 			void session
 				.sendCustomMessage(
@@ -1592,7 +1632,7 @@ export class ClientSession {
 			`日志：${job.logPath}\n最后输出：\n${tail}）`;
 		const session = conv.runtime.session;
 		if (session.isStreaming) {
-			void session.sendUserMessage(text).catch(() => {});
+			void promptSession(session, text).catch(() => {});
 		} else {
 			void session
 				.sendCustomMessage(
@@ -1853,10 +1893,13 @@ export class ClientSession {
 				await conv.session.bindExtensions({
 					mode: "rpc",
 					uiContext: WebUIContext.headless(),
-					onError: this.makeExtensionErrorReporter({
-						text: `子代理 ${conversationId}：`,
-						textEn: `Subagent ${conversationId}: `,
-					}),
+					onError: this.makeExtensionErrorReporter(
+						{
+							text: `子代理 ${conversationId}：`,
+							textEn: `Subagent ${conversationId}: `,
+						},
+						conversationId,
+					),
 				});
 			} catch {}
 			assertChildCurrent();
@@ -1950,8 +1993,7 @@ export class ClientSession {
 			signal?.addEventListener("abort", onSpawnAbort, { once: true });
 			holder.assertSubagentWorktreeAdmission(conv);
 			this.recordSubagentRunStart(conv, { prompt, template: apply?.name, persist: Boolean(persist) });
-			conv.kickoff = runtime.session
-				.sendUserMessage(prompt)
+			conv.kickoff = promptSession(runtime.session, prompt)
 				.catch((err) => {
 					currentHolder()?.emit({
 						type: "notice",
@@ -2410,7 +2452,13 @@ export class ClientSession {
 		if (mode === "closed") return { state: "missed" };
 		if (mode === "live") {
 			// 只投给活着的一轮：SDK 的 steering 队列由这一轮自己取走。
-			await this.submitText(conv, message, mode);
+			try {
+				await this.submitText(conv, message, mode);
+			} catch (err) {
+				// 会话刚被 dispose（#958）：这一轮已经不存在，回执如实报 missed。
+				if (err instanceof SessionRetiredError) return { state: "missed" };
+				throw err;
+			}
 			return { state: "delivered" };
 		}
 		if (mode === "gated") {
@@ -2446,7 +2494,7 @@ export class ClientSession {
 		let requeued = false;
 		conv.kickoff = (async () => {
 			try {
-				await session.sendUserMessage(message);
+				await promptSession(session, message);
 			} catch (err) {
 				if (!isCurrent()) return;
 				// 门在开轮的瞬间又关上了（例如刚进来一轮压缩）：转回队列，不当作失败。
@@ -2626,9 +2674,7 @@ export class ClientSession {
 		text: string,
 		tag?: string,
 	): Promise<"delivered" | "queued" | "closed" | "rejected"> {
-		const mode = this.deliveryModeOf(conv);
-		if (mode === "closed") return "closed";
-		if (mode === "gated") {
+		const park = (): "queued" | "rejected" => {
 			const queue = this.deliveryQueue(conv);
 			if (
 				!queue.park({
@@ -2648,9 +2694,18 @@ export class ClientSession {
 			}
 			void this.drainDeliveries(conv);
 			return "queued";
+		};
+		const mode = this.deliveryModeOf(conv);
+		if (mode === "closed") return "closed";
+		if (mode === "gated") return park();
+		try {
+			await this.submitText(conv, text, mode);
+			return "delivered";
+		} catch (err) {
+			// 会话刚被 dispose（force reset 重建中）：不能丢消息，也不能报「失败」——留在队里，#958。
+			if (err instanceof SessionRetiredError) return park();
+			throw err;
 		}
-		await this.submitText(conv, text, mode);
-		return "delivered";
 	}
 
 	/**
@@ -2700,7 +2755,7 @@ export class ClientSession {
 		await queue.drain(this.deliveryHost(conv));
 	}
 
-	/** 把一段文字投进对话的唯一实现：live → 当前轮，其余 → 新开一轮。 */
+	/** 把一段文字投进对话的唯一实现：live → 当前轮，其余 → 新开一轮。走 `session-turns` 闸门（#958）。 */
 	private async submitText(
 		conv: Conversation,
 		text: string,
@@ -2709,11 +2764,11 @@ export class ClientSession {
 		if (mode === "live") {
 			// 已经在跑：交给这一轮的 steering 队列；刚要开始（promptInFlight）同样走这里，
 			// 因为那一轮马上会把队列取走——绝不能在这里另开一轮。
-			if (conv.session.isStreaming) await conv.session.sendUserMessage(text, { deliverAs: "steer" });
-			else await conv.session.steer(text);
+			if (conv.session.isStreaming) await promptSession(conv.session, text, { deliverAs: "steer" });
+			else await steerSession(conv.session, text);
 			return;
 		}
-		await conv.session.sendUserMessage(text);
+		await promptSession(conv.session, text);
 	}
 
 	private async deliverIntent(conv: Conversation, intent: DeliveryIntent): Promise<"delivered" | "gated"> {
@@ -2723,12 +2778,19 @@ export class ClientSession {
 		if (intent.kind === "subagent-notice") return await this.deliverSubagentNotice(conv, intent);
 		const text = intent.text ?? "";
 		if (!text.trim()) return "delivered";
-		if (intent.kind === "steer") {
-			if (mode === "live") await this.submitText(conv, text, mode);
-			else this.startSubagentRound(conv, text);
-			return "delivered";
+		try {
+			if (intent.kind === "steer") {
+				if (mode === "live") await this.submitText(conv, text, mode);
+				else this.startSubagentRound(conv, text);
+				return "delivered";
+			}
+			await this.submitText(conv, text, mode);
+		} catch (err) {
+			// 会话刚被 dispose（force reset 重建 / 沙盒清理）：这条意图不能丢，也不能当「失败」报。
+			// 留在队列里等新 session 绑好后的 drain（`bindSession` 结束时会排空）——#958。
+			if (err instanceof SessionRetiredError) return "gated";
+			throw err;
 		}
-		await this.submitText(conv, text, mode);
 		if (this.convs.get(conv.id) === conv) this.flushSnapshot();
 		return "delivered";
 	}
@@ -4383,12 +4445,12 @@ export class ClientSession {
 			waitRoleAgent: (convId, timeoutMs) => this.waitConversationTurnEnd(convId, timeoutMs),
 			sendRoleAgent: async (convId, message, deliverAs) => {
 				const conv = this.convs.get(convId);
-				if (!conv?.session) return false;
+				if (!conv?.session || isRetiredSession(conv.session)) return false;
 				this.assertSubagentWorktreeAdmission(conv);
 				const mode = this.deliveryModeOf(conv);
 				if (mode === "closed") return false;
 				if (mode === "live" && deliverAs === "followUp") {
-					await conv.session.sendUserMessage(message, { deliverAs: "followUp" });
+					await promptSession(conv.session, message, { deliverAs: "followUp" });
 					return true;
 				}
 				const outcome = await this.deliverFromOutside(conv, message);
@@ -4719,10 +4781,13 @@ export class ClientSession {
 					await pinnedConv.session.bindExtensions({
 						mode: "rpc",
 						uiContext: WebUIContext.headless(),
-						onError: cs.makeExtensionErrorReporter({
-							text: `会话 ${convId}：`,
-							textEn: `Conversation ${convId}: `,
-						}),
+						onError: cs.makeExtensionErrorReporter(
+							{
+								text: `会话 ${convId}：`,
+								textEn: `Conversation ${convId}: `,
+							},
+							convId,
+						),
 					});
 				} catch {}
 				cs.applyToolGating(pinnedConv.session, pinnedConv.agentPreset);
@@ -4940,155 +5005,177 @@ export class ClientSession {
 								name: "pi-webui-provider-payload-overrides",
 								hidden: true,
 								factory: (pi) => {
-									pi.on("before_provider_request", (event, ctx) => {
-										const parentConversationId = this.convs.get(ownerId ?? "")?.parentId;
-										return mergeModelSamplingParamsIntoProviderPayload(
-											event.payload,
-											ctx.model,
-											getConversationSamplingOverrides(ownerId, parentConversationId),
-										);
-									});
+									pi.on(
+										"before_provider_request",
+										staleSafe((event, ctx) => {
+											const parentConversationId = this.convs.get(ownerId ?? "")?.parentId;
+											return mergeModelSamplingParamsIntoProviderPayload(
+												event.payload,
+												ctx.model,
+												getConversationSamplingOverrides(ownerId, parentConversationId),
+											);
+										}),
+									);
 								},
 							},
 							{
 								name: "pi-webui-sandbox-final-gate",
 								hidden: true,
 								factory: (pi) => {
-									pi.on("tool_call", async (event) => {
-										if (botExecution) {
-											try {
-												await botExecution.assertWorkspace(effectiveCwd);
-												const auth = this.botToolAuthorization(
-													event.toolName,
-													effectiveCwd,
-													event.input,
-													"execute",
-													ownerId,
-												);
-												if (!auth.allowed)
-													return { block: true, reason: auth.reason ?? "Tool is not authorized for this Bot" };
-											} catch {
-												return { block: true, reason: "Bot execution authorization expired" };
-											}
-										}
-										return sandboxRuntimeGate.check(event);
-									});
+									pi.on(
+										"tool_call",
+										// 守卫类钩子必须 fail-closed：ctx 失效时拒绝工具调用，而不是静默放行。
+										staleSafe(
+											async (event) => {
+												if (botExecution) {
+													try {
+														await botExecution.assertWorkspace(effectiveCwd);
+														const auth = this.botToolAuthorization(
+															event.toolName,
+															effectiveCwd,
+															event.input,
+															"execute",
+															ownerId,
+														);
+														if (!auth.allowed)
+															return {
+																block: true,
+																reason: auth.reason ?? "Tool is not authorized for this Bot",
+															};
+													} catch {
+														return { block: true, reason: "Bot execution authorization expired" };
+													}
+												}
+												return sandboxRuntimeGate.check(event);
+											},
+											{ onStale: () => ({ block: true, reason: "This session was retired; tool calls are blocked." }) },
+										),
+									);
 								},
 							},
 							{
 								name: "pi-webui-device-group-context",
 								hidden: true,
 								factory: (pi) => {
-									pi.on("context", (event, ctx) => {
-										const bot = botExecution;
-										if (!bot?.groupContext) return;
-										const messages = repairGroupContextRequest(bot.groupContext, event.messages, bot.bot.id);
-										const metrics =
-											messages !== event.messages
-												? (messages.at(-1) as ReturnType<typeof groupContextMessage>).details.metrics
-												: extractGroupContextMetrics(bot.groupContext, [], "", "none", true);
-										recordGroupContextMetrics(ctx.sessionManager.getSessionId(), metrics);
-										if (messages !== event.messages) return { messages };
-									});
-									pi.on("before_agent_start", (_event, ctx) => {
-										const bot = botExecution;
-										const current = bot?.groupContext;
-										if (!current) return;
-										const message = groupContextMessage(
-											current,
-											ctx.sessionManager.buildSessionProjection().messages,
-											bot.bot.id,
-										);
-										recordGroupContextMetrics(ctx.sessionManager.getSessionId(), message.details.metrics);
-										return { message };
-									});
+									pi.on(
+										"context",
+										staleSafe((event, ctx) => {
+											const bot = botExecution;
+											if (!bot?.groupContext) return;
+											const messages = repairGroupContextRequest(bot.groupContext, event.messages, bot.bot.id);
+											const metrics =
+												messages !== event.messages
+													? (messages.at(-1) as ReturnType<typeof groupContextMessage>).details.metrics
+													: extractGroupContextMetrics(bot.groupContext, [], "", "none", true);
+											recordGroupContextMetrics(ctx.sessionManager.getSessionId(), metrics);
+											if (messages !== event.messages) return { messages };
+										}),
+									);
+									pi.on(
+										"before_agent_start",
+										staleSafe((_event, ctx) => {
+											const bot = botExecution;
+											const current = bot?.groupContext;
+											if (!current) return;
+											const message = groupContextMessage(
+												current,
+												ctx.sessionManager.buildSessionProjection().messages,
+												bot.bot.id,
+											);
+											recordGroupContextMetrics(ctx.sessionManager.getSessionId(), message.details.metrics);
+											return { message };
+										}),
+									);
 								},
 							},
 							{
 								name: "pi-webui-persona",
 								hidden: true,
 								factory: (pi) => {
-									pi.on("before_agent_start", (event) => {
-										const { core, rewrap } = prepareBotExecutionSystemPrompt(event, botExecution);
-										if (apply) {
-											const tplPrompt = this.templatePrompt(apply).trim();
-											if (apply.promptMode !== "replace" || !tplPrompt) return undefined;
-											const boundary = core.indexOf("\n\nAvailable tools:");
-											const swapped = rewrap(
-												boundary === -1 ? `${tplPrompt}\n\n${core}` : tplPrompt + core.slice(boundary),
-											);
-											return swapped === event.systemPrompt ? undefined : { systemPrompt: swapped };
-										}
-										const conv = this.convs.get(ownerId ?? this.activeId) ?? this.conv;
-										const sess = conv?.session;
-										const activeToolNames = sess ? sess.getActiveToolNames() : [];
-										const lazyOn = this.lazyEffectiveOn();
-										const catalog =
-											lazyOn && sess
-												? this.promptToolCatalog(sess, conv)
-												: {
-														names: activeToolNames,
-														snippets: {},
-														signatures: {},
-													};
-										const baseNames = lazyOn && sess ? this.lazyResidentNames(sess, conv) : activeToolNames;
-										const activeSnippets: Record<string, string> = {};
-										const activeSignatures: Record<string, string> = catalog.signatures ?? {};
-										if (sess) {
-											for (const name of catalog.names) {
-												const def = sess.getToolDefinition(name);
-												if (!def) continue;
-												const ov = toolPromptOverrideOf(this.settingsSvc.current.toolPromptOverrides, name);
-												const eff = effectiveToolPrompt(def, ov);
-												if (eff.promptSnippet && eff.promptSnippet.trim() && (lazyOn || ov?.promptSnippet)) {
-													activeSnippets[name] = eff.promptSnippet.trim();
+									pi.on(
+										"before_agent_start",
+										staleSafe((event) => {
+											const { core, rewrap } = prepareBotExecutionSystemPrompt(event, botExecution);
+											if (apply) {
+												const tplPrompt = this.templatePrompt(apply).trim();
+												if (apply.promptMode !== "replace" || !tplPrompt) return undefined;
+												const boundary = core.indexOf("\n\nAvailable tools:");
+												const swapped = rewrap(
+													boundary === -1 ? `${tplPrompt}\n\n${core}` : tplPrompt + core.slice(boundary),
+												);
+												return swapped === event.systemPrompt ? undefined : { systemPrompt: swapped };
+											}
+											const conv = this.convs.get(ownerId ?? this.activeId) ?? this.conv;
+											const sess = conv?.session;
+											const activeToolNames = sess ? sess.getActiveToolNames() : [];
+											const lazyOn = this.lazyEffectiveOn();
+											const catalog =
+												lazyOn && sess
+													? this.promptToolCatalog(sess, conv)
+													: {
+															names: activeToolNames,
+															snippets: {},
+															signatures: {},
+														};
+											const baseNames = lazyOn && sess ? this.lazyResidentNames(sess, conv) : activeToolNames;
+											const activeSnippets: Record<string, string> = {};
+											const activeSignatures: Record<string, string> = catalog.signatures ?? {};
+											if (sess) {
+												for (const name of catalog.names) {
+													const def = sess.getToolDefinition(name);
+													if (!def) continue;
+													const ov = toolPromptOverrideOf(this.settingsSvc.current.toolPromptOverrides, name);
+													const eff = effectiveToolPrompt(def, ov);
+													if (eff.promptSnippet && eff.promptSnippet.trim() && (lazyOn || ov?.promptSnippet)) {
+														activeSnippets[name] = eff.promptSnippet.trim();
+													}
 												}
 											}
-										}
-										const currentPreset =
-											conv?.agentPreset ?? targetPreset ?? this.settingsSvc.current.defaultAgentPreset ?? "standard";
-										const opts = event.systemPromptOptions as
-											| {
-													cwd?: string;
-													forceSystemPrompt?: string;
-													selectedTools?: string[];
-													toolSnippets?: Record<string, string>;
-													contextFiles?: { path: string; content: string }[];
-													skills?: { name: string; description?: string; filePath?: string }[];
-											  }
-											| undefined;
-										const rawCwdForPrompt =
-											typeof opts?.cwd === "string" ? opts.cwd : (conv?.cwd ?? effectiveCwd ?? this.cwd);
-										const realCwdForPrompt = restoreWorkspaceUriFromSessionDir(rawCwdForPrompt);
-										const rendered = this.renderMainCompose({
-											cwd: realCwdForPrompt,
-											selectedTools: baseNames.length > 0 ? baseNames : (opts?.selectedTools ?? []),
-											toolSnippets: activeSnippets,
-											toolSignatures: activeSignatures,
-											...(lazyOn ? { lazy: true, catalogTools: catalog.names } : {}),
-											contextFiles: opts?.contextFiles ?? [],
-											skills: (opts?.skills ?? []).map((s) => ({
-												name: s.name,
-												description: s.description ?? "",
-												filePath: s.filePath ?? "",
-											})),
-											preset: currentPreset,
-											session: sess ?? undefined,
-										});
-										if (rendered) {
-											return { systemPrompt: rewrap(rendered) };
-										}
-										if (isRemoteWorkspaceUri(realCwdForPrompt)) {
-											const patchedCore = core.replace(
-												/Current working directory:\s*[^\r\n]+/,
-												`Current working directory: ${formatCwdForPrompt(realCwdForPrompt)}`,
-											);
-											if (patchedCore !== core) {
-												return { systemPrompt: rewrap(patchedCore) };
+											const currentPreset =
+												conv?.agentPreset ?? targetPreset ?? this.settingsSvc.current.defaultAgentPreset ?? "standard";
+											const opts = event.systemPromptOptions as
+												| {
+														cwd?: string;
+														forceSystemPrompt?: string;
+														selectedTools?: string[];
+														toolSnippets?: Record<string, string>;
+														contextFiles?: { path: string; content: string }[];
+														skills?: { name: string; description?: string; filePath?: string }[];
+												  }
+												| undefined;
+											const rawCwdForPrompt =
+												typeof opts?.cwd === "string" ? opts.cwd : (conv?.cwd ?? effectiveCwd ?? this.cwd);
+											const realCwdForPrompt = restoreWorkspaceUriFromSessionDir(rawCwdForPrompt);
+											const rendered = this.renderMainCompose({
+												cwd: realCwdForPrompt,
+												selectedTools: baseNames.length > 0 ? baseNames : (opts?.selectedTools ?? []),
+												toolSnippets: activeSnippets,
+												toolSignatures: activeSignatures,
+												...(lazyOn ? { lazy: true, catalogTools: catalog.names } : {}),
+												contextFiles: opts?.contextFiles ?? [],
+												skills: (opts?.skills ?? []).map((s) => ({
+													name: s.name,
+													description: s.description ?? "",
+													filePath: s.filePath ?? "",
+												})),
+												preset: currentPreset,
+												session: sess ?? undefined,
+											});
+											if (rendered) {
+												return { systemPrompt: rewrap(rendered) };
 											}
-										}
-										return undefined;
-									});
+											if (isRemoteWorkspaceUri(realCwdForPrompt)) {
+												const patchedCore = core.replace(
+													/Current working directory:\s*[^\r\n]+/,
+													`Current working directory: ${formatCwdForPrompt(realCwdForPrompt)}`,
+												);
+												if (patchedCore !== core) {
+													return { systemPrompt: rewrap(patchedCore) };
+												}
+											}
+											return undefined;
+										}),
+									);
 								},
 							},
 						],
@@ -5624,6 +5711,8 @@ export class ClientSession {
 	}
 
 	private makeConversation(runtime: AgentSessionRuntime, id: string, terminals: TerminalManager): Conversation {
+		// 宿主拿到会话的第一处：从那以后任何来源的 dispose 都会把它标成退役（#958）。
+		guardSession(runtime.session);
 		const conv: Conversation = {
 			id,
 			title: conversationTitle(runtime.session),
@@ -5634,7 +5723,10 @@ export class ClientSession {
 				return config ? { nativeCli: { config, terminalId: `cli-${id}` } } : {};
 			})(),
 			runtime,
-			session: runtime.session,
+			// 只读投影：必须读 `this.runtime.session`（而不是闭包里的 `runtime`），否则 reset 后拿到旧会话。
+			get session() {
+				return this.runtime.session;
+			},
 			cwd: restoreWorkspaceUriFromSessionDir(runtime.cwd),
 			createdAt: Date.now(),
 			agentPreset: this.settingsSvc.current.defaultAgentPreset ?? "standard",
@@ -5957,18 +6049,33 @@ export class ClientSession {
 		for (const sink of [...this.sinks]) sink(msg);
 	}
 
-	private makeExtensionErrorReporter(prefix?: { text: string; textEn: string }): (err: ExtensionError) => void {
-		const seen = new Set<string>();
+	private makeExtensionErrorReporter(
+		prefix?: { text: string; textEn: string },
+		conversationId?: string,
+	): (err: ExtensionError) => void {
+		// 计数挂在会话上（“同一扩展 · 钩子 · 报错”跨 bindSession / reload 仍然只报一次），
+		// 不挂在 reporter 实例上——否则每次重新 bind 就把计数清零，长会话照样反复打。
+		const countsKey = conversationId ?? "";
+		let counts = this.extensionErrorCounts.get(countsKey);
+		if (!counts) {
+			counts = new Map<string, number>();
+			this.extensionErrorCounts.set(countsKey, counts);
+		}
+		const buckets = counts;
 		return (err) => {
 			if (isAbortedTurnBoundaryError(err)) return;
 			const message = err?.error ?? String(err);
 			const where = [err?.extensionPath, err?.event].filter(Boolean).join(" · ");
-			console.error(
-				`[extension] ${prefix?.text ?? "当前对话"}${where ? ` (${where})` : ""}: ${message}${err?.stack ? `\n${err.stack}` : ""}`,
-			);
 			const key = `${err?.extensionPath ?? ""}|${err?.event ?? ""}|${message}`;
-			if (seen.has(key)) return;
-			seen.add(key);
+			const count = countExtensionError(buckets, key);
+			const plan = extensionErrorLogPlan(count);
+			if (plan.log) {
+				const head = `[extension] ${prefix?.text ?? "当前对话"}${where ? ` (${where})` : ""}: ${message}`;
+				const repeat = count > 1 ? ` (×${count}, identical reports suppressed in this session)` : "";
+				console.error(`${head}${repeat}${plan.withStack && err?.stack ? `\n${err.stack}` : ""}`);
+			}
+			// 界面通知本来就只报一次；日志按数量级采样，两者都不随轮次增长。
+			if (count > 1) return;
 			this.emit({
 				type: "notice",
 				level: "error",
@@ -5981,7 +6088,9 @@ export class ClientSession {
 	async bindSession(target?: Conversation): Promise<void> {
 		const conv = target ?? this.conv;
 		conv.unsubscribe?.();
-		conv.session = conv.runtime.session;
+		// 不赋值 `conv.session`：它是 `conv.runtime.session` 的只读投影，换 session 只换 runtime。
+		// 会话被换过（reload / force reset / 新建）：新 session 同样要登记退役钩子（#958）。
+		guardSession(conv.session);
 		if (conv.nativeCli && !conv.terminals.has(conv.nativeCli.terminalId)) {
 			try {
 				await this.startNativeCliTerminal(conv);
@@ -5999,10 +6108,13 @@ export class ClientSession {
 			uiContext: this.webUi.forConversation(conv.id),
 			onError: this.makeExtensionErrorReporter(
 				conv.isEphemeral ? { text: `临时对话 ${conv.id}：`, textEn: `Ephemeral chat ${conv.id}: ` } : undefined,
+				conv.id,
 			),
 		});
 		conv.unsubscribe = conv.session.subscribe((event) => this.onEvent(conv, event));
 		this.applySessionOverrides(conv);
+		// 新 session 就绪：退役窗口里被判 `gated` 的意图重新投递（#958）。
+		void this.drainDeliveries(conv);
 		this.scheduleSnapshot();
 		this.webUi.refresh();
 		this.startWidgetsTimer();
@@ -10878,11 +10990,16 @@ export class ClientSession {
 				// 门关着：排队，压缩结束会自动开一轮（目标对话不会因此漏活）。
 				void this.deliverFromOutside(execConv, trimmed);
 			} else if (mode === "live" && queue) {
-				await execConv.session.sendUserMessage(trimmed, { deliverAs: "followUp" });
+				await promptSession(execConv.session, trimmed, { deliverAs: "followUp" });
 			} else {
 				await this.submitText(execConv, trimmed, mode);
 			}
 		} catch (err) {
+			if (err instanceof SessionRetiredError) {
+				// 执行者会话刚被 dispose（#958）：留队，等新 session 绑好后重投，不当失败报。
+				void this.deliverFromOutside(execConv, trimmed);
+				return true;
+			}
 			const msg = err instanceof Error ? err.message : String(err);
 			this.emit({
 				type: "notice",
@@ -11901,7 +12018,7 @@ export class ClientSession {
 				}
 				try {
 					this.assertSubagentWorktreeAdmission(conv);
-					await s.prompt(fullPromptText, {
+					await runTurn(s, fullPromptText, {
 						streamingBehavior: kind,
 						images: promptImages.length > 0 ? promptImages : undefined,
 					});
@@ -11934,7 +12051,7 @@ export class ClientSession {
 				const snapshotPromise = this.startWorkspaceSnapshot(conv);
 				try {
 					this.assertSubagentWorktreeAdmission(conv);
-					await s.prompt(formatQuotedPrompt(text, streamingQuotes));
+					await runTurn(s, formatQuotedPrompt(text, streamingQuotes));
 				} finally {
 					if (conv.pendingWorkspaceSnapshot === snapshotPromise) {
 						conv.pendingWorkspaceSnapshot = undefined;
@@ -12199,7 +12316,7 @@ export class ClientSession {
 			if (!current()) return;
 			try {
 				conv.queuedSteeringEntries.push(entry);
-				await s.steer(entry.text, entry.images);
+				await steerSession(s, entry.text, entry.images);
 				if (!current()) return;
 			} catch (err) {
 				if (!current()) return;
@@ -12422,7 +12539,8 @@ export class ClientSession {
 					"（系统：用户手动停止了刚才的 bash 命令——命令被中止，终止前已输出的内容在对应工具结果里。请据此继续，不要重跑被中止的命令，除非确实必要。）",
 				);
 			} else {
-				await runtime?.session.sendUserMessage(
+				await promptSession(
+					runtime?.session,
 					"（系统：用户手动停止了刚才的 bash 命令——命令被中止，终止前已输出的内容在对应工具结果里。请据此继续，不要重跑被中止的命令，除非确实必要。）",
 				);
 			}
@@ -12583,7 +12701,6 @@ export class ClientSession {
 				for (const n of this.transcriptRepairNotices(opened.repair)) this.emit(n);
 			}
 			conv.runtime = runtime;
-			conv.session = runtime.session;
 			if (healedCount > 0) {
 				this.emit({
 					type: "notice",
@@ -13646,6 +13763,7 @@ export class ClientSession {
 			} catch {}
 		}
 		this.memoryQuotas.delete(id);
+		this.extensionErrorCounts.delete(id);
 		if (conv.nativeCli) conv.nativeCliClosed = true;
 		this.settlePendingsForConv(id);
 		conversationCommunication.close(conv);
@@ -17272,6 +17390,7 @@ export class ClientSession {
 		}
 		this.botMcpByConversation.clear();
 		this.memoryQuotas.clear();
+		this.extensionErrorCounts.clear();
 		this.sessionSearchController?.abort();
 		this.pluginModelKeys?.clear();
 		this.modelAdmin.dispose();

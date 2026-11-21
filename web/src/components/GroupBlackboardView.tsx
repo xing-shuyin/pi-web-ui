@@ -14,8 +14,7 @@ import {
 	FiAlertTriangle,
 } from "react-icons/fi";
 import { Markdown } from "./Markdown";
-import { appUrl } from "../base-url";
-import { withToken } from "../auth-token";
+import { apiFetch, readApiFailure } from "../api-client";
 import { useI18n, useT } from "../i18n";
 import type { MessageKey } from "../i18n/catalog";
 import { useCopyFeedback } from "../use-copy-feedback";
@@ -250,21 +249,9 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 			if (activeTab !== "all") {
 				let sectionSaved = false;
 				try {
-					const secRes = await fetch(
-						withToken(
-							appUrl(
-								`/api/device-center/rooms/${encodeURIComponent(roomId)}/blackboard/sections/${encodeURIComponent(activeTab)}`,
-							),
-						),
-						{
-							method: "PUT",
-							credentials: "same-origin",
-							headers: { "Content-Type": "application/json" },
-							body: JSON.stringify({
-								content: sectionContent,
-								expectedVersion,
-							}),
-						},
+					const secRes = await apiFetch(
+						`/api/device-center/rooms/${encodeURIComponent(roomId)}/blackboard/sections/${encodeURIComponent(activeTab)}`,
+						{ method: "PUT", body: { content: sectionContent, expectedVersion } },
 					);
 					if (secRes.ok) {
 						sectionSaved = true;
@@ -281,26 +268,18 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 						sectionContent,
 					);
 
-					const fullRes = await fetch(
-						withToken(appUrl(`/api/device-center/rooms/${encodeURIComponent(roomId)}/blackboard`)),
-						{
-							method: "PUT",
-							credentials: "same-origin",
-							headers: { "Content-Type": "application/json" },
-							body: JSON.stringify({
-								title: blackboard?.title || undefined,
-								content: newFullContent,
-								expectedVersion,
-							}),
+					const fullResponse = await apiFetch(`/api/device-center/rooms/${encodeURIComponent(roomId)}/blackboard`, {
+						method: "PUT",
+						body: {
+							title: blackboard?.title || undefined,
+							content: newFullContent,
+							expectedVersion,
 						},
-					);
+					});
 
-					const data = await fullRes.json().catch(() => ({}));
-					if (!fullRes.ok) {
-						if (fullRes.status === 409) {
-							throw new Error(t("groupBlackboardVersionConflict"));
-						}
-						throw new Error(data.error || String(fullRes.status));
+					if (!fullResponse.ok) {
+						if (fullResponse.status === 409) throw new Error(t("groupBlackboardVersionConflict"));
+						throw new Error((await readApiFailure(fullResponse)).error);
 					}
 				}
 			} else {
@@ -310,26 +289,18 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 					return;
 				}
 
-				const response = await fetch(
-					withToken(appUrl(`/api/device-center/rooms/${encodeURIComponent(roomId)}/blackboard`)),
-					{
-						method: "PUT",
-						credentials: "same-origin",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({
-							title: title.trim() || undefined,
-							content,
-							expectedVersion,
-						}),
+				const response = await apiFetch(`/api/device-center/rooms/${encodeURIComponent(roomId)}/blackboard`, {
+					method: "PUT",
+					body: {
+						title: title.trim() || undefined,
+						content,
+						expectedVersion,
 					},
-				);
+				});
 
-				const data = await response.json().catch(() => ({}));
 				if (!response.ok) {
-					if (response.status === 409) {
-						throw new Error(t("groupBlackboardVersionConflict"));
-					}
-					throw new Error(data.error || String(response.status));
+					if (response.status === 409) throw new Error(t("groupBlackboardVersionConflict"));
+					throw new Error((await readApiFailure(response)).error);
 				}
 			}
 

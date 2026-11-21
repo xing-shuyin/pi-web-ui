@@ -221,8 +221,8 @@ try {
 	await page.goto("http://127.0.0.1:8994/shell.html");
 	await page.locator(".pb-tab").first().waitFor();
 	assert.equal(await page.locator(".pb-tab").count(), 2);
-	// 现在的 chrome 是单行 40px，body 必须保持透明（上下由原生 WebContentsView 铺）
-	assert.equal(await page.locator(".pb-chrome").evaluate((node) => node.getBoundingClientRect().height), 40);
+	// chrome 是两行 40px（标签页 + 固定工具行），body 必须保持透明（上下由原生 WebContentsView 铺）
+	assert.equal(await page.locator(".pb-chrome").evaluate((node) => node.getBoundingClientRect().height), 80);
 	assert.equal(
 		await page.locator("body").evaluate((node) => getComputedStyle(node).backgroundColor),
 		"rgba(0, 0, 0, 0)",

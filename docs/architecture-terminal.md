@@ -1,8 +1,26 @@
-[English](./architecture-terminal.en.md) · **简体中文** · [繁體中文](./architecture-terminal.zh-TW.md)
-
 # 终端架构
 
 > 覆盖 PTY 管理、原生 CLI 工作台、按键编码、输出合并、SCM git 查询、活力检测、终端接管 bash 等。
+
+## 目录
+
+- [Windows PTY 与输入法定位](#windows-pty-与输入法定位)
+- [原生 CLI 工作台](#原生-cli-工作台)
+- [原生 bash 生命周期](#原生-bash-生命周期)
+- [终端管理](#终端管理)
+- [terminal_key 按键编码](#terminalkey-按键编码)
+- [输出合并](#输出合并)
+- [终端查询回话必须一问一答（提示符里冒出 `1;2c`）](#终端查询回话必须一问一答提示符里冒出-12c)
+- [node-pty × Node `--watch` 兼容自愈](#node-pty--node---watch-兼容自愈)
+- [SCM 源代码管理](#scm-源代码管理)
+- [终端活力检测（liveness watchdog）](#终端活力检测liveness-watchdog)
+- [终端接管 bash（terminal-backed bash）](#终端接管-bashterminal-backed-bash)
+- [统一 terminal 工具与权限边界](#统一-terminal-工具与权限边界)
+- [终端归属与恢复](#终端归属与恢复)
+- [macOS launchd / TCC 问题](#macos-launchd--tcc-问题)
+- [Windows shell 解析](#windows-shell-解析)
+- [终端与源码管理的界面容器（底部面板 / 右栏标签）](#终端与源码管理的界面容器底部面板--右栏标签)
+- [终端右键：引用「终端对象」与引用「输出文字」](#终端右键引用终端对象与引用输出文字)
 
 ## Windows PTY 与输入法定位
 

@@ -1,0 +1,167 @@
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it, vi } from "vitest";
+import {
+	guardSession,
+	isRetiredSession,
+	promptSession,
+	retireSession,
+	runTurn,
+	SessionRetiredError,
+	steerSession,
+} from "../../server/session-turns.js";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const root = join(here, "..", "..");
+const SERVER = join(root, "server");
+
+/** 唯一允许直接调 SDK 喂轮回的模块（#958）。 */
+const SINGLE_SOURCE = join(SERVER, "session-turns.ts");
+
+/**
+ * 直连 SDK 喂轮的写法。故意只收「几乎不可能是别的东西」的形式：
+ * - `sendUserMessage(`：SDK 独有；
+ * - `.session.prompt(` / `.session.steer(`：宿主别名写法；
+ * - `s.prompt(` / `s.steer(`：agent-service 里 `const s = conv.session` 的别名。
+ */
+const RAW_TURN_CALLS = [
+	/\bsendUserMessage\(/,
+	/\.session\.prompt\(/,
+	/\.session\.steer\(/,
+	/\bs\.prompt\(/,
+	/\bs\.steer\(/,
+];
+
+/** 直接给会话字段赋值：换会话只能换 `conv.runtime`（`session` 是只读投影）。 */
+const SESSION_ASSIGNMENT = /\b(?:conv|conversation)\.session\s*=[^=]/;
+
+function sources(dir: string): string[] {
+	const out: string[] = [];
+	for (const entry of readdirSync(dir, { withFileTypes: true })) {
+		const path = join(dir, entry.name);
+		if (entry.isDirectory()) out.push(...sources(path));
+		else if (entry.name.endsWith(".ts")) out.push(path);
+	}
+	return out;
+}
+
+describe("session-turns 是唯一喂轮出口（#958）", () => {
+	it("除 session-turns.ts 外没有地方直接调 SDK 的 sendUserMessage / steer / prompt", () => {
+		const offenders: string[] = [];
+		for (const file of sources(SERVER)) {
+			if (file === SINGLE_SOURCE) continue;
+			const text = readFileSync(file, "utf8");
+			for (const pattern of RAW_TURN_CALLS) {
+				if (pattern.test(text)) offenders.push(`${relative(root, file)} (${pattern})`);
+			}
+		}
+		expect(
+			offenders,
+			`请改走 server/session-turns.ts 的 promptSession / steerSession / runTurn：\n${offenders.join("\n")}`,
+		).toEqual([]);
+	});
+
+	it("Conversation.session 是 runtime.session 的只读投影（禁再长出可赋值的会话字段）", () => {
+		const service = readFileSync(join(SERVER, "agent-service.ts"), "utf8");
+		// 接口层：readonly —— 赋值在编译期就是错。
+		expect(service).toContain("readonly session: AgentSession;");
+		// 实现层：对象字面量里必须是读 `this.runtime.session` 的 getter（不能闭包捕获局部 runtime，
+		// 否则 force reset 换 runtime 后拿到的还是旧会话）。
+		const makeConversation = service.slice(service.indexOf("private makeConversation("));
+		const literalStart = makeConversation.indexOf("const conv: Conversation = {");
+		expect(literalStart, "makeConversation 的会话字面量没找到").toBeGreaterThan(-1);
+		const literal = makeConversation.slice(literalStart, literalStart + 1200);
+		expect(literal).toContain("get session() {");
+		expect(literal).toContain("return this.runtime.session;");
+	});
+
+	it("server/ 下没有任何地方给 conv.session 赋值", () => {
+		const offenders: string[] = [];
+		for (const file of sources(SERVER)) {
+			readFileSync(file, "utf8")
+				.split("\n")
+				.forEach((line, index) => {
+					if (SESSION_ASSIGNMENT.test(line)) offenders.push(`${relative(root, file)}:${index + 1}`);
+				});
+		}
+		expect(offenders, `换会话请赋值 conv.runtime（session 是只读投影）：\n${offenders.join("\n")}`).toEqual([]);
+	});
+
+	it("宿主接管会话的两处入口都登记了退役钩子", () => {
+		const service = readFileSync(join(SERVER, "agent-service.ts"), "utf8");
+		const makeConversation = service.slice(service.indexOf("private makeConversation("));
+		expect(makeConversation.slice(0, 400)).toContain("guardSession(runtime.session)");
+		const bindSession = service.slice(service.indexOf("async bindSession("));
+		expect(bindSession.slice(0, 400)).toContain("guardSession(conv.session)");
+	});
+});
+
+describe("退役会话不再接受一轮输入", () => {
+	const makeSession = () =>
+		({
+			sendUserMessage: vi.fn(async () => {}),
+			steer: vi.fn(async () => ({}) as never),
+			prompt: vi.fn(async () => {}),
+			dispose: vi.fn(),
+		}) as any;
+
+	it("guardSession 幂等，dispose 一次即退役", () => {
+		const session = makeSession();
+		const originalDispose = session.dispose;
+		const guarded = guardSession(guardSession(session));
+		expect(guarded).toBe(session);
+		expect(isRetiredSession(session)).toBe(false);
+		session.dispose();
+		expect(isRetiredSession(session)).toBe(true);
+		// 原 dispose 必须真的跑（不能因为加钩子把清理吞掉），且只包一层。
+		expect(originalDispose).toHaveBeenCalledTimes(1);
+		expect(guardSession(session)).toBe(session);
+		session.dispose();
+		expect(isRetiredSession(session)).toBe(true);
+	});
+
+	it("dispose 时顺手清掉 SDK 的 extensionRunnerRef（兜住没被补丁命中的 SDK 副本）", () => {
+		const ref: { current?: unknown } = { current: { staleMessage: "stale" } };
+		const session = Object.assign(makeSession(), { _extensionRunnerRef: ref });
+		guardSession(session);
+		session.dispose();
+		expect(ref.current).toBeUndefined();
+	});
+
+	it("三种喂轮方式都在闸门前抛 SessionRetiredError，且不触达 SDK", async () => {
+		const session = makeSession();
+		guardSession(session);
+		retireSession(session);
+		await expect(promptSession(session, "hi")).rejects.toBeInstanceOf(SessionRetiredError);
+		await expect(promptSession(session, "hi", { deliverAs: "steer" })).rejects.toBeInstanceOf(SessionRetiredError);
+		await expect(steerSession(session, "hi")).rejects.toBeInstanceOf(SessionRetiredError);
+		await expect(runTurn(session, "hi")).rejects.toBeInstanceOf(SessionRetiredError);
+		expect(session.sendUserMessage).not.toHaveBeenCalled();
+		expect(session.steer).not.toHaveBeenCalled();
+		expect(session.prompt).not.toHaveBeenCalled();
+	});
+
+	it("活着的会话原样委托，参数不被改写", async () => {
+		const session = makeSession();
+		guardSession(session);
+		await promptSession(session, "hi", { deliverAs: "followUp" });
+		expect(session.sendUserMessage).toHaveBeenCalledWith("hi", { deliverAs: "followUp" });
+		await steerSession(session, "steer me", [{ type: "image" }] as never);
+		expect(session.steer).toHaveBeenCalledWith("steer me", [{ type: "image" }]);
+		await runTurn(session, "run", { expandPromptTemplates: false });
+		expect(session.prompt).toHaveBeenCalledWith("run", { expandPromptTemplates: false });
+	});
+
+	it("会话整个没了也是同一个 fail-closed 错误（不抛 TypeError）", async () => {
+		await expect(promptSession(undefined, "hi")).rejects.toBeInstanceOf(SessionRetiredError);
+		await expect(steerSession(undefined, "hi")).rejects.toBeInstanceOf(SessionRetiredError);
+		await expect(runTurn(undefined, "hi")).rejects.toBeInstanceOf(SessionRetiredError);
+	});
+
+	it("错误自带稳定 code，调用方可据此留队重投", async () => {
+		const error = await promptSession(undefined, "hi").catch((err: unknown) => err);
+		expect(error).toBeInstanceOf(SessionRetiredError);
+		expect((error as SessionRetiredError).code).toBe("session_retired");
+	});
+});
