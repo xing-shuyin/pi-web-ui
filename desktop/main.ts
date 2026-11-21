@@ -31,11 +31,17 @@ import {
 } from "./updater.js";
 import { buildDesktopLoadUrl, DEFAULT_DESKTOP_PORT, resolveHealthTimeoutMs, waitForHealth } from "./startup.js";
 import { decideKernelMode, probeKernel, toKernelState, type KernelMode } from "./kernel-mode.js";
-import { buildServiceInstallArgs, buildServiceLifecycleArgs, runKernelCli } from "./kernel-install.js";
+import {
+	buildServiceInstallArgs,
+	buildServiceLifecycleArgs,
+	decideServiceInstall,
+	runKernelCli,
+} from "./kernel-install.js";
 import { readKernelLock } from "../server/instance-lock.js";
 import {
 	fetchLatestVersion,
 	nodeInstallLaunch,
+	resolveLaunch,
 	planUpgrade,
 	readGlobalPackageVersion,
 	runCommand,
@@ -88,7 +94,6 @@ import {
 	parseNpmPrefix,
 	readServiceInstallState,
 } from "./kernel-env.js";
-import { resolveCommandLaunch } from "../server/command-spawn.js";
 
 const portablePaths = setupPortableMode(app);
 
@@ -187,14 +192,10 @@ async function resolveGlobalKernelEntry(): Promise<string | null> {
 /** `npm prefix -g`：用 command-spawn 单源把它还原成可 spawn 的 argv（Windows 不开 shell），5s 硬超时。 */
 function queryNpmGlobalPrefix(): Promise<string | null> {
 	return new Promise((resolve) => {
-		let file = "npm";
-		let args = ["prefix", "-g"];
-		try {
-			const launch = resolveCommandLaunch("npm", ["prefix", "-g"]);
-			file = launch.file;
-			args = launch.args;
-		} catch {}
-		execFile(file, args, { timeout: 5000, windowsHide: true }, (error, stdout) => {
+		// 必须透传 windowsVerbatimArguments：Windows 上 command-spawn 把 npm 还原成
+		// `cmd /d /s /c "npm.cmd prefix -g"`，丢掉这个标志会让 Node 二次加引号 → 命令根本不执行。
+		const launch = resolveLaunch("npm", ["prefix", "-g"]);
+		execFile(launch.file, launch.args, { timeout: 5000, windowsHide: true, ...launch.options }, (error, stdout) => {
 			resolve(error ? null : parseNpmPrefix(stdout));
 		});
 	});
@@ -794,16 +795,24 @@ function currentKernelCwd(): string {
  * 不能让用户点完按钮反而没内核了。
  */
 async function installKernelService(): Promise<{ ok: boolean; message: string }> {
-	if (kernelMode === "external" && kernelState?.supervisor)
+	const decision = decideServiceInstall({
+		mode: kernelMode,
+		supervisor: kernelState?.supervisor ?? null,
+		serviceName: kernelState?.serviceName ?? null,
+		platform: process.platform,
+	});
+	if (decision.kind === "already")
 		return {
 			ok: true,
-			message: `已由 ${kernelState.supervisor} 托管（${kernelState.serviceName ?? "pi-web-ui"}），无需重复安装`,
+			message: `已由 ${decision.supervisor} 托管（${decision.serviceName ?? "pi-web-ui"}），无需重复安装`,
 		};
-	// 环境检测：Linux 上安装服务需要 root（systemd 系统单元），GUI 里没 TTY，sudo 必然失败。
-	if (process.platform === "linux")
+	if (decision.kind === "terminal")
+		return { ok: false, message: `Linux 安装系统服务需要超级权限，请在终端执行：${decision.command}` };
+	if (decision.kind === "foreign")
 		return {
 			ok: false,
-			message: "Linux 安装系统服务需要超级权限，请在终端执行：pi-web-ui server install（或 sudo 开头）",
+			message:
+				"当前连的内核不是本机装的：本机不知道它的数据目录，装服务只会装出一份空数据。请到内核所在机器执行 pi-web-ui server install",
 		};
 	const node = describeNodeRuntime({ execPath: process.execPath, nodeVersion: process.versions.node });
 	if (!node.ok) {
@@ -811,7 +820,7 @@ async function installKernelService(): Promise<{ ok: boolean; message: string }>
 		return { ok: false, message: `本机 node 版本太低（v${node.version}，需 ≥22）：${guide.command}` };
 	}
 	const runningPort = currentKernelPort();
-	const port = kernelMode === "external" && runningPort ? runningPort : DEFAULT_DESKTOP_PORT;
+	const port = runningPort ?? DEFAULT_DESKTOP_PORT;
 	const serviceUrl = `http://127.0.0.1:${port}`;
 	const wasLocal = kernelMode === "local";
 	if (wasLocal) await stopServerSidecar();

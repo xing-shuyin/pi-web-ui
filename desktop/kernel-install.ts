@@ -118,3 +118,25 @@ export function runKernelCli(
 		child.on("close", (code: number | null) => finish(code ?? -1));
 	});
 }
+
+/** 「安装为系统服务」该不该动手：判定集中在这里，main.ts 只负责按结论说话。 */
+export type ServiceInstallDecision =
+	| { kind: "install" }
+	| { kind: "already"; supervisor: string; serviceName: string | null }
+	| { kind: "terminal"; command: string }
+	/** 连的是别人机器上的内核（external 且没有本机托管者）：本机不知道它的数据目录，装只会装错。 */
+	| { kind: "foreign" };
+
+export function decideServiceInstall(input: {
+	mode: "external" | "local";
+	supervisor: string | null;
+	serviceName?: string | null;
+	platform: NodeJS.Platform;
+}): ServiceInstallDecision {
+	if (input.mode === "external" && input.supervisor)
+		return { kind: "already", supervisor: input.supervisor, serviceName: input.serviceName ?? null };
+	// Linux 上装服务要写 /etc/systemd/system（root），GUI 里没有 TTY，sudo 必然失败 → 只给命令。
+	if (input.platform === "linux") return { kind: "terminal", command: "pi-web-ui server install" };
+	if (input.mode === "external") return { kind: "foreign" };
+	return { kind: "install" };
+}

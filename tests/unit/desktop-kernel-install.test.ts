@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	buildServiceInstallArgs,
+	decideServiceInstall,
 	buildServiceLifecycleArgs,
 	kernelCliPath,
 	normalizeServiceName,
@@ -144,5 +145,34 @@ describe("runKernelCli", () => {
 		});
 		expect(result.timedOut).toBe(true);
 		expect(result.code).toBe(-1);
+	});
+});
+describe("decideServiceInstall（按钮该不该动手）", () => {
+	it("本机裸内核 → install", () => {
+		expect(decideServiceInstall({ mode: "local", supervisor: null, platform: "win32" })).toEqual({ kind: "install" });
+	});
+
+	it("已由系统托管 → already（不重复装）", () => {
+		expect(
+			decideServiceInstall({
+				mode: "external",
+				supervisor: "windows-watchdog",
+				serviceName: "pi-web-ui",
+				platform: "win32",
+			}),
+		).toEqual({ kind: "already", supervisor: "windows-watchdog", serviceName: "pi-web-ui" });
+	});
+
+	it("Linux → 只给终端命令（GUI 里没 TTY）", () => {
+		expect(decideServiceInstall({ mode: "local", supervisor: null, platform: "linux" })).toEqual({
+			kind: "terminal",
+			command: "pi-web-ui server install",
+		});
+	});
+
+	it("外部但没有托管者（别人的内核）→ foreign，不拿本机默认目录乱装", () => {
+		expect(decideServiceInstall({ mode: "external", supervisor: null, platform: "win32" })).toEqual({
+			kind: "foreign",
+		});
 	});
 });

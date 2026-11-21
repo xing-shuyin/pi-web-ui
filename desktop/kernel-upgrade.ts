@@ -12,6 +12,7 @@
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { existsSync } from "node:fs";
 import { resolveCommandLaunch } from "../server/command-spawn.js";
 
 /** 全局包里的 package.json 路径。 */
@@ -104,6 +105,24 @@ export async function fetchLatestVersion(options: {
 	}
 }
 
+/** 把命令解析成可 spawn 的 argv（Windows 的 .cmd shim 由 command-spawn 单源还原成 `node <entry>`）。 */
+export function resolveLaunch(
+	command: string,
+	args: readonly string[],
+): { file: string; args: string[]; options: { windowsVerbatimArguments?: boolean } } {
+	try {
+		const launch = resolveCommandLaunch(command, args);
+		return {
+			file: launch.file,
+			args: launch.args,
+			// 丢掉这个标志，Node 会给 `cmd /d /s /c "..."` 再套一层引号，命令根本跑不起来（Windows 实测）。
+			options: launch.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {},
+		};
+	} catch {
+		return { file: command, args: [...args], options: {} };
+	}
+}
+
 export interface CommandRunResult {
 	code: number;
 	stdout: string;
@@ -120,19 +139,14 @@ export function runCommand(
 	args: readonly string[],
 	options: { timeoutMs?: number; spawnImpl?: typeof spawn; env?: NodeJS.ProcessEnv } = {},
 ): Promise<CommandRunResult> {
-	let file = command;
-	let argv = [...args];
-	try {
-		const launch = resolveCommandLaunch(command, args);
-		file = launch.file;
-		argv = launch.args;
-	} catch {}
+	const launch = resolveLaunch(command, args);
 	const spawnImpl = options.spawnImpl ?? spawn;
 	return new Promise<CommandRunResult>((resolvePromise) => {
-		const child = spawnImpl(file, argv, {
+		const child = spawnImpl(launch.file, launch.args, {
 			stdio: ["ignore", "pipe", "pipe"],
 			env: options.env ?? process.env,
 			windowsHide: true,
+			...launch.options,
 		});
 		let stdout = "";
 		let stderr = "";
@@ -168,13 +182,26 @@ export function runCommand(
 /**
  * 装 node 的可执行 argv（与 `kernel-env.ts` 的 `nodeInstallGuide` 文案一一对应）。
  * Linux 返回 null：那要 `sudo` + TTY，GUI 里必然失败，只能把命令交给用户。
+ *
+ * winget 是 Windows 的 AppExecutionAlias，可能不在 PATH 里、`findNativeCliExecutable` 也找不到；
+ * 依次试几个已知落点，全都没有就退回裸 `winget`（由 `runCommand` 报出可读的 ENOENT）。
  */
-export function nodeInstallLaunch(platform: NodeJS.Platform): { command: string; args: string[] } | null {
-	if (platform === "win32")
+export function nodeInstallLaunch(
+	platform: NodeJS.Platform,
+	options: { exists?: (path: string) => boolean; env?: NodeJS.ProcessEnv } = {},
+): { command: string; args: string[] } | null {
+	if (platform === "win32") {
+		const env = options.env ?? process.env;
+		const exists = options.exists ?? existsSync;
+		const candidates = [
+			join(env.LOCALAPPDATA ?? "", "Microsoft", "WindowsApps", "winget.exe"),
+			join(env.ProgramFiles ?? "C:/Program Files", "WindowsApps", "winget.exe"),
+		].filter((path) => path && exists(path));
 		return {
-			command: "winget",
+			command: candidates[0] ?? "winget",
 			args: ["install", "--id", "OpenJS.NodeJS.LTS", "-e", "--accept-package-agreements", "--accept-source-agreements"],
 		};
+	}
 	if (platform === "darwin") return { command: "brew", args: ["install", "node@22"] };
 	return null;
 }
