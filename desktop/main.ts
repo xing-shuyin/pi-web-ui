@@ -89,6 +89,7 @@ import {
 } from "./kernel-authority.js";
 import {
 	describeNodeRuntime,
+	envWithNodeOnPath,
 	globalKernelRoot,
 	nodeInstallGuide,
 	parseNpmPrefix,
@@ -206,7 +207,9 @@ function queryNpmGlobalPrefix(): Promise<string | null> {
 		// 必须透传 windowsVerbatimArguments：Windows 上 command-spawn 把 npm 还原成
 		// `cmd /d /s /c "npm.cmd prefix -g"`，丢掉这个标志会让 Node 二次加引号 → 命令根本不执行。
 		const launch = resolveLaunch("npm", ["prefix", "-g"]);
-		execFile(launch.file, launch.args, { timeout: 5000, windowsHide: true, ...launch.options }, (error, stdout) => {
+		const node = findSystemNode();
+		const env = node ? envWithNodeOnPath(process.env, node) : process.env;
+		execFile(launch.file, launch.args, { timeout: 5000, windowsHide: true, env, ...launch.options }, (error, stdout) => {
 			resolve(error ? null : parseNpmPrefix(stdout));
 		});
 	});
@@ -995,7 +998,13 @@ async function currentNpmPrefix(): Promise<string | null> {
  * 只有一步成功才算成功；npm 失败时原内核仍在跑（不重启），用户不会点完变没。
  */
 async function upgradeKernel(): Promise<{ ok: boolean; message: string }> {
-	const result = await runCommand("npm", ["i", "-g", "pi-web-ui@latest"], { timeoutMs: 300_000 });
+	const node = findSystemNode();
+	// 关键：npm 的 install 脚本是 `cmd /c node install.js`，靠 PATH 找 node。
+	// 不补这一行，用 fnm/nvm 的机器会报「'node' 不是内部或外部命令」，整次安装失败。
+	const result = await runCommand("npm", ["i", "-g", "pi-web-ui@latest"], {
+		timeoutMs: 300_000,
+		env: node ? envWithNodeOnPath(process.env, node) : process.env,
+	});
 	const output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n").slice(-2000);
 	if (result.code !== 0)
 		return {

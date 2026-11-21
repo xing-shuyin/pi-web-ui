@@ -1,3 +1,4 @@
+import { win32 } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	AUTHORITY_CACHE_TTL_MS,
@@ -9,6 +10,7 @@ import {
 } from "../../desktop/kernel-authority.js";
 import {
 	describeNodeRuntime,
+	envWithNodeOnPath,
 	globalKernelRoot,
 	nodeInstallGuide,
 	npmGlobalInstallGuide,
@@ -112,5 +114,55 @@ describe("kernel-env", () => {
 			readServiceInstallState({ platform: "linux", env: {}, home: "/home/c", exists: (p) => p.includes("pi-web-ui") }),
 		).toBe("installed");
 	});
+});
 
+describe("envWithNodeOnPath（子进程 PATH 补 node 目录）", () => {
+	const node = win32.join(
+		"C:",
+		"Users",
+		"c",
+		"AppData",
+		"Roaming",
+		"fnm",
+		"node-versions",
+		"v26.13.1",
+		"installation",
+		"node.exe",
+	);
+	const nodeDir = win32.join(
+		"C:",
+		"Users",
+		"c",
+		"AppData",
+		"Roaming",
+		"fnm",
+		"node-versions",
+		"v26.13.1",
+		"installation",
+	);
+
+	it("把 node 所在目录前置到 PATH，其余环境原样保留", () => {
+		const env = envWithNodeOnPath(
+			{
+				PATH: win32.join("C:", "Windows", "system32"),
+				APPDATA: win32.join("C:", "Users", "c", "AppData", "Roaming"),
+			} as NodeJS.ProcessEnv,
+			node,
+			"win32",
+		);
+		expect(env.PATH).toBe(`${nodeDir};${win32.join("C:", "Windows", "system32")}`);
+		expect(env.APPDATA).toBe(win32.join("C:", "Users", "c", "AppData", "Roaming"));
+	});
+
+	it("Windows 上清掉 Path/PATH 的所有大小写变体，只留一个（否则子进程可能拿到没改过的那个）", () => {
+		const windowsDir = win32.join("C:", "Windows");
+		const env = envWithNodeOnPath({ Path: windowsDir, PATH: windowsDir } as NodeJS.ProcessEnv, node, "win32");
+		expect(Object.keys(env).filter((key) => key.toLowerCase() === "path")).toEqual(["PATH"]);
+		expect(env.PATH?.startsWith(nodeDir)).toBe(true);
+	});
+
+	it("POSIX 用冒号分隔", () => {
+		const env = envWithNodeOnPath({ PATH: "/usr/bin" } as NodeJS.ProcessEnv, "/opt/node/bin/node", "linux");
+		expect(env.PATH).toBe("/opt/node/bin:/usr/bin");
+	});
 });
