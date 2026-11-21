@@ -46,17 +46,42 @@ files:
   - "!plugin-sdk"
   - "!plugins/catalog.json"
   - "!docs/architecture-plugins.md"
-  # 桌面主进程 require 的四个包（漏一个就是安装版 MODULE_NOT_FOUND）：
-  # electron-chrome-extensions（扩展支持）· debug/ms（它的传递依赖）· jsqr（TOTP 扫码解码）
-  - node_modules/electron-chrome-extensions/**
+  # >>> shell-deps（由 scripts/gen-shell-deps.mjs 生成，勿手改）
+  # 内容 = 壳源码的 import 闭包 + 这些包的传递依赖；改了壳的 import 就重跑生成器。
+  - node_modules/@isaacs/fs-minipass/**
+  - node_modules/argparse/**
+  - node_modules/builder-util-runtime/**
+  - node_modules/chownr/**
   - node_modules/debug/**
-  - node_modules/ms/**
+  - node_modules/electron-chrome-extensions/**
+  - node_modules/electron-updater/**
+  - node_modules/fs-extra/**
+  - node_modules/graceful-fs/**
+  - node_modules/js-yaml/**
+  - node_modules/jsonfile/**
   - node_modules/jsqr/**
+  - node_modules/lazy-val/**
+  - node_modules/lodash.escaperegexp/**
+  - node_modules/lodash.isequal/**
+  - node_modules/minipass/**
+  - node_modules/minizlib/**
+  - node_modules/ms/**
+  - node_modules/pend/**
+  - node_modules/sax/**
+  - node_modules/tar/**
+  - node_modules/tiny-typed-emitter/**
+  - node_modules/universalify/**
+  - node_modules/yauzl/**
+  # <<< shell-deps
 
 # 没有原生件可解包：node-pty 属于内核（运行时），壳不需要它
 asarUnpack: []
 
 nsis:
+  # 安装器必须提权（实测：非提权启动会拿到低完整性令牌，安装目录不可写 →
+  # NSIS 报“不能打开要写入的文件：<目录>Uninstall …exe”，换任何目录都一样）。
+  # perMachine 是 NSIS 侧的提权开关；requestedExecutionLevel 只作用于应用 exe，别用那个。
+  perMachine: true
   oneClick: false
   allowToChangeInstallationDirectory: true
   artifactName: ${productName}-shell-${version}-setup.${ext}

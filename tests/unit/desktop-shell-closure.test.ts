@@ -134,3 +134,28 @@ describe("纯壳包依赖闭包", () => {
 		}
 	});
 });
+
+describe("纯壳包 npm 依赖闭包（按 import 图自动算，不手写）", () => {
+	it("yml 里的 shell-deps 块与生成器一致（改了壳的 import 却忘了重跑 → 这里红）", async () => {
+		const { shellNodeModulePackages } = await import("../../scripts/gen-shell-deps.mjs");
+		const packages: Set<string> = shellNodeModulePackages();
+		const block = shellYml.slice(shellYml.indexOf("# >>> shell-deps"), shellYml.indexOf("# <<< shell-deps"));
+		for (const name of packages) {
+			expect(block, `纯壳包缺少 node_modules/${name}/**（运行时会 ERR_MODULE_NOT_FOUND）`).toContain(
+				`node_modules/${name}/**`,
+			);
+		}
+		// 反向：块里列的都是闭包内的包（防残留）
+		for (const match of block.matchAll(/- node_modules\/([^\s*]+)\//g)) {
+			expect(packages.has(match[1]!)).toBe(true);
+		}
+	});
+
+	it("yauzl / tar / electron-updater 这类“壳自己要用”的包必须在（历史真踩过）", async () => {
+		const { shellNodeModulePackages } = await import("../../scripts/gen-shell-deps.mjs");
+		const packages: Set<string> = shellNodeModulePackages();
+		for (const name of ["yauzl", "tar", "electron-updater", "electron-chrome-extensions", "jsqr"]) {
+			expect(packages.has(name), `闭包里应当包含 ${name}`).toBe(true);
+		}
+	});
+});
