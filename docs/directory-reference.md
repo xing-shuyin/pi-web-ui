@@ -10,6 +10,7 @@
 ```
 pi-web-ui/
 ├── server/                     # 后端（Node ESM，编译到 dist/server/）
+├── shared/                     # 服务端与桌面壳共用的纯工具（锁协议 / 隐藏控制台开关；两边各编译一份到 dist/shared/）
 ├── web/                        # 前端（React + Vite，编译到 web/dist/）
 ├── bin/pi-web-ui.mjs           # CLI：前台启动 / server install|uninstall|start|stop|restart|status
 ├── desktop/                    # Electron 桌面壳（sidecar：随机空闲口起 dist/server + BrowserWindow）
@@ -57,6 +58,14 @@ pi-web-ui/
 └── tsconfig.server.json / tsconfig.extensions.json / tsconfig.tests.json / web/tsconfig.json
 ```
 
+## shared/
+
+```text
+shared/
+├── instance-lock.ts        # ★ 数据目录单实例锁（pid 文件 + 探活 + 陈旧接管）：server 与桌面壳（读锁收敛）共用
+├── hide-console-windows.ts # ★ Windows 进程级「不弹控制台」开关：patch spawn/fork 注入 windowsHide（单源；CLI 侧镜像件 bin/lib/hide-console-windows.mjs）
+```
+
 ## server/
 
 ```
@@ -70,7 +79,6 @@ server/
 ├── text-sniff.ts           # 文件预览纯函数（previewKind/looksLikeText/decodeText/sniffImageMime/hexDump/countLines）
 ├── queue-utils.ts          # 排队消息纯函数（removeFirstOccurrence：只移除第一条匹配，重复文本不连带删除）
 ├── process-utils.ts        # 进程工具：snapshotListeningPorts/killPidTree/lookupProcessName
-├── hide-console-windows.ts  # ★ Windows 进程级「不弹控制台」开关：patch spawn/spawnSync/exec/execSync/execFile/execFileSync/fork 注入 windowsHide（单源；CLI/桌面壳用生成件 bin/lib/hide-console-windows.mjs，见 docs/agent-rules.md §四）
 ├── spawn-child.ts         # ★ 常驻子进程单源：spawn + 统一 options + stop()（先 grace 再杀整棵树）；raw 流给 LSP/MCP/引擎/采集/二进制协议
 ├── run-process.ts          # ★ 子进程执行单源：spawn + 超时/取消杀整棵树 + 行回调 + stdin 接地 + NO_COLOR（调用点不再手写 detached/stdio/windowsHide）
 ├── git-run.ts              # ★ git 调用单源：runGit/runGitText + gitEnv/stripGitEnv（quotepath=false、禁提示环境、16MB、失败取 stderr 首行）

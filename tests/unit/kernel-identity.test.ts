@@ -31,6 +31,7 @@ describe("buildKernelInfo", () => {
 	const base = {
 		version: "0.121.3",
 		packageRoot: "/usr/local/lib/node_modules/pi-web-ui",
+		protocol: 60,
 		startedAt: 1_000,
 		now: 61_000,
 		supervisor: null,
@@ -62,6 +63,7 @@ describe("buildKernelInfo", () => {
 				"lock",
 				"minShell",
 				"mode",
+				"protocol",
 				"serviceName",
 				"startedAt",
 				"supervisor",

@@ -25,20 +25,25 @@ export interface ResolveKernelEntryInput {
 	globalEntry: string | null;
 	/** `<userData>/runtime` 解析出来的入口（没有可用运行时则为 null）。 */
 	runtimeEntry: string | null;
-	/** 安装包自带的入口，永远可用。 */
-	bundledEntry: string;
+	/**
+	 * 安装包自带的入口；纯壳包（`desktop/electron-builder.shell.yml`）里不存在 → null。
+	 * 这是权威链的末端，null 表示“这台机器上没有任何内核”，由壳提示安装，而不是硬跑一份不存在的入口。
+	 */
+	bundledEntry: string | null;
 }
 
 /**
- * 优先级：全局 npm → 用户目录运行时（离线兜底）→ 包内自带。
+ * 优先级：全局 npm → 用户目录运行时（离线兜底）→ 包内自带；三者都没有 → `null`（需安装内核）。
  *
  * 为什么不把包内自带排前面：它随壳一起更新，而"内核与壳解耦"正是这套设计的目的；
  * 包内那份只在"这台机器没有任何其它内核"时兜底，保证永远能起来。
+ * 纯壳包把这个兜底拿掉了：那时唯一能起来的前提是前面两档里有一档存在，否则必须让用户装（`kernel-authority.md` §纯壳包）。
  */
-export function pickKernelSource(input: ResolveKernelEntryInput): KernelResolution {
+export function pickKernelSource(input: ResolveKernelEntryInput): KernelResolution | null {
 	if (input.globalEntry) return { source: "global-npm", entry: input.globalEntry };
 	if (input.runtimeEntry) return { source: "userdata-runtime", entry: input.runtimeEntry };
-	return { source: "bundled", entry: input.bundledEntry };
+	if (input.bundledEntry) return { source: "bundled", entry: input.bundledEntry };
+	return null;
 }
 
 /** 全局 npm 包根下的服务端入口。 */

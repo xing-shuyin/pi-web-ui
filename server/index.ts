@@ -18,7 +18,7 @@
  */
 // 必须排在所有 import 之前：先装上「Windows 不弹控制台」进程级开关，后面求值的模块
 // （含 module 作用域里的 `promisify(execFile)` 捕获、插件里的 spawn）才都吃到它。
-import "./hide-console-windows.js";
+import "../shared/hide-console-windows.js";
 import { sleep } from "./async-utils.js";
 import { botExecutionMessageAllowed } from "./device-center/bot-execution.js";
 import { createBotDraftStore, normalizeBotDraft } from "./device-center/bot-drafts.js";
@@ -68,7 +68,7 @@ import { augmentNodePath, augmentNodePathFromShell } from "./node-path.js";
 import { listThemes, readThemeCss, resolveThemeFile } from "./themes.js";
 import { isManaged, managedRefusal } from "./managed.js";
 import { launchOrigin, toServiceInfo } from "./launch-origin.js";
-import { acquireKernelLock, formatLockDenied, releaseKernelLock } from "./instance-lock.js";
+import { acquireKernelLock, formatLockDenied, releaseKernelLock } from "../shared/instance-lock.js";
 import { buildKernelInfo, classifyKernelInstall, describeKernelInstall } from "./kernel-identity.js";
 import { isTabAllowed, parseTabs, tabsRefusal } from "./tabs.js";
 import { nativeCliDiscoveryHandler } from "./native-cli-routes.js";
@@ -715,6 +715,7 @@ function kernelInfo() {
 	return buildKernelInfo({
 		version: appVersion(),
 		packageRoot: getPkgRoot(),
+		protocol: PROTOCOL_VERSION,
 		startedAt: KERNEL_STARTED_AT,
 		now: Date.now(),
 		supervisor: ORIGIN.supervisor,

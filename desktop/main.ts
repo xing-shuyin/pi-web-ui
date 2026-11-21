@@ -1,6 +1,6 @@
 // 第一条 import：桌面壳（GUI 子系统应用，本来就没有控制台）装上「Windows 不弹控制台」进程级开关，
-// 它对 taskkill / powershell / 更新器等子进程一律建控制台。单一实现见 server/hide-console-windows.ts。
-import "../server/hide-console-windows.js";
+// 它对 taskkill / powershell / 更新器等子进程一律建控制台。单一实现见 shared/hide-console-windows.ts。
+import "../shared/hide-console-windows.js";
 import { app, BrowserWindow, dialog, ipcMain, session, shell, type IpcMainInvokeEvent } from "electron";
 import { ElectronChromeExtensions, setSessionPartitionResolver } from "electron-chrome-extensions";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
@@ -37,7 +37,7 @@ import {
 	decideServiceInstall,
 	runKernelCli,
 } from "./kernel-install.js";
-import { readKernelLock } from "../server/instance-lock.js";
+import { readKernelLock } from "../shared/instance-lock.js";
 import {
 	fetchLatestVersion,
 	nodeInstallLaunch,
@@ -131,16 +131,22 @@ function bundledAppRoot(): string {
 /**
  * 这次启动跑哪份服务端：打包后先问 `<userData>/runtime`（P0 只读，见 desktop/runtime-store.ts），
  * 任何不确定都退回安装包内自带的那份——兜底路径不依赖网络、签名、指针文件。
+ *
+ * **返回 null = 这台机器上没有任何内核**（纯壳包不带包内自带那份，全局 npm / 运行时也没有）。
+ * 壳不会硬跑一份不存在的入口，而是把“装内核”作为可执行的下一步交给界面（见 markKernelUnavailable）。
  */
-async function resolveServerEntry(): Promise<string> {
+async function resolveServerEntry(): Promise<string | null> {
 	const devEntry = join(here, "..", "server", "index.js");
 	const override = process.env[RUNTIME_ROOT_ENV]?.trim();
 	const bundledRoot = bundledAppRoot();
 	const bundledEntry = join(bundledRoot, "dist", "server", "index.js");
+	// 纯壳包（desktop/electron-builder.shell.yml）不带内核：兜底入口不存在，权威链末端就是 null。
+	const bundledAvailable = existsSync(bundledEntry);
 	if (bypassRuntimeForThisBoot) {
 		activeRuntimeVersion = null;
 		console.warn("[desktop] runtime: 本次启动跳过 userData 运行时，直接跑安装包自带的那份");
-		return app.isPackaged || override ? bundledEntry : devEntry;
+		if (!app.isPackaged && !override) return devEntry;
+		return bundledAvailable ? bundledEntry : null;
 	}
 	if (!app.isPackaged && !override) {
 		activeRuntimeVersion = null;
@@ -160,8 +166,13 @@ async function resolveServerEntry(): Promise<string> {
 	const picked = pickKernelSource({
 		globalEntry,
 		runtimeEntry: resolved.source === "runtime" ? resolved.entry : null,
-		bundledEntry: resolved.source === "runtime" ? bundledEntry : resolved.entry,
+		// 纯壳包里两个候选都是“不存在”，传 null 而不是一条假路径——否则会去 spawn 一个 ENOENT 入口。
+		bundledEntry: bundledAvailable ? (resolved.source === "runtime" ? bundledEntry : resolved.entry) : null,
 	});
+	if (!picked) {
+		console.warn("[desktop] kernel: 找不到任何内核（npm 全局包 / userData 运行时 / 包内自带都没有）");
+		return null;
+	}
 	kernelSource = picked.source;
 	if (picked.source === "global-npm") {
 		activeRuntimeVersion = null;
@@ -509,6 +520,11 @@ async function startServerSidecar(): Promise<string> {
 		console.warn(`[desktop] 打包版忽略 PI_WEB_DESKTOP_URL=${override}（仅开发模式允许）`);
 	}
 	const entry = await resolveServerEntry();
+	if (!entry) {
+		// 纯壳包 + 本机没有任何内核：不 spawn 一条不存在的入口，转成“可修复”的状态。
+		const message = await markKernelUnavailable();
+		throw new Error(message);
+	}
 	resolveWebDir();
 	console.log(`[desktop] server entry: ${entry}`);
 	const port = await resolvePort(lastServerPort);
@@ -578,6 +594,9 @@ async function startServerSidecar(): Promise<string> {
 		throw error;
 	}
 	sidecarUrl = url;
+	// 内核已经跑起来：把“没有内核”的覆盖层收回去（安装/修复成功后走的就是这里）。
+	browserHost?.setKernelMissing(null);
+	browserHost?.setAgentError("");
 	console.log(`[desktop] server 就绪：${url}`);
 	return url;
 }
@@ -713,6 +732,42 @@ async function refreshKernelState(
 	browserHost?.setKernelState(kernelState);
 }
 
+/** 读系统 node 的版本（`node -v`）。找不到/超时/报错一律 null——只用于告诉用户“够不够用”。 */
+async function probeSystemNode(): Promise<{ path: string; version: string | null } | null> {
+	const path = findNodeInPath(process.env, existsSync);
+	if (!path) return null;
+	return await new Promise((resolvePromise) => {
+		execFile(path, ["-v"], { timeout: 5000, windowsHide: true }, (error, stdout) => {
+			if (error) return resolvePromise({ path, version: null });
+			const version = stdout.trim().replace(/^v/i, "");
+			resolvePromise({ path, version: version || null });
+		});
+	});
+}
+
+/**
+ * 本机没有任何可用内核时的统一出口：算清“还缺什么”（node / 内核本体），
+ * 把结果丢给渲染层（那个覆盖层负责弹“安装/修复”），并返回一句能直接展示的说明。
+ *
+ * 为什么不是直接报错字：纯壳包首次启动必然走这条路，用户需要的不是堆栈而是下一步动作。
+ */
+async function markKernelUnavailable(): Promise<string> {
+	const node = await probeSystemNode();
+	const nodeOk =
+		node !== null &&
+		node.version !== null &&
+		describeNodeRuntime({ execPath: node.path, nodeVersion: node.version }).ok;
+	const message =
+		node === null
+			? "本机没有可用的内核，也没找到 node：先安装 Node（≥22），再安装内核。"
+			: nodeOk
+				? `本机没有可用的内核（node v${node.version} 已就绪）：点「安装内核」执行 npm i -g pi-web-ui。`
+				: `本机 node 版本太低（v${node.version ?? "未知"}，需 ≥22）：先升级 Node，再安装内核。`;
+	browserHost?.setKernelMissing({ nodeOk, nodeVersion: node?.version ?? null, platform: process.platform });
+	browserHost?.setAgentError(message);
+	return message;
+}
+
 /**
  * 启动时的内核判定：
  * - 配置的内核活着 → **只连不拉**（“关掉壳内核还在跑”的前提）
@@ -765,7 +820,7 @@ async function adoptLockedKernel(): Promise<string | null> {
 	return probe.reachable ? url : null;
 }
 
-/** pid 探活（与 server/instance-lock.ts 同一判据）：EPERM 也算活着。 */
+/** pid 探活（与 shared/instance-lock.ts 同一判据）：EPERM 也算活着。 */
 function isProcessAlive(pid: number): boolean {
 	if (!Number.isInteger(pid) || pid <= 0) return false;
 	try {

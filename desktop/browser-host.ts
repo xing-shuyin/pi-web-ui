@@ -262,6 +262,8 @@ export class DesktopBrowserHost {
 	 * 判定/安装逻辑全在 `desktop/kernel-mode.ts` / `kernel-install.ts`，主进程注入。
 	 */
 	private kernelState: BrowserKernelState | undefined;
+	/** “本机还没有任何内核”（纯壳包首次启动）：覆盖层据此给安装/修复出口。 */
+	private kernelMissing: BrowserState["kernelMissing"] | undefined;
 	private kernelBridge: KernelBridge | null = null;
 	/** 搜索浮层：外壳自己的 DOM 浮层盖住整块内容区时，临时把内容视图藏起来 */
 	private overlay = false;
@@ -986,7 +988,19 @@ export class DesktopBrowserHost {
 			agentReady: this.agentReady,
 			...(this.agentError ? { agentError: this.agentError } : {}),
 			...(this.kernelState ? { kernel: this.kernelState } : {}),
+			...(this.kernelMissing ? { kernelMissing: this.kernelMissing } : {}),
 		};
+	}
+
+	/**
+	 * “这台机器没有可跑的内核”（纯壳包首次启动 / 用户把内核卸了）。
+	 * 传 null = 内核已经能用，把覆盖层收回去；与 `setAgentError` 成对使用（前者说“为什么”，后者说“下一步能做什么”）。
+	 */
+	setKernelMissing(missing: BrowserState["kernelMissing"] | null): void {
+		const next = missing ?? undefined;
+		if (JSON.stringify(this.kernelMissing) === JSON.stringify(next)) return;
+		this.kernelMissing = next;
+		this.publish();
 	}
 
 	/** 主进程算好内核状态后推过来（面板与 `pi-browser:state` 都用这一个字段）。 */

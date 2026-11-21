@@ -112,3 +112,17 @@ export function kernelEnvironmentActions(env: KernelEnvironmentView | null): {
 	if (!env) return { upgrade: false, installNode: false };
 	return { upgrade: env.global.canUpgrade, installNode: !env.node.ok && env.nodeInstall.canRun };
 }
+
+/**
+ * 「升级内核」按钮该不该给：除了“注册表有新版”，还有一个更硬的理由——
+ * **壳与内核协议不匹配**（纯壳包下两者独立安装，不匹配是常态）。
+ * 只看注册表会把“本地包就是最新版、但与壳不兼容”这种情形藏成一个点不动的按钮。
+ */
+export function shouldOfferKernelUpgrade(
+	env: KernelEnvironmentView | null,
+	state: { compat?: { kind: string } } | null,
+): boolean {
+	const compat = state?.compat?.kind;
+	if (compat === "upgrade-kernel" || compat === "unknown-kernel") return true;
+	return kernelEnvironmentActions(env).upgrade;
+}

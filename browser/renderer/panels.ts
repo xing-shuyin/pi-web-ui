@@ -28,6 +28,7 @@ import {
 	describeKernelState,
 	kernelActions,
 	kernelEnvironmentActions,
+	shouldOfferKernelUpgrade,
 	kernelPersistenceHint,
 	SHELL_CAPABILITY,
 } from "../kernel-view.js";
@@ -528,6 +529,13 @@ async function kernelSectionView(): Promise<HTMLElement> {
 		}
 		warning.hidden = actions.warning !== "min-shell-above";
 		if (!warning.hidden) warning.textContent = t("kernelMinShellWarning");
+		// 壳 ↔ 内核不匹配（纯壳包下两者是两个独立安装物）：就地说清楚该升哪一边。
+		// “升级全局包”走现成的「升级内核」按钮（同一个 `kernel.upgrade` 通道）。
+		const compat = state?.compat;
+		if (compat && compat.kind !== "ok" && compat.message) {
+			warning.hidden = false;
+			warning.textContent = `⚠ ${compat.message}`;
+		}
 	};
 
 	const show = (state: BrowserKernelState | null): void => {
@@ -562,7 +570,8 @@ async function kernelSectionView(): Promise<HTMLElement> {
 			envLine.textContent = describeKernelEnvironment(env);
 			envLine.hidden = !envLine.textContent;
 			const actions = kernelEnvironmentActions(env);
-			upgradeButton.hidden = !actions.upgrade;
+			// 协议不匹配时也要给升级按钮（本地包可能“已是最新”但与壳不兼容）。
+			upgradeButton.hidden = !shouldOfferKernelUpgrade(env, current);
 			installNodeButton.hidden = !actions.installNode;
 		} catch {
 			// 环境探测失败不影响内核状态展示（registry 不可达时静默）

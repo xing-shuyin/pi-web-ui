@@ -27,7 +27,7 @@
 | 关注点                                  | 唯一事实源                                       | 说明                                                                               |
 | --------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------- |
 | 内核身份（版本/安装形态/托管者/uptime） | `server/kernel-identity.ts`                      | 纯推导，无 I/O；`/api/health` 的 `kernel` 块由它产出                               |
-| 数据目录单实例                          | `server/instance-lock.ts`                        | pid 文件 + 探活 + 陈旧接管                                                         |
+| 数据目录单实例                          | `shared/instance-lock.ts`                        | pid 文件 + 探活 + 陈旧接管                                                         |
 | 内核公开快照的形状                      | `server/protocol.ts` 的 `KernelPublicInfo`       | 客户端与内核之间的线形状                                                           |
 | 权威链（哪份代码是内核）                | `desktop/kernel-authority.ts`                    | 全局 npm 包 > `<userData>/runtime`（离线兜底）> 包内自带；`npm prefix -g` 缓存一天 |
 | 环境探测（node/服务/安装指引）          | `desktop/kernel-env.ts`                          | 纯函数 + 可注入 `exists`/`env`；不读注册表、不 spawn                               |
@@ -152,6 +152,65 @@ pi-web-ui server status                          # 服务装没装、起没起
 解析优先级在 `desktop/kernel-authority.ts`：**全局 npm 包 → `<userData>/runtime`（离线兜底）→ 包内自带**。
 包内自带永远兜底（"永远能起来"这条活路不变），但它随壳更新，所以排在最后。
 `npm prefix -g` 要起子进程（几百毫秒），结果缓存在 `<userData>/kernel-authority.json`，有效期一天。
+
+### 9.1.1 纯壳包（安装包不装内核）
+
+`desktop/electron-builder.shell.yml`（`npm run desktop:nsis:shell`）出的是**只有壳**的安装包：
+`files` 只收 `dist/desktop` + `dist/browser` + 壳主进程 require 的四个包（`electron-chrome-extensions` /
+`debug` / `ms` / `jsqr`），内核（`dist/server`、`web/dist`、其余 `node_modules`、`bin`、`themes`、`plugin-sdk`）一律不装。
+
+这份包把权威链末端（包内自带）拿掉，于是 `pickKernelSource` 有三种结果而不是必然有值：
+
+| 机器状态                | 结果                                 |
+| ----------------------- | ------------------------------------ |
+| 装了全局 npm 包         | 用它（与完整包同一条路）             |
+| 有 `<userData>/runtime` | 用它                                 |
+| 两者都没有              | **`null`**，壳不 spawn，界面提示安装 |
+
+`null` 的处理是三层，缺一层就变成"点了没反应"：
+
+1. `desktop/main.ts` 的 `resolveServerEntry()` 返回 `null`；`startServerSidecar()` **在 spawn 之前**拦下，
+   走 `markKernelUnavailable()` 算清"还缺什么"（系统 node 有没有、够不够 ≥22），
+   写进 `BrowserState.kernelMissing` 并把说明交给 `agentError`。
+2. `browser/renderer/shell.ts` 的启动覆盖层（`pb-boot-actions`）据 `kernelMissing` 出三个按钮：
+   **安装 Node**（`kernel.installNode`）/ **安装内核**（`kernel.upgrade` = `npm i -g pi-web-ui@latest`）/
+   **重试**（`kernel.restart`）。三个动作全是既有通道，没有新增 IPC —— 同一件事只能有一个实现。
+3. 内核真正起来后（`startServerSidecar` 健康检查通过）立刻 `setKernelMissing(null)` 收回覆盖层，
+   不需要用户重启壳。
+
+**取舍**：纯壳包首次启动依赖网络 + node（内核就是 npm 包，这是产品本来就要的运行时）。
+因此**完整包不能取消**——它是离线 / 没装 node 的机器唯一能起来的形态；两种包按命令分开，产物目录也分开
+（`release/` vs `release-shell/`），`publish: null` 保证壳包不会污染完整包的 `latest.yml`。
+
+**顺带的好处**：完整包把 node-pty 的 console helper 铺进 `app.asar.unpacked`，主进程被强杀后它们成孤儿、
+抱着原生模块导致覆盖安装卡进度（[`architecture-desktop-update.md`](architecture-desktop-update.md) §十二）。
+纯壳包不含这些文件，安装器要覆盖的只剩自己的 exe。
+
+### 9.1.2 壳与全局包不匹配：装完之后才需要回答的事
+
+纯壳包把「壳」和「内核」变成两个独立安装物（`setup.exe` + `npm i -g pi-web-ui`），
+所以**版本不匹配是常态，不是异常**。两边的本钱不同，判定必须分开说：
+
+| 谁的本钱                | 在哪里                                                                     | 不匹配时能不能就地修            |
+| ----------------------- | -------------------------------------------------------------------------- | ------------------------------- |
+| 壳的协议期望            | `desktop/protocol-expectation.ts`（构建期由 `scripts/gen-desktop-protocol.mjs` 从 `server/protocol-version.ts` 烘进来） | 不能（已装好的壳不可热更）      |
+| 壳的能力版本            | `desktop/runtime-config.ts` 的 `SHELL_CAPABILITY_VERSION`                  | 同上                            |
+| 内核的协议 / 兼容下限   | `/api/health.kernel.protocol` / `.minShell`（`server/kernel-identity.ts`）  | 能（`npm i -g pi-web-ui@latest`） |
+
+**为什么协议要烘进壳里而不是 import**：纯壳包不带 `dist/server`，运行时 `../server/protocol-version.js`
+根本不存在。所以只能在构建期把数字写进 `desktop/protocol-expectation.ts`；
+它与源文件不一致时单测会红（`tests/unit/desktop-kernel-compat.test.ts`）。
+
+判定单源是 `desktop/kernel-compat.ts` 的 `compareKernelCompat`，顺序本身即语义：
+
+1. `kernel.minShell > 本壳能力` → **升级壳**（升内核救不了：IPC/preload 是编译进去的）。
+2. 内核没报 `protocol`（老内核）→ **升级全局包**（不能白屏）。
+3. `protocol` 不相等（两个方向）→ **升级全局包**（壳不可热更，能动手的一侧永远是内核）。
+4. 其余 → ok。
+
+结论进 `BrowserKernelState.compat`，渲染层只展示不重算：设置面板的「内核」小节会显示一条警告，
+并把「升级内核」按钮亮出来 —— `shouldOfferKernelUpgrade()` 不只看注册表有没有新版，
+还看协议是否不匹配（否则“本地已是最新、但与壳不兼容”会变成一个点不动的按钮）。
 
 用全局包当内核时，**内核进程用系统 node 启动**（不是 Electron 的 node）：全局包里的原生模块按系统 node ABI 编译，
 塞进 `ELECTRON_RUN_AS_NODE` 可能加载失败；找不到 node 才退回 Electron 自带运行时并在日志里说清。

@@ -9,7 +9,7 @@ import {
 	readKernelLock,
 	releaseKernelLock,
 	STALE_AFTER_MS,
-} from "../../server/instance-lock.js";
+} from "../../shared/instance-lock.js";
 
 let dataDir = "";
 

@@ -20,7 +20,16 @@ import { describe, expect, it } from "vitest";
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 
 /** 构建产物 / 依赖目录里的副本不算文档（不扫）。 */
-const SKIP_DIRS = new Set(["node_modules", "release", "dist", "build", "artifacts", "coverage", "vendor"]);
+const SKIP_DIRS = new Set([
+	"node_modules",
+	"release",
+	"release-shell",
+	"dist",
+	"build",
+	"artifacts",
+	"coverage",
+	"vendor",
+]);
 
 /**
  * 根级白名单（登记制）。两类：
@@ -49,6 +58,7 @@ const ROOT_ALLOWLIST = new Set([
 	"plugins",
 	"scripts",
 	"server",
+	"shared",
 	"tests",
 	"themes",
 	"web",
@@ -71,6 +81,7 @@ const ROOT_ALLOWLIST = new Set([
 	"artifacts",
 	"dist",
 	"release",
+	"release-shell",
 	"durable",
 	// —— 仓库根文件
 	".dockerignore",
