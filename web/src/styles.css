@@ -3956,6 +3956,15 @@
 		border-radius: 999px;
 		background: color-mix(in srgb, #34d399 22%, var(--bg-elev));
 		color: var(--green);
+		flex-shrink: 0;
+	}
+
+	/* 网页标题可以是整条 PR 标题：标签里只留一行，超了就省略号，全文在 title 属性里 */
+	.attach-label {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.attach-remove {
@@ -29617,7 +29626,7 @@
 			width: 40px;
 		}
 		.attach-chip {
-			max-width: 78vw;
+			max-width: min(320px, 78vw);
 		}
 
 		.fp-overlay {
