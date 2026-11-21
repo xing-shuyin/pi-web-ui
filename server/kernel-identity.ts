@@ -9,7 +9,6 @@
  * 为什么必须有单源：客户端要判断"关掉桌面壳之后这个内核还在不在、归谁托管、版本对不对"，
  * 而这些事实只有内核自己知道；让客户端各算一遍必然分叉（历史上就是两套数据目录 + 两套更新链）。
  */
-import { basename, sep } from "node:path";
 import type { KernelInstallKind, KernelPublicInfo, ServiceSupervisor } from "./protocol.js";
 
 /**
@@ -74,13 +73,4 @@ export function describeKernelInstall(kind: KernelInstallKind): string {
 		default:
 			return "源码";
 	}
-}
-
-/** 诊断日志用：只保留包根末两级，避免把完整用户目录写进日志。 */
-export function tailPackageRoot(packageRoot: string): string {
-	const normalized = packageRoot.replace(/\\/g, "/").replace(/\/+$/, "");
-	const parent = normalized.slice(0, normalized.lastIndexOf("/"));
-	// 盘符（`D:`）不是路径段：WSL/macOS 上读到 Windows 路径时也别把它当一级留下。
-	const segments = [basename(parent), basename(normalized)].filter((s) => s && !/^[a-z]:$/i.test(s));
-	return segments.join("/") || basename(normalized) || sep;
 }
