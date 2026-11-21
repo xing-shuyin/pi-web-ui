@@ -253,6 +253,22 @@ export async function killPidTree(pid: number): Promise<void> {
 	} catch {}
 }
 
+/** killPidTree 返回时目标进程可能尚未退出（taskkill 退出 / SIGKILL 送达都异步），按 50ms 轮询判定。 */
+export async function waitForPidGone(
+	pid: number,
+	timeoutMs = 500,
+	isAlive: (pid: number) => boolean = pidAlive,
+): Promise<boolean> {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		if (!isAlive(pid)) return true;
+		await new Promise<void>((resolve) => {
+			setTimeout(resolve, 50);
+		});
+	}
+	return !isAlive(pid);
+}
+
 export async function lookupProcessCommandLine(pid: number): Promise<string | undefined> {
 	try {
 		const { execFile } = await import("node:child_process");

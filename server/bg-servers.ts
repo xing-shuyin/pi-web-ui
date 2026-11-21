@@ -3,6 +3,7 @@ import type { ServerMessage, BgServer } from "./protocol.js";
 import {
 	killPidTree,
 	lookupProcessDetailsBatch,
+	waitForPidGone,
 	snapshotListeningPorts,
 	snapshotProcessTree,
 	type ProcessTreeNode,
@@ -402,7 +403,18 @@ export class BgServerTracker {
 			this.opts.flushSnapshot();
 			return false;
 		}
-		killPidTree(entry.pid);
+		// 杀不掉时保留条目并报错，不能先删列表再公告成功。
+		await killPidTree(entry.pid);
+		if (!(await waitForPidGone(entry.pid))) {
+			this.opts.emit({
+				type: "notice",
+				level: "error",
+				text: `停止失败：端口 ${port}（pid ${entry.pid}）仍在运行，已保留在后台任务列表中`,
+				textEn: `Failed to stop: port ${port} (pid ${entry.pid}) is still running; kept in the background task list`,
+			});
+			this.opts.flushSnapshot();
+			return false;
+		}
 		this.servers.delete(port);
 		this.push();
 		this.opts.emit({
