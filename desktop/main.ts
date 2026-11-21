@@ -30,7 +30,7 @@ import {
 	type UpdaterPrefs,
 } from "./updater.js";
 import { buildDesktopLoadUrl, DEFAULT_DESKTOP_PORT, resolveHealthTimeoutMs, waitForHealth } from "./startup.js";
-import { decideKernelMode, probeKernel, toKernelState, type KernelMode } from "./kernel-mode.js";
+import { decideKernelMode, isSameKernel, probeKernel, toKernelState, type KernelMode } from "./kernel-mode.js";
 import {
 	buildServiceInstallArgs,
 	buildServiceLifecycleArgs,
@@ -577,6 +577,7 @@ async function startServerSidecar(): Promise<string> {
 		await recordRuntimeBootFailure();
 		throw error;
 	}
+	sidecarUrl = url;
 	console.log(`[desktop] server 就绪：${url}`);
 	return url;
 }
@@ -599,6 +600,7 @@ async function recordRuntimeBootFailure(): Promise<void> {
 
 /** 停掉当前 server（含它派生的 pty / 子进程）；Windows 必须杀进程树，否则端口/句柄不放。 */
 async function stopServerSidecar(): Promise<void> {
+	sidecarUrl = null;
 	const proc = serverProc;
 	serverProc = null;
 	if (!proc) return;
@@ -670,9 +672,16 @@ async function restartServerSidecar(expectedVersion?: string | null): Promise<st
 
 /** 最近一次算出的内核状态（面板读它，`pi-browser:state` 也带它）。 */
 let kernelState: BrowserKernelState | null = null;
+/** 壳自己拉起的 sidecar 地址：同一地址 = local，其它 = external（用户手动连的 / 服务托管的）。 */
+let sidecarUrl: string | null = null;
 let kernelMode: KernelMode = "local";
 
-/** 当前shell 认为应在的内核地址：外部模式就是配置的地址，本地模式就是 sidecar 地址。 */
+/** 当前连的地址到底是谁：我们自己的 sidecar → local，其它 → external。 */
+function kernelModeFor(url: string): KernelMode {
+	return sidecarUrl !== null && isSameKernel(url, sidecarUrl) ? "local" : "external";
+}
+
+/** 当前 shell 认为应在的内核地址：外部模式就是配置的地址，本地模式就是 sidecar 地址。 */
 function currentKernelUrl(): string {
 	return kernelState?.url ?? browserHost?.getState().agentUrl ?? "";
 }
@@ -951,7 +960,14 @@ async function installNodeRuntime(): Promise<{ ok: boolean; message: string }> {
 /** 「重启内核」：服务托管时交给服务管理器，本地 sidecar 才自己杀重生。 */
 async function restartKernel(): Promise<{ ok: boolean; message: string }> {
 	if (kernelMode === "external") {
-		const result = await runKernelCli(buildServiceLifecycleArgs("restart"), { pkgRoot: resolveKernelPkgRoot() });
+		const result = await runKernelCli(
+			buildServiceLifecycleArgs("restart", {
+				name: kernelState?.serviceName ?? null,
+				dataDir: currentKernelDataDir(),
+				port: currentKernelPort(),
+			}),
+			{ pkgRoot: resolveKernelPkgRoot() },
+		);
 		const message = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n").slice(-2000);
 		if (result.code !== 0) return { ok: false, message: message || `重启失败（退出码 ${result.code}）` };
 		await refreshKernelState(currentKernelUrl(), "external");
@@ -1034,7 +1050,8 @@ async function createWindow(): Promise<void> {
 	// 内核状态的唯一来源在主进程：宿主只转发面板的查询/安装/重启请求。
 	browserHost.setKernelBridge({
 		refresh: async () => {
-			await refreshKernelState(currentKernelUrl(), kernelMode);
+			const url = browserHost?.getState().agentUrl || currentKernelUrl();
+			await refreshKernelState(url, kernelModeFor(url));
 			return kernelState ?? undefined;
 		},
 		install: installKernelService,

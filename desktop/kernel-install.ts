@@ -37,9 +37,20 @@ export function buildServiceInstallArgs(input: KernelServicePlanInput): string[]
 	return args;
 }
 
-export function buildServiceLifecycleArgs(action: "status" | "restart" | "stop", name?: string | null): string[] {
+/**
+ * 生命周期动作的参数。
+ * **必须带上 --data-dir / --port**：CLI 的 restart/stop 走数据目录里的控制通道，
+ * 不带就默认指向 ~/.pi-web + 8787 —— 那会去重启"另一个内核"（或者什么都没发生）。
+ */
+export function buildServiceLifecycleArgs(
+	action: "status" | "restart" | "stop",
+	options: { name?: string | null; dataDir?: string; port?: number | null } = {},
+): string[] {
 	const args = ["server", action];
-	const normalized = normalizeServiceName(name);
+	if (typeof options.port === "number" && Number.isInteger(options.port) && options.port > 0)
+		args.push("--port", String(options.port));
+	if (options.dataDir?.trim()) args.push("--data-dir", options.dataDir.trim());
+	const normalized = normalizeServiceName(options.name);
 	if (normalized) args.push("--name", normalized);
 	return args;
 }

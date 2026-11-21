@@ -39,8 +39,30 @@ describe("buildServiceInstallArgs", () => {
 describe("buildServiceLifecycleArgs", () => {
 	it("status / restart / stop 三种动作，服务名可选", () => {
 		expect(buildServiceLifecycleArgs("restart")).toEqual(["server", "restart"]);
-		expect(buildServiceLifecycleArgs("status", "pi-web-ui")).toEqual(["server", "status", "--name", "pi-web-ui"]);
-		expect(buildServiceLifecycleArgs("stop", "bad name")).toEqual(["server", "stop"]);
+		expect(buildServiceLifecycleArgs("status", { name: "pi-web-ui" })).toEqual([
+			"server",
+			"status",
+			"--name",
+			"pi-web-ui",
+		]);
+		expect(buildServiceLifecycleArgs("stop", { name: "bad name" })).toEqual(["server", "stop"]);
+	});
+
+	// 回归：不带 dataDir/port 会去操作 ~/.pi-web 的那个内核（或什么都没发生）
+	it("必须带上目标内核的 --port / --data-dir", () => {
+		expect(buildServiceLifecycleArgs("restart", { dataDir: "C:/d", port: 8908 })).toEqual([
+			"server",
+			"restart",
+			"--port",
+			"8908",
+			"--data-dir",
+			"C:/d",
+		]);
+	});
+
+	it("端口非法就不写（不让 CLI 拿垃圾值去拼 socket 名）", () => {
+		expect(buildServiceLifecycleArgs("restart", { port: 0 })).toEqual(["server", "restart"]);
+		expect(buildServiceLifecycleArgs("restart", { port: 1.5 })).toEqual(["server", "restart"]);
 	});
 });
 

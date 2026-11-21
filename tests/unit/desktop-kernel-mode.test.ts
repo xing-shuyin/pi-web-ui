@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	decideKernelMode,
+	isSameKernel,
 	probeKernel,
 	toKernelState,
 	type FetchLike,
@@ -160,5 +161,18 @@ describe("toKernelState / 文案", () => {
 		expect(formatUptime(90_000)).toBe("1 分钟");
 		expect(formatUptime(2 * 60 * 60 * 1000)).toBe("2 小时 0 分钟");
 		expect(formatUptime(26 * 60 * 60 * 1000)).toBe("1 天 2 小时");
+	});
+});
+describe("isSameKernel（地址归一化）", () => {
+	it("尾斜杠/大小写/默认端口不影响判定", () => {
+		expect(isSameKernel("http://127.0.0.1:8787", "http://127.0.0.1:8787/")).toBe(true);
+		expect(isSameKernel("http://LOCALHOST:8787", "http://localhost:8787")).toBe(true);
+		expect(isSameKernel("http://127.0.0.1:8787/?token=x", "http://127.0.0.1:8787")).toBe(true);
+		expect(isSameKernel("http://127.0.0.1:8787", "http://127.0.0.1:8788")).toBe(false);
+	});
+
+	it("不是 URL 时退化成去尾斜杠比较，不抛", () => {
+		expect(isSameKernel("abc/", "abc")).toBe(true);
+		expect(isSameKernel("", "")).toBe(true);
 	});
 });

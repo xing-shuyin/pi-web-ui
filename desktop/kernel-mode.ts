@@ -52,7 +52,13 @@ export type FetchLike = (
 export const KERNEL_PROBE_TIMEOUT_MS = 1500;
 
 function normalizeBaseUrl(url: string): string {
-	return url.trim().replace(/\/+$/, "");
+	const trimmed = url.trim();
+	try {
+		// 按 origin 归一：壳里的 agentUrl 常带尾斜杠（`http://127.0.0.1:8787/`），直接比字符串会误判。
+		return new URL(trimmed).origin;
+	} catch {
+		return trimmed.replace(/\/+$/, "");
+	}
 }
 
 function isInstallKind(value: unknown): value is KernelInstallKind {
@@ -97,6 +103,15 @@ export async function probeKernel(
 }
 
 export type KernelMode = "external" | "local";
+
+/**
+ * 两个地址是不是同一个内核。
+ * 必须按 origin 比：壳里的 agentUrl 常常带尾斜杠（`http://127.0.0.1:8787/`），
+ * 字符串直接比会把"自己的 sidecar"误判成外部内核 —— 于是重启按钮消失、点了也重启错对象。
+ */
+export function isSameKernel(a: string, b: string): boolean {
+	return normalizeBaseUrl(a) === normalizeBaseUrl(b);
+}
 
 export interface KernelDecision {
 	mode: KernelMode;

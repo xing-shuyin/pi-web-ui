@@ -38,7 +38,8 @@ export function kernelPersistenceHint(state: BrowserKernelState): string {
 	if (!state.reachable) return state.error ? `内核未连通：${state.error}` : "内核未连通";
 	if (state.mode === "external" && state.supervisor)
 		return "已由系统托管：关掉本窗口与浏览器，定时任务与渠道仍继续运行。";
-	if (state.mode === "external") return "连的是外部内核：关掉本窗口不影响它，但请确认它自己常驻。";
+	if (state.mode === "external")
+		return "连的是外部内核：关掉本窗口不影响它，但请确认它自己常驻（重启请到它所在的机器上执行）。";
 	return "当前内核随本窗口退出而停止：定时任务与 QQ 等渠道会一起停。";
 }
 
@@ -53,7 +54,7 @@ export const KERNEL_LINUX_INSTALL_COMMAND = "pi-web-ui server install";
 
 export interface KernelActions {
 	install: { kind: "enabled" | "hidden" | "terminal"; command?: string };
-	restart: { kind: "enabled" };
+	restart: { kind: "enabled" | "hidden" };
 	/** 内核要求的最低壳能力高于本壳：先更新桌面应用，而不是继续点按钮。 */
 	warning?: "min-shell-above";
 }
@@ -78,7 +79,10 @@ export function kernelActions(input: {
 		else if (platform === "linux") install = { kind: "terminal", command: KERNEL_LINUX_INSTALL_COMMAND };
 		else if (platform === "darwin" || platform === "win32") install = { kind: "enabled" };
 	}
-	return { install, restart: { kind: "enabled" }, ...(warning ? { warning } : {}) };
+	// 重启只对本壳自己拉起的 sidecar、或由系统托管的内核有意义；
+	// 连的是别人的裸内核（external + 无托管者）时本壳没有任何手段重启它，点按钮只会白点。
+	const canRestart = Boolean(state) && (state!.mode === "local" || Boolean(state!.supervisor));
+	return { install, restart: { kind: canRestart ? "enabled" : "hidden" }, ...(warning ? { warning } : {}) };
 }
 
 /** 环境一行的摘要：`node v26.13.1 · 全局包 v0.121.3（可升到 0.121.4） · 服务配置：已安装`。 */

@@ -1295,6 +1295,8 @@ export class DesktopBrowserHost {
 				return true;
 			case "agent.connect":
 				await this.connectAgent(text(args.url));
+				// 手动换了内核：面板的状态/模式/按钮必须跟着重算，否则"重启内核"会去重启旧的那个。
+				await this.kernelBridge?.refresh();
 				return true;
 			case "kernel.status":
 				if (!this.kernelBridge) return this.kernelState ?? null;

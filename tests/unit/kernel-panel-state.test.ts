@@ -19,7 +19,8 @@ describe("kernelActions", () => {
 	it("没有内核状态时不显示安装按钮（先连上再谈装）", () => {
 		const actions = act(null);
 		expect(actions.install.kind).toBe("hidden");
-		expect(actions.restart.kind).toBe("enabled");
+		// 连都没连上时重启也无从下手（没有目标）
+		expect(actions.restart.kind).toBe("hidden");
 	});
 
 	it("Windows / macOS 裸内核 → 可直接装（Win 免管理员，mac 用 launchd 免 sudo）", () => {
@@ -55,8 +56,15 @@ describe("kernelActions", () => {
 		expect(act({ ...base, minShell: 0 }).warning).toBeUndefined();
 	});
 
-	it("重启按钮在任何状态下都可用（连不上时正是要用它）", () => {
+	it("本地 sidecar / 系统托管 → 可重启（连不上时正是要用它）", () => {
 		expect(act({ ...base, reachable: false }).restart.kind).toBe("enabled");
+		expect(act({ ...base, mode: "external", supervisor: "systemd" }).restart.kind).toBe("enabled");
+	});
+
+	// 别人的裸内核：本壳没有任何手段重启它，点了只会白点
+	it("外部且无托管者 → 重启按钮隐藏", () => {
+		expect(act({ ...base, mode: "external", supervisor: null }).restart.kind).toBe("hidden");
+		expect(act(null).restart.kind).toBe("hidden");
 	});
 });
 
