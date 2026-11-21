@@ -153,6 +153,7 @@ export const ENV_SPECS: readonly EnvSpec[] = [
 	{ name: "PI_DEVICE_TURN_USERNAME", scope: "public" },
 	{ name: "PI_MOBILE_JPUSH_APP_KEY", scope: "public" },
 	{ name: "PI_WEB_ALLOW_HOSTS", scope: "public" },
+	{ name: "PI_WEB_ALLOW_MULTI_INSTANCE", scope: "public" },
 	{ name: "PI_WEB_ALLOW_ORIGINS", scope: "public" },
 	{ name: "PI_WEB_BASH_TIMEOUT_SEC", scope: "public" },
 	{ name: "PI_WEB_CWD", scope: "public" },

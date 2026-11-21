@@ -76,6 +76,6 @@ export function describeKernelInstall(kind: KernelInstallKind): string {
 /** 诊断日志用：只保留包根末两级，避免把完整用户目录写进日志。 */
 export function tailPackageRoot(packageRoot: string): string {
 	const normalized = packageRoot.replace(/\\/g, "/").replace(/\/+$/, "");
-	const parent = normalized.slice(0, normalized.lastIndexOf("/"));
+	const parent = normalized.slice(0, normalized.lastIndexOf("/")).replace(/^[A-Za-z]:$/, "");
 	return [basename(parent), basename(normalized)].filter(Boolean).join("/") || basename(normalized) || sep;
 }
