@@ -10,6 +10,7 @@ import { resolveDefaultPkgRoot } from "./plugin-updater.js";
 // shellQuotePosix 的单源在 shell-quote.ts；这里 re-export 是为了不让 6+ 个既有 import 点全部改一遍。
 import { shellQuotePosix } from "./shell-quote.js";
 import { isAudioFile, previewKind } from "./text-sniff.js";
+import { inspectVersionedJson, preserveFileSync } from "./versioned-store.js";
 import type {
 	RemoteSshDirItem,
 	RemoteSshHostTrustOffer,
@@ -355,6 +356,8 @@ export class RemoteSshService {
 	private readonly credentialCache = new Map<string, RemoteSshProbeParams>();
 	private pendingHostKeys = new Map<string, { key: Buffer; fingerprint: string }>();
 	private secretKey: Buffer | null = null;
+	/** 读盘时发现认不出的格式就置上：之后一律拒绝写盘，避免把用户数据覆盖成空库。 */
+	private loadBlockedReason: string | null = null;
 
 	constructor(dataDir: string) {
 		this.dataDir = dataDir;
@@ -418,27 +421,56 @@ export class RemoteSshService {
 	}
 
 	private async loadProfilesData(): Promise<StoredProfilesFile> {
+		if (this.loadBlockedReason) return { version: 1, profiles: {} };
+		const source = existsSync(this.profilesFilePath)
+			? this.profilesFilePath
+			: existsSync(this.legacyProfilesFilePath)
+				? this.legacyProfilesFilePath
+				: null;
+		if (!source) return { version: 1, profiles: {} };
+		let content: string;
 		try {
-			if (existsSync(this.profilesFilePath)) {
-				const content = await fs.readFile(this.profilesFilePath, "utf8");
-				const parsed = JSON.parse(content) as StoredProfilesFile;
-				if (parsed && parsed.version === 1 && typeof parsed.profiles === "object") {
-					return parsed;
-				}
-			} else if (existsSync(this.legacyProfilesFilePath)) {
-				const content = await fs.readFile(this.legacyProfilesFilePath, "utf8");
-				const parsed = JSON.parse(content) as StoredProfilesFile;
-				if (parsed && parsed.version === 1 && typeof parsed.profiles === "object") {
-					await fs.mkdir(this.dataDir, { recursive: true });
-					await fs.writeFile(this.profilesFilePath, JSON.stringify(parsed, null, 2), "utf8");
-					return parsed;
-				}
+			content = await fs.readFile(source, "utf8");
+		} catch (error) {
+			this.blockLoad(source, `读取失败：${String(error)}`, undefined);
+			return { version: 1, profiles: {} };
+		}
+		const inspected = inspectVersionedJson<StoredProfilesFile>(content, "version", 1);
+		if (inspected.status === "unsupported") {
+			this.blockLoad(source, inspected.reason, content);
+			return { version: 1, profiles: {} };
+		}
+		if (inspected.status === "missing") return { version: 1, profiles: {} };
+		const parsed = inspected.value;
+		if (typeof parsed.profiles !== "object" || parsed.profiles === null) {
+			this.blockLoad(source, "profiles 不是对象", content);
+			return { version: 1, profiles: {} };
+		}
+		if (source === this.legacyProfilesFilePath) {
+			try {
+				await fs.mkdir(this.dataDir, { recursive: true });
+				await fs.writeFile(this.profilesFilePath, JSON.stringify(parsed, null, 2), "utf8");
+			} catch (error) {
+				console.error("[remote-ssh] 旧版 profiles 迁移到 global-hosts.json 失败:", error);
 			}
-		} catch {}
-		return { version: 1, profiles: {} };
+		}
+		return parsed;
+	}
+
+	private blockLoad(source: string, reason: string, content: string | undefined): void {
+		this.loadBlockedReason = `${source} ${reason}`;
+		const backup = content === undefined ? undefined : preserveFileSync(source, content, "unsupported");
+		console.error(
+			`[remote-ssh] ${source} 无法识别（${reason}），本次以空列表运行且拒绝写盘` +
+				(backup ? `；原文件已备份到 ${backup}` : "；备份失败，原文件保持原样"),
+		);
 	}
 
 	private async saveProfilesData(data: StoredProfilesFile): Promise<void> {
+		if (this.loadBlockedReason) {
+			console.error(`[remote-ssh] 拒绝保存 profiles：${this.loadBlockedReason}。请先修复或移走该文件后重启。`);
+			return;
+		}
 		try {
 			await fs.mkdir(this.dataDir, { recursive: true });
 			const json = JSON.stringify(data, null, 2);

@@ -17,6 +17,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { inspectVersionedJson, preserveFileSync } from "./versioned-store.js";
 import { writeJsonAtomicSync } from "./atomic-file.js";
 
 export type LedgerDirection = "in" | "out";
@@ -95,6 +96,8 @@ export class PluginLedgerStore {
 	private readonly flushDelayMs: number;
 	private flushTimer: ReturnType<typeof setTimeout> | null = null;
 	private dirty = false;
+	/** 账本文件认不出（版本不认识/解析失败）时置上：之后只写内存，不覆盖原文件。 */
+	private loadBlockedReason: string | null = null;
 	private closed = false;
 
 	constructor(opts: PluginLedgerOptions) {
@@ -114,27 +117,48 @@ export class PluginLedgerStore {
 
 	private load(): void {
 		if (!existsSync(this.file)) return;
+		let content: string;
 		try {
-			const parsed = JSON.parse(readFileSync(this.file, "utf8")) as LedgerFile;
-			if (!parsed || parsed.v !== 1 || !Array.isArray(parsed.records)) return;
-			for (const r of parsed.records) {
-				if (!r || typeof r.key !== "string" || typeof r.state !== "string") continue;
-				if (!["claimed", "done", "failed"].includes(r.state)) continue;
-				const direction: LedgerDirection = r.direction === "out" ? "out" : "in";
-				const key = typeof r.key === "string" ? r.key : "";
-				if (!key) continue;
-				this.records.set(this.mapKey(direction, key), {
-					...r,
-					direction,
-					id: typeof r.id === "string" ? r.id : `${this.pluginId}:${r.key}`,
-					attempts: Number.isFinite(r.attempts) ? Number(r.attempts) : 1,
-					createdAt: Number.isFinite(r.createdAt) ? Number(r.createdAt) : this.now(),
-					updatedAt: Number.isFinite(r.updatedAt) ? Number(r.updatedAt) : this.now(),
-				});
-			}
-		} catch {
-			// 坏文件不阻断插件启动：当作空账本，下次 flush 覆盖。
+			content = readFileSync(this.file, "utf8");
+		} catch (error) {
+			this.blockLoad(`读取失败：${String(error)}`, undefined);
+			return;
 		}
+		const inspected = inspectVersionedJson<LedgerFile>(content, "v", 1);
+		if (inspected.status === "unsupported") {
+			this.blockLoad(inspected.reason, content);
+			return;
+		}
+		if (inspected.status === "missing") return;
+		if (!Array.isArray(inspected.value.records)) {
+			this.blockLoad("records 不是数组", content);
+			return;
+		}
+		for (const r of inspected.value.records) {
+			if (!r || typeof r.key !== "string" || typeof r.state !== "string") continue;
+			if (!["claimed", "done", "failed"].includes(r.state)) continue;
+			const direction: LedgerDirection = r.direction === "out" ? "out" : "in";
+			const key = typeof r.key === "string" ? r.key : "";
+			if (!key) continue;
+			this.records.set(this.mapKey(direction, key), {
+				...r,
+				direction,
+				id: typeof r.id === "string" ? r.id : `${this.pluginId}:${r.key}`,
+				attempts: Number.isFinite(r.attempts) ? Number(r.attempts) : 1,
+				createdAt: Number.isFinite(r.createdAt) ? Number(r.createdAt) : this.now(),
+				updatedAt: Number.isFinite(r.updatedAt) ? Number(r.updatedAt) : this.now(),
+			});
+		}
+	}
+
+	/** 文件认不出时降级为「只记内存」：既不阻断插件启动，也绝不把用户数据覆盖成空账本。 */
+	private blockLoad(reason: string, content: string | undefined): void {
+		this.loadBlockedReason = `${this.file} ${reason}`;
+		const backup = content === undefined ? undefined : preserveFileSync(this.file, content, "unsupported");
+		console.error(
+			`[plugin-ledger] ${this.file} 无法识别（${reason}），本次只记内存、拒绝写盘` +
+				(backup ? `；原文件已备份到 ${backup}` : "；备份失败，原文件保持原样"),
+		);
 	}
 
 	get(key: string, direction: LedgerDirection): LedgerRecord | undefined {
@@ -226,6 +250,7 @@ export class PluginLedgerStore {
 			this.flushTimer = null;
 		}
 		if (!this.dirty) return;
+		if (this.loadBlockedReason) return;
 		this.dirty = false;
 		this.prune();
 		try {
