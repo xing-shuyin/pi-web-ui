@@ -97,8 +97,13 @@ import {
 import { setFenceSend, syncFenceRenderers, syncMessageWidgets } from "./plugin-fence";
 import { findFileHandler, syncFileHandlers, type FileHandlerPlugin } from "./plugin-file-handlers";
 const PiSetupModal = lazy(() => import("./components/PiSetupModal").then((m) => ({ default: m.PiSetupModal })));
-import { getDesktopBrowserReferenceBridge, getDesktopOpenFilesBridge, isDesktopShell } from "./desktop";
-import { browserReferenceInsertion } from "./browser-tab-reference";
+import {
+	getDesktopBrowserReferenceBridge,
+	getDesktopOpenFilesBridge,
+	isDesktopShell,
+	notifyDesktopBrowserReferenceReady,
+} from "./desktop";
+import { browserReferenceAttachments } from "./browser-tab-reference";
 const ModelConfigModal = lazy(() =>
 	import("./components/ModelConfigModal").then((m) => ({ default: m.ModelConfigModal })),
 );
@@ -507,13 +512,22 @@ export function App() {
 			}
 		});
 	}, [openFile]);
-	// 内置浏览器的标签页右键「引用到输入框」→ 主进程转一手推过来，插在当前对话的输入框里
+	// 内置浏览器的标签页右键「引用到输入框」→ 主进程转一手推过来，插成「页面 chip」（和面板里引用 / @页面 同一种）
 	useEffect(() => {
 		const subscribe = getDesktopBrowserReferenceBridge();
 		if (!subscribe) return;
+		// 订阅成功就报一声：壳拿它区分「页面加载完了」与「界面真能收」（界面由内核提供，可能是旧版）
+		notifyDesktopBrowserReferenceReady();
 		return subscribe((payload) => {
-			const insertion = browserReferenceInsertion(payload);
-			if (insertion) insertTextAtCursor(insertion);
+			const attachments = browserReferenceAttachments(payload);
+			if (!attachments.length) return;
+			// 输入框可能还没挂好（应用刚起来就右键）：隔一拍重试，别把用户这一次引用丢掉
+			let attempts = 3;
+			const deliver = () => {
+				if (composeToComposer({ attachments })) return;
+				if (--attempts > 0) window.setTimeout(deliver, 400);
+			};
+			deliver();
 		});
 	}, []);
 	const [lightboxImage, setLightboxImage] = useState<ImageLightboxTarget | null>(null);

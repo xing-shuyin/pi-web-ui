@@ -41,9 +41,10 @@ export function buildServiceInstallArgs(input: KernelServicePlanInput): string[]
  * 生命周期动作的参数。
  * **必须带上 --data-dir / --port**：CLI 的 restart/stop 走数据目录里的控制通道，
  * 不带就默认指向 ~/.pi-web + 8787 —— 那会去重启"另一个内核"（或者什么都没发生）。
+ * `start` 只认服务名（Windows 上就是启动那个 vbs 看门狗），多余的参数与默认值一致，不影响行为。
  */
 export function buildServiceLifecycleArgs(
-	action: "status" | "restart" | "stop",
+	action: "status" | "restart" | "stop" | "start",
 	options: { name?: string | null; dataDir?: string; port?: number | null } = {},
 ): string[] {
 	const args = ["server", action];

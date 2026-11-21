@@ -1,58 +1,85 @@
 import { describe, expect, it } from "vitest";
 import {
-	browserReferenceInsertion,
-	formatBrowserTabReference,
-	formatQuotedSelection,
+	browserReferenceAttachments,
+	BROWSER_QUOTE_MAX_CHARS,
+	BROWSER_REFERENCE_TITLE_MAX_CHARS,
+	cleanSelectedText,
+	shortenReferenceTitle,
 } from "../../web/src/browser-tab-reference.js";
 
-describe("标签页 → 输入框的引用文本", () => {
-	it("标题 + 地址压成一行", () => {
-		expect(formatBrowserTabReference({ title: "Example Domain", url: "https://example.com/a" })).toBe(
-			"页面引用：Example Domain — https://example.com/a",
-		);
+describe("标签页 → 输入框的引用", () => {
+	it("落成页面 chip（不是一段文字），标题进 name、原标签 id 进 path", () => {
+		const [page] = browserReferenceAttachments({
+			title: "Example",
+			url: "https://example.com/a",
+			tabId: "tab-1",
+		});
+		expect(page).toMatchObject({ mode: "page", name: "Example", path: "tab-1", key: "page:tab-1" });
+		expect(browserReferenceAttachments({ url: "https://example.com/a" })[0]).toMatchObject({
+			mode: "page",
+			path: "https://example.com/a",
+			name: "https://example.com/a",
+		});
 	});
 
-	it("没标题就只留地址；地址是内部页/相对地址时什么都不插", () => {
-		expect(formatBrowserTabReference({ url: "https://example.com" })).toBe("页面引用：https://example.com");
-		expect(formatBrowserTabReference({ title: "新标签页", url: "" })).toBe("");
-		expect(formatBrowserTabReference({ title: "x", url: "about:blank" })).toBe("");
-		expect(formatBrowserTabReference({ title: "x", url: "file:///C:/a.html" })).toBe("");
+	it("内部页 / 相对地址什么都不加", () => {
+		expect(browserReferenceAttachments({ title: "新标签页", url: "" })).toEqual([]);
+		expect(browserReferenceAttachments({ title: "x", url: "about:blank" })).toEqual([]);
+		expect(browserReferenceAttachments({ title: "x", url: "file:///C:/a.html" })).toEqual([]);
 	});
 
-	it("标题里的换行压成空格，引用只占一行", () => {
-		const line = formatBrowserTabReference({ title: "a\n b", url: "https://x.dev" });
-		expect(line).toBe("页面引用：a b — https://x.dev");
+	it("标题里的空白压成一行；标题就是地址时当没有标题", () => {
+		expect(browserReferenceAttachments({ title: "  a\n b ", url: "https://x.dev" })[0].name).toBe("a b");
+		expect(browserReferenceAttachments({ title: "https://x.dev", url: "https://x.dev" })[0].name).toBe("https://x.dev");
 	});
 
-	it("插入时单独占一行：光标落到引用之后的空行上", () => {
-		expect(browserReferenceInsertion({ title: "T", url: "https://x.dev" })).toBe("页面引用：T — https://x.dev\n");
-		expect(browserReferenceInsertion({ url: "" })).toBe("");
+	it("页面里选中了文字：页面 chip + 引用 chip（角色 page，卡片显示「网页」）", () => {
+		const attachments = browserReferenceAttachments({
+			title: "文档",
+			url: "https://x.dev/a",
+			tabId: "tab-9",
+			text: "第一行\n第二行",
+		});
+		expect(attachments).toHaveLength(2);
+		expect(attachments[0]).toMatchObject({ mode: "page", path: "tab-9" });
+		expect(attachments[1].mode).toBe("quote");
+		expect(attachments[1].quote).toMatchObject({
+			text: "第一行\n第二行",
+			role: "page",
+			messageId: "page:tab-9",
+		});
 	});
-});
 
-describe("选中文字 → 输入框的引用块", () => {
-	it("选段跟在标签页标识下面，逐行引用", () => {
-		expect(browserReferenceInsertion({ title: "文档", url: "https://x.dev/a", text: "第一行\n第二行" })).toBe(
-			"页面引用：文档 — https://x.dev/a\n选中内容：\n> 第一行\n> 第二行\n\n",
-		);
-	});
-
-	it("选段清洗：去行尾空白、去首尾空行、空行保留成单独的 >", () => {
-		expect(formatQuotedSelection("\n  foo  \n\n bar\n\n")).toBe(">   foo\n>\n>  bar");
-		expect(formatQuotedSelection("   \n\n")).toBe("");
+	it("选段去行尾空白与首尾空行；空白选段只留页面 chip", () => {
+		expect(cleanSelectedText("  \n第一行   \n\n第二行\n\n")).toBe("第一行\n\n第二行");
+		expect(cleanSelectedText("   \n\n ")).toBe("");
+		expect(browserReferenceAttachments({ url: "https://x.dev", text: " \n " })).toHaveLength(1);
 	});
 
 	it("超长选段按行边界截断并标注，不把半行丢给模型", () => {
-		const long = Array.from({ length: 40 }, (_, index) => `line-${index}`).join("\n");
-		const formatted = formatQuotedSelection(long, 40);
-		expect(formatted.endsWith("…（已截断）")).toBe(true);
-		expect(formatted.split("\n").every((line) => line.startsWith(">"))).toBe(true);
-		// 截断保留开头（选段是用户自己选的，开头才是他要说的那句话的起点），尾部直接丢掉
-		expect(formatted).toContain("> line-0");
-		expect(formatted).not.toContain("line-39");
+		const line = "a".repeat(80);
+		const cleaned = cleanSelectedText(Array.from({ length: 200 }, () => line).join("\n"), 200);
+		const lines = cleaned.split("\n");
+		expect(lines.length).toBeGreaterThan(1);
+		// 除最后一行外都是整行（截断只发生在行边界），最后一行是残行 + 截断标注
+		expect(lines.slice(0, -1).every((item) => item === line)).toBe(true);
+		expect(cleaned.endsWith("…（已截断）")).toBe(true);
+		expect(cleaned.length).toBeLessThanOrEqual(200 + "…（已截断）".length);
+		expect(BROWSER_QUOTE_MAX_CHARS).toBe(6000);
 	});
 
-	it("地址不可用时整块都不插（选段也不单独发）", () => {
-		expect(browserReferenceInsertion({ url: "about:blank", text: "hello" })).toBe("");
+	it("超长的网页标题按标签长度截断（整条 PR 标题不铺满输入框）", () => {
+		const long =
+			"fix(bg-servers): 停止后台任务时等待进程真正退出，失败则保留条目并报错 (#974) by JSJ189 · Pull Request #984 · xing-shuyin/pi-web-ui";
+		const short = shortenReferenceTitle(long);
+		expect(short.length).toBe(BROWSER_REFERENCE_TITLE_MAX_CHARS + 1);
+		expect(short.endsWith("…")).toBe(true);
+		expect(long.startsWith(short.slice(0, -1))).toBe(true);
+		expect(shortenReferenceTitle("简短标题")).toBe("简短标题");
+		// 截断后不把结尾的空白 / 分隔符留在省略号前
+		expect(shortenReferenceTitle("abcd ,", 3)).toBe("abc…");
+		const [page] = browserReferenceAttachments({ title: long, url: "https://github.com/x/y/pull/984", tabId: "t" });
+		expect(page.name).toBe(short);
+		expect(String(page.path)).toBe("t");
 	});
 });

@@ -8,6 +8,9 @@
  * 本模块**不 import electron**：纯函数 + 可注入 fetch，方便单测（tests/unit/desktop-kernel-mode.test.ts）。
  */
 import type { BrowserKernelState, KernelInstallKind } from "../browser/contracts.js";
+import type { ServiceInstallState } from "./kernel-env.js";
+import { compareKernelCompat, describeKernelCompat } from "./kernel-compat.js";
+import { KERNEL_SERVICE_FIRST, SHELL_CAPABILITY_VERSION } from "./runtime-config.js";
 
 export { describeKernelState, formatUptime } from "../browser/kernel-view.js";
 
@@ -23,6 +26,7 @@ export interface HealthProbeBody {
 		installKind?: unknown;
 		uptimeMs?: unknown;
 		minShell?: unknown;
+		protocol?: unknown;
 		lock?: unknown;
 	};
 }
@@ -36,6 +40,8 @@ export interface KernelProbeResult {
 	uptimeMs?: number;
 	/** 内核要求的最低壳能力版本（高过本壳就提示先更新壳）。 */
 	minShell?: number;
+	/** 内核自己上报的协议版本（与壳构建期锁定的值比对，不等就提示升级全局包）。 */
+	protocol?: number;
 	/** 不可达时的原因（展示给用户，不要吞掉）。 */
 	error?: string;
 }
@@ -93,6 +99,7 @@ export async function probeKernel(
 			serviceName: typeof kernel.serviceName === "string" ? kernel.serviceName : null,
 			uptimeMs: typeof kernel.uptimeMs === "number" ? kernel.uptimeMs : undefined,
 			minShell: typeof kernel.minShell === "number" ? kernel.minShell : undefined,
+			protocol: typeof kernel.protocol === "number" ? kernel.protocol : undefined,
 		};
 	} catch (error) {
 		const message = (error as Error)?.name === "AbortError" ? "探测超时" : ((error as Error)?.message ?? "连接失败");
@@ -135,6 +142,86 @@ export function decideKernelMode(input: {
 	return { mode: "local", reason: "external-unreachable" };
 }
 
+/**
+ * 壳的内核生命周期策略：打包版默认「后台服务优先」（壳只做客户端，不再自己拉 sidecar）。
+ * 开发/冒烟默认关（保持本地 sidecar 的调试手感），`PI_DESKTOP_KERNEL_SERVICE_FIRST` 可双向覆盖。
+ */
+export function resolveKernelServiceFirst(input: { packaged: boolean; env?: NodeJS.ProcessEnv }): boolean {
+	const raw = (input.env ?? process.env).PI_DESKTOP_KERNEL_SERVICE_FIRST?.trim().toLowerCase();
+	if (raw === "0" || raw === "false" || raw === "no") return false;
+	if (raw === "1" || raw === "true" || raw === "yes") return true;
+	return input.packaged && KERNEL_SERVICE_FIRST;
+}
+
+/** 启动前壳手上握着的全部事实（都是探测结果，不含判断）。 */
+export interface KernelBootFacts {
+	/** 设置里配的 Agent 地址（可能是别人机器上的内核）。 */
+	configuredUrl: string | null;
+	configuredProbe: KernelProbeResult | null;
+	/** 数据目录锁里那个活内核（本机服务 / 上一次运行留下的）。 */
+	adoptedUrl: string | null;
+	/** 默认端口上已经有一个可达内核（同一个或别的数据目录）。 */
+	defaultPortUrl: string | null;
+	serviceFirst: boolean;
+	platform: NodeJS.Platform;
+	serviceInstalled: ServiceInstallState;
+	/** 磁盘上有没有「全局 npm 包」那份内核。 */
+	globalKernelAvailable: boolean;
+	node: { found: boolean; ok: boolean };
+	/** 包内自带 / userData 运行时能不能跑起来（离线活路）。 */
+	ephemeralKernelAvailable: boolean;
+}
+
+/**
+ * 一次启动的结论。**壳要不要自己拉进程**只由这里决定（`main.ts` 不许另写 if）。
+ *
+ * - `connect`：已经有一个活内核，只连不拉（关掉壳它继续跑的前提）
+ * - `provision-service`：本机有全局包内核但还没被系统托管 → 交给 `server install/start`，壳不拉
+ * - `install-kernel` / `install-node`：连内核都没有 → 把「安装」作为可执行的下一步交给界面
+ * - `ephemeral-kernel`：只能临时内核（开发/冒烟、Linux 无 TTY、离线只有包内自带那份）
+ */
+export type KernelBootPlan =
+	| { kind: "connect"; url: string; reason: "configured" | "adopted" | "default-port" }
+	| { kind: "provision-service"; action: "start" | "install"; reason: "service-installed" | "global-kernel" }
+	| { kind: "install-kernel" }
+	| { kind: "install-node"; reason: "node-missing" | "node-too-old" }
+	| { kind: "ephemeral-kernel"; reason: "policy-off" | "needs-terminal" | "prerequisite-missing" };
+
+/**
+ * 启动决策（唯一出口）。顺序即语义：
+ * 先找活内核（配置 → 数据目录锁 → 默认端口），再决定要不要把自己变成「后台服务」。
+ * 服务优先的前提是**磁盘上有全局 npm 包**：否则服务会钉死在安装目录，应用一升级就失效。
+ */
+export function planKernelBoot(facts: KernelBootFacts): KernelBootPlan {
+	const decision = decideKernelMode({ externalUrl: facts.configuredUrl ?? "", probe: facts.configuredProbe });
+	if (decision.mode === "external" && facts.configuredUrl)
+		return { kind: "connect", url: facts.configuredUrl, reason: "configured" };
+	if (facts.adoptedUrl) return { kind: "connect", url: facts.adoptedUrl, reason: "adopted" };
+	if (facts.defaultPortUrl) return { kind: "connect", url: facts.defaultPortUrl, reason: "default-port" };
+
+	// 开发/冒烟/显式关闭策略：保持旧行为，壳自己拉 sidecar。
+	if (!facts.serviceFirst) return { kind: "ephemeral-kernel", reason: "policy-off" };
+	// Linux 的 systemd 系统单元要 root，GUI 里拿不到 TTY → 只能回落临时内核，装服务交给面板给命令。
+	if (facts.platform === "linux") return { kind: "ephemeral-kernel", reason: "needs-terminal" };
+
+	// 前置条件不满足：还有能跑的代码就先用临时内核，什么都跑不了才把安装交给界面。
+	const fallback = (): KernelBootPlan => {
+		if (facts.globalKernelAvailable || facts.ephemeralKernelAvailable)
+			return { kind: "ephemeral-kernel", reason: "prerequisite-missing" };
+		if (!facts.node.found) return { kind: "install-node", reason: "node-missing" };
+		if (!facts.node.ok) return { kind: "install-node", reason: "node-too-old" };
+		return { kind: "install-kernel" };
+	};
+	if (!facts.globalKernelAvailable || !facts.node.ok) return fallback();
+
+	const installed = facts.serviceInstalled === "installed";
+	return {
+		kind: "provision-service",
+		action: installed ? "start" : "install",
+		reason: installed ? "service-installed" : "global-kernel",
+	};
+}
+
 /** 面板要展示的内核状态（也是 `pi-browser:state` 里的 `kernel` 字段）。 */
 export function toKernelState(input: {
 	decision: KernelDecision;
@@ -142,6 +229,15 @@ export function toKernelState(input: {
 	probe: KernelProbeResult | null;
 }): BrowserKernelState {
 	const { decision, url, probe } = input;
+	// 兼容结论只在“真的连上了”时才有意义；探不到内核时算出来只会是误导。
+	const verdict = probe?.reachable
+		? compareKernelCompat({
+				kernelProtocol: probe.protocol,
+				kernelMinShell: probe.minShell,
+				shellCapability: SHELL_CAPABILITY_VERSION,
+			})
+		: null;
+	const compat = verdict ? { kind: verdict.kind, message: describeKernelCompat(verdict) } : null;
 	return {
 		mode: decision.mode,
 		reason: decision.reason,
@@ -153,6 +249,8 @@ export function toKernelState(input: {
 		...(probe?.serviceName ? { serviceName: probe.serviceName } : {}),
 		...(typeof probe?.uptimeMs === "number" ? { uptimeMs: probe.uptimeMs } : {}),
 		...(typeof probe?.minShell === "number" ? { minShell: probe.minShell } : {}),
+		...(typeof probe?.protocol === "number" ? { protocol: probe.protocol } : {}),
+		...(compat ? { compat } : {}),
 		...(probe?.error ? { error: probe.error } : {}),
 	};
 }

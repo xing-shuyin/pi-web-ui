@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import { hiddenConsoleArgs, wrapForHiddenConsole } from "../../server/hide-console-windows.js";
+import { hiddenConsoleArgs, wrapForHiddenConsole } from "../../shared/hide-console-windows.js";
 import { blankNonCode } from "../helpers/code-scan.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -26,8 +26,8 @@ const SPAWN_APIS = /(?<![\w.$])(spawn|spawnSync|execFile|execFileSync|exec|fork)
  *  桌面壳（Electron 主进程：taskkill / 更新器 / 浏览器宿主）。 */
 const ENTRY_INSTALLS: Array<{ file: string; specifier: string }> = [
 	{ file: "bin/pi-web-ui.mjs", specifier: "./lib/hide-console-windows.mjs" },
-	{ file: "server/index.ts", specifier: "./hide-console-windows.js" },
-	{ file: "desktop/main.ts", specifier: "../server/hide-console-windows.js" },
+	{ file: "server/index.ts", specifier: "../shared/hide-console-windows.js" },
+	{ file: "desktop/main.ts", specifier: "../shared/hide-console-windows.js" },
 ];
 
 /** 热路径：桌面端触发插件安装/更新/校验的整条链 + CLI 全部子命令（服务安装、frp、hub 都在这里）。

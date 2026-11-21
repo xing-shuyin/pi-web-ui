@@ -32,7 +32,7 @@
 2. **Git 稀疏拉取与 Blobless 过滤（Sparse + Blobless Checkout）**：针对远程子目录插件，优先采用 `git clone --depth 1 --filter=blob:none --sparse --no-checkout` 配合 `git sparse-checkout set <subpath>`，只拉取提交树元数据与目标子目录的文件 blob，不下载非必要仓库内容（全仓数十兆流量降至几十 KB）；遇旧版 Git 自动平滑降级常规 shallow clone 与 tarball 直连。
 3. **批量安装/更新会话级仓库缓存（Shared Repo Cache）**：在目录同步（`--catalog`）或多插件批量操作中，同源仓库仅拉取一次元数据，多个子目录通过 `git sparse-checkout add` 增量检出复用，杜绝同一仓库连续重复 clone。
 
-**Windows 桌面版不弹黑窗**：桌面壳跑服务与插件作业用的是**无控制台进程**（`ELECTRON_RUN_AS_NODE` 起的 `dist/server/index.js`，插件作业再由 `server/plugin-installer.ts` spawn `bin/pi-web-ui.mjs`）。Windows 上任何不带 `windowsHide: true` 的子进程都会被系统新建一个控制台 —— 用户看到的就是装插件时黑窗闪一下。因此两处收敛：① 进程级开关 `server/hide-console-windows.ts`（生成件 `bin/lib/hide-console-windows.mjs`）在 `server/index.ts` / `bin/pi-web-ui.mjs` / `desktop/main.ts` 各 import 一次，之后整个进程（含宿主内加载的插件、`promisify(execFile)` 拿到的引用）的子进程都不会开控制台；② 安装链（`bin/*.mjs`、`server/plugin*.ts`）的每个 spawn 仍显式写 `windowsHide`，由 `tests/unit/windows-hide-guard.test.ts` 逐调用点守住。调用点显式 `windowsHide: false` 可实现可见终端，`PI_WEB_SHOW_CONSOLE=1` 全局关掉开关（排查用）。
+**Windows 桌面版不弹黑窗**：桌面壳跑服务与插件作业用的是**无控制台进程**（`ELECTRON_RUN_AS_NODE` 起的 `dist/server/index.js`，插件作业再由 `server/plugin-installer.ts` spawn `bin/pi-web-ui.mjs`）。Windows 上任何不带 `windowsHide: true` 的子进程都会被系统新建一个控制台 —— 用户看到的就是装插件时黑窗闪一下。因此两处收敛：① 进程级开关 `shared/hide-console-windows.ts`（生成件 `bin/lib/hide-console-windows.mjs`）在 `server/index.ts` / `bin/pi-web-ui.mjs` / `desktop/main.ts` 各 import 一次，之后整个进程（含宿主内加载的插件、`promisify(execFile)` 拿到的引用）的子进程都不会开控制台；② 安装链（`bin/*.mjs`、`server/plugin*.ts`）的每个 spawn 仍显式写 `windowsHide`，由 `tests/unit/windows-hide-guard.test.ts` 逐调用点守住。调用点显式 `windowsHide: false` 可实现可见终端，`PI_WEB_SHOW_CONSOLE=1` 全局关掉开关（排查用）。
 
 **三层来源合并**（`server/plugin-catalog.ts`）：
 

@@ -179,20 +179,17 @@ Agent 可以给网页注入脚本：`browser_script` 工具（`server/browser-sc
 - **页面级动作只走一条窄路**：`page.translate` 与 `page.markdown` 由主进程在活动标签页里 `executeJavaScript` 跑一小段固定脚本（翻译开关点的是 `translate.js` 注入的 `__PI_TRANSLATE__`，Markdown 取页面自己的 `body.innerText` 前 30000 字），文案由主进程 `clipboard.writeText()` 落地——页面自己写剪贴板受焦点/权限影响，不可靠。脚本是常量、不接受任何参数，所以外壳并没有拿到任意求值能力。
 - **标签页右键 = 原生菜单**：`tabs.menu { id, x, y }` 用 `Menu.popup()`（DOM 浮层会被原生内容视图盖住）。菜单项：引用到输入框 / 复制链接 / 重新加载 / 关闭标签页 / 关闭其他标签页。
 - **两个「引用到输入框」入口**：①标签页右键（`tabs.menu`）；②页面里选中文字后的原生右键菜单（`showPageContextMenu`，选中非空时才出现）——选段一定跟着它所在的标签页（标题 + 地址）一起走，不否则模型不知道这段话出自哪个页面。
-- **「引用到输入框」跨视图**：外壳（`shell.html`）/ 页面脚本与 Agent 页是两个 `WebContentsView`，只能由主进程转一手：`pi-desktop:browser-reference` → `desktop/preload.cts` 的 `onBrowserReference` → `web/src/App.tsx` 用 `insertTextAtCursor()` 把 `web/src/browser-tab-reference.ts` 生成的引用块插到光标处：
+- **「引用到输入框」跨视图**：外壳（`shell.html`）/ 页面脚本与 Agent 页是两个 `WebContentsView`，只能由主进程转一手：`pi-desktop:browser-reference` → `desktop/preload.cts` 的 `onBrowserReference` → `web/src/App.tsx` 把 `web/src/browser-tab-reference.ts` 生成的引用交给 `composeToComposer()`。
 
-  ```
-  页面引用：标题 — https://…
-  选中内容：
-  > 第一行
-  > 第二行
-  ```
+  **落成 chip，不落成文字**：与「浏览器面板里的引用 / @页面」完全同一种——页面 chip（`mode: "page"`，`pageCitation()`，`path` = 原生 tabId（模型就是拿它当 `browser_page` 的 target）/ `name` = 标题）；页面里选中了文字时再补一条 `mode: "quote"` 的引用 chip（`role: "page"`，卡片显示「网页」），页面 chip 仍跟着走，否则模型不知道这段话出自哪个页面。选段去行尾空白、去首尾空行，超 6000 字按行边界截断并标注（主进程 `QUOTE_MAX_CHARS` 同一量级）。
 
-  选段去行尾空白、去首尾空行、每行加 `> `，超 6000 字按行边界截断并标注（主进程 `QUOTE_MAX_CHARS` 也是同一量级）。只带标题、地址与选段，不带整页正文：Agent 有自己的浏览器工具，要全文自己读。Agent 未就绪时降级成「已复制到剪贴板」，不假装成功；纯浏览器模式下引用成功会自动切成分栏，用户能直接看到那一行。
+  标题只留到能认出来为止（`BROWSER_REFERENCE_TITLE_MAX_CHARS` = 10，超了按字符边界加 `…`，再长的部分靠 chip 的单行省略号兜底），别把整条 PR 标题铺满输入框。只带地址、标题与选段，不带整页正文：模型要内容自己调 `browser_page`（`server/browser-page-tool.ts` 的 target 接受原生 tabId 或 origin）。同一页重复引用靠 chip 自己去重（`page:<tabId|origin>`），不会堆出两枚。Agent 未就绪时降级成「已复制到剪贴板」，不假装成功；纯浏览器模式下引用成功会自动切成分栏，用户能直接看到那一枚 chip。
+
+- **这条通道要握手（壳与界面各自更新）**：界面（`web/dist`）由**内核**提供，壳（`desktop/`）与内核是两份可以互不同步的代码——壳升了、内核还是老版本时，老界面根本没有订阅口，`send` 过去只会被丢掉，而 `agentReady`（页面加载完了）照样是 `true`。所以：界面订阅成功时调 `piDesktop.browserReferenceReady()`（IPC `pi-desktop:browser-reference-ready`，主进程只认 Agent 视图自己的主帧）把自己「能收」报上去，壳用 `agentReferenceReady` 记账，**没报到就按不支持处理**：写剪贴板 + 回执「当前内核界面不支持引用（请升级内核后再试）」。每次**开始加载**（`did-start-loading`）就清零重报，别让刷新前的旧声明生效；不能在 `did-finish-load` 里清——界面报到早于 load 事件结束，那样会把刚到的声明抹掉。这类「壳与界面两侧都得改」的能力不能只靠 `SHELL_CAPABILITY_VERSION`（那条只管壳自己的能力）。
 
 - **新标签页不再重复这排按钮**：书签/下载/历史/设置原本在首页右上角也有一份，工具行固定之后删掉了重复入口（`newtab.ts` 只留时钟、搜索条与书签网格）。
 - **首页书签网格不限高、带站点图标**：收藏有多少铺多少（`.unified-nav-grid` 不再有 `max-height` 小滚动窗口，页面自己滚），每个书签取站点自己的 `/favicon.ico`（`img-src` 因此放开到 `https: http:`），拿不到就退回首字母方块——不经过第三方图标服务，不把浏览记录送给别人。
-- 回归：`tests/unit/browser-tool-row.test.ts`（行高常量 / 五个入口 / 页面级动作 / 菜单与跨视图通道）、`tests/unit/browser-tab-reference.test.ts`（引用文本整理）。
+- 回归：`tests/unit/browser-tool-row.test.ts`（行高常量 / 五个入口 / 页面级动作 / 菜单与跨视图通道）、`tests/unit/browser-tab-reference.test.ts`（引用 chip 整理）。
 
 ### TOTP
 

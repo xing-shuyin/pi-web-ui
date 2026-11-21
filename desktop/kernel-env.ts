@@ -107,16 +107,30 @@ export function readServiceInstallState(input: {
 	return input.platform === "linux" ? "unknown" : "absent";
 }
 
-/** 从 PATH 里找 node：全局包内核要用**系统 node**跑（Electron 的 node ABI 不一定兼容原生模块）。 */
-export function findNodeInPath(env: NodeJS.ProcessEnv, exists: (path: string) => boolean): string | null {
-	const names = process.platform === "win32" ? ["node.exe"] : ["node"];
-	const pathValue = env.PATH ?? env.Path ?? "";
-	for (const dir of pathValue.split(process.platform === "win32" ? ";" : ":")) {
-		if (!dir.trim()) continue;
-		for (const name of names) {
-			const candidate = join(dir.trim(), name);
-			if (exists(candidate)) return candidate;
-		}
+/**
+ * 给子进程补上 node 所在目录（PATH 前置）。
+ *
+ * 为什么必须补：壳从资源管理器/UAC 提权启动时，PATH 里没有版本管理器（fnm/nvm/volta）的注入项。
+ * 我们能用**绝对路径**找到 node，但 `npm i -g pi-web-ui` 的生命周期脚本是
+ * `cmd /d /s /c node install.js` —— 它靠 PATH 找 node，找不到就报
+ * 「'node' 不是内部或外部命令」，整次安装失败（实测 2026-11-21，ssh2 的 install.js 就是这样炸的）。
+ *
+ * 只改 PATH：其余环境原样保留（代理、npm_config_* 等都是用户已配好的）。
+ * Windows 的环境变量名大小写不敏感，但 Node 里 `PATH` 与 `Path` 会共存成两个键，
+ * 子进程取到的可能是没改过的那个 —— 所以先把所有大小写变体删掉再写 `PATH`。
+ */
+export function envWithNodeOnPath(
+	env: NodeJS.ProcessEnv,
+	nodePath: string,
+	platform: NodeJS.Platform = process.platform,
+): NodeJS.ProcessEnv {
+	const next: NodeJS.ProcessEnv = {};
+	for (const [key, value] of Object.entries(env)) {
+		if (platform === "win32" && key.toLowerCase() === "path") continue;
+		next[key] = value;
 	}
-	return null;
+	const dir = nodePath.slice(0, Math.max(nodePath.lastIndexOf("/"), nodePath.lastIndexOf("\\")));
+	const prepended = dir ? `${dir}${platform === "win32" ? ";" : ":"}${env.PATH ?? env.Path ?? ""}` : (env.PATH ?? "");
+	next.PATH = prepended.replace(/;+$/, "");
+	return next;
 }

@@ -964,6 +964,7 @@
 	"role.assistant": "pi",
 	"role.tool": "工具",
 	"role.bash": "终端",
+	"role.page": "网页",
 	"role.branch": "分支摘要",
 	"role.compaction": "上下文已压缩",
 	"directory": "目录",
@@ -3977,7 +3978,5 @@
 	"kernelUptimeMinutes": "{minutes} 分钟",
 	"kernelUptimeHours": "{hours} 小时 {minutes} 分钟",
 	"kernelUptimeDays": "{days} 天 {hours} 小时",
-	"browserRefPage": "页面引用：{target}",
-	"browserRefSelection": "选中内容：",
 	"browserRefTruncated": "…（已截断）"
 }

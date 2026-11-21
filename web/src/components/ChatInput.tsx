@@ -29,6 +29,7 @@ import {
 	registerInsertSink,
 	registerRemoveMentionSink,
 } from "../composer-bridge";
+import { shouldSkipInsertion } from "../composer-insert";
 import { setGoalCompose, useGoalCompose, useGoalPlan, useGoalRefine } from "../goal-compose";
 import { caretVisualLineFlags } from "../caret-visual-line";
 import { isRasterImage } from "../image-paste";
@@ -345,34 +346,31 @@ export const ChatInput = memo(function ChatInput({
 	useEffect(() => {
 		if (groupDevices) return;
 		registerInsertSink((textToInsert) => {
-			{
-				const core = textToInsert.trim();
-				const specials = new Set([".", "*", "+", "?", "^", "$", "{", "}", "(", ")", "|", "[", "]", "\\"]);
-				const escapedCore = core
-					.split("")
-					.map((ch) => (specials.has(ch) ? "\\" + ch : ch))
-					.join("");
-				const re = new RegExp("(^|[\\s(（\"'“‘[【])" + escapedCore + "(?=[\\s,.;:!?，。！？)\\]】」]|$)");
-				if (core && re.test(textRef.current)) return;
-			}
+			// 只有 @ 提及才去重：同一条引用（浏览器标签页 / 终端选段）插第二次也是用户要的
+			if (shouldSkipInsertion(textRef.current, textToInsert)) return;
 			const ta = taRef.current;
+			const current = textRef.current;
+			// 正文源只有 ref：插完必须把三份镜像一起写，否则「草稿恢复」看到 textMirrorRef 还是空的，
+			// 下一帧就拿持久化的旧草稿 setText 把它盖掉（引用块只闪几十毫秒就没了）
+			const commitInsertion = (next: string) => {
+				textRef.current = next;
+				textMirrorRef.current = next;
+				menuTextRef.current = next;
+				touchedRef.current = true;
+				lastEditTsRef.current = Date.now();
+				setText(next);
+			};
 			if (!ta) {
-				setText((prev) => {
-					const next = prev + (prev && !prev.endsWith(" ") ? " " : "") + textToInsert;
-					menuTextRef.current = next;
-					return next;
-				});
+				commitInsertion(current + (current && !current.endsWith(" ") ? " " : "") + textToInsert);
 				return;
 			}
-			const start = ta.selectionStart ?? textRef.current.length;
-			const end = ta.selectionEnd ?? textRef.current.length;
-			const current = textRef.current;
+			const start = ta.selectionStart ?? current.length;
+			const end = ta.selectionEnd ?? current.length;
 			const needsPrefixSpace = start > 0 && !/[\s([{]$/.test(current.slice(0, start));
 			const prefix = needsPrefixSpace ? " " : "";
 			const insert = prefix + textToInsert;
 			const next = current.slice(0, start) + insert + current.slice(end);
-			menuTextRef.current = next;
-			setText(next);
+			commitInsertion(next);
 			const newCursor = start + insert.length;
 			requestAnimationFrame(() => {
 				ta.focus();
@@ -1795,7 +1793,9 @@ export const ChatInput = memo(function ChatInput({
 								) : (
 									"📎"
 								)}
-								{a.name}
+								<span className="attach-label" title={a.name}>
+									{a.name}
+								</span>
 								{a.mode === "lines" && a.lines && (
 									<span className="attach-range">
 										L{a.lines.start}-{a.lines.end}

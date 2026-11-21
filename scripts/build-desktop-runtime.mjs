@@ -31,6 +31,7 @@ const { parseRuntimeManifest, RUNTIME_ALLOWED_TOP_LEVEL } = manifestModule;
 // `bin/`（ffmpeg / codec / p2p）属于 natives 载荷，P2 还没下发，见 docs/architecture-desktop-runtime.md。
 const DEFAULT_INCLUDE = [
 	"dist/server",
+	"dist/shared",
 	"web/dist",
 	"themes",
 	"plugin-sdk",

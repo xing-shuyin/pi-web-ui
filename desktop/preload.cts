@@ -116,6 +116,9 @@ contextBridge.exposeInMainWorld("piDesktop", {
 		ipcRenderer.on("pi-desktop:browser-reference", listener);
 		return () => ipcRenderer.removeListener("pi-desktop:browser-reference", listener);
 	},
+	// 界面对主进程的声明：这条通道我接了。壳拿它区分「页面加载完了」与「界面真能收」——
+	// 界面由内核提供，版本可能落后于壳，老界面只会把事件丢掉。
+	browserReferenceReady: (): Promise<boolean> => ipcRenderer.invoke("pi-desktop:browser-reference-ready"),
 	// 双击关联文件 / 点链接时主进程推过来的目标
 	onOpenFiles: (cb: (payload: { files: string[] }) => void): (() => void) => {
 		const listener = (_event: IpcRendererEvent, payload: { files?: string[] }) =>

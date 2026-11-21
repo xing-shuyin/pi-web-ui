@@ -895,6 +895,8 @@ export interface KernelPublicInfo {
 	installKind: KernelInstallKind;
 	startedAt: number;
 	uptimeMs: number;
+	/** 内核自己的协议版本（`server/protocol-version.ts`）：壳与之不等时提示升级对应一侧。 */
+	protocol: number;
 	/** 内核要求的最低壳能力版本：高过客户端自己的 SHELL_CAPABILITY_VERSION 就先更新壳。 */
 	minShell: number;
 	/** `disabled` = 显式关掉了数据目录单实例锁（PI_WEB_ALLOW_MULTI_INSTANCE=1）。 */

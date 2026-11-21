@@ -3,6 +3,7 @@ import type { ServerMessage, BgServer } from "./protocol.js";
 import {
 	killPidTree,
 	lookupProcessDetailsBatch,
+	waitForPidGone,
 	snapshotListeningPorts,
 	snapshotProcessTree,
 	type ProcessTreeNode,
@@ -402,7 +403,18 @@ export class BgServerTracker {
 			this.opts.flushSnapshot();
 			return false;
 		}
-		killPidTree(entry.pid);
+		// 杀不掉时保留条目并报错，不能先删列表再公告成功。
+		if (!(await this.stopProcess(entry.pid))) {
+			this.opts.emit({
+				type: "notice",
+				level: "error",
+				text: `停止失败：端口 ${port}（pid ${entry.pid}）仍在运行，已保留在后台任务列表中`,
+				textEn: `Failed to stop: port ${port} (pid ${entry.pid}) is still running; kept in the background task list`,
+			});
+			this.push();
+			this.opts.flushSnapshot();
+			return false;
+		}
 		this.servers.delete(port);
 		this.push();
 		this.opts.emit({
@@ -433,6 +445,15 @@ export class BgServerTracker {
 		return true;
 	}
 
+	/**
+	 * 停一个进程：确认真退出了才返回 true。
+	 * killPidTree 自己 `catch {}` 吞错、taskkill/SIGKILL 又都是异步送达，所以必须发完复核（#974 §1）。
+	 */
+	private async stopProcess(pid: number): Promise<boolean> {
+		await killPidTree(pid);
+		return waitForPidGone(pid);
+	}
+
 	async cleanStale(thresholdMs: number, opts: { manual: boolean }): Promise<number[]> {
 		await this.verifyBeforeKill();
 		const picked = staleLeftovers(
@@ -451,18 +472,34 @@ export class BgServerTracker {
 			return [];
 		}
 		const killed: number[] = [];
-		for (const item of picked) {
-			killPidTree(item.pid);
-			this.servers.delete(item.port);
-			killed.push(item.port);
+		const failed: number[] = [];
+		// 并发停：失败时每个要等满复核窗口，串行会让 tick 拖成 N×2s（还可能险些重入）。
+		const results = await Promise.all(picked.map(async (item) => ({ item, ok: await this.stopProcess(item.pid) })));
+		for (const { item, ok } of results) {
+			if (ok) {
+				this.servers.delete(item.port);
+				killed.push(item.port);
+			} else failed.push(item.port);
 		}
+		killed.sort((a, b) => a - b);
 		this.push();
-		this.opts.emit({
-			type: "notice",
-			level: "info",
-			text: `已清理 ${killed.length} 个遗留后台实例：端口 ${killed.join("、")}（闲置超 ${Math.round(thresholdMs / 60_000)} 分钟；可在面板里钉住想留的）`,
-			textEn: `Cleaned ${killed.length} leftover background instance(s): port ${killed.join(", ")} (idle over ${Math.round(thresholdMs / 60_000)} min; pin the ones you want to keep)`,
-		});
+		if (killed.length > 0) {
+			this.opts.emit({
+				type: "notice",
+				level: "info",
+				text: `已清理 ${killed.length} 个遗留后台实例：端口 ${killed.join("、")}（闲置超 ${Math.round(thresholdMs / 60_000)} 分钟；可在面板里钉住想留的）`,
+				textEn: `Cleaned ${killed.length} leftover background instance(s): port ${killed.join(", ")} (idle over ${Math.round(thresholdMs / 60_000)} min; pin the ones you want to keep)`,
+			});
+		}
+		// 自动清理每 30s 跑一次：失败不刷屏（面板上那几行还留着，本身就说明了），手动清理要说清楚。
+		if (failed.length > 0 && opts.manual) {
+			this.opts.emit({
+				type: "notice",
+				level: "error",
+				text: `清理失败：端口 ${failed.join("、")} 仍在运行，已保留在后台任务列表中`,
+				textEn: `Failed to clean: port ${failed.join(", ")} is still running; kept in the background task list`,
+			});
+		}
 		this.opts.flushSnapshot();
 		return killed;
 	}
@@ -472,16 +509,31 @@ export class BgServerTracker {
 		// 插件常驻任务不在内（它们由插件自己的 stop 回调负责，面板上也单独走 kill_background_server{taskId}）。
 		const killedJobs = this.opts.killAllJobs?.() ?? [];
 		const killed: string[] = killedJobs.map((id) => `job:${id}`);
+		const failed: number[] = [];
 		if (this.servers.size > 0) {
 			await this.verifyBeforeKill();
+			// 并发停：失败时每个要等满复核窗口，串行会让「全部关闭」拖成 N×2s。
 			// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: killPidTree 的异步回调可能改 map
-			for (const [port, { pid }] of [...this.servers]) {
-				killPidTree(pid);
-				killed.push(String(port));
+			const results = await Promise.all(
+				[...this.servers].map(async ([port, { pid }]) => ({ port, ok: await this.stopProcess(pid) })),
+			);
+			for (const { port, ok } of results) {
+				if (ok) {
+					this.servers.delete(port);
+					killed.push(String(port));
+				} else failed.push(port);
 			}
-			this.servers.clear();
 		}
 		if (killed.length > 0) this.push();
+		// 调用方（「全部关闭」按钮）不看返回值：失败只能靠这里告知，否则面板剩几行、用户以为按钮坏了。
+		if (failed.length > 0) {
+			this.opts.emit({
+				type: "notice",
+				level: "error",
+				text: `停止失败：端口 ${failed.join("、")} 仍在运行，已保留在后台任务列表中`,
+				textEn: `Failed to stop: port ${failed.join(", ")} is still running; kept in the background task list`,
+			});
+		}
 		return killed;
 	}
 }

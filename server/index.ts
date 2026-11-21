@@ -18,7 +18,7 @@
  */
 // 必须排在所有 import 之前：先装上「Windows 不弹控制台」进程级开关，后面求值的模块
 // （含 module 作用域里的 `promisify(execFile)` 捕获、插件里的 spawn）才都吃到它。
-import "./hide-console-windows.js";
+import "../shared/hide-console-windows.js";
 import { sleep } from "./async-utils.js";
 import { botExecutionMessageAllowed } from "./device-center/bot-execution.js";
 import { createBotDraftStore, normalizeBotDraft } from "./device-center/bot-drafts.js";
@@ -68,7 +68,7 @@ import { augmentNodePath, augmentNodePathFromShell } from "./node-path.js";
 import { listThemes, readThemeCss, resolveThemeFile } from "./themes.js";
 import { isManaged, managedRefusal } from "./managed.js";
 import { launchOrigin, toServiceInfo } from "./launch-origin.js";
-import { acquireKernelLock, formatLockDenied, releaseKernelLock } from "./instance-lock.js";
+import { acquireKernelLock, formatLockDenied, releaseKernelLock } from "../shared/instance-lock.js";
 import { buildKernelInfo, classifyKernelInstall, describeKernelInstall } from "./kernel-identity.js";
 import { isTabAllowed, parseTabs, tabsRefusal } from "./tabs.js";
 import { nativeCliDiscoveryHandler } from "./native-cli-routes.js";
@@ -690,13 +690,31 @@ const SERVICE_INFO = toServiceInfo(ORIGIN);
  * 会话转录 / plugin-data / schedules / 设备身份都是单写者语义，双内核无法正确合并。
  */
 const KERNEL_STARTED_AT = Date.now();
-const KERNEL_LOCK = acquireKernelLock({
-	dataDir: DATA_DIR,
-	version: appVersion(),
-	cwd: CWD,
-	port: PORT,
-	now: KERNEL_STARTED_AT,
-});
+/** 接力子进程的标记（外部编排换启新进程时置 `1`）。单源在这里：锁要先等老内核腾出来。 */
+const RESTART_CHILD_ENV = "PI_WEB_RESTART_CHILD";
+/** 接力子进程等老内核腾出「数据目录锁 + 端口」的窗口（与下面等端口那段同一个值）。 */
+const HANDOFF_WAIT_MS = 20_000;
+
+/**
+ * 抢数据目录锁。
+ * `PI_WEB_RESTART_CHILD=1` 的接力子进程是**故意**在老内核还活着时被拉起来的（外部编排先起
+ * 新进程再让旧的退），所以这里要等它释放锁，而不是一开机就判死——否则 `restart-handoff-test`
+ * 描的交接契约（新进程活下来、旧进程退出后接管端口）直接失效。
+ */
+async function acquireStartupLock(): Promise<ReturnType<typeof acquireKernelLock>> {
+	const acquire = () =>
+		acquireKernelLock({ dataDir: DATA_DIR, version: appVersion(), cwd: CWD, port: PORT, now: KERNEL_STARTED_AT });
+	let lock = acquire();
+	if (lock.state !== "denied" || process.env[RESTART_CHILD_ENV] !== "1") return lock;
+	const deadline = Date.now() + HANDOFF_WAIT_MS;
+	while (lock.state === "denied" && Date.now() < deadline) {
+		await sleep(200);
+		lock = acquire();
+	}
+	return lock;
+}
+
+const KERNEL_LOCK = await acquireStartupLock();
 if (KERNEL_LOCK.state === "denied") {
 	console.error("");
 	console.error("  [FATAL] 已有内核占用这份数据目录，已拒绝启动。");
@@ -715,6 +733,7 @@ function kernelInfo() {
 	return buildKernelInfo({
 		version: appVersion(),
 		packageRoot: getPkgRoot(),
+		protocol: PROTOCOL_VERSION,
 		startedAt: KERNEL_STARTED_AT,
 		now: Date.now(),
 		supervisor: ORIGIN.supervisor,
@@ -1094,7 +1113,6 @@ app.get("/plugins-shared/*splat", (req, res) => {
 				.end("not found");
 	});
 });
-const RESTART_CHILD_ENV = "PI_WEB_RESTART_CHILD";
 const deviceDesktop = createDeviceDesktop({ app, dataDir: DATA_DIR, authorize: (req) => !AUTH_TOKEN || tokenOk(req) });
 const deviceBots = await createLocalBotRegistry(DATA_DIR);
 const deviceBotDrafts = createBotDraftStore(DATA_DIR);

@@ -1,6 +1,6 @@
 // 第一条 import：桌面壳（GUI 子系统应用，本来就没有控制台）装上「Windows 不弹控制台」进程级开关，
-// 它对 taskkill / powershell / 更新器等子进程一律建控制台。单一实现见 server/hide-console-windows.ts。
-import "../server/hide-console-windows.js";
+// 它对 taskkill / powershell / 更新器等子进程一律建控制台。单一实现见 shared/hide-console-windows.ts。
+import "../shared/hide-console-windows.js";
 import { app, BrowserWindow, dialog, ipcMain, session, shell, type IpcMainInvokeEvent } from "electron";
 import { ElectronChromeExtensions, setSessionPartitionResolver } from "electron-chrome-extensions";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
@@ -30,14 +30,23 @@ import {
 	type UpdaterPrefs,
 } from "./updater.js";
 import { buildDesktopLoadUrl, DEFAULT_DESKTOP_PORT, resolveHealthTimeoutMs, waitForHealth } from "./startup.js";
-import { decideKernelMode, isSameKernel, probeKernel, toKernelState, type KernelMode } from "./kernel-mode.js";
+import {
+	isSameKernel,
+	planKernelBoot,
+	probeKernel,
+	resolveKernelServiceFirst,
+	toKernelState,
+	type KernelMode,
+} from "./kernel-mode.js";
 import {
 	buildServiceInstallArgs,
 	buildServiceLifecycleArgs,
 	decideServiceInstall,
 	runKernelCli,
+	type KernelCliResult,
 } from "./kernel-install.js";
-import { readKernelLock } from "../server/instance-lock.js";
+import { readKernelLock } from "../shared/instance-lock.js";
+import { findNativeCliExecutable } from "../server/native-cli-discovery.js";
 import {
 	fetchLatestVersion,
 	nodeInstallLaunch,
@@ -88,11 +97,12 @@ import {
 } from "./kernel-authority.js";
 import {
 	describeNodeRuntime,
-	findNodeInPath,
+	envWithNodeOnPath,
 	globalKernelRoot,
 	nodeInstallGuide,
 	parseNpmPrefix,
 	readServiceInstallState,
+	type ServiceInstallState,
 } from "./kernel-env.js";
 
 const portablePaths = setupPortableMode(app);
@@ -106,6 +116,8 @@ const RUNTIME_ROOT_ENV = "PI_DESKTOP_RUNTIME_ROOT";
 let activeRuntimeVersion: string | null = null;
 /** 本次进程跑的哪份代码：全局 npm 包 / 用户目录运行时 / 包内自带（权威链，见 kernel-authority.ts）。 */
 let kernelSource: KernelSource = "bundled";
+/** 全局 npm 包内核的入口（解析到了才非 null）：装服务时要用它自己的 CLI。 */
+let globalKernelEntryPath: string | null = null;
 const AUTHORITY_LABEL: Record<KernelSource, string> = {
 	"global-npm": "全局 npm 包",
 	"userdata-runtime": "用户目录运行时",
@@ -131,16 +143,22 @@ function bundledAppRoot(): string {
 /**
  * 这次启动跑哪份服务端：打包后先问 `<userData>/runtime`（P0 只读，见 desktop/runtime-store.ts），
  * 任何不确定都退回安装包内自带的那份——兜底路径不依赖网络、签名、指针文件。
+ *
+ * **返回 null = 这台机器上没有任何内核**（纯壳包不带包内自带那份，全局 npm / 运行时也没有）。
+ * 壳不会硬跑一份不存在的入口，而是把“装内核”作为可执行的下一步交给界面（见 markKernelUnavailable）。
  */
-async function resolveServerEntry(): Promise<string> {
+async function resolveServerEntry(): Promise<string | null> {
 	const devEntry = join(here, "..", "server", "index.js");
 	const override = process.env[RUNTIME_ROOT_ENV]?.trim();
 	const bundledRoot = bundledAppRoot();
 	const bundledEntry = join(bundledRoot, "dist", "server", "index.js");
+	// 纯壳包（desktop/electron-builder.shell.yml）不带内核：兜底入口不存在，权威链末端就是 null。
+	const bundledAvailable = existsSync(bundledEntry);
 	if (bypassRuntimeForThisBoot) {
 		activeRuntimeVersion = null;
 		console.warn("[desktop] runtime: 本次启动跳过 userData 运行时，直接跑安装包自带的那份");
-		return app.isPackaged || override ? bundledEntry : devEntry;
+		if (!app.isPackaged && !override) return devEntry;
+		return bundledAvailable ? bundledEntry : null;
 	}
 	if (!app.isPackaged && !override) {
 		activeRuntimeVersion = null;
@@ -160,8 +178,13 @@ async function resolveServerEntry(): Promise<string> {
 	const picked = pickKernelSource({
 		globalEntry,
 		runtimeEntry: resolved.source === "runtime" ? resolved.entry : null,
-		bundledEntry: resolved.source === "runtime" ? bundledEntry : resolved.entry,
+		// 纯壳包里两个候选都是“不存在”，传 null 而不是一条假路径——否则会去 spawn 一个 ENOENT 入口。
+		bundledEntry: bundledAvailable ? (resolved.source === "runtime" ? bundledEntry : resolved.entry) : null,
 	});
+	if (!picked) {
+		console.warn("[desktop] kernel: 找不到任何内核（npm 全局包 / userData 运行时 / 包内自带都没有）");
+		return null;
+	}
 	kernelSource = picked.source;
 	if (picked.source === "global-npm") {
 		activeRuntimeVersion = null;
@@ -177,7 +200,7 @@ async function resolveGlobalKernelEntry(): Promise<string | null> {
 	const cachedPrefix = readAuthorityCache(readTextFile(cachePath), Date.now());
 	if (cachedPrefix) {
 		const entry = globalKernelEntry(globalKernelRoot(cachedPrefix));
-		if (existsSync(entry)) return entry;
+		if (existsSync(entry)) return rememberGlobalKernel(entry);
 	}
 	const prefix = await queryNpmGlobalPrefix();
 	if (!prefix) return null;
@@ -186,7 +209,12 @@ async function resolveGlobalKernelEntry(): Promise<string | null> {
 		writeFileSync(cachePath, buildAuthorityCache(prefix, Date.now()));
 	} catch {}
 	const entry = globalKernelEntry(globalKernelRoot(prefix));
-	return existsSync(entry) ? entry : null;
+	return existsSync(entry) ? rememberGlobalKernel(entry) : null;
+}
+
+function rememberGlobalKernel(entry: string): string {
+	globalKernelEntryPath = entry;
+	return entry;
 }
 
 /** `npm prefix -g`：用 command-spawn 单源把它还原成可 spawn 的 argv（Windows 不开 shell），5s 硬超时。 */
@@ -195,9 +223,16 @@ function queryNpmGlobalPrefix(): Promise<string | null> {
 		// 必须透传 windowsVerbatimArguments：Windows 上 command-spawn 把 npm 还原成
 		// `cmd /d /s /c "npm.cmd prefix -g"`，丢掉这个标志会让 Node 二次加引号 → 命令根本不执行。
 		const launch = resolveLaunch("npm", ["prefix", "-g"]);
-		execFile(launch.file, launch.args, { timeout: 5000, windowsHide: true, ...launch.options }, (error, stdout) => {
-			resolve(error ? null : parseNpmPrefix(stdout));
-		});
+		const node = findSystemNode();
+		const env = node ? envWithNodeOnPath(process.env, node) : process.env;
+		execFile(
+			launch.file,
+			launch.args,
+			{ timeout: 5000, windowsHide: true, env, ...launch.options },
+			(error, stdout) => {
+				resolve(error ? null : parseNpmPrefix(stdout));
+			},
+		);
 	});
 }
 
@@ -509,6 +544,11 @@ async function startServerSidecar(): Promise<string> {
 		console.warn(`[desktop] 打包版忽略 PI_WEB_DESKTOP_URL=${override}（仅开发模式允许）`);
 	}
 	const entry = await resolveServerEntry();
+	if (!entry) {
+		// 纯壳包 + 本机没有任何内核：不 spawn 一条不存在的入口，转成“可修复”的状态。
+		const message = await markKernelUnavailable();
+		throw new Error(message);
+	}
 	resolveWebDir();
 	console.log(`[desktop] server entry: ${entry}`);
 	const port = await resolvePort(lastServerPort);
@@ -525,7 +565,7 @@ async function startServerSidecar(): Promise<string> {
 	const sdkHook = join(dirname(entry), "resolve-global-sdk.js");
 	// 全局 npm 包内核用**系统 node** 跑：包里的原生模块（node-pty 等）按系统 node ABI 编译，
 	// 塞进 ELECTRON_RUN_AS_NODE 可能加载失败。找不到 node 才退回 Electron 自带的那份（并在日志里说清）。
-	const systemNode = kernelSource === "global-npm" ? findNodeInPath(process.env, existsSync) : null;
+	const systemNode = kernelSource === "global-npm" ? findSystemNode() : null;
 	if (kernelSource === "global-npm" && !systemNode)
 		console.warn("[desktop] kernel: 没在 PATH 里找到 node，暂用 Electron 自带运行时（全局包里的原生模块可能加载失败）");
 	const nodeBinary = systemNode ?? process.execPath;
@@ -578,6 +618,9 @@ async function startServerSidecar(): Promise<string> {
 		throw error;
 	}
 	sidecarUrl = url;
+	// 内核已经跑起来：把“没有内核”的覆盖层收回去（安装/修复成功后走的就是这里）。
+	browserHost?.setKernelMissing(null);
+	browserHost?.setAgentError("");
 	console.log(`[desktop] server 就绪：${url}`);
 	return url;
 }
@@ -668,6 +711,22 @@ async function restartServerSidecar(expectedVersion?: string | null): Promise<st
 	});
 }
 
+// 系统 node 的唯一发现口径：server/native-cli-discovery.ts。
+//
+// 为什么不自己扫 PATH：fnm / nvm-windows / Volta 都是按 shell 注入 PATH 的，
+// 从资源管理器双击起来的桌面壳看不到那些注入项 —— 只扫 PATH 会把「用 fnm 装了 node」误判成「没装」。
+// 那个模块本来就在扫 PATH + fnm node-versions/*/installation + nvm + volta + scoop，是仓库单源
+// （server/command-spawn.ts 解析用户命令走的也是它），壳这边直接复用，不另写一套。
+function findSystemNode(): string | null {
+	try {
+		return (
+			findNativeCliExecutable("node", { platform: process.platform, env: process.env, homeDir: homedir() }) ?? null
+		);
+	} catch {
+		return null;
+	}
+}
+
 // ── 内核：谁是内核、壳要不要自己拉一份（docs/architecture-kernel.md） ───────────────
 
 /** 最近一次算出的内核状态（面板读它，`pi-browser:state` 也带它）。 */
@@ -713,42 +772,121 @@ async function refreshKernelState(
 	browserHost?.setKernelState(kernelState);
 }
 
+/** 读系统 node 的版本（`node -v`）。找不到/超时/报错一律 null——只用于告诉用户“够不够用”。 */
+async function probeSystemNode(): Promise<{ path: string; version: string | null } | null> {
+	const path = findSystemNode();
+	if (!path) return null;
+	return await new Promise((resolvePromise) => {
+		execFile(path, ["-v"], { timeout: 5000, windowsHide: true }, (error, stdout) => {
+			if (error) return resolvePromise({ path, version: null });
+			const version = stdout.trim().replace(/^v/i, "");
+			resolvePromise({ path, version: version || null });
+		});
+	});
+}
+
 /**
- * 启动时的内核判定：
- * - 配置的内核活着 → **只连不拉**（“关掉壳内核还在跑”的前提）
- * - 没配 → 拉本地 sidecar（既有行为）
- * - 配了但不可达 → 回退本地，同时把原因透给面板（不能白屏）
+ * 本机没有任何可用内核时的统一出口：算清“还缺什么”（node / 内核本体），
+ * 把结果丢给渲染层（那个覆盖层负责弹“安装/修复”），并返回一句能直接展示的说明。
+ *
+ * 为什么不是直接报错字：纯壳包首次启动必然走这条路，用户需要的不是堆栈而是下一步动作。
+ */
+async function markKernelUnavailable(): Promise<string> {
+	const node = await probeSystemNode();
+	const nodeOk =
+		node !== null &&
+		node.version !== null &&
+		describeNodeRuntime({ execPath: node.path, nodeVersion: node.version }).ok;
+	const message =
+		node === null
+			? "本机没有可用的内核，也没找到 node：先安装 Node（≥22），再安装内核。"
+			: nodeOk
+				? `本机没有可用的内核（node v${node.version} 已就绪）：点「安装内核」执行 npm i -g pi-web-ui。`
+				: `本机 node 版本太低（v${node.version ?? "未知"}，需 ≥22）：先升级 Node，再安装内核。`;
+	browserHost?.setKernelMissing({ nodeOk, nodeVersion: node?.version ?? null, platform: process.platform });
+	browserHost?.setAgentError(message);
+	return message;
+}
+
+/**
+ * 启动时的内核判定（唯一出口：`planKernelBoot`，决定壳到底要不要自己拉进程）：
+ * 1. 已经有一个活内核（配置 / 数据目录锁 / 默认端口）→ **只连不拉**
+ * 2. 打包版：本机有全局包内核就把它装成**系统托管的后台服务**，壳只做客户端（关掉壳它继续跑）
+ * 3. 什么都跑不了 → 把「装 node / 装内核」交给界面；还能跑就先跑临时内核（离线活路）
  */
 async function startKernel(): Promise<void> {
 	const saved = (browserHost?.browser.getSettings().agentUrl ?? "").trim();
-	const probe = saved ? await probeKernel(saved) : null;
-	const decision = decideKernelMode({ externalUrl: saved, probe });
-	if (decision.mode === "external") {
-		console.log(`[desktop] kernel: 复用外部内核 ${saved}（本次不启动本地 sidecar）`);
-		if (browserHost && browserHost.getState().agentUrl !== saved) await browserHost.connectAgent(saved, false);
-		kernelMode = "external";
-		kernelState = toKernelState({ decision, url: saved, probe });
-		browserHost?.setKernelState(kernelState);
+	const savedProbe = saved ? await probeKernel(saved) : null;
+	if (saved && savedProbe?.reachable) {
+		console.log(`[desktop] kernel: 复用配置的内核 ${saved}（本次不启动本地 sidecar）`);
+		await switchAgentTo(saved, "external", "external-reachable");
 		return;
 	}
-	if (decision.reason === "external-unreachable")
-		console.warn(`[desktop] kernel: 配置的内核不可达（${probe?.error ?? "未知原因"}），回退本地 sidecar`);
+	if (saved) console.warn(`[desktop] kernel: 配置的内核不可达（${savedProbe?.error ?? "未知原因"}）`);
 
-	// 收敛：数据目录已有一个**活着的**内核对（通常是上一次壳退出时遗留的 sidecar，
-	// 或用户刚装好的服务）。直接连它，不要再拉一份再被锁拒掉。
+	// 收敛：数据目录已有一个**活着的**内核对（系统服务 / 上一次壳退出遗留的 sidecar）。直接连它。
 	const adopted = await adoptLockedKernel();
 	if (adopted) {
 		console.log(`[desktop] kernel: 直接复用数据目录里已在内核（${adopted}）`);
-		if (browserHost && browserHost.getState().agentUrl !== adopted) await browserHost.connectAgent(adopted, false);
-		kernelMode = "external";
-		await refreshKernelState(adopted, "external", "external-reachable");
+		await switchAgentTo(adopted, "external", "external-reachable");
 		return;
 	}
 
+	const entry = await resolveServerEntry();
+	const node = kernelNodeRuntime();
+	const plan = planKernelBoot({
+		configuredUrl: saved || null,
+		configuredProbe: savedProbe,
+		adoptedUrl: null,
+		defaultPortUrl: await probeDefaultPortKernel(),
+		serviceFirst: resolveKernelServiceFirst({ packaged: app.isPackaged, env: process.env }),
+		platform: process.platform,
+		serviceInstalled: kernelServiceInstallState(),
+		globalKernelAvailable: (await resolveGlobalKernelEntry()) !== null,
+		node: { found: findSystemNode() !== null, ok: node.ok },
+		ephemeralKernelAvailable: entry !== null,
+	});
+	console.log(`[desktop] kernel: plan=${plan.kind}${reasonOf(plan)}`);
+
+	if (plan.kind === "connect") {
+		await switchAgentTo(plan.url, "external", "external-reachable");
+		return;
+	}
+	if (plan.kind === "provision-service") {
+		const provisioned = await provisionKernelService({ action: plan.action, stopEphemeral: true });
+		if (provisioned.ok) return;
+		console.warn(`[desktop] kernel: 后台服务没装成（${provisioned.message}），本次先用临时内核`);
+	}
+	if (plan.kind === "install-node" || plan.kind === "install-kernel") {
+		throw new Error(await markKernelUnavailable());
+	}
+	// 走到这里只剩「临时内核」：壳自己拉一份（不常驻，关壳即停——面板会这么提示）。
+	if (!entry) throw new Error(await markKernelUnavailable());
 	const url = await enqueueServerStep(() => startServerSidecar());
+	await switchAgentTo(url, "local", saved ? "external-unreachable" : "no-external-configured");
+}
+
+function reasonOf(plan: ReturnType<typeof planKernelBoot>): string {
+	return "reason" in plan ? ` (${plan.reason})` : "";
+}
+
+/** 默认端口上是不是已经有一个可达内核（别人的常驻内核 / 刚装好的服务）。 */
+async function probeDefaultPortKernel(): Promise<string | null> {
+	const url = `http://127.0.0.1:${DEFAULT_DESKTOP_PORT}`;
+	const probe = await probeKernel(url);
+	return probe.reachable ? url : null;
+}
+
+/** 服务配置在不在（与 CLI 的落点一致，只读判断）。 */
+function kernelServiceInstallState(): ServiceInstallState {
+	return readServiceInstallState({ platform: process.platform, env: process.env, home: homedir(), exists: existsSync });
+}
+
+/** 把界面切到目标内核并刷新面板状态（“连谁”的唯一写法）。 */
+async function switchAgentTo(url: string, mode: KernelMode, reason: BrowserKernelState["reason"]): Promise<void> {
 	const target = buildDesktopLoadUrl(url, process.env);
 	if (browserHost?.getState().agentUrl !== target) await browserHost?.connectAgent(target, false);
-	await refreshKernelState(target, "local", decision.reason, probe?.error);
+	await refreshKernelState(target, mode, reason);
 }
 
 /**
@@ -765,7 +903,7 @@ async function adoptLockedKernel(): Promise<string | null> {
 	return probe.reachable ? url : null;
 }
 
-/** pid 探活（与 server/instance-lock.ts 同一判据）：EPERM 也算活着。 */
+/** pid 探活（与 shared/instance-lock.ts 同一判据）：EPERM 也算活着。 */
 function isProcessAlive(pid: number): boolean {
 	if (!Number.isInteger(pid) || pid <= 0) return false;
 	try {
@@ -776,8 +914,10 @@ function isProcessAlive(pid: number): boolean {
 	}
 }
 
-/** 挂着的内核包根：优先进当前运行时目录，其次包内自带（dev 下就是仓库根）。 */
+/** 跑内核 CLI 用的包根：全局包内核就是它自己（版本/参数语义与在跑的一致），其次运行时目录，最后包内自带。 */
 function resolveKernelPkgRoot(): string {
+	// <pkg>/dist/server/index.js → <pkg>；装服务必须用内核自己的 CLI，否则烘焙进看门狗的是壳里那份。
+	if (kernelSource === "global-npm" && globalKernelEntryPath) return join(globalKernelEntryPath, "..", "..", "..");
 	const candidates: string[] = [];
 	if (activeRuntimeVersion) candidates.push(join(desktopRuntimeRootDir(), activeRuntimeVersion));
 	candidates.push(bundledAppRoot());
@@ -797,11 +937,8 @@ function currentKernelCwd(): string {
 }
 
 /**
- * 「安装为系统服务」：把**当前内核**的数据目录/工作目录原样焙进服务配置，然后把壳交棒给服务。
- *
- * 顺序是有原因的：本地 sidecar 正持着数据目录锁，服务启动会被单实例锁拒绝。
- * 所以先停本地内核 → 装并启动服务 → 壳改连服务地址；任何一步失败都回滚到本地内核，
- * 不能让用户点完按钮反而没内核了。
+ * 「安装为系统服务」（面板按钮）：真正的装/启动/健康检查/交棒都在 `provisionKernelService`；
+ * 这里只回答"该不该动手"与"动手失败怎么回滚"。
  */
 async function installKernelService(): Promise<{ ok: boolean; message: string }> {
 	const decision = decideServiceInstall({
@@ -823,48 +960,107 @@ async function installKernelService(): Promise<{ ok: boolean; message: string }>
 			message:
 				"当前连的内核不是本机装的：本机不知道它的数据目录，装服务只会装出一份空数据。请到内核所在机器执行 pi-web-ui server install",
 		};
-	const node = kernelNodeRuntime();
-	if (!node.ok) {
-		const guide = nodeInstallGuide(process.platform);
-		return { ok: false, message: `本机 node 版本太低（v${node.version}，需 ≥22）：${guide.command}` };
-	}
-	const runningPort = currentKernelPort();
-	const port = runningPort ?? DEFAULT_DESKTOP_PORT;
-	const serviceUrl = `http://127.0.0.1:${port}`;
-	const wasLocal = kernelMode === "local";
-	if (wasLocal) await stopServerSidecar();
-	const result = await runKernelCli(
-		buildServiceInstallArgs({
-			port,
-			dataDir: currentKernelDataDir(),
-			cwd: currentKernelCwd(),
-			engine: process.env.PI_WEB_ENGINE ?? null,
-		}),
-		{ pkgRoot: resolveKernelPkgRoot() },
-	);
-	const message = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n").slice(-2000);
-	if (result.code !== 0) {
-		// 回滚：服务没装成，至少把本地内核还给用户。
-		if (wasLocal) {
-			try {
-				const url = await enqueueServerStep(() => startServerSidecar());
-				await syncAgentUrl(url);
-				await refreshKernelState(url, "local");
-			} catch (error) {
-				console.error("[desktop] 安装失败后回退本地内核也失败了：", error);
-			}
-		}
+	// 装服务要求磁盘上有全局 npm 包：否则服务会钉死在安装目录，应用一升级就失效。
+	if (kernelSource !== "global-npm" && !activeRuntimeVersion)
 		return {
 			ok: false,
-			message: result.timedOut ? `安装超时\n${message}` : message || `安装失败（退出码 ${result.code}）`,
+			message:
+				"当前内核是安装包里自带的那份：装成服务会钉死在安装目录，应用一升级就失效。先点「升级内核」装好全局 npm 包，再装服务。",
 		};
+	const wasLocal = kernelMode === "local";
+	const result = await provisionKernelService({ action: "install", stopEphemeral: true });
+	if (result.ok) return result;
+	// 回滚：服务没装成，至少把本地内核还给用户（不能"点完按钮反而没内核了"）。
+	if (wasLocal) {
+		try {
+			const url = await enqueueServerStep(() => startServerSidecar());
+			await switchAgentTo(url, "local", "no-external-configured");
+		} catch (error) {
+			console.error("[desktop] 安装失败后回退本地内核也失败了：", error);
+		}
 	}
-	// 交棒：把 Agent 地址改成服务地址，下次启动就不再拉起本地 sidecar。
+	return result;
+}
+
+/**
+ * 把本机内核装成系统托管的后台服务并交棒。**唯一实现**：启动流程、面板按钮、升级后处理都走这里。
+ *
+ * 先 `start` 再 `install` 是有原因的：服务配置可能在（用户只是停过它），直接重装也把用户停掉的东西拉起来；
+ * 启动失败（配置被删/组件丢失，实机见过 vbs 丢失）才退回 `install` 重写一遍——自愈。
+ */
+async function provisionKernelService(options: {
+	action: "start" | "install";
+	stopEphemeral?: boolean;
+}): Promise<{ ok: boolean; message: string }> {
+	const node = kernelNodeRuntime();
+	if (!node.ok)
+		return {
+			ok: false,
+			message: `本机 node 版本太低（v${node.version}，需 ≥22）：${nodeInstallGuide(process.platform).command}`,
+		};
+	const port = await resolvePort(currentKernelPort() ?? lastServerPort ?? null);
+	const dataDir = currentKernelDataDir();
+	const cwd = currentKernelCwd();
+	const url = `http://127.0.0.1:${port}`;
+	const pkgRoot = resolveKernelPkgRoot();
+	// 服务会把这两个路径焙进看门狗脚本：先确保它们在（首次启动时 userData/data 还不存在）。
+	try {
+		mkdirSync(dataDir, { recursive: true });
+		mkdirSync(cwd, { recursive: true });
+	} catch {}
+	if (options.stopEphemeral) {
+		// 本地 sidecar 正持着数据目录锁与端口：不让位，服务启动会被单实例锁拒掉。
+		stoppingServer = true;
+		try {
+			await stopServerSidecar();
+		} finally {
+			stoppingServer = false;
+		}
+	}
+	const output: string[] = [];
+	const runStep = async (args: string[]): Promise<KernelCliResult> => {
+		// nodePath 必须是**系统 node**：CLI 会把 `process.execPath` 烘焙进看门狗脚本，
+		// 用 Electron 的 execPath 装出来的服务会拿 electron.exe 去跑内核，永远起不来。
+		const result = await runKernelCli(args, { pkgRoot, nodePath: node.path });
+		output.push([result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n"));
+		return result;
+	};
+	const summarize = (fallback: string): string => (output.join("\n").trim() || fallback).slice(-2000);
+
+	if (options.action === "start") {
+		const started = await runStep(
+			buildServiceLifecycleArgs("start", { name: kernelState?.serviceName ?? null, dataDir, port }),
+		);
+		if (started.code === 0 && (await waitForKernelHealth(url, 8000)))
+			return await handOverToService(url, summarize(`内核已在 ${url} 就绪`));
+		console.warn("[desktop] kernel: 已有服务配置但起不来，重装一遍服务组件");
+	}
+	const installed = await runStep(
+		buildServiceInstallArgs({ port, dataDir, cwd, engine: process.env.PI_WEB_ENGINE ?? null }),
+	);
+	if (installed.code !== 0) return { ok: false, message: summarize(`安装失败（退出码 ${installed.code}）`) };
+	if (!(await waitForKernelHealth(url, resolveHealthTimeoutMs(process.env))))
+		return { ok: false, message: `服务已安装但没在 ${url} 就绪\n${summarize("")}` };
+	return await handOverToService(url, summarize(`内核已由系统托管：${url}`));
+}
+
+async function waitForKernelHealth(url: string, timeoutMs: number): Promise<boolean> {
+	try {
+		await waitForHealth(url, { timeoutMs });
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** 交棒：Agent 地址写成服务地址（下次启动不再拉临时内核）并刷新面板。 */
+async function handOverToService(url: string, message: string): Promise<{ ok: boolean; message: string }> {
 	const settings = browserHost?.browser.getSettings();
-	if (browserHost && settings) browserHost.browser.saveSettings({ ...settings, agentUrl: serviceUrl });
-	if (browserHost && browserHost.getState().agentUrl !== serviceUrl) await browserHost.connectAgent(serviceUrl, false);
-	await refreshKernelState(serviceUrl, "external");
-	return { ok: true, message: message || `已安装并启动系统服务：${serviceUrl}` };
+	if (browserHost && settings && settings.agentUrl !== url)
+		browserHost.browser.saveSettings({ ...settings, agentUrl: url });
+	browserHost?.setKernelMissing(null);
+	await switchAgentTo(url, "external", "external-reachable");
+	return { ok: true, message };
 }
 
 /**
@@ -873,7 +1069,7 @@ async function installKernelService(): Promise<{ ok: boolean; message: string }>
  * 所以先看 PATH 里的系统 node（全局包内核正是用它启动），找不到才退回壳自带的。
  */
 function kernelNodeRuntime() {
-	const systemNode = findNodeInPath(process.env, existsSync);
+	const systemNode = findSystemNode();
 	const info = describeNodeRuntime({ execPath: process.execPath, nodeVersion: process.versions.node });
 	return systemNode ? { ...info, path: systemNode } : info;
 }
@@ -897,12 +1093,7 @@ async function readKernelEnvironment(): Promise<KernelEnvironmentView> {
 			canUpgrade: plan.kind === "upgrade",
 		},
 		service: {
-			state: readServiceInstallState({
-				platform: process.platform,
-				env: process.env,
-				home: homedir(),
-				exists: existsSync,
-			}),
+			state: kernelServiceInstallState(),
 		},
 		nodeInstall: { command: guide.command, url: guide.url, canRun: nodeInstallLaunch(process.platform) !== null },
 	};
@@ -922,22 +1113,45 @@ async function currentNpmPrefix(): Promise<string | null> {
 }
 
 /**
- * 「升级内核」：`npm i -g pi-web-ui@latest` → 重启内核。
- * 只有一步成功才算成功；npm 失败时原内核仍在跑（不重启），用户不会点完变没。
+ * 「升级内核」：`npm i -g pi-web-ui@latest` → **直接装成系统托管的后台服务并交棒**。
+ *
+ * 为什么不是简单地重启：用户点「安装内核」要的是"内核能自己跑"。装完又回成
+ * "壳自己拉一份、关壳就停"，等于白白多点一次（这正是解绑前的痛点）。
+ * npm 失败时旧内核仍在跑（不动服务），用户不会点完变没。
  */
 async function upgradeKernel(): Promise<{ ok: boolean; message: string }> {
-	const result = await runCommand("npm", ["i", "-g", "pi-web-ui@latest"], { timeoutMs: 300_000 });
+	const node = findSystemNode();
+	// 关键：npm 的 install 脚本是 `cmd /c node install.js`，靠 PATH 找 node。
+	// 不补这一行，用 fnm/nvm 的机器会报「'node' 不是内部或外部命令」，整次安装失败。
+	const result = await runCommand("npm", ["i", "-g", "pi-web-ui@latest"], {
+		timeoutMs: 300_000,
+		env: node ? envWithNodeOnPath(process.env, node) : process.env,
+	});
 	const output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n").slice(-2000);
 	if (result.code !== 0)
 		return {
 			ok: false,
 			message: result.timedOut ? `升级超时（npm 仍在跑？）\n${output}` : output || `升级失败（退出码 ${result.code}）`,
 		};
-	const restarted = await restartKernel();
-	return {
-		ok: restarted.ok,
-		message: restarted.ok ? `已升级并重启内核\n${output}` : `已升级，但重启失败：${restarted.message}`,
-	};
+	// 装完内核：权威链指向新装的全局包，否则装服务拿到的是壳里那份 CLI。
+	if (await resolveGlobalKernelEntry()) kernelSource = "global-npm";
+	const decision = decideServiceInstall({
+		mode: kernelMode,
+		supervisor: kernelState?.supervisor ?? null,
+		serviceName: kernelState?.serviceName ?? null,
+		platform: process.platform,
+	});
+	if (decision.kind === "terminal")
+		return { ok: true, message: `已升级；Linux 上请再执行：${decision.command}\n${output}` };
+	if (decision.kind === "foreign")
+		return { ok: true, message: `已升级本机内核（当前连的是外部内核，未接管它）\n${output}` };
+	const provisioned = await provisionKernelService({ action: "install", stopEphemeral: true });
+	return provisioned.ok
+		? {
+				ok: true,
+				message: `已升级并装成后台服务（关掉桌面端也会继续跑）\n${provisioned.message}\n${output}`.slice(-2000),
+			}
+		: { ok: false, message: `已升级，但装成后台服务失败：${provisioned.message}` };
 }
 
 /** 「安装 node」：Win 走 winget、mac 走 brew（都会弹系统授权）；Linux 只给命令。 */

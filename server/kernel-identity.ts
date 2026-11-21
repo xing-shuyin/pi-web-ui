@@ -28,6 +28,8 @@ export function classifyKernelInstall(packageRoot: string): KernelInstallKind {
 export interface KernelInfoInput {
 	version: string;
 	packageRoot: string;
+	/** 内核自己的协议版本（`PROTOCOL_VERSION`）。由调用方传入，保持本模块纯推导。 */
+	protocol: number;
 	startedAt: number;
 	now: number;
 	supervisor: ServiceSupervisor | null;
@@ -56,6 +58,7 @@ export function buildKernelInfo(input: KernelInfoInput): KernelPublicInfo {
 		installKind: classifyKernelInstall(input.packageRoot),
 		startedAt: input.startedAt,
 		uptimeMs: Math.max(0, Math.floor(input.now - input.startedAt)),
+		protocol: input.protocol,
 		minShell: KERNEL_MIN_SHELL,
 		lock: input.lock,
 	};
@@ -77,5 +80,7 @@ export function describeKernelInstall(kind: KernelInstallKind): string {
 export function tailPackageRoot(packageRoot: string): string {
 	const normalized = packageRoot.replace(/\\/g, "/").replace(/\/+$/, "");
 	const parent = normalized.slice(0, normalized.lastIndexOf("/"));
-	return [basename(parent), basename(normalized)].filter(Boolean).join("/") || basename(normalized) || sep;
+	// 盘符（`D:`）不是路径段：WSL/macOS 上读到 Windows 路径时也别把它当一级留下。
+	const segments = [basename(parent), basename(normalized)].filter((s) => s && !/^[a-z]:$/i.test(s));
+	return segments.join("/") || basename(normalized) || sep;
 }
