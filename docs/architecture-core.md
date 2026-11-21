@@ -159,6 +159,26 @@
 - **未登录页走原生表单登录**（`server/unauthorized-page.ts` + `server/auth-login.ts`，`POST /__pi/auth`）：口令表单是**真 POST → 303 → GET**，并带 `autocomplete="username"` 的账号域 + `autocomplete="current-password"` 的密码域——只有这样才能让 Chrome/Safari/Firefox 在登录后询问「是否保存密码」（历史实现是 JS `preventDefault()` + `?token=` 跳转，浏览器不认为是登录，永远不弹）。回跳目标统一走 `sanitizeNextPath`：只允许同源绝对路径（禁 `//host`、`\`、控制字符）并剔除 `token`/`__tried_cached_token`/`auth_error` 查询参数；口令错误 303 回 `?auth_error=1`，未登录页据此渲染「口令不正确」。`?token=` / Bearer / X-PI-Token 旧路径全部保留。回归：`tests/unit/auth-login.test.ts`、`tests/unit/unauthorized-page.test.ts`、`tests/token-auth-test.mjs`。
 - **dev 兼容**：vite :5173 代理 /ws 到 :8788 时 Origin(:5173) ≠ Host(:8788)，靠 `PI_WEB_ALLOW_ORIGINS`（dev:server 内置）放行，勿删。
 
+## CSS 分层（`@layer guard, base, theme, drawer;`）
+
+- **为什么分层**：`web/src/styles.css` 是共享基线、主题是后加载的完整样式表，两者在同一份文档里争权重。分层重构前，能跨文件夺权的唯一手段就是 `!important`（叹号 important）：基线 218 处、主题侧 613 处（`bases/obsidian-base.css` 220、`bases/zhujian-base.css` 143、`bases/zhupi-base.css` 132、`aetheris.css` 118），主题要压住基线只能继续加码，越改越沉——典型的军备竞赛。改成显式分层 + 无层覆盖区后基线只剩 1 处（mermaid 运行时内联 style，见下），胜负由**层序**决定，叹号 important 不再是夺权工具。
+- **四层职责**（顺序声明只有一处：`web/src/styles.css` 顶部的 `@layer guard, base, theme, drawer;`，早于所有层块，层序按此固定）：
+  - `@layer base`：整份基线样式（`web/src/styles.css` 内容）。默认层，正常写选择器，不加 `!important`。
+  - `@layer theme`：主题样式。**服务端统一下发**——`server/themes.ts` 的 `readThemeCss()` 内联展开 `@import` 后把整份文本包进 `@layer theme { … }`（只包最外层一次；递归内联的子文件原样返回，否则会变成嵌套层）。`themes/**/*.css` 源文件因此**不需要**自己写 `@layer`，也不需要 `!important`：只要写在主题里就天然压过 base。
+  - `@layer drawer`：底部面板与源码管理面板（`web/src/drawer.css`，经 `@import … layer(drawer)` 引入）。它排在最后，因此能压过 base 里的同名规则，**不必靠复合类提权**；新增组件层只能追加到这个位置之后。
+  - `@layer guard`：唯一活口是 mermaid——它用 d3 `.style()` 把字号写成 SVG 内联 `style`，任何普通声明都压不住，只能留这一处叹号 important（`styles.css` 末尾，写明原因）。guard 先声明，层序反转后它的 important 恒胜。别把普通样式挪进来偷懒。
+- **无层覆盖区**（`styles.css` 末尾、所有层块之后）：需要盖过主题或未分层三方库（highlight.js `github-dark.css`，bundle 里后加载）的结构性复位放这里——代码行清零（同为无层后靠更高权重盖过 `pre code.hljs`）、折叠态 `.goalbar.goalbar-collapsed` 抹皮（无层一句盖住 theme 层面板皮）、xterm 视口底色（`xterm.css` 的 `#000` 会把终端底部漏成一条黑边，层内写同属性是空转）。**未分层的普通声明永远胜过任何层内的普通声明**，所以这里不需要叹号 important。分包引入的 CSS（如 `web/src/model-management.css` 经 `@import … layer(base)`）与插件样式同样必须进层，不能裸奔成无层。
+- **层序规则（两个方向相反，最容易踩）**：普通声明按**层声明顺序**后者胜（`theme` > `base` > `guard`）；带叹号 important 的声明**反向**——先声明的层胜（`guard` > `base` > `theme`）。所以 guard 层的价值恰在于它**先**声明：mermaid 那一处例外放进去就能盖住运行时内联；而 base/theme 里写叹号 important 只会把自己钉死，越写越糟。另注：**未分层的样式永远胜过任何层内的普通声明**——这正是「无层覆盖区」能零提权盖住主题与 highlight.js 的原因。
+- **新增样式时的规矩**：① 主题里**禁止**叹号 important，一律靠 theme 层胜出；② 基线里同层权重不够时用**复合类提权**（如 `.canvas-dropdown-item.canvas-inline-create`），不准加叹号 important；③ 要盖主题/三方库普通声明时用文件末尾**无层覆盖区**，不准加叹号 important；④ 只有运行时内联 `style`（如 mermaid）才配写，必须写明原因并收进 `@layer guard`；⑤ 主题不要再写 `#root .foo` 这类 ID 加权选择器和基线抢权重（层序已解决，残余的 ID 加权属于历史包袱，改到即删）。守卫：`tests/unit/css-layers.test.ts`（基线叹号 important ≤ 1、`themes/**/*.css` 必须为 0、层声明与 guard 位置、文档契约）。
+- **视觉回归闸门**（改了任何样式都必须过）：`npm run audit:themes`（当前树截图 → `.theme-audit/current`）→ `npm run audit:diff`（与 `.theme-audit/baseline` 逐像素比对）。固定 fixture DOM（含气泡/Markdown/表格/代码/思考卡/工具卡/胶囊流/输入岛/顶栏/侧边停靠栏/快捷短语/插件图标/`hide-model-row` 紧凑模式）+ 每个主题一张图（35 个主题），单主题差异 > **0.05%** 即退出码 1。
+  - 基线快照 `.theme-audit/baseline` 是「分层重构完成时」的状态（已 gitignore）。要拿**重构前**的基线只能开一个 `HEAD` 的 git worktree 再拍：`git worktree add ../baseline HEAD` → `node scripts/theme-audit.mjs --root ../baseline --out .theme-audit/pristine`。
+  - 只有当差异确属「有意改进」时才允许重建基线；否则先查层序（`theme` 被 `base` 压住是最常见的错）。
+- **已接受的有意差异（主题为准）**：分层后 `theme` 层恒胜 `base`，以下 4 处历史上是基线的 `!important` 赢、现在按主题样式渲染 —— 这是**定案，不是缺陷**，不要再用对齐块把它们打回旧值（zhujian/zhupi/aetheris 顶栏那组对齐块是历史特例，后续新主题姿态请以主题直出为准）：
+  1. `flow` / `flow-light` / `wallpaper-flow`：`.msg-assistant` 上下 padding 取主题的 `0`（原被基线紧凑模式的 2px/4px 盖）——夹具差异 ~2.0%；
+  2. `flow` / `translucent` / `transparent`：`.quick-chip.active` 取主题底色（原被基线强调底盖）——差异 ~0.5%；
+  3. `aetheris`：`.chip` 圆角与 `.bar-item` 内边距取主题值；
+  4. `wallpaper-obsidian`：插件图标 `.plugin-icon-svg` 颜色取主题值。
+
 ## 多对话并发
 
 - **引擎契约单源 `server/engine-service.ts`**：`EngineService`（谁能接客户端）与 `DispatchSession`（一个会话能干什么）、`TerminalManagerLike` 只在这里声明。五个引擎（pi / dsh / claude / codex / durable）都显式 `implements EngineService`，服务模块不得再从 `server/index.ts` 取这些类型（入口是装配代码，被当类型库 import 就是一条「服务 → 入口」的回边）。守卫：`tests/unit/engine-service-single-source.test.ts`。
