@@ -2,16 +2,18 @@
  * canvas-pstack-skills.test.ts — Pstack 58 个 Skills 与 Skill 灵魂角色在画布协同中的单元测试。
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PSTACK_SKILLS, PSTACK_SKILLS_MAP, PSTACK_CATEGORIES } from "../../server/canvas/pstack-skills-data.js";
+import { PSTACK_SKILLS_CONTENT } from "../../server/canvas/pstack-skills-content.js";
+import { getPstackSkills } from "../../web/src/components/canvas/pstack-skills-data.js";
 import { CanvasOrchestrator } from "../../server/canvas/canvas-orchestrator.js";
 import { makeCanvasTool } from "../../server/canvas/canvas-agent-tool.js";
 import { createDefaultCanvasGraph, saveCanvasGraph } from "../../server/canvas/canvas-store.js";
 import { getRoleMetas, getRoleFields, getRoleIoHelp } from "../../web/src/components/canvas/CanvasTypes.js";
 import { getSquadTemplates } from "../../web/src/components/canvas/CanvasTemplates.js";
-import { en, type Translate } from "../../web/src/i18n.js";
+import { en, zh, type Translate } from "../../web/src/i18n.js";
 
 const translate: Translate = (key) => en[key];
 const ROLE_METAS = getRoleMetas(translate);
@@ -245,5 +247,48 @@ describe("Canvas Tool & Orchestrator Execution for pstack and skill roles", () =
 		expect(promptLog?.text).toContain("bro");
 		expect(promptLog?.text).toContain("极简直白沟通");
 		orchestrator.stopAll(graph.id);
+	});
+});
+/**
+ * Pstack 技能内容只有一份：`server/canvas/pstack-skills-content.ts`。
+ * 两侧视图（服务端中文名 / 前端 i18n 名）只补标签，不许再抄一份正文——抄回去就白漂了 220KB。
+ */
+describe("Pstack 技能内容单源", () => {
+	const root = join(import.meta.dirname, "../..");
+	const read = (path: string) => readFileSync(join(root, path), "utf8");
+
+	it("内容层收录全部技能，id 唯一", () => {
+		expect(PSTACK_SKILLS_CONTENT.length).toBe(58);
+		expect(new Set(PSTACK_SKILLS_CONTENT.map((s) => s.id)).size).toBe(58);
+	});
+
+	it("两侧标签与服务端目录、前端视图的 id 一一对应", () => {
+		const ids = PSTACK_SKILLS_CONTENT.map((s) => s.id);
+		expect(PSTACK_SKILLS.map((s) => s.id)).toEqual(ids);
+		expect(getPstackSkills(translate).map((s) => s.id)).toEqual(ids);
+	});
+
+	it("服务端每个技能都有中文名，前端每个技能都有中英文名", () => {
+		for (const skill of PSTACK_SKILLS) {
+			expect(skill.nameZh.trim(), skill.id).not.toBe("");
+			expect(skill.nameZh, skill.id).not.toBe(skill.id);
+		}
+		for (const skill of getPstackSkills(translate)) {
+			expect(skill.name.trim(), skill.id).not.toBe("");
+			expect(skill.name, skill.id).not.toBe(`canvas.pstack.skill.${skill.id}.name`);
+		}
+		expect(zh["canvas.pstack.skill.architect.name"]).not.toBe(en["canvas.pstack.skill.architect.name"]);
+	});
+
+	it("正文不再出现在两侧视图文件里", () => {
+		const serverView = read("server/canvas/pstack-skills-data.ts");
+		const webView = read("web/src/components/canvas/pstack-skills-data.ts");
+		for (const [name, text] of [
+			["server/canvas/pstack-skills-data.ts", serverView],
+			["web/src/components/canvas/pstack-skills-data.ts", webView],
+		] as const) {
+			expect(text, name).not.toContain("content:");
+			expect(text.length, name).toBeLessThan(20_000);
+		}
 	});
 });

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import type { EngineService, DispatchSession } from "../index.js";
+import type { EngineService, DispatchSession } from "../engine-service.js";
 import type { ServerMessage, UiServiceInfo } from "../protocol.js";
 import type { ClientStateStore } from "../client-state.js";
 import type { PluginCommandDef } from "../plugins.js";

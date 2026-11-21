@@ -354,13 +354,12 @@ describe("BrowserManager", () => {
 		expect(mock.sessions[0].listenerCount("will-download")).toBe(0);
 	});
 
-	it("pushes download state to the active page only, as a single display-only update()", () => {
+	it("下载状态只在主进程记账，不推给页面（页面侧徽标已移除）", () => {
 		const { manager } = setup();
 		const backgroundId = manager.getActiveTabId()!;
 		const background = manager.getWebContents(backgroundId) as unknown as { executeJavaScript: any };
 		const activeId = manager.createTab("https://example.com/page2");
 		const active = manager.getWebContents(activeId) as unknown as { executeJavaScript: any };
-		// 建标签本身会推一次（新页面要知道自己该不该显示圆钮），这里只关心下载事件带来的推送
 		background.executeJavaScript.mockClear();
 		active.executeJavaScript.mockClear();
 
@@ -368,19 +367,17 @@ describe("BrowserManager", () => {
 			getFilename: () => "track.zip",
 			getURL: () => "https://example.com/track.zip",
 			getTotalBytes: () => 900,
-			getReceivedBytes: () => 300,
+			getReceivedBytes: () => 0,
 			setSavePath: vi.fn(),
 			cancel: vi.fn(),
 		});
 		mock.sessions[0].emit("will-download", { preventDefault: vi.fn() }, item, manager.getWebContents(activeId));
 
-		const code = active.executeJavaScript.mock.calls.at(-1)?.[0] as string;
-		expect(code).toContain("window.__PI_DOWNLOADS__ && window.__PI_DOWNLOADS__.update(");
-		expect(code).toContain("track.zip");
-		// 页面拿到的只能是显示用的字段，方向是单向的（脚本里没有任何反向能力）
-		expect(code).toContain('"state":"progressing"');
-		// 后台标签不推：同一时刻只有活动标签那一块是可见的
+		// 唯一的读者是 downloads.list（外壳徽标 + 下载面板），页面不再拿到任何脚本
+		expect(active.executeJavaScript).not.toHaveBeenCalled();
 		expect(background.executeJavaScript).not.toHaveBeenCalled();
+		const [record] = manager.getDownloads();
+		expect(record).toMatchObject({ state: "progressing", totalBytes: 900, filename: "track.zip" });
 		manager.dispose();
 	});
 });

@@ -14,8 +14,7 @@ import {
 	FiLock,
 	FiRotateCcw,
 } from "react-icons/fi";
-import { appUrl } from "../base-url";
-import { withToken } from "../auth-token";
+import { requestJson } from "../api-client";
 import { useT } from "../i18n";
 import type {
 	DeviceExecutionSettings as SettingsType,
@@ -192,19 +191,7 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 			else externalSignal.addEventListener("abort", onExternalAbort, { once: true });
 		}
 		try {
-			const response = await fetch(withToken(appUrl(`/api/device-center/${path}`)), {
-				method: body ? "POST" : "GET",
-				credentials: "same-origin",
-				signal: controller.signal,
-				headers: body ? { "Content-Type": "application/json" } : undefined,
-				body: body ? JSON.stringify(body) : undefined,
-			});
-			const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-			if (!response.ok) {
-				const msg = typeof data.error === "string" ? data.error : `HTTP ${response.status}`;
-				throw new Error(msg);
-			}
-			return data as T;
+			return await requestJson<T>(`/api/device-center/${path}`, { body, signal: controller.signal });
 		} finally {
 			if (externalSignal) externalSignal.removeEventListener("abort", onExternalAbort);
 			controllers.current.delete(controller);

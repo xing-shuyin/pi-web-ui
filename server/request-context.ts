@@ -138,8 +138,11 @@ export async function externalizeRequestEvidence(
 
 export function requestContextExtension(pi: ExtensionAPI): void {
 	pi.on("context", async (event, ctx) => {
+		// 先拿到 signal 再干活：stale ctx 的 `signal` getter 会直接抛，捕获里就不能再读一次。
+		let signal: AbortSignal | undefined;
 		try {
-			ctx.signal?.throwIfAborted();
+			signal = ctx.signal;
+			signal?.throwIfAborted();
 			const messages = deduplicateRequestContext(event.messages);
 			const sessionFile = ctx.sessionManager.getSessionFile();
 			return {
@@ -155,12 +158,15 @@ export function requestContextExtension(pi: ExtensionAPI): void {
 									pi.getAllTools().filter((tool) => pi.getActiveTools().includes(tool.name)),
 								),
 								keepRecentResults: 2,
-								signal: ctx.signal,
+								signal,
 							})
 						: messages,
 			};
-		} catch {
-			ctx.signal?.throwIfAborted();
+		} catch (err) {
+			// #958：会话已失效（runner 已 stale）时 `ctx.signal` 的 getter 自己就抛；以前这里再读一次
+			// 等于把同一个错又抛回 `emitContext`，让我们也成为「每轮一条 stale 报错」的来源。
+			// 只有真中止才继续抖出去（它要停掉本轮）；其它错误降级为「这一轮不做上下文改写」。
+			if (signal?.aborted || (err as Error | undefined)?.name === "AbortError") throw err;
 			return { messages: event.messages };
 		}
 	});

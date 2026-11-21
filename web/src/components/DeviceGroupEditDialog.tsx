@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FiCheck, FiX } from "react-icons/fi";
-import { appUrl } from "../base-url";
-import { withToken } from "../auth-token";
+import { ApiError, requestJson } from "../api-client";
 import { useT } from "../i18n";
 import { useEscapeKey } from "../shortcut-stack";
 
@@ -26,25 +25,11 @@ type RoomDetail = {
 const DEVICE_GROUPS_CHANGED = "pi-web-ui:device-groups-changed";
 
 async function api<T>(path: string, signal: AbortSignal, body?: object): Promise<T> {
-	const response = await fetch(withToken(appUrl(`/api/device-center/${path}`)), {
-		method: body ? "POST" : "GET",
-		credentials: "same-origin",
+	return requestJson<T>(`/api/device-center/${path}`, {
+		body,
 		signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
-		...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+		errorFor: (failure) => new ApiError(failure.status, failure.error, failure.code),
 	});
-	const data = await response.json().catch(() => ({}));
-	if (!response.ok) {
-		const err = new Error(
-			typeof (data as { error?: unknown }).error === "string" && (data as { error: string }).error
-				? (data as { error: string }).error
-				: `Request failed (${response.status})`,
-		);
-		(err as { status?: number }).status = response.status;
-		(err as { code?: string }).code =
-			typeof (data as { code?: unknown }).code === "string" ? (data as { code: string }).code : "";
-		throw err;
-	}
-	return data as T;
 }
 
 /**

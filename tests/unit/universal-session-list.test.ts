@@ -7,7 +7,7 @@ import { UniversalSessionStore } from "../../server/universal/session-store.js";
 import { MockAgentDriver } from "../../server/universal/drivers/mock-driver.js";
 import type { ServerMessage } from "../../server/protocol.js";
 import { handleSessionLifecycleMessage } from "../../server/dispatch-domain-handlers.js";
-import type { DispatchSession } from "../../server/index.js";
+import type { DispatchSession } from "../../server/engine-service.js";
 
 describe("universal engine session list identity", () => {
 	let dir: string;

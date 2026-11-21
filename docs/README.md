@@ -4,7 +4,7 @@
 
 > 本仓库文档的**唯一入口**。`AGENTS.md` 只放「关键功能 → 事实源文件 → 文档」的映射，本文件放「每份文档讲什么、多重、什么时候该读」。
 > 新增 / 删除 / 改名文档必须同步本索引（守卫：`tests/unit/docs-index.test.ts`）。
-> **文档以中文原稿为唯一事实源**：英文（`文件名.en.md`）与繁体中文（`文件名.zh-TW.md`）都是**可选**的尽力而为译本，有就跟着更新，没有也不算缺；`npm run docs:i18n` 只做覆盖度报告（`--check` 同样退出 0，不阻塞任何门禁）。本索引只登记中文原稿。`docs/*.html` 设计稿同理（守卫脚本 `npm run docs:i18n:html` 只报告）；`CHANGELOG.md` 由发布脚本生成。
+> **文档只有中文单版本**：除 `README`（可保留英文 / 繁体中文译本）外，任何目录的 markdown 与 `docs/*.html` 设计稿都不再出译本——不写 `文件名.en.md` / `文件名.zh-TW.md`，也不写 `.en.html` / `.zh-TW.html`（守卫：`tests/unit/repo-hygiene.test.ts`）。`CHANGELOG.md` 由发布脚本生成。
 
 ## 权重含义
 
@@ -21,8 +21,10 @@
 
 | 文档                                                 | 主题                                                                                                                              | 何时读                             |
 | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| [`architecture-core.md`](architecture-core.md)       | 核心架构：快照驱动、协议单源、安全边界、主题与 CSS 分层、中央列几何、多对话并发、审批、问卷、异步归属与持久化、命令/搜索/恢复状态 | 任何跨端、运行态、审批、并发改动   |
-| [`architecture-plugins.md`](architecture-plugins.md) | 插件体系：manifest、34 个 UI 插槽与四层合并、宿主 API、MCP 项目运行态、多根工作区、定时任务、市场与更新                           | 插件、UI 扩展点、MCP、工作区改动   |
+| [`architecture-core.md`](architecture-core.md)       | 核心架构内核：快照驱动、协议单源、安全边界、异步归属与持久化、命令/搜索/恢复状态、对话通信与任务完成、多对话并发、全局运行态 | 任何跨端、协议、并发改动           |
+| [`architecture-ui.md`](architecture-ui.md)           | 界面状态与样式：计时与完成通知、侧栏历史与项目排序、工作树入口、消息操作、随手问、主题、CSS 分层、中央列几何                 | 动样式/主题/布局、侧栏与通知       |
+| [`architecture-runtime.md`](architecture-runtime.md) | 运行态：压缩期入站投递、子代理结算与派发预算、运行账本、问卷队列、引擎检测与 Codex/Claude 接入、工具/审批/后台任务桥接      | 动投递、子代理、审批与工具桥接     |
+| [`architecture-plugins.md`](architecture-plugins.md) | 插件内核：形态、协议、manifest、宿主扩展点、能力模型、内置插件与生命周期、MCP 项目运行态                                    | 动插件内核、权限与能力声明         |
 | [`architecture-tts.md`](architecture-tts.md)         | 统一 TTS 引擎中心：系统音色、插件注册、音频合成、网页播报与 QQ 自动语音回复                                                       | 语音、TTS 引擎与音色、QQ 回复改动  |
 | [`agent-rules.md`](agent-rules.md)                   | 编码红线细则：协议与数据安全、工具提示词三处分离、UI 样式与对比度、运行态铁律、边界指针表                                         | 提交前自查；改样式/提示词/运行态前 |
 | [`development.md`](development.md)                   | 开发工作流：常用命令、CI 矩阵、编码约定、AGENTS.md 索引约定、斜杠命令目录、测试规范                                               | 每天；动测试或无把握的写法时       |
@@ -33,8 +35,12 @@
 | 文档                                                                       | 主题                                                                                                                 | 何时读                                           |
 | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | [`architecture-browser.md`](architecture-browser.md)                       | 内置浏览器模块、桌面 browser/agent/split、可信原生页面桥、数据与打包                                                 | 动浏览器、桌面组合、Web 原生操作                 |
+| [`architecture-plugin-ui.md`](architecture-plugin-ui.md)                   | 插件界面集成与 UI 扩展点：renderer 渲染、宿主动作桥与语言单源、静态服务、常驻播放器、slot 框架（挂载点/合并优先级/弹窗） | 动 UI 插槽、插件前端集成                         |
+| [`architecture-plugin-host-api.md`](architecture-plugin-host-api.md)       | 插件宿主 API 清单：目录授权与跨目录 fs、requestPermission、schedule、project/openSession、多根工作区、MCP 工具桥、注册面 | 加宿主能力、改插件 API 边界                      |
+| [`architecture-plugin-market.md`](architecture-plugin-market.md)           | 插件市场、验收与运营面：市场清单与一键安装、仓库自带真实插件、回归测试要求、设置页扩展菜单                       | 动市场、插件验收与设置页                         |
 | [`architecture-desktop-update.md`](architecture-desktop-update.md)         | 桌面应用内更新：主进程状态机、能力判定（dev/便携/无 feed）、失败分类、发布说明、IPC 三面对齐                         | 动桌面更新、更新面板、发布说明                   |
 | [`architecture-desktop-runtime.md`](architecture-desktop-runtime.md)       | 桌面更新演进方案（设计稿）：壳/运行时双层、自有密钥签名、版本闸门、三平台矩阵、切换与回滚、分阶段落地                | 规划桌面运行时自更新、免证书路线、发布产物改造   |
+| [`architecture-kernel.md`](architecture-kernel.md)                         | 内核与客户端：一份运行时/一个内核、数据目录单实例锁、壳的内核判定、一键装系统服务、`/api/health.kernel`              | 动内核启动、桌面拉起内核、服务安装、单实例约束   |
 | [`architecture-system-integration.md`](architecture-system-integration.md) | Windows 系统集成：默认浏览器/文件关联注册表布局、UserChoice 限制、argv/单实例打开链路、office 插件工作区外与远程文档 | 动桌面默认应用、双击打开、文件关联               |
 | [`plugin-hongguo.md`](plugin-hongguo.md)                                   | hongguo 插件：悬浮 / 分屏播放、选集续播、媒体代理、FFmpeg、缓存与常驻生命周期                                        | 动短剧播放器、播放布局或媒体接口                 |
 | [`mobile.md`](mobile.md)                                                   | React + Capacitor 手机客户端、设备中心登录与多设备切换、极光 / APNs 通知与构建验收                                   | 动手机 App、后台通知、native 设备连接            |
@@ -64,28 +70,18 @@
 | [`env-vars.md`](env-vars.md)                                                       | 环境变量全表（端口/鉴权/数据目录/引擎/窗口/预设/SSH/远程桌面）       | 改配置、排查行为差异                 |
 | [`deployment.md`](deployment.md)                                                   | 部署：前台、自启（launchd/systemd/Run 键）、Docker、反代与子路径     | 上线、装机、守护进程                 |
 | [`device-center-deployment.md`](device-center-deployment.md)                       | 设备中心独立部署：Hub 拓扑、账号、连接器、域名与 TLS                 | 部署设备中心                         |
-| [`hub-upgrade-release-testing.md`](hub-upgrade-release-testing.md)                 | Hub 升级流程与发布前升级验证                                         | 发布与验证 Hub 更新                  |
-| [`release.md`](release.md)                                                         | 发布：版本号、changelog:i18n、tag 与 Action、npm publish             | 发版                                 |
-| [`official-providers.md`](official-providers.md)                                   | 官方供应商快速配置                                                   | 接官方 API Key                       |
-| [`antigravity-proxy.md`](antigravity-proxy.md)                                     | Antigravity-Manager 反代接入（本机 8045）                            | 用反代接 Google/Anthropic            |
-| [`magpie-proxy.md`](magpie-proxy.md)                                               | Magpie 反代接入（多供应商统一网关）                                  | 用 Magpie 聚合供应商                 |
+| [`release.md`](release.md)                                                         | 发布：版本号、changelog:i18n、tag 与 Action、npm publish、Hub 发布包升级验收 | 发版、验证 Hub 升级                  |
+| [`official-providers.md`](official-providers.md)                                   | 官方供应商快速配置；Antigravity-Manager / Magpie 反代接入与「补参数」 | 接官方 API Key、用反代               |
 | [`external-channel-capabilities.md`](external-channel-capabilities.md)             | 外部消息渠道：11 个平台命令与能力矩阵                                | 接微信/QQ/飞书/Telegram 等           |
 | [`unattended-operation.md`](unattended-operation.md)                               | 无人值守：`manifest.alwaysOn` 与后台执行者注册表、`/api/health` 探针 | 不开网页也要跑（机房/容器/开机自启） |
-| [`daily-ai-maintainer-workflow.md`](daily-ai-maintainer-workflow.md)               | 每日 AI 仓库维护：执行锁、分诊顺序、交付形态                         | 维护定时维护任务                     |
-| [`workflows/daily-ai-maintainer-setup.md`](workflows/daily-ai-maintainer-setup.md) | 上述工作流的落地配置（含 `workflows/*.canvas.json` 画布定义）        | 首次搭维护流水线                     |
+| [`daily-ai-maintainer-workflow.md`](daily-ai-maintainer-workflow.md)               | 每日 AI 仓库维护：执行锁、分诊顺序、交付形态、落地画布配置           | 维护定时维护任务                     |
 
 ## 四、参考材料（○，不必通读）
 
 | 位置                                                                                                                                                                                                                                                                                                                                                                                                                                  | 内容                                                                                        |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | [`agent-bot-design.md`](agent-bot-design.md)                                                                                                                                                                                                                                                                                                                                                                                          | Bot 独立化设计稿：私聊（普通对话+Bot 绑定）/群聊派活、一句话创建、独立记忆与预算            |
-| [`issue-885-triage.md`](issue-885-triage.md)                                                                                                                                                                                                                                                                                                                                                                                          | #885 分诊记录：验收条目逐条核实与 6 步拆分建议                                              |
-| [`device-file-sync.md`](device-file-sync.md)                                                                                                                                                                                                                                                                                                                                                                                          | 分块目录导出（`prepare({recursive})`）的边界与拒绝规则                                      |
-| [`audits/root-cause-review-2026-10-29.md`](audits/root-cause-review-2026-10-29.md)                                                                                                                                                                                                                                                                                                                                                    | 根因整改审查证据（对应 `root-cause-boundaries.md`）                                         |
-| [`test-performance-audit.md`](test-performance-audit.md)                                                                                                                                                                                                                                                                                                                                                                              | 单测性能审计：实测基线、快/重两池、未解瓶颈                                                 |
-| [`reviews/canvas-usability-review-2026-07.md`](reviews/canvas-usability-review-2026-07.md)                                                                                                                                                                                                                                                                                                                                            | 画布可用性评审记录                                                                          |
-| [`proposals/`](proposals)                                                                                                                                                                                                                                                                                                                                                                                                             | 提案与设计稿（issue #769 diff 可视化、`canvas-audio-and-triggers.md`＝issue #950 落地方案） |
-| [`composer-height-solutions.html`](composer-height-solutions.html) · [`plugin-market-redesign.html`](plugin-market-redesign.html) · [`settings-modern-redesign.html`](settings-modern-redesign.html) · [`settings-mobile-redesign.html`](settings-mobile-redesign.html) · [`device-directory-redesign-proposals.html`](device-directory-redesign-proposals.html) · [`git-ui-redesign-proposals.html`](git-ui-redesign-proposals.html) | 交互/视觉设计稿（HTML，浏览器直接看）                                                       |
+| [`proposals/`](proposals)                                                                                                                                                                                                                                                                                                                                                                                                             | 未落地的设计与可行性报告（渠道任务面、消息中心、画布音频与触发、渠道 S0、预案）              |
 | [`presets/README.md`](presets/README.md) · [`examples/`](examples)                                                                                                                                                                                                                                                                                                                                                                    | 预设交换格式示例与内置预设样例                                                              |
 
 ## 五、按场景的阅读路线
@@ -94,12 +90,13 @@
 | ---------------------------- | --------------------------------------------------------------------------------------------- |
 | 改跨端协议 / 快照 / 会话     | `architecture-core.md` → `agent-rules.md`（协议与数据安全）                                   |
 | 加或改工具                   | `agent-rules.md`（工具与提示词）→ `tool-context-budget.md` → `architecture-system-prompt.md`  |
-| 改样式 / 主题 / 布局         | `agent-rules.md`（UI 布局与样式）→ `architecture-core.md`（主题、CSS 分层、中央列几何）       |
+| 改样式 / 主题 / 布局         | `agent-rules.md`（UI 布局与样式）→ `architecture-ui.md`（主题、CSS 分层、中央列几何）       |
 | 动终端 / bash                | `architecture-terminal.md` → `agent-rules.md`（命令与恢复状态边界）                           |
 | 动画布 / 图形工作流          | `architecture-canvas.md` → `root-cause-boundaries.md`                                         |
 | 动 Bot 独立化 / 记忆         | `agent-bot-design.md` → `device-collaboration.md` → `tool-context-budget.md`                  |
 | 动群组 / 设备中心            | `device-collaboration.md` → `device-center.md` → `device-center-deployment.md`                |
-| 动插件 / UI 插槽 / MCP       | `architecture-plugins.md` → `agent-rules.md`（插件版本号、`arrange.label`、peerDependencies） |
+| 动插件 / UI 插槽 / MCP       | `architecture-plugins.md` → `architecture-plugin-ui.md` → `agent-rules.md`（插件版本号、`arrange.label`、peerDependencies） |
+| 动投递 / 子代理 / 审批       | `architecture-runtime.md` → `architecture-core.md`（异步归属）→ `agent-rules.md`（运行态铁律） |
 | 动目标模式 / 委派 / 计划模式 | `goal-conversation-design.md` → `agent-rules.md`（运行态铁律）                                |
 | 动沙盒                       | `architecture-sandbox.md` → `root-cause-boundaries.md`                                        |
 | 不开网页也要跑 / 常驻执行者  | `unattended-operation.md` → `architecture-plugins.md`（生命周期与权限）                       |
@@ -110,5 +107,6 @@
 
 1. **一处一件事**：细则写进对应主题文档；`AGENTS.md` 只登记入口，本索引登记主题与权重。
 2. **新增文档** = 建文件 + 在本索引对应分组加一行（写明主题、权重、何时读）+ 必要时在 `AGENTS.md` 映射表补一行。
-3. **红线不散落**：新增禁令写进 `agent-rules.md`，并在 `AGENTS.md` §3 补一行 + 守卫测试名。
-4. 守卫：`tests/unit/docs-index.test.ts`（本索引覆盖全部 `docs/*.md`、链接与锚点存活、每行有权重标记）、`tests/unit/agents-md.test.ts`（`AGENTS.md` 体量与死链）。
+3. **长文给导航**：`##` 小节 ≥ 8 或正文 > 35KB 的文档在 H1 后放 `## 目录`（同文件锚点，条目与 `##` 标题一致）；混装多主题的超大文档用 `## 一、…` 这类编号分区把原有 `##` 小节降为 `###` 分组（标题文字不动，锚点不变）。改小节标题时同步目录锚点。
+4. **红线不散落**：新增禁令写进 `agent-rules.md`，并在 `AGENTS.md` §3 补一行 + 守卫测试名。
+5. 守卫：`tests/unit/docs-index.test.ts`（本索引覆盖全部 `docs/*.md`、链接与锚点存活、每行有权重标记）、`tests/unit/agents-md.test.ts`（`AGENTS.md` 体量与死链）。

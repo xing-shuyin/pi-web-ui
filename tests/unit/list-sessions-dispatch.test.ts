@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { handleSessionLifecycleMessage } from "../../server/dispatch-domain-handlers.js";
-import type { DispatchSession } from "../../server/index.js";
+import type { DispatchSession } from "../../server/engine-service.js";
 import { isSessionMatchingProject } from "../../web/src/use-chat.js";
 
 describe("list_sessions dispatch and matching", () => {

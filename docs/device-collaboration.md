@@ -1,12 +1,25 @@
-[English](./device-collaboration.en.md) · **简体中文** · [繁體中文](./device-collaboration.zh-TW.md)
-
 # 群组 / Bot / 跨设备协作硬约束
 
 > 服务端架构与部署链路见 [`device-center.md`](device-center.md)（Hub 与本机连接器、绑定与配对、部署）
 > 与 [`device-center-deployment.md`](device-center-deployment.md)；远程桌面实现细节见 [`device-desktop.md`](device-desktop.md)；
-> 分块文件同步细节见 [`device-file-sync.md`](device-file-sync.md)。
+> 分块文件同步细节见 [`device-center.md`](device-center.md#文件传递边界)。
 > 与单个 Bot 的私聊（`kind: "direct"` 的房间）与 Bot 独立记忆见 [`agent-bot-design.md`](agent-bot-design.md)。
 > **本文只收录「改代码时必须遵守」的硬约束**（原 `AGENTS.md`「设备中心与跨设备协作」整段迁入）。
+
+## 目录
+
+- [1. 设备中心入口与本机 Hub](#1-设备中心入口与本机-hub)
+- [2. 群任务派发与上下文](#2-群任务派发与上下文)
+- [3. Bot 注册表与持久会话](#3-bot-注册表与持久会话)
+- [4. 并发、调度与进度推送](#4-并发调度与进度推送)
+- [5. 文件同步](#5-文件同步)
+- [6. 远程页面隔离与跨设备代理](#6-远程页面隔离与跨设备代理)
+- [7. 群任务恢复与报告](#7-群任务恢复与报告)
+- [8. 交付与审查（交付 ≠ 验收）](#8-交付与审查交付--验收)
+- [9. 远程桌面](#9-远程桌面)
+- [10. 群组 Webhook 集成](#10-群组-webhook-集成)
+- [11. 群组独立 AI Router 与外部工单](#11-群组独立-ai-router-与外部工单)
+- [12. 调度分层（Hub 派发 vs 设备执行）](#12-调度分层hub-派发-vs-设备执行)
 
 ## 1. 设备中心入口与本机 Hub
 

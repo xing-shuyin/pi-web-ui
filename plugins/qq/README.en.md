@@ -36,7 +36,7 @@ QQ workbench →「机器人凭证与高级设置」(Bot credentials and advance
 - Final answers in direct chats, group chats, and bound web sessions support voice; channels, command acknowledgements, and progress notices stay text. Long replies read the opening aloud while keeping the full text; if voice generation, transcoding, or sending fails, the plugin falls back to the full text, and advanced settings show the reason.
 - The first QQ voice synthesis installs `silk-wasm` on demand; compressed audio such as AAC installs `ffmpeg-static` on demand. System WAV only needs the SILK encoder.
 
-Engine registration, system voices, API, and cancellation rules: see [`docs/architecture-tts.md`](../../docs/architecture-tts.en.md).
+Engine registration, system voices, API, and cancellation rules: see [`docs/architecture-tts.md`](../../docs/architecture-tts.md).
 
 ## Configuration guide
 

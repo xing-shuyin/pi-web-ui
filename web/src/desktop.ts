@@ -46,6 +46,15 @@ export interface DesktopSystemIntegrationBridge {
 	openWithSystem: (path: string) => Promise<boolean>;
 }
 
+/** 浏览器外壳右键「引用到输入框」推过来的东西：标签页（标题 + 地址）与可选的选段。 */
+export interface DesktopBrowserReference {
+	tabId?: string;
+	url?: string;
+	title?: string;
+	/** 页面里选中的文字（标签页右键引用时没有） */
+	text?: string;
+}
+
 export interface DesktopShellWindow {
 	piDesktop?: {
 		isDesktop?: unknown;
@@ -58,6 +67,8 @@ export interface DesktopShellWindow {
 		browser?: DesktopBrowserBridge;
 		systemIntegration?: DesktopSystemIntegrationBridge;
 		onOpenFiles?: (cb: (payload: { files: string[] }) => void) => () => void;
+		/** 浏览器标签页 / 选中文字「引用到输入框」（外壳右键 → 主进程 → 这里） */
+		onBrowserReference?: (cb: (payload: DesktopBrowserReference) => void) => () => void;
 	};
 	navigator?: { userAgent?: unknown };
 }
@@ -114,6 +125,17 @@ export function getDesktopOpenFilesBridge(
 		(win as DesktopShellWindow | undefined) ??
 		(typeof window === "undefined" ? undefined : (window as unknown as DesktopShellWindow));
 	const subscribe = w?.piDesktop?.onOpenFiles;
+	return typeof subscribe === "function" ? subscribe : null;
+}
+
+/** 浏览器标签页「引用到输入框」的订阅口（只有桌面壳 + 浏览器窗口存在时才有）。 */
+export function getDesktopBrowserReferenceBridge(
+	win?: unknown,
+): ((cb: (payload: DesktopBrowserReference) => void) => () => void) | null {
+	const w =
+		(win as DesktopShellWindow | undefined) ??
+		(typeof window === "undefined" ? undefined : (window as unknown as DesktopShellWindow));
+	const subscribe = w?.piDesktop?.onBrowserReference;
 	return typeof subscribe === "function" ? subscribe : null;
 }
 

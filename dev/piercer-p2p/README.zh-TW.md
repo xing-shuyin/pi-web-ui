@@ -2,7 +2,7 @@
 
 # Piercer 與 pi-web-ui 的 P2P 接入驗證
 
-狀態：**本目錄保留最初的傳輸可行性原型**。後續生產實現位於 `native/device-p2p/` 和 `server/device-center/device-p2p.ts`，見[接入文件](../../docs/device-center.zh-TW.md#p2p-裝置訪問)。原型不連線使用者的 Hub，不讀裝置憑據，不啟動真實桌面採集；兩個 WebRTC PeerConnection 位於同一個程序，只使用迴環 UDP 候選。它驗證協議相容性與既有授權邊界，不證明公網打洞成功率或遠端滿速。
+狀態：**本目錄保留最初的傳輸可行性原型**。後續生產實現位於 `native/device-p2p/` 和 `server/device-center/device-p2p.ts`，見[接入文件](../../docs/device-center.md)。原型不連線使用者的 Hub，不讀裝置憑據，不啟動真實桌面採集；兩個 WebRTC PeerConnection 位於同一個程序，只使用迴環 UDP 候選。它驗證協議相容性與既有授權邊界，不證明公網打洞成功率或遠端滿速。
 
 ## 已驗證
 

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { handleSettingsMessage } from "../../server/dispatch-domain-handlers.js";
-import type { DispatchSession } from "../../server/index.js";
+import type { DispatchSession } from "../../server/engine-service.js";
 import { McpOAuthUi } from "../../server/mcp-oauth-ui.js";
 import type * as Login from "../../server/mcp-oauth-login.js";
 

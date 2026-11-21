@@ -109,3 +109,57 @@ function getHideModelRowSnapshot(): boolean {
 export function useHideModelRow(): boolean {
 	return useSyncExternalStore(subscribeHideModelRow, getHideModelRowSnapshot);
 }
+
+const HIDE_QUESTION_NAV_SETTINGS_KEY = "pi-web-ui:hide-question-nav";
+
+export interface HideQuestionNavSettings {
+	hide: boolean;
+}
+
+export const DEFAULT_HIDE_QUESTION_NAV_SETTINGS: HideQuestionNavSettings = { hide: false };
+
+export function normalizeHideQuestionNavSettings(raw: unknown): HideQuestionNavSettings {
+	if (!raw || typeof raw !== "object") return { ...DEFAULT_HIDE_QUESTION_NAV_SETTINGS };
+	const o = raw as Record<string, unknown>;
+	return {
+		hide: typeof o.hide === "boolean" ? o.hide : DEFAULT_HIDE_QUESTION_NAV_SETTINGS.hide,
+	};
+}
+
+function loadHideQuestionNavSettings(): HideQuestionNavSettings {
+	try {
+		const raw = localStorage.getItem(HIDE_QUESTION_NAV_SETTINGS_KEY);
+		if (!raw) return { ...DEFAULT_HIDE_QUESTION_NAV_SETTINGS };
+		return normalizeHideQuestionNavSettings(JSON.parse(raw));
+	} catch {
+		return { ...DEFAULT_HIDE_QUESTION_NAV_SETTINGS };
+	}
+}
+
+export function saveHideQuestionNavSettings(s: HideQuestionNavSettings): void {
+	const norm = normalizeHideQuestionNavSettings(s);
+	try {
+		localStorage.setItem(HIDE_QUESTION_NAV_SETTINGS_KEY, JSON.stringify(norm));
+	} catch {}
+	cachedHideQuestionNav = norm;
+	for (const l of hideQuestionNavListeners) l();
+}
+
+let cachedHideQuestionNav: HideQuestionNavSettings | null = null;
+const hideQuestionNavListeners = new Set<() => void>();
+
+function subscribeHideQuestionNav(onStoreChange: () => void): () => void {
+	hideQuestionNavListeners.add(onStoreChange);
+	return () => {
+		hideQuestionNavListeners.delete(onStoreChange);
+	};
+}
+
+function getHideQuestionNavSnapshot(): boolean {
+	if (!cachedHideQuestionNav) cachedHideQuestionNav = loadHideQuestionNavSettings();
+	return cachedHideQuestionNav.hide;
+}
+
+export function useHideQuestionNav(): boolean {
+	return useSyncExternalStore(subscribeHideQuestionNav, getHideQuestionNavSnapshot);
+}

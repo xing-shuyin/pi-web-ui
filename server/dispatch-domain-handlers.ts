@@ -1,5 +1,5 @@
 import type { ClientMessage, ServerMessage } from "./protocol.js";
-import type { DispatchSession } from "./index.js";
+import type { DispatchSession } from "./engine-service.js";
 import { SchedulerValidationError, type SchedulerStore } from "./scheduler-tasks.js";
 import { getGlobalRemoteSshService, isRemoteWorkspaceUri, type RemoteSshService } from "./remote-ssh-service.js";
 import { prepareRemoteNativeCliPaste } from "./native-cli-remote-files.js";

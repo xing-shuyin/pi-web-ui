@@ -1,7 +1,7 @@
 /**
  * 网页里的密码自动填充下拉（点账号框/密码框时出现在字段下方，点一条就填进去）。
  *
- * 和 `dock.js` 一样，这是被主进程 `executeJavaScript` 注进**普通网页**的脚本，所以：
+ * 和 `translate.js` 一样，这是被主进程 `executeJavaScript` 注进**普通网页**的脚本，所以：
  * - 只认 `window.__piAutofill` 这条窄桥（preload 暴露，见 `browser/preload.cts`）：拿候选只回
  *   `{ id, name, username }`，**永远拿不到明文密码**；点选只是让主进程去填，明文照旧不经过这里。
  * - 页面自己的脚本可能乱点我们的 UI：所以只认 `isTrusted` 的聚焦/点击，合成事件一律不填。

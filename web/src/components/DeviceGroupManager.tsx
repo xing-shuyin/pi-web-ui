@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FiCheck, FiEdit2, FiMessageSquare, FiPlus, FiRefreshCw, FiTrash2, FiUsers, FiX } from "react-icons/fi";
-import { appUrl } from "../base-url";
-import { withToken } from "../auth-token";
+import { requestJson } from "../api-client";
 import { useT } from "../i18n";
 import { GroupRouterSettings, type GroupRouterConfig } from "./GroupRouterSettings";
 import { GroupWorkItems } from "./GroupWorkItems";
@@ -17,15 +16,7 @@ function openChat(roomId: string) {
 }
 
 async function groupApi<T>(path: string, signal: AbortSignal, body?: object): Promise<T> {
-	const response = await fetch(withToken(appUrl(`/api/device-center/${path}`)), {
-		method: body ? "POST" : "GET",
-		credentials: "same-origin",
-		signal,
-		...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
-	});
-	const data = await response.json().catch(() => ({}));
-	if (!response.ok) throw new Error(data.error || data.message || `Request failed (${response.status})`);
-	return data as T;
+	return requestJson<T>(`/api/device-center/${path}`, { body, signal });
 }
 
 export function DeviceGroupManager({ bindingKey = "" }: { bindingKey?: string }) {

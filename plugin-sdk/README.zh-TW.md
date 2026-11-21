@@ -6,7 +6,7 @@
 
 所有語音引擎在服務端通過 `host.tts.registerEngine({ id, label, getVoices, synthesize })` 註冊。宿主提供系統 `builtin` 引擎；外掛解除安裝自動撤銷註冊並取消合成。瀏覽器不再提供 `ttsProviders.register()`。
 
-呼叫方使用 `host.tts.listEngines()`、`await host.tts.listVoices(engineId)`、`await host.tts.synthesize({ text, engine, voice, rate, signal })`，取得 `{ buffer, format }` 音訊。固定語速引擎宣告 `supportsRate: false`。引擎和音色 ID 來自同一個中心目錄，QQ、網頁播報與 AI 工具共享。完整介面、限制和遷移見 [`docs/architecture-tts.md`](../docs/architecture-tts.zh-TW.md)。
+呼叫方使用 `host.tts.listEngines()`、`await host.tts.listVoices(engineId)`、`await host.tts.synthesize({ text, engine, voice, rate, signal })`，取得 `{ buffer, format }` 音訊。固定語速引擎宣告 `supportsRate: false`。引擎和音色 ID 來自同一個中心目錄，QQ、網頁播報與 AI 工具共享。完整介面、限制和遷移見 [`docs/architecture-tts.md`](../docs/architecture-tts.md)。
 
 ## 腳手架：`pi-web-ui plugin create`
 

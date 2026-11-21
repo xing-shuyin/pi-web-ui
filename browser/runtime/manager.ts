@@ -17,9 +17,8 @@ import { BrowserStorage } from "../storage/index.js";
 import { isWebUrl, internalPageName, internalPageUrl, normalizeBrowserUrl, pickTabFavicon, webOrigin } from "./urls.js";
 import { BrowserCustomization } from "./customize.js";
 import { themeBackground } from "./palette.js";
-import { DOCK_SCRIPT, SCROLLBAR_CSS } from "./dock.js";
+import { SCROLLBAR_CSS } from "./scrollbar.js";
 import { TRANSLATE_SCRIPT } from "./translate.js";
-import { DOWNLOADS_SCRIPT, scriptLiteral } from "./downloads.js";
 import { AUTOFILL_SCRIPT } from "./autofill.js";
 import { PASSKEY_GATE_SCRIPT } from "./passkey-gate.js";
 import {
@@ -107,12 +106,8 @@ interface PasskeySession {
 }
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 /**
- * 下载圆钮只展示「进行中」与「刚刚结束」的：留着旧任务会让每打开一个页面
- * 都把「上次那个已下完」再亮一遍，那就不叫提示了。
+ * 下载不再往页面里注入圆钮：状态统一由外壳工具栏的「下载」按钮（徽标 = 进行中数量）与下载面板展示。
  */
-const DOWNLOAD_NOTICE_MS = 30_000;
-/** 圆钮一次最多列 8 条：再多也看不完，真正的全量列表在浏览器的「下载」面板里。 */
-const DOWNLOAD_NOTICE_LIMIT = 8;
 /** file:// URL → 本地路径；不是合法 file URL 就返回空串（恢复标签时遇到就丢掉）。 */
 function safeFilePath(url: string): string {
 	try {
@@ -304,8 +299,8 @@ export class BrowserManager {
 			const current = wc.getURL() || "";
 			// 自定义主题也盖内部页：外壳 / 面板在宿主那边注入，标签页归这里
 			if (this.isInternalPage(current)) void this.applyTheme(id, wc).catch(() => {});
-			// 本地文件（PDF 阅读器是 Chromium 内部文档）不注入 dock / 滚动条 CSS / 下载圆钮：
-			// 这些脚本会挂到它的滚动容器上，实测让 PDF 滚动明显卡顿。
+			// 本地文件（PDF 阅读器是 Chromium 内部文档）不注入滚动条 CSS：
+			// 它会被挂到 PDF 的滚动容器上，实测让滚动明显卡顿。
 			const isLocalFile = current.startsWith("file:");
 			const isWebsite = isWebUrl(current);
 			if (!isLocalFile && !this.isInternalPage(current)) {
@@ -313,21 +308,14 @@ export class BrowserManager {
 					if (this.storage.getSettings().customScrollbar !== false) {
 						void wc.insertCSS(SCROLLBAR_CSS).catch(() => {});
 					}
-					// DOCK_SCRIPT 读不到时是空串（见 runtime/dock.ts 的单源说明），别白跑一次注入
-					if (DOCK_SCRIPT && this.storage.getSettings().smartDock !== false) {
-						void wc
-							.executeJavaScript(DOCK_SCRIPT)
-							.catch((error: unknown) => this.reportInjection(wc, "悬浮圆钮", error));
-					}
 					// 翻译脚本只对 http(s) 网站注入；preload 的 __piTranslate 窄桥也只在这些页面可用
+					// （外壳工具栏的「翻译此页」按钮调用的就是它）
 					if (isWebsite && TRANSLATE_SCRIPT) {
 						void wc
 							.executeJavaScript(TRANSLATE_SCRIPT)
 							.catch((error: unknown) => this.reportInjection(wc, "网页翻译", error));
 					}
 				} catch {}
-				// 下载圆钮不受 smartDock 管：它是「文件下来了」的提示，不是导航玩具
-				this.injectDownloads(wc);
 			}
 			if (!isLocalFile) void this.applyPageScripts(id).catch(() => {});
 			// passkey：先确保本标签有平台认证器，再把属于这个站点的凭据装回去
@@ -345,11 +333,6 @@ export class BrowserManager {
 				const isLocalFile = current.startsWith("file:");
 				if (!isLocalFile && !this.isInternalPage(current)) {
 					try {
-						if (DOCK_SCRIPT && this.storage.getSettings().smartDock !== false) {
-							void wc
-								.executeJavaScript(DOCK_SCRIPT)
-								.catch((error: unknown) => this.reportInjection(wc, "悬浮圆钮", error));
-						}
 						// 密码自动填充下拉：只对真网站注入（内部页没有登录表单，也不该拿到那条桥）
 						if (isWebUrl(current) && AUTOFILL_SCRIPT) {
 							void wc.executeJavaScript(AUTOFILL_SCRIPT).catch(() => {});
@@ -360,7 +343,6 @@ export class BrowserManager {
 								.catch((error: unknown) => this.reportInjection(wc, "网页翻译", error));
 						}
 					} catch {}
-					this.injectDownloads(wc);
 				}
 			}
 		});
@@ -386,8 +368,6 @@ export class BrowserManager {
 		if (contents) this.options.extensionHooks?.selectTab?.(contents);
 		this.mount();
 		this.changed();
-		// 这个页面可能早就加载完了（那时推的是彼时的下载状态），切回来时补推一次
-		if (contents) this.pushDownloads(contents);
 	}
 	closeTab(id: string): void {
 		const record = this.tabs.get(id);
@@ -496,37 +476,9 @@ export class BrowserManager {
 		console.warn(`[browser] ${what}注入失败 ${target}：${messageOf(error)}`);
 	}
 	/**
-	 * 注入下载圆钮（页面右下角悬浮球里那一颗），并把当前状态补推给它：新文档里它是空的，
-	 * 不喂一次就不知道自己该不该出现（刚下来的文件在新页面上也该看得见）。
+	 * 下载状态只在主进程记账：外壳工具栏的徽标与下载面板都通过 `downloads.list` 读，
+	 * 页面里不再注入任何悬浮圆钮（2024 版悬浮球已下线，全部工具搬到外壳第二行工具栏）。
 	 */
-	private injectDownloads(contents: WebContents): void {
-		if (!DOWNLOADS_SCRIPT || contents.isDestroyed()) return;
-		void contents
-			.executeJavaScript(DOWNLOADS_SCRIPT)
-			.then(() => this.pushDownloads(contents))
-			.catch((error: unknown) => this.reportInjection(contents, "下载圆钮", error));
-	}
-	/**
-	 * 把下载状态推给页面里的圆钮（`browser/renderer/downloads.js`）。
-	 *
-	 * 只推一块视图：同一时刻只有活动标签的页面是可见的，后台标签等它被激活/重新加载时再补。
-	 * 方向是单向的（主进程 → 页面）：显示面不接受任何反向请求，唯一的后向能力是按 id 走
-	 * `__piDownloads.reveal` 请宿主在文件管理器里定位（见 `desktop/browser-host.ts`）。
-	 */
-	private pushDownloads(contents = this.activeContents()): void {
-		if (this.disposed || !DOWNLOADS_SCRIPT || !contents || contents.isDestroyed()) return;
-		const now = Date.now();
-		const list = this.getDownloads()
-			.filter((item) => {
-				if (item.state === "progressing") return true;
-				return now - (this.downloads.get(item.id)?.finishedAt ?? 0) < DOWNLOAD_NOTICE_MS;
-			})
-			.slice(-DOWNLOAD_NOTICE_LIMIT)
-			.reverse();
-		void contents
-			.executeJavaScript(`window.__PI_DOWNLOADS__ && window.__PI_DOWNLOADS__.update(${scriptLiteral(list)})`)
-			.catch(() => {});
-	}
 	listBookmarks(): ReturnType<BrowserStorage["listBookmarks"]> {
 		return this.storage.listBookmarks();
 	}
@@ -1197,7 +1149,6 @@ export class BrowserManager {
 			state.totalBytes = item.getTotalBytes();
 			if (status !== "progressing") record.finishedAt = Date.now();
 			this.changed();
-			this.pushDownloads();
 		};
 		item.on("updated", onUpdate);
 		item.once("done", (_event, status) => {
@@ -1208,9 +1159,7 @@ export class BrowserManager {
 			state.totalBytes = item.getTotalBytes();
 			record.finishedAt = Date.now();
 			this.changed();
-			this.pushDownloads();
 		});
 		this.changed();
-		this.pushDownloads();
 	};
 }

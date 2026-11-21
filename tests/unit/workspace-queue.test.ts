@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { handleFileMessage, handleSessionLifecycleMessage } from "../../server/dispatch-domain-handlers.js";
-import type { DispatchSession } from "../../server/index.js";
+import type { DispatchSession } from "../../server/engine-service.js";
 import type { ServerMessage } from "../../server/protocol.js";
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));

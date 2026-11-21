@@ -22,7 +22,7 @@ Registers **ByteDance Doubao large-model speech** and **DeepSeek speech** with t
 
 Engines register on the plugin server through `host.tts.registerEngine()`; no plugin page needs to be open. The web 「设置 → 声音与语音」 (Settings → Sound and speech), this plugin's audition panel and the QQ voice settings all read engines and voices from the center. The `builtin` system engine comes from the host; the plugin registers `doubao-tts` and `deepseek-tts`.
 
-The AI `tts` tool supports `action: "list"` to query every engine, and `engine` to query that engine's voices; synthesis can choose the system engine or one registered by another plugin. The old `doubao` / `deepseek` arguments keep working. Uninstalling the plugin revokes its engine registration and cancels in-flight requests. See [`docs/architecture-tts.md`](../../docs/architecture-tts.en.md) for the interface and migration notes.
+The AI `tts` tool supports `action: "list"` to query every engine, and `engine` to query that engine's voices; synthesis can choose the system engine or one registered by another plugin. The old `doubao` / `deepseek` arguments keep working. Uninstalling the plugin revokes its engine registration and cancels in-flight requests. See [`docs/architecture-tts.md`](../../docs/architecture-tts.md) for the interface and migration notes.
 
 ## Highlights
 

@@ -14073,6 +14073,37 @@
 		color: var(--accent);
 	}
 
+	/* 安静模式 · 零痕迹呈现（issue #956）：不留整行占位，只在悬停/聚焦时露出入口。
+	   只用既有令牌，不新增主题变量 —— 38 个主题零适配。 */
+	.quiet-gap {
+		display: block;
+		height: 12px;
+		margin: 0;
+		position: relative;
+		cursor: pointer;
+	}
+	.quiet-gap::before {
+		content: "⋯";
+		position: absolute;
+		left: 0;
+		top: -5px;
+		font-size: 13px;
+		line-height: 1;
+		letter-spacing: 1px;
+		color: var(--text-faint);
+		opacity: 0;
+		transition: opacity 0.15s ease;
+	}
+	.quiet-gap:hover::before,
+	.quiet-gap:focus-visible::before {
+		opacity: 0.85;
+	}
+	.quiet-gap:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+		border-radius: 4px;
+	}
+
 	.msg-collapse-btn {
 		display: inline-flex;
 		align-items: center;

@@ -1,4 +1,7 @@
-import type { ServerMessage } from "../server/protocol.js";
+import type { KernelInstallKind, ServerMessage } from "../server/protocol.js";
+
+/** 安装形态是内核报的（`/api/health` 的 `kernel.installKind`），形状单源在 server/protocol.ts。 */
+export type { KernelInstallKind };
 
 export type BrowserPageRequest = Omit<Extract<ServerMessage, { type: "page_request" }>, "type" | "id">;
 export type BrowserPageResult = { ok: true; result?: unknown } | { ok: false; error: string };
@@ -34,6 +37,40 @@ export interface BrowserState {
 	agentUrl: string;
 	agentReady: boolean;
 	agentError?: string;
+	/** 内核状态：这个地址上跑的是谁、关掉壳之后还在不在（见 docs/architecture-kernel.md）。 */
+	kernel?: BrowserKernelState;
+}
+
+/**
+ * 内核（唯一的 pi-web-ui 服务进程）在壳里的视图。
+ * 判定与文案都在 `desktop/kernel-mode.ts`；这里只定义跨层形状。
+ */
+export interface BrowserKernelState {
+	mode: "external" | "local";
+	reason: "external-reachable" | "no-external-configured" | "external-unreachable";
+	url: string;
+	reachable: boolean;
+	version?: string;
+	installKind?: KernelInstallKind;
+	supervisor: string | null;
+	/** 托管者注册的服务名（launchd label / systemd unit / Windows 看门狗名）。 */
+	serviceName?: string | null;
+	uptimeMs?: number;
+	/** 内核要求的最低壳能力版本（`SHELL_CAPABILITY_VERSION` 对比用，见 version-gate）。 */
+	minShell?: number;
+	error?: string;
+}
+
+/**
+ * 内核环境（面板的“环境检测”区）：node 够不够、全局包能不能升、服务配置装没装。
+ * 判定与命令生成都在 `desktop/kernel-env.ts` / `desktop/kernel-upgrade.ts`，这里只定义跨层形状。
+ */
+export interface KernelEnvironmentView {
+	node: { ok: boolean; version: string };
+	global: { installed: boolean; version?: string; latest?: string; upgradeCommand: string; canUpgrade: boolean };
+	service: { state: "installed" | "absent" | "unknown" };
+	/** 缺 node 时给用户的命令（GUI 里不硬跑的平台只给这条）。 */
+	nodeInstall: { command: string; url: string; canRun: boolean };
 }
 
 /**
@@ -112,6 +149,13 @@ export type BrowserShellAction =
 	| "tabs.create"
 	| "tabs.activate"
 	| "tabs.close"
+	/** 标签页右键菜单（原生）：`{ id, x, y }`，菜单里可选「引用到输入框」等 */
+	| "tabs.menu"
+	/** 页面级动作：在活动标签页里跑一段固定脚本（翻译开关 / 整页 Markdown） */
+	| "page.translate"
+	/** 读一次页面翻译状态（进度/完成），外壳拿它给按钮做反馈 */
+	| "page.translateState"
+	| "page.markdown"
 	| "navigate"
 	| "back"
 	| "forward"
@@ -121,6 +165,14 @@ export type BrowserShellAction =
 	| "mode"
 	| "splitRatio"
 	| "agent.connect"
+	/** 内核（唯一服务进程）：查状态、一键装为系统服务、重启（见 docs/architecture-kernel.md） */
+	| "kernel.status"
+	| "kernel.install"
+	| "kernel.restart"
+	/** 内核环境：node 装没装、全局包版本与可升级性、服务配置状态 */
+	| "kernel.env"
+	| "kernel.upgrade"
+	| "kernel.installNode"
 	| "bookmarks.list"
 	| "bookmarks.save"
 	/** 从别的浏览器导出的书签文件导入：宿主自己开原生选文件对话框、读盘、解析再合并，回执只有条数 */

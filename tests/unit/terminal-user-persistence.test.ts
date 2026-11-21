@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { _chatReducerForTest, type ChatState } from "../../web/src/use-chat.js";
 import { handleTerminalMessage } from "../../server/dispatch-domain-handlers.js";
-import type { DispatchSession, TerminalManagerLike } from "../../server/index.js";
+import type { DispatchSession, TerminalManagerLike } from "../../server/engine-service.js";
 import { ClientSession } from "../../server/agent-service.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
 

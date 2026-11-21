@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SandboxModal, canApplySandboxPreview, matchesSandboxPreview } from "../../web/src/components/SandboxModal.js";
 import { handleFileMessage } from "../../server/dispatch-domain-handlers.js";
-import type { DispatchSession } from "../../server/index.js";
+import type { DispatchSession } from "../../server/engine-service.js";
 import type { SandboxDiffView, SandboxInfo } from "../../server/protocol.js";
 
 const sandbox: SandboxInfo = {

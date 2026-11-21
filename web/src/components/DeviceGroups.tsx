@@ -5,8 +5,7 @@ import { LocalBots } from "./LocalBots";
 import { FiUsers, FiPlus, FiMessageSquare, FiMonitor, FiSearch } from "react-icons/fi";
 import type { DeviceGroupNavigation } from "../device-group-navigation";
 import { searchGroupRoomsAndTasks, GroupNotificationManager, type SearchableGroupTask } from "../group-view-state";
-import { appUrl } from "../base-url";
-import { withToken } from "../auth-token";
+import { requestJson } from "../api-client";
 import { useT } from "../i18n";
 import type { GroupRouterConfig } from "./GroupRouterSettings";
 
@@ -37,20 +36,11 @@ class RequestError extends Error {
 	}
 }
 async function request<T>(path: string, signal: AbortSignal, body?: object): Promise<T> {
-	const response = await fetch(withToken(appUrl(`/api/device-center/${path}`)), {
-		method: body ? "POST" : "GET",
-		credentials: "same-origin",
+	return requestJson<T>(`/api/device-center/${path}`, {
+		body,
 		signal,
-		...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+		errorFor: (failure) => new RequestError(failure.status, failure.code, failure.error),
 	});
-	const data = await response.json().catch(() => ({}));
-	if (!response.ok)
-		throw new RequestError(
-			response.status,
-			data.code ?? "",
-			typeof data.error === "string" ? data.error : String(response.status),
-		);
-	return data as T;
 }
 function openChat(roomId: string) {
 	window.dispatchEvent(new CustomEvent("pi-web-ui:device-group-open", { detail: { roomId } }));

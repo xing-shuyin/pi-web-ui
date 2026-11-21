@@ -3,28 +3,39 @@ import {
 	agentModeIcon,
 	applySettings,
 	arrowTopRightIcon,
+	backIcon,
+	bookmarksIcon,
 	bridgeReady,
 	browserModeIcon,
 	button,
 	call,
+	clockIcon,
 	closeIcon,
 	createSvg,
+	downloadIcon,
 	element,
 	enableCrxDropTarget,
 	extensionIcon,
+	forwardIcon,
+	gearIcon,
 	globeIcon,
 	iconButton,
 	input,
 	keyIcon,
 	listenPanelEvents,
 	listenState,
+	markdownIcon,
+	notify,
 	plusIcon,
+	reloadIcon,
 	reportError,
 	searchIcon,
 	spinnerIcon,
 	splitModeIcon,
+	starIcon,
 	svgPath,
 	svgRect,
+	translateIcon,
 	type Settings,
 } from "./common.js";
 import { t } from "./i18n.js";
@@ -206,7 +217,119 @@ actionList.setAttribute("alignment", "bottom left");
 const items = element("div", "pb-tool-items");
 items.append(actionList);
 
-titlebar.append(tabs, create, dragArea, modeBtn, searchBtn, items, totpBtn, extensionsBtn, controls);
+// 第一行只放「窗框」：标签页、新建、模式、搜索、扩展动作图标、窗口按钮
+titlebar.append(tabs, create, dragArea, modeBtn, searchBtn, items, controls);
+
+/**
+ * 第二行：一条位置固定的工具栏（后退/前进/刷新 · 收藏/书签/下载/历史/翻译/复制Markdown · 验证器/扩展/设置）。
+ * 这些动作以前挂在页面右下角的悬浮圆钮上（已下线）：它跟着站点漂、会被站点层级压住、换个站就换位置，
+ * 用户经常找不到。现在全部钉在标签页下沿这一行里，位置永远不变。
+ */
+const toolRow = element("div", "pb-chrome-row pb-tool-row");
+const navGroup = element("div", "pb-tool-group");
+const pageGroup = element("div", "pb-tool-group");
+const toolGroup = element("div", "pb-tool-group pb-tool-group-end");
+
+const backBtn = iconButton(backIcon(14), `${t("back")} (Alt+←)`, () => browserAction("back"));
+const forwardBtn = iconButton(forwardIcon(14), `${t("forward")} (Alt+→)`, () => browserAction("forward"));
+const reloadBtn = iconButton(reloadIcon(14), `${t("reload")} (Ctrl+R)`, () => browserAction("reload"));
+const starBtn = iconButton(starIcon(14), `${t("addBookmark")} (Ctrl+D)`, () => addCurrentBookmark());
+const bookmarksBtn = iconButton(bookmarksIcon(14), t("bookmarks"), () => showShellPanel("bookmarks"));
+const downloadsBtn = iconButton(downloadIcon(14), t("downloads"), () => showShellPanel("downloads"));
+const downloadsCount = element("span", "pb-tool-btn-count");
+downloadsCount.hidden = true;
+downloadsBtn.append(downloadsCount);
+const historyBtn = iconButton(clockIcon(14), t("history"), () => showShellPanel("history"));
+// 翻译 / 复制 Markdown 是页面级能力（得在站点自己的文档里跑），交给宿主在活动标签页上执行
+const translateBtn = iconButton(translateIcon(14), t("translatePage"), () => runPageCommand("page.translate"));
+const markdownBtn = iconButton(markdownIcon(14), t("copyMarkdown"), () => runPageCommand("page.markdown"));
+const settingsBtn = iconButton(gearIcon(14), t("settings"), () => showShellPanel("settings"));
+
+for (const btn of [
+	backBtn,
+	forwardBtn,
+	reloadBtn,
+	starBtn,
+	bookmarksBtn,
+	downloadsBtn,
+	historyBtn,
+	translateBtn,
+	markdownBtn,
+	settingsBtn,
+])
+	btn.classList.add("pb-tool-btn");
+
+navGroup.append(backBtn, forwardBtn, reloadBtn);
+pageGroup.append(starBtn, bookmarksBtn, downloadsBtn, historyBtn, translateBtn, markdownBtn);
+toolGroup.append(totpBtn, extensionsBtn, settingsBtn);
+toolRow.append(navGroup, pageGroup, toolGroup);
+
+/** 页面级动作：宿主把结果消息回给外壳，用 toast 报一句，不做假成功。 */
+async function runPageCommand(action: "page.translate" | "page.markdown"): Promise<void> {
+	try {
+		const message = await call<string>(action);
+		if (message) notify(message);
+		if (action === "page.translate") watchPageTranslation(message);
+	} catch (error) {
+		reportError(error);
+	}
+}
+
+/**
+ * 整页翻译是页面里跑的异步活（几十段、几十秒），点完按钮后轮询页面状态：
+ * 翻译中不刷屏，完成/失败才再报一句——悬浮球下线后，这是唯一能“看见它到底成没成”的地方。
+ */
+let translatePollTimer: ReturnType<typeof setInterval> | undefined;
+function watchPageTranslation(started: string): void {
+	// 刚点的是「显示原文」或页面不支持：没有活要等
+	if (!started || started.includes("原文") || started.includes("不支持") || started.includes("进行中")) return;
+	if (translatePollTimer !== undefined) clearInterval(translatePollTimer);
+	const startedAt = Date.now();
+	translatePollTimer = setInterval(() => {
+		void (async () => {
+			const timedOut = Date.now() - startedAt > 120_000;
+			const state = await call<{ pageState?: string; done?: number; failed?: number } | null>(
+				"page.translateState",
+			).catch(() => null);
+			if (!timedOut && (!state || state.pageState === "translating")) return;
+			if (translatePollTimer !== undefined) clearInterval(translatePollTimer);
+			translatePollTimer = undefined;
+			if (timedOut) return;
+			if (state?.pageState === "translated")
+				notify(
+					state.failed
+						? `${t("translateDone")} · ${t("translateFailedParts")}: ${state.failed}`
+						: t("translateDone"),
+				);
+			else notify(t("translateFailed"), true);
+		})();
+	}, 1000);
+}
+
+/** 工具栏下载计数：只有真在下的任务才亮徽标（下完不亮，翻面板看列表）。 */
+let downloadPollTimer: ReturnType<typeof setTimeout> | undefined;
+let downloadsCheckedAt = 0;
+async function refreshDownloadsCount(force = false): Promise<void> {
+	// 状态推送很密（每次加载进度都来一发），徽标不需要那个新鲜度：两秒内只问一次
+	const now = Date.now();
+	if (!force && now - downloadsCheckedAt < 2000) return;
+	downloadsCheckedAt = now;
+	try {
+		const entries = await call<{ state: string }[]>("downloads.list");
+		const active = entries.filter((entry) => entry.state === "progressing").length;
+		downloadsCount.textContent = String(active);
+		downloadsCount.hidden = active === 0;
+		if (active > 0 && downloadPollTimer === undefined) {
+			downloadPollTimer = setTimeout(() => {
+				downloadPollTimer = undefined;
+				void refreshDownloadsCount(true);
+			}, 1500);
+		}
+	} catch {
+		// 面板自己能报错，工具栏上的计数静默降级
+		downloadsCount.hidden = true;
+	}
+}
 
 // 中间可拖拽分栏线 (Direct Draggable Split Divider)
 const divider = element("div", "pb-split-divider");
@@ -297,7 +420,7 @@ const progressBarWrap = element("div", "pb-progress-bar-wrap");
 const progressBar = element("div", "pb-progress-bar");
 progressBarWrap.append(progressBar);
 
-chrome.append(titlebar, progressBarWrap);
+chrome.append(titlebar, toolRow, progressBarWrap);
 app.append(chrome);
 
 // 极简搜索浮层 (参照 E:\ai-browser\src\search.html)
@@ -452,6 +575,15 @@ function render(next: BrowserState): void {
 			if (target?.closest(".pb-tab-close, .pb-tab-activate")) return;
 			void browserAction("tabs.activate", { id: tab.id });
 		});
+		// 右键：原生菜单（引用到输入框 / 复制链接 / 重新加载 / 关闭…），菜单位置就放在鼠标那一点
+		row.addEventListener("contextmenu", (event) => {
+			event.preventDefault();
+			void call<string>("tabs.menu", { id: tab.id, x: event.clientX, y: event.clientY })
+				.then((message) => {
+					if (message) notify(message);
+				})
+				.catch(reportError);
+		});
 		row.append(activate, close);
 		tabs.append(row);
 	}
@@ -467,7 +599,13 @@ function render(next: BrowserState): void {
 	modeBtn.replaceChildren(cfg.icon());
 	modeBtn.title = `${cfg.title} (Ctrl+Alt+M)`;
 
+	// 后退/前进不可用时置灰：依旧可点（点了就是无操作），但看得出“到头了”
+	const activeTab = next.tabs.find((tab) => tab.id === next.activeTabId);
+	backBtn.disabled = !activeTab?.canGoBack;
+	forwardBtn.disabled = !activeTab?.canGoForward;
+
 	updateProgress(next);
+	void refreshDownloadsCount();
 	updateChromePosition(next);
 }
 

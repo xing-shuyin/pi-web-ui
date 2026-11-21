@@ -14,4 +14,4 @@ node scripts/link-plugins.mjs hongguo
 
 隨後在設定裡重新載入外掛。首次訪問自動安裝外掛獨立依賴。MP4 統一轉為 H.264 + AAC 相容格式，舊快取自動遷移，避免部分客戶端出現有聲音但黑屏。影片處理及 HEIC 封面需要 FFmpeg，可在外掛設定中填寫執行檔路徑。
 
-完整安裝、介面、快取、許可權、第三方來源和驗收說明見 [hongguo 外掛文件](../../docs/plugin-hongguo.zh-TW.md)。
+完整安裝、介面、快取、許可權、第三方來源和驗收說明見 [hongguo 外掛文件](../../docs/plugin-hongguo.md)。

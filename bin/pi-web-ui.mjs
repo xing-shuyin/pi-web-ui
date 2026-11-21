@@ -249,7 +249,20 @@ function run(cmd, args, { ignoreError = false, silent = false } = {}) {
 		windowsHide: true,
 		stdio: silent ? ["inherit", "ignore", "ignore"] : "inherit",
 	});
-	if (!ignoreError && res.status !== 0) process.exit(res.status ?? 1);
+	// 失败必须出声：这里以前直接 process.exit()，在 GUI / 受限进程里表现为「什么都没发生」。
+	// 只打前三个 token（不带整段 /d 值），并给出可操作的下一步。
+	if (!ignoreError && (res.status !== 0 || res.error)) {
+		const detail = res.error ? `${res.error.code ?? ""} ${res.error.message}`.trim() : `退出码 ${res.status}`;
+		console.error(`✖ 命令执行失败：${cmd} ${args.slice(0, 3).join(" ")}（${detail}）`);
+		console.error(
+			ZH
+				? "  可能是权限不足或被安全软件拦下。请在普通终端里重跑同一条命令以看完整输出；" +
+						"只想看将要写入的配置可以加 --print（不落盘、不提权）。"
+				: "  Likely missing privileges or blocked by security software. Re-run the same command in a terminal for full output; " +
+						"add --print to inspect the configuration without writing anything.",
+		);
+		process.exit(res.status ?? 1);
+	}
 	return res;
 }
 

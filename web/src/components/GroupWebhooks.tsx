@@ -13,8 +13,7 @@ import {
 	FiGlobe,
 	FiSliders,
 } from "react-icons/fi";
-import { appUrl } from "../base-url";
-import { withToken } from "../auth-token";
+import { apiFetch, readApiFailure, requestJson } from "../api-client";
 import { useT } from "../i18n";
 import type { MessageKey } from "../i18n/catalog";
 import type { GroupWebhook, GroupWebhookEventType } from "../device-group-messages";
@@ -59,22 +58,14 @@ export function GroupWebhooks({ roomId, disabled = false }: GroupWebhooksProps) 
 		abortRef.current = controller;
 		try {
 			setError("");
+			const roomPath = `/api/device-center/rooms/${encodeURIComponent(roomId)}`;
 			const [webhooksRes, roomRes, statusRes] = await Promise.all([
-				fetch(withToken(appUrl(`/api/device-center/rooms/${encodeURIComponent(roomId)}/webhooks`)), {
-					signal: controller.signal,
-				}),
-				fetch(withToken(appUrl(`/api/device-center/rooms/${encodeURIComponent(roomId)}`)), {
-					signal: controller.signal,
-				}).catch(() => null),
-				fetch(withToken(appUrl("/api/device-center/status")), {
-					signal: controller.signal,
-				}).catch(() => null),
+				apiFetch(`${roomPath}/webhooks`, { signal: controller.signal }),
+				apiFetch(roomPath, { signal: controller.signal }).catch(() => null),
+				apiFetch("/api/device-center/status", { signal: controller.signal }).catch(() => null),
 			]);
 
-			if (!webhooksRes.ok) {
-				const err = await webhooksRes.json().catch(() => ({}));
-				throw new Error(err.error || `HTTP ${webhooksRes.status}`);
-			}
+			if (!webhooksRes.ok) throw new Error((await readApiFailure(webhooksRes)).error);
 			const data = await webhooksRes.json();
 			setWebhooks(data.webhooks || []);
 
@@ -116,15 +107,10 @@ export function GroupWebhooks({ roomId, disabled = false }: GroupWebhooksProps) 
 		setSavingRelay(true);
 		setError("");
 		try {
-			const res = await fetch(withToken(appUrl(`/api/device-center/rooms/${encodeURIComponent(roomId)}/hub-relay`)), {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ hubRelayBaseUrl: relayConfigInput.trim() || null }),
+			await requestJson(`/api/device-center/rooms/${encodeURIComponent(roomId)}/hub-relay`, {
+				body: { hubRelayBaseUrl: relayConfigInput.trim() || null },
+				errorFor: (failure) => new Error(failure.serverError || t("groupWebhooksRelayUpdateFailed")),
 			});
-			if (!res.ok) {
-				const data = await res.json().catch(() => ({}));
-				throw new Error(data.error || t("groupWebhooksRelayUpdateFailed"));
-			}
 			setCustomRelayUrl(relayConfigInput.trim());
 			setShowRelayConfig(false);
 		} catch (err: any) {
@@ -142,20 +128,13 @@ export function GroupWebhooks({ roomId, disabled = false }: GroupWebhooksProps) 
 
 	const handleToggleEnabled = async (hook: GroupWebhook) => {
 		try {
-			const res = await fetch(
-				withToken(
-					appUrl(`/api/device-center/rooms/${encodeURIComponent(roomId)}/webhooks/${encodeURIComponent(hook.id)}`),
-				),
+			await requestJson(
+				`/api/device-center/rooms/${encodeURIComponent(roomId)}/webhooks/${encodeURIComponent(hook.id)}`,
 				{
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ enabled: !hook.enabled }),
+					body: { enabled: !hook.enabled },
+					errorFor: (failure) => new Error(failure.serverError || t("groupWebhooksToggleFailed")),
 				},
 			);
-			if (!res.ok) {
-				const err = await res.json().catch(() => ({}));
-				throw new Error(err.error || t("groupWebhooksToggleFailed"));
-			}
 			await fetchWebhooks();
 		} catch (err: any) {
 			setError(err?.message || t("groupWebhooksToggleError"));
@@ -165,16 +144,13 @@ export function GroupWebhooks({ roomId, disabled = false }: GroupWebhooksProps) 
 	const handleDelete = async (id: string) => {
 		if (!window.confirm(t("groupWebhooksDeleteConfirm"))) return;
 		try {
-			const res = await fetch(
-				withToken(
-					appUrl(`/api/device-center/rooms/${encodeURIComponent(roomId)}/webhooks/${encodeURIComponent(id)}/delete`),
-				),
-				{ method: "POST" },
+			await requestJson(
+				`/api/device-center/rooms/${encodeURIComponent(roomId)}/webhooks/${encodeURIComponent(id)}/delete`,
+				{
+					method: "POST",
+					errorFor: (failure) => new Error(failure.serverError || t("groupWebhooksDeleteFailed")),
+				},
 			);
-			if (!res.ok) {
-				const err = await res.json().catch(() => ({}));
-				throw new Error(err.error || t("groupWebhooksDeleteFailed"));
-			}
 			await fetchWebhooks();
 		} catch (err: any) {
 			setError(err?.message || t("groupWebhooksDeleteError"));
@@ -186,18 +162,13 @@ export function GroupWebhooks({ roomId, disabled = false }: GroupWebhooksProps) 
 			return;
 		}
 		try {
-			const res = await fetch(
-				withToken(
-					appUrl(
-						`/api/device-center/rooms/${encodeURIComponent(roomId)}/webhooks/${encodeURIComponent(id)}/regenerate-token`,
-					),
-				),
-				{ method: "POST" },
+			await requestJson(
+				`/api/device-center/rooms/${encodeURIComponent(roomId)}/webhooks/${encodeURIComponent(id)}/regenerate-token`,
+				{
+					method: "POST",
+					errorFor: (failure) => new Error(failure.serverError || t("groupWebhooksRegenerateFailed")),
+				},
 			);
-			if (!res.ok) {
-				const err = await res.json().catch(() => ({}));
-				throw new Error(err.error || t("groupWebhooksRegenerateFailed"));
-			}
 			await fetchWebhooks();
 		} catch (err: any) {
 			setError(err?.message || t("groupWebhooksRegenerateError"));
@@ -208,14 +179,11 @@ export function GroupWebhooks({ roomId, disabled = false }: GroupWebhooksProps) 
 		setTestingId(hook.id);
 		setTestResult(null);
 		try {
-			const res = await fetch(
-				withToken(
-					appUrl(`/api/device-center/rooms/${encodeURIComponent(roomId)}/webhooks/${encodeURIComponent(hook.id)}/test`),
-				),
+			const data = await requestJson<{ success?: boolean; status?: number }>(
+				`/api/device-center/rooms/${encodeURIComponent(roomId)}/webhooks/${encodeURIComponent(hook.id)}/test`,
 				{ method: "POST" },
 			);
-			const data = await res.json().catch(() => ({}));
-			if (res.ok && data.success) {
+			if (data.success) {
 				const relayNotice = hook.relayViaHub !== false ? t("groupWebhooksViaHubSuffix") : "";
 				setTestResult({
 					id: hook.id,
@@ -226,7 +194,7 @@ export function GroupWebhooks({ roomId, disabled = false }: GroupWebhooksProps) 
 				setTestResult({
 					id: hook.id,
 					success: false,
-					message: data.error || t("groupWebhooksTestFailed"),
+					message: t("groupWebhooksTestFailed"),
 				});
 			}
 		} catch (err: any) {
@@ -671,16 +639,9 @@ function WebhookEditModal({
 				? `/api/device-center/rooms/${encodeURIComponent(roomId)}/webhooks/${encodeURIComponent(webhook!.id)}`
 				: `/api/device-center/rooms/${encodeURIComponent(roomId)}/webhooks`;
 
-			const res = await fetch(withToken(appUrl(endpoint)), {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(body),
-			});
+			const res = await apiFetch(endpoint, { body });
 
-			if (!res.ok) {
-				const data = await res.json().catch(() => ({}));
-				throw new Error(data.error || t("groupWebhooksSaveFailed"));
-			}
+			if (!res.ok) throw new Error((await readApiFailure(res)).serverError || t("groupWebhooksSaveFailed"));
 			onSaved();
 		} catch (err: any) {
 			setError(err?.message || t("groupWebhooksSaveError"));

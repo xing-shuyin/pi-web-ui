@@ -1,4 +1,5 @@
 import {
+	Fragment,
 	memo,
 	startTransition,
 	useCallback,
@@ -22,12 +23,15 @@ import { openFilePreview } from "../file-preview-bridge";
 
 import { collectQuestionAttachments } from "../question-attachments";
 import { questionNavLayout } from "../question-nav";
+import { useHideQuestionNav } from "../chat-width-settings";
 
 import { parseSkillBlock } from "../skill-block";
 import { computeEarlierCount } from "../history-window";
 import { CollapsedMessage } from "./CollapsedMessage";
 import { reviewFoldKind } from "../goal-review-fold";
 import { useFlowStreamMode } from "../flow-mode";
+import { foldQuietItems, summarizeQuietFold } from "../quiet-fold";
+import { useQuietMode } from "../quiet-mode";
 import { LazyMount } from "./LazyMount";
 import {
 	applyPlan,
@@ -489,6 +493,19 @@ export function MessageList({
 	}, [state.messages, expanded]);
 
 	const flowStream = useFlowStreamMode();
+	const quietMode = useQuietMode();
+	// 安静模式：纯展示层开关（issue #956）。搜索 / 导出图片时必须看到全量活动，
+	// 与 needsFullHistory 同一条约定；历史与执行链路一条不动。
+	const quietActive = quietMode.enabled && !searchOpen && !exportImage.open;
+	const [quietExpanded, setQuietExpanded] = useState<Set<string>>(() => new Set());
+	const toggleQuietFold = useCallback((id: string) => {
+		setQuietExpanded((prev) => {
+			const next = new Set(prev);
+			if (next.has(id)) next.delete(id);
+			else next.add(id);
+			return next;
+		});
+	}, []);
 	const clusterOptions = useMemo<ClusterOptions>(() => ({ mergeTurns: true }), []);
 	const [hidden, setHidden] = useState<Set<string>>(() => {
 		if (reversePagination || state.messages.length <= VIRTUAL_MIN) return new Set();
@@ -817,12 +834,21 @@ export function MessageList({
 		if (historyStartRef.current > 0) requestServerPage({ all: true });
 	}, [needsFullHistory, requestServerPage]);
 
-	const clusteredItems = useMemo(
-		() => clusterMessages(visibleMessages, clusterOptions),
-		[visibleMessages, clusterOptions],
-	);
+	const quietStreamingId = state.streamingMessage?.id ?? null;
+	const quietStreaming = state.isStreaming;
+	const clusteredItems = useMemo(() => {
+		const items = clusterMessages(visibleMessages, clusterOptions);
+		if (!quietActive) return items;
+		// 流式输出中的那条消息永不折叠：有的引擎只给 isStreaming 不给 streamingMessage。
+		return foldQuietItems(items, {
+			streamingId: quietStreamingId,
+			keepIds: quietStreaming && lastId ? new Set([lastId]) : undefined,
+		});
+	}, [visibleMessages, clusterOptions, quietActive, quietStreamingId, quietStreaming, lastId]);
 
-	const virtualOn = !reversePagination && state.messages.length > VIRTUAL_MIN && !searchOpen;
+	// 安静视图本身极小（用户消息 + 每轮一条最终回复 + 几条折叠行），关掉窗口化：
+	// 让 hidden / pinned / 测量 / 锚定那一整套机制整体绕过，而不是去和它协调。
+	const virtualOn = !reversePagination && state.messages.length > VIRTUAL_MIN && !searchOpen && !quietActive;
 	const virtualOnRef = useRef(virtualOn);
 	virtualOnRef.current = virtualOn;
 
@@ -1284,8 +1310,9 @@ export function MessageList({
 		userPromptNonce,
 	});
 
+	const hideQuestionNav = useHideQuestionNav();
 	const [railH, setRailH] = useState(0);
-	const hasQuestions = questions.length > 0;
+	const hasQuestions = questions.length > 0 && !hideQuestionNav;
 	useLayoutEffect(() => {
 		const rail = railRef.current;
 		if (!rail) return;
@@ -1304,6 +1331,45 @@ export function MessageList({
 		gap: railGap,
 		many,
 	} = useMemo(() => questionNavLayout(questions.length, railH, activeIdx), [questions.length, railH, activeIdx]);
+
+	const renderMessageCard = (m: UiMessage, isDenseCluster = false) => {
+		const isStreamingThis =
+			(state.streamingMessage ? m.id === state.streamingMessage.id : state.isStreaming && m.id === lastId) &&
+			(m.role === "assistant" || !m.role);
+		const renderKey = stableKeyMap.get(m.id) ?? m.id;
+		const effectiveToolsWrap = isDenseCluster ? (isStreamingThis ? toolsWrap : false) : toolsWrap;
+		return (
+			<Message
+				uiMessageActions={uiMessageActions}
+				uiContextMessage={uiContextMessage}
+				uiContextToolCall={uiContextToolCall}
+				uiToolCardFooter={uiToolCardFooter}
+				onUiAction={readOnly ? undefined : onUiAction}
+				key={renderKey}
+				message={m}
+				toolResults={toolResults}
+				liveOutputs={hasToolCall(m) ? liveOutputs : EMPTY_LIVE}
+				toolStatuses={toolStatuses}
+				streaming={isStreamingThis}
+				onKillBash={readOnly ? undefined : onKillBash}
+				onRetry={!readOnly && m.id === lastId ? onRetry : undefined}
+				toolsWrap={effectiveToolsWrap}
+				toolImages={toolImages}
+				thinkingWrap={thinkingWrap}
+				isLast={m.id === lastId}
+				onEdit={readOnly ? undefined : onEdit}
+				readOnly={readOnly}
+				messageLabel={messageLabels?.get(m.id)}
+				onRollbackEdit={rollbackEdit}
+				canRollbackEdit={!readOnly && !!onEdit && precedingQuestions.has(m.id)}
+				questionAttachments={questionAttachments.get(m.id)}
+				editRequest={
+					editRequest && editRequest.session === state.sessionFile && editRequest.id === m.id ? editRequest : undefined
+				}
+				searchActive={searchOpen}
+			/>
+		);
+	};
 
 	return (
 		<div className={`messages-wrap${exportImage.open ? " messages-exporting" : ""}`}>
@@ -1333,6 +1399,65 @@ export function MessageList({
 				)}
 
 				{clusteredItems.map((item) => {
+					// 安静模式折叠项（issue #956）：同一份判定，两种呈现 —— fold 折叠行 / zero 零痕迹。
+					if (item.type === "quiet_fold") {
+						const open = quietExpanded.has(item.id);
+						const summary = summarizeQuietFold(item.messages);
+						const label = t("quietHidden", { count: summary.total });
+						const chips: string[] = [];
+						if (summary.thinking) chips.push(`${t("thinking")} ${summary.thinking}`);
+						if (summary.tools) chips.push(`${t("toolCalls")} ${summary.tools}`);
+						if (summary.bash) chips.push(`${t("bashRuns")} ${summary.bash}`);
+						if (summary.collab) chips.push(`${t("subagentBadge")} ${summary.collab}`);
+						const toggle = () => toggleQuietFold(item.id);
+						const onKeyDown = (e: React.KeyboardEvent) => {
+							if (e.key !== "Enter" && e.key !== " ") return;
+							e.preventDefault();
+							toggle();
+						};
+						return (
+							<Fragment key={item.id}>
+								{quietMode.style === "zero" ? (
+									<div
+										className="quiet-gap"
+										role="button"
+										tabIndex={0}
+										aria-expanded={open}
+										title={label}
+										aria-label={label}
+										onClick={toggle}
+										onKeyDown={onKeyDown}
+									/>
+								) : (
+									<div
+										className="msg-collapsed"
+										role="button"
+										tabIndex={0}
+										aria-expanded={open}
+										title={label}
+										onClick={toggle}
+										onKeyDown={onKeyDown}
+									>
+										<span className="msg-collapsed-role">{t("quietActivity")}</span>
+										<span className="msg-collapsed-body">
+											<span className="msg-collapsed-preview">{label}</span>
+											{chips.length > 0 && (
+												<span className="msg-collapsed-chips">
+													{chips.map((c, i) => (
+														<span key={i} className="msg-collapsed-chip">
+															{c}
+														</span>
+													))}
+												</span>
+											)}
+										</span>
+										<span className="msg-collapsed-action">{open ? t("collapseMsg") : t("expandMsg")}</span>
+									</div>
+								)}
+								{open && <div className="turn-tools-trail">{item.messages.map((m) => renderMessageCard(m))}</div>}
+							</Fragment>
+						);
+					}
 					if (item.type === "tool_cluster") {
 						const streamingId = state.streamingMessage?.id;
 						const isStreamingCluster =
@@ -1361,49 +1486,7 @@ export function MessageList({
 								onMeasured={storeHeight}
 								variant={flowStream ? "flow" : transparent ? "contents" : "trail"}
 							>
-								{item.messages.map((m) => {
-									const isStreamingThis =
-										(state.streamingMessage
-											? m.id === state.streamingMessage.id
-											: state.isStreaming && m.id === lastId) &&
-										(m.role === "assistant" || !m.role);
-									const renderKey = stableKeyMap.get(m.id) ?? m.id;
-									const effectiveToolsWrap = isDenseCluster ? (isStreamingThis ? toolsWrap : false) : toolsWrap;
-
-									return (
-										<Message
-											uiMessageActions={uiMessageActions}
-											uiContextMessage={uiContextMessage}
-											uiContextToolCall={uiContextToolCall}
-											uiToolCardFooter={uiToolCardFooter}
-											onUiAction={readOnly ? undefined : onUiAction}
-											key={renderKey}
-											message={m}
-											toolResults={toolResults}
-											liveOutputs={hasToolCall(m) ? liveOutputs : EMPTY_LIVE}
-											toolStatuses={toolStatuses}
-											streaming={isStreamingThis}
-											onKillBash={readOnly ? undefined : onKillBash}
-											onRetry={!readOnly && m.id === lastId ? onRetry : undefined}
-											toolsWrap={effectiveToolsWrap}
-											toolImages={toolImages}
-											thinkingWrap={thinkingWrap}
-											isLast={m.id === lastId}
-											onEdit={readOnly ? undefined : onEdit}
-											readOnly={readOnly}
-											messageLabel={messageLabels?.get(m.id)}
-											onRollbackEdit={rollbackEdit}
-											canRollbackEdit={!readOnly && !!onEdit && precedingQuestions.has(m.id)}
-											questionAttachments={questionAttachments.get(m.id)}
-											editRequest={
-												editRequest && editRequest.session === state.sessionFile && editRequest.id === m.id
-													? editRequest
-													: undefined
-											}
-											searchActive={searchOpen}
-										/>
-									);
-								})}
+								{item.messages.map((m) => renderMessageCard(m, isDenseCluster))}
 							</LazyToolCluster>
 						);
 					}
@@ -1585,7 +1668,7 @@ export function MessageList({
 				open={searchOpen}
 				onClose={() => setSearchOpen(false)}
 			/>
-			{questions.length > 0 && (
+			{questions.length > 0 && !hideQuestionNav && (
 				<div
 					className={`qn-rail ${many ? "many" : ""}`}
 					ref={railRef}

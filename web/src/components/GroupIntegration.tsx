@@ -4,8 +4,7 @@ import {
 	INTEGRATION_UI_TIMEOUT_MS,
 	VERIFICATION_UI_TIMEOUT_MS,
 } from "../../../server/device-center/verification-limits";
-import { appUrl } from "../base-url";
-import { withToken } from "../auth-token";
+import { requestJson } from "../api-client";
 import { useT } from "../i18n";
 import type { GroupDevice } from "../device-group-messages";
 import type { DeviceDelivery, DeviceIntegration, DeviceIntegrationListResponse, DeviceReview } from "../types";
@@ -19,15 +18,10 @@ function publicationPending(integration: DeviceIntegration | null | undefined): 
 }
 
 async function request<T>(path: string, signal: AbortSignal, body?: object, timeoutMs = 30000): Promise<T> {
-	const response = await fetch(withToken(appUrl(`/api/device-center/${path}`)), {
-		method: body ? "POST" : "GET",
-		credentials: "same-origin",
+	return requestJson<T>(`/api/device-center/${path}`, {
+		body,
 		signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
-		...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
 	});
-	const data = await response.json().catch(() => ({}));
-	if (!response.ok) throw new Error(data.error || String(response.status));
-	return data;
 }
 
 export interface GroupIntegrationProps {

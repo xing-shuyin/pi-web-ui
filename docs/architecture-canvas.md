@@ -1,5 +1,3 @@
-[English](./architecture-canvas.en.md) · **简体中文** · [繁體中文](./architecture-canvas.zh-TW.md)
-
 # Canvas 协同：编辑版本、运行与产物
 
 画布入口是 `web/src/components/canvas/CanvasStudio.tsx`，独立 WebSocket 在 `canvas-client.ts`。服务端协议单源为 `server/protocol.ts`；`canvas-dispatch.ts` 处理用户请求，`canvas-agent-tool.ts` 提供 AI 编辑和调试入口。两者共用存储及调度器。
@@ -7,6 +5,8 @@
 ## 本地化
 
 Canvas 界面与内置模板的展示文案在 `web/src/i18n/messages/canvas/`，后端系统状态和日志在 `canvas-runtime/`；两个模块均维护全部 14 种语言，共用全局翻译运行时。后端广播消息 key 与参数，由各浏览器按自己的当前语言渲染；用户内容和 AI 回复保留原文。字典维护、兼容字段与同步流程见 [`i18n.md`](i18n.md)。
+
+Pstack 技能目录同理只存一份内容：正文、描述、图标、分类在 `server/canvas/pstack-skills-content.ts`；服务端视图 `server/canvas/pstack-skills-data.ts` 只补中文名，前端视图 `web/src/components/canvas/pstack-skills-data.ts` 只补 i18n 名称键。新增技能改内容层加两份标签，守卫见 `tests/unit/canvas-pstack-skills.test.ts`「Pstack 技能内容单源」。
 
 ## 对话调用与引用
 

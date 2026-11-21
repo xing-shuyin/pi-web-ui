@@ -8,6 +8,8 @@ export interface StartupBannerParams {
 	sessionDir: string;
 	version: string;
 	sdkNote?: string | null;
+	/** 内核形态行（“全局 npm 包 · systemd · 锁 held”），见 server/kernel-identity.ts。 */
+	kernelNote?: string | null;
 }
 
 export function buildMainUrl(port: number, host: string, token?: string): string {
@@ -31,6 +33,9 @@ export function formatStartupBannerLines(params: StartupBannerParams): string[] 
 		lines.push(`    pi SDK note : ${params.sdkNote}`);
 	}
 	lines.push(`    bind        : ${params.host}:${params.port}`);
+	if (params.kernelNote) {
+		lines.push(`    kernel      : ${params.kernelNote}`);
+	}
 	if (params.token?.trim()) {
 		lines.push(`    token       : ${params.token.trim()}`);
 	}

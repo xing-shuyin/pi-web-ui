@@ -40,6 +40,7 @@ import {
 	formatUnavailableCanvasReference,
 } from "../universal/universal-attachments.js";
 import type { ProjectRunnerInfo, SessionOwnerInfo } from "../agent-service.js";
+import type { EngineService } from "../engine-service.js";
 import { bilingual, pick, resolveServerLang, type ServerLang } from "../i18n.js";
 import { ModelAdminService } from "../model-admin.js";
 import { normalizeToolInfo, unsupportedToolInfo } from "../tool-info.js";
@@ -5657,7 +5658,7 @@ export class DshClientSession {
 	}
 }
 
-export class DshAgentService {
+export class DshAgentService implements EngineService {
 	private clients = new Map<string, DshClientSession>();
 	private quiesced = false;
 	private quiescedAt = 0;

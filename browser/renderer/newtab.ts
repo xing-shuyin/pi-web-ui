@@ -4,12 +4,9 @@ import {
 	call,
 	checkIcon,
 	chevronDownIcon,
-	clockIcon,
-	downloadIcon,
 	element,
 	enableCrxDropTarget,
 	folderIcon,
-	gearIcon,
 	hostName,
 	input,
 	listenPanelEvents,
@@ -18,7 +15,6 @@ import {
 	openUrl,
 	plusIcon,
 	reportError,
-	starIcon,
 	applySettings,
 	type Bookmark,
 	type Settings,
@@ -58,19 +54,7 @@ function getEngineConfig(id?: string): SearchEngineOption {
 const app = document.querySelector<HTMLElement>("#app")!;
 const main = element("main", "pb-start pb-unified-flow-page");
 
-// 顶部极简导航栏（左上角不再显示品牌标识，只保留右侧工具栏）
-const top = element("header", "pb-start-top");
-
-// 面板按钮兼作开关：再点一下收起（面板点外部也会收起，见 panels.ts 的 handleOutsidePointer）
-const tools = element("nav", "pb-toolbar");
-tools.append(
-	button([starIcon(13), element("span", "", t("bookmarks"))], () => showPanel("bookmarks"), "pb-panel-toggle"),
-	button([downloadIcon(13), element("span", "", t("downloads"))], () => showPanel("downloads"), "pb-panel-toggle"),
-	button([clockIcon(13), element("span", "", t("history"))], () => showPanel("history"), "pb-panel-toggle"),
-	button([gearIcon(13), element("span", "", t("settings"))], () => showPanel("settings"), "pb-panel-toggle"),
-);
-top.append(tools);
-
+// 顶部不再放工具栏（书签/下载/历史/设置）：它们已经固定在外壳第二行，首页重复一遍只是占位。
 // 方案4 居中一体化流线容器
 const unifiedContainer = element("div", "unified-container");
 
@@ -283,9 +267,40 @@ function folderTile(folder: Bookmark): HTMLButtonElement {
 	);
 }
 
+/**
+ * 书签的站点图标：直接问站点自己的 `/favicon.ico`（不经过第三方图标服务，不把浏览记录送给别人）。
+ * 拿不到（404 / 离线 / 非 http(s)）就退回“首字母”方块，绝不留空白框。
+ */
+function faviconUrl(url: string): string {
+	try {
+		const parsed = new URL(url);
+		if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+		return `${parsed.origin}/favicon.ico`;
+	} catch {
+		return "";
+	}
+}
+
+/** 一格书签图标：有站点图标就用它，否则回退到首字母/自定义字符。 */
+function linkSymbol(link: Bookmark): string | Node {
+	const letter = link.char || link.name.slice(0, 1).toUpperCase() || "?";
+	const src = faviconUrl(link.url || "");
+	if (!src) return letter;
+	const image = element("img", "unified-tile-favicon");
+	image.src = src;
+	image.alt = "";
+	image.decoding = "async";
+	image.loading = "lazy";
+	image.addEventListener("error", () => {
+		// 站点没给 /favicon.ico：换成首字母方块，而不是一个空白圆角框
+		image.replaceWith(letter);
+	});
+	return image;
+}
+
 function linkTile(link: Bookmark): HTMLButtonElement {
 	return tile(
-		link.char || link.name.slice(0, 1).toUpperCase(),
+		linkSymbol(link),
 		link.name,
 		hostName(link.url || ""),
 		() => openUrl(addressUrl(link.url || "", settings.searchEngine), openInNewTab()),
@@ -343,7 +358,7 @@ unifiedContainer.append(hero, search, nav);
 
 const footer = element("footer", "pb-start-footer unified-footer pb-muted", "按 / 键快速搜索 · 回车直达");
 
-main.append(top, unifiedContainer, footer);
+main.append(unifiedContainer, footer);
 app.append(main);
 
 // 光标直接落在输入框里，并且请宿主把键盘焦点交过来：只做 DOM 聚焦的话，按键还是进外壳页

@@ -8,7 +8,7 @@ import { handleSettingsMessage } from "../../server/dispatch-domain-handlers.js"
 import { fakeClientSession } from "../helpers/fake-session.js";
 import { ClientStateStore } from "../../server/client-state.js";
 import { SettingsService, type SettingsHost } from "../../server/settings-service.js";
-import type { DispatchSession } from "../../server/index.js";
+import type { DispatchSession } from "../../server/engine-service.js";
 import type { ClientMessage } from "../../server/protocol.js";
 import type { SubagentTemplatesStore } from "../../server/subagent-templates.js";
 

@@ -104,8 +104,16 @@ import { BotDraftSettings, type BotDraftPatch } from "./BotDraftSettings";
 import type { UiExtensionInventoryEntry } from "../types";
 import { SubagentTemplateWizard } from "./SubagentTemplateWizard";
 import { formatTokenDraft, parseTokenInput } from "../token-input";
-import { useWideChat, saveChatWidthSettings, useHideModelRow, saveHideModelRowSettings } from "../chat-width-settings";
+import {
+	useWideChat,
+	saveChatWidthSettings,
+	useHideModelRow,
+	saveHideModelRowSettings,
+	useHideQuestionNav,
+	saveHideQuestionNavSettings,
+} from "../chat-width-settings";
 import { usePresentAutoOpen, savePresentAutoOpen } from "../present-settings";
+import { useQuietMode, saveQuietModeSettings } from "../quiet-mode";
 import { useProjectClickSwitch, saveProjectClickSwitch } from "../project-click-settings";
 import { useProjectOrderManual, saveProjectOrderManual } from "../project-order-settings";
 import { type SendKey, saveSendKeyPref, useEffectiveSendKey } from "../composer-keys";
@@ -792,7 +800,9 @@ function LoadedSettingsModal({
 	);
 	const totalContextTokenEstimate = promptTokenEstimate + toolsSchemaTokenEstimate;
 	const wideChat = useWideChat();
+	const quietMode = useQuietMode();
 	const hideModelRow = useHideModelRow();
+	const hideQuestionNav = useHideQuestionNav();
 	const effectiveSendKey = useEffectiveSendKey();
 	const presentAutoOpen = usePresentAutoOpen();
 	const projectClickSwitch = useProjectClickSwitch();
@@ -4383,6 +4393,33 @@ function LoadedSettingsModal({
 									enabled={hideModelRow}
 									onToggle={() => saveHideModelRowSettings({ hide: !hideModelRow })}
 								/>
+								<ToggleRow
+									title={t("hideQuestionNav")}
+									tip={t("hideQuestionNavDesc")}
+									enabled={hideQuestionNav}
+									onToggle={() => saveHideQuestionNavSettings({ hide: !hideQuestionNav })}
+								/>
+								<ToggleRow
+									title={t("quietMode")}
+									tip={t("quietModeDesc")}
+									enabled={quietMode.enabled}
+									onToggle={() => saveQuietModeSettings({ ...quietMode, enabled: !quietMode.enabled })}
+								/>
+								{quietMode.enabled && (
+									<FieldRow label={t("quietModeStyle")} htmlFor="quiet-style">
+										<select
+											id="quiet-style"
+											className="set-select"
+											value={quietMode.style}
+											onChange={(e) =>
+												saveQuietModeSettings({ ...quietMode, style: e.target.value === "zero" ? "zero" : "fold" })
+											}
+										>
+											<option value="fold">{t("quietStyleFold")}</option>
+											<option value="zero">{t("quietStyleZero")}</option>
+										</select>
+									</FieldRow>
+								)}
 								<ToggleRow
 									title={t("projectTitle")}
 									tip={t("projectTitleDesc")}

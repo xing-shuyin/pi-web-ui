@@ -7,6 +7,8 @@ import {
 	normalizeChatWidthSettings,
 	DEFAULT_HIDE_MODEL_ROW_SETTINGS,
 	normalizeHideModelRowSettings,
+	DEFAULT_HIDE_QUESTION_NAV_SETTINGS,
+	normalizeHideQuestionNavSettings,
 } from "../../web/src/chat-width-settings.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -56,5 +58,26 @@ describe("normalizeHideModelRowSettings", () => {
 	it("styles.css 包含 .main.hide-model-row 的模型名字行隐藏与紧凑间距规则", () => {
 		expect(CSS).toMatch(/\.main\.hide-model-row\s+\.msg-assistant\s+\.msg-meta\s*\{[^}]*display:\s*none/s);
 		expect(CSS).toMatch(/\.main\.hide-model-row\s+\.msg-assistant\s*\+\s*\.msg-assistant\s*\{[^}]*padding-top:\s*0/s);
+	});
+});
+
+describe("normalizeHideQuestionNavSettings", () => {
+	it("非对象回退默认（默认显示）", () => {
+		expect(normalizeHideQuestionNavSettings(null)).toEqual(DEFAULT_HIDE_QUESTION_NAV_SETTINGS);
+		expect(normalizeHideQuestionNavSettings(undefined)).toEqual(DEFAULT_HIDE_QUESTION_NAV_SETTINGS);
+		expect(normalizeHideQuestionNavSettings("yes")).toEqual(DEFAULT_HIDE_QUESTION_NAV_SETTINGS);
+		expect(normalizeHideQuestionNavSettings(1)).toEqual(DEFAULT_HIDE_QUESTION_NAV_SETTINGS);
+	});
+
+	it("保留合法的布尔值", () => {
+		expect(normalizeHideQuestionNavSettings({ hide: true })).toEqual({ hide: true });
+		expect(normalizeHideQuestionNavSettings({ hide: false })).toEqual({ hide: false });
+	});
+
+	it("字段类型错误/缺失回退默认", () => {
+		expect(normalizeHideQuestionNavSettings({ hide: "yes" })).toEqual(DEFAULT_HIDE_QUESTION_NAV_SETTINGS);
+		expect(normalizeHideQuestionNavSettings({ hide: 1 })).toEqual(DEFAULT_HIDE_QUESTION_NAV_SETTINGS);
+		expect(normalizeHideQuestionNavSettings({})).toEqual(DEFAULT_HIDE_QUESTION_NAV_SETTINGS);
+		expect(normalizeHideQuestionNavSettings({ other: true })).toEqual(DEFAULT_HIDE_QUESTION_NAV_SETTINGS);
 	});
 });

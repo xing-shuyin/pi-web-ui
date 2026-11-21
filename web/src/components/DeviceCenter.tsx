@@ -11,6 +11,7 @@ import {
 	FiRefreshCw,
 	FiShield,
 } from "react-icons/fi";
+import { requestJson } from "../api-client";
 import { appUrl } from "../base-url";
 import { waitForHubUpgrade, type HubUpgradeStatus } from "../hub-upgrade";
 import { withToken } from "../auth-token";
@@ -259,21 +260,15 @@ export function DeviceCenter({
 		const controller = new AbortController();
 		controllers.current.add(controller);
 		try {
-			const response = await fetch(withToken(appUrl(`/api/device-center/${path}`)), {
-				method: body ? "POST" : "GET",
-				credentials: "same-origin",
+			return await requestJson<T>(`/api/device-center/${path}`, {
+				body,
 				signal: controller.signal,
-				...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+				errorFor: (failure) =>
+					new DeviceRequestError(
+						failure.status,
+						failure.serverError || translate.current("deviceHubRequestFailed", { status: failure.status }),
+					),
 			});
-			const data = await response.json().catch(() => ({}));
-			if (!response.ok)
-				throw new DeviceRequestError(
-					response.status,
-					typeof data.error === "string"
-						? data.error
-						: translate.current("deviceHubRequestFailed", { status: response.status }),
-				);
-			return data as T;
 		} finally {
 			controllers.current.delete(controller);
 		}

@@ -3,6 +3,7 @@ import { sleep } from "./async-utils.js";
 import { statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import type { MobileNotificationCallback } from "./mobile-notification-events.js";
+import type { EngineService } from "./engine-service.js";
 import { VERSION, getAgentDir, ModelRuntime, type AgentSession } from "@earendil-works/pi-coding-agent";
 import { ClientStateStore } from "./client-state.js";
 import { ClaimStore } from "./claim-store.js";
@@ -65,7 +66,7 @@ const PANEL_CONVERSATION_OPS = new Set<ClientMessage["type"]>([
 	"persist_conversation",
 ]);
 
-export class AgentService {
+export class AgentService implements EngineService {
 	static isPseudoClientId = isPseudoClientId;
 
 	private sharedViewers = new Map<

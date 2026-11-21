@@ -19,4 +19,16 @@ MCowBQYDK2VwAyEAcQPqchk6PGtiBxacLgl1nma1f4EYzvO9QsBCXyKKbTI=
 
 export const SHELL_CAPABILITY_VERSION = 1;
 
+/**
+ * 内核权威链：`npm-global` = 以全局 npm 包为准，壳不再自更新内核（默认）；
+ * `bundled-runtime` = 旧双层模型（`<userData>/runtime` 签名清单自更新）。
+ * 只能有一条权威链，细则见 `docs/architecture-kernel.md` §9 与 `desktop/kernel-authority.ts`。
+ */
+export type KernelAuthority = "npm-global" | "bundled-runtime";
+
+export const KERNEL_AUTHORITY = "npm-global" as KernelAuthority;
+
+/** 运行时自更新是否可作为权威链。`npm-global` 下它为 false：仍可作离线兜底，但不再自动下载/切换。 */
+export const RUNTIME_SELF_UPDATE_ENABLED: boolean = KERNEL_AUTHORITY === "bundled-runtime";
+
 export const DEFAULT_RUNTIME_FEED_URL = "https://github.com/xing-shuyin/pi-web-ui/releases/latest/download";

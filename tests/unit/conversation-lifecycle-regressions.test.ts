@@ -55,12 +55,20 @@ function conversation(id: string): any {
 		subscribe: vi.fn(() => vi.fn()),
 		bindExtensions: vi.fn().mockResolvedValue(undefined),
 	};
+	const runtime = {
+		session,
+		fork: vi.fn(),
+		dispose: vi.fn().mockResolvedValue(undefined),
+	};
 	return {
 		id,
 		cwd: resolve("lifecycle-test-project"),
 		title: id,
-		session,
-		runtime: { session, fork: vi.fn(), dispose: vi.fn().mockResolvedValue(undefined) },
+		runtime,
+		// `conv.session` 是 `runtime.session` 的只读投影：换会话只能写 runtime（假体同构）。
+		get session() {
+			return this.runtime.session;
+		},
 		terminals: { killAll: vi.fn() },
 		uiMessageCache: new Map([["old", "cached"]]),
 		msgIds: new Map([["old", "id"]]),
@@ -158,7 +166,8 @@ describe("editMessage ownership across abort/reload awaits", () => {
 			const editing = cs.editMessage("question", "revised");
 			if (change === "removed") cs.convs.delete(a.id);
 			else if (change === "runtime replaced") a.runtime = { ...a.runtime };
-			else a.session = { ...a.session };
+			// 会话替换只发生在运行态里（`conv.session` 是 `runtime.session` 的只读投影）。
+			else a.runtime.session = { ...a.session };
 			abort.resolve();
 			reload.resolve();
 			await editing;
@@ -214,7 +223,8 @@ describe("explicit retry, queue and draft targets", () => {
 		const queued = deferred<void>();
 		a.session.steer = vi.fn(() => queued.promise);
 		const removing = cs.removeQueued("steer", "drop", 0, undefined, a);
-		expect(a.session.steer).toHaveBeenCalledWith("keep", undefined);
+		// #958 起走 `steerSession()`：没图时只传正文（与 SDK 的可选参数等价）。
+		expect(a.session.steer).toHaveBeenCalledWith("keep");
 		cs.activeId = a.id;
 		queued.resolve();
 		await removing;

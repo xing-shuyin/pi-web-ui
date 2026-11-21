@@ -1,4 +1,4 @@
-import { appUrl } from "./base-url";
+import { apiFetch, readApiFailure, requestJson } from "./api-client";
 import type { PluginHostTtsProvider, PluginHostTtsProviderInfo } from "./plugin-host";
 
 // Built-in provider ships the same label/labelEn pair as plugin providers; consumers pick one (data).
@@ -7,17 +7,10 @@ const listeners = new Set<() => void>();
 let refreshInFlight: Promise<void> | undefined;
 let refreshTimer: ReturnType<typeof setInterval> | undefined;
 
-async function responseError(response: Response): Promise<Error> {
-	const data = await response.json().catch(() => ({}));
-	return new Error(data.error || `TTS HTTP ${response.status}`);
-}
-
 export function refreshTtsEngines(): Promise<void> {
 	if (!refreshInFlight)
 		refreshInFlight = (async () => {
-			const response = await fetch(appUrl("/api/tts/engines"));
-			if (!response.ok) throw await responseError(response);
-			const data = await response.json();
+			const data = await requestJson<{ engines: PluginHostTtsProviderInfo[] }>("/api/tts/engines");
 			engines = data.engines;
 			for (const listener of listeners) listener();
 		})().finally(() => {
@@ -35,9 +28,9 @@ export function getPluginTtsProvider(id: string): PluginHostTtsProvider | undefi
 	return {
 		...(engines.find((engine) => engine.id === id) || { id, label: id }),
 		getVoices: async () => {
-			const response = await fetch(appUrl(`/api/tts/voices?engine=${encodeURIComponent(id)}`));
-			if (!response.ok) throw await responseError(response);
-			const data = await response.json();
+			const data = await requestJson<{ voices: { id: string; label: string; lang?: string }[] }>(
+				`/api/tts/voices?engine=${encodeURIComponent(id)}`,
+			);
 			return data.voices.map((voice: { id: string; label: string; lang?: string }) => ({
 				voiceURI: voice.id,
 				name: voice.label,
@@ -70,13 +63,11 @@ export function getPluginTtsProvider(id: string): PluginHostTtsProvider | undefi
 			};
 			void (async () => {
 				try {
-					const response = await fetch(appUrl("/api/tts/synthesize"), {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({ text, engine: id, voice: voiceURI || "", rate }),
+					const response = await apiFetch("/api/tts/synthesize", {
+						body: { text, engine: id, voice: voiceURI || "", rate },
 						signal: controller.signal,
 					});
-					if (!response.ok) throw await responseError(response);
+					if (!response.ok) throw new Error((await readApiFailure(response)).error);
 					const blob = await response.blob();
 					if (stopped) return;
 					url = URL.createObjectURL(blob);

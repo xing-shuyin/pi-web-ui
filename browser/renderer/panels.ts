@@ -23,6 +23,15 @@ import {
 	type Settings,
 } from "./common.js";
 import { t, tf, type MessageKey } from "./i18n.js";
+import {
+	describeKernelEnvironment,
+	describeKernelState,
+	kernelActions,
+	kernelEnvironmentActions,
+	kernelPersistenceHint,
+	SHELL_CAPABILITY,
+} from "../kernel-view.js";
+import type { BrowserKernelState, KernelEnvironmentView } from "../contracts.js";
 import { vaultPanel, type VaultTab } from "./vault.js";
 import type {
 	BrowserDesignDocument,
@@ -480,6 +489,119 @@ async function historyPanel(container: HTMLElement): Promise<void> {
 	container.replaceChildren(search, list);
 	render();
 }
+/**
+ * 内核小节：状态一行 + “装成系统服务 / 重启”两个按钮。
+ * 重要不是控件而是那句话：“关掉本窗口之后它还在不在”（kernelPersistenceHint）。
+ */
+async function kernelSectionView(): Promise<HTMLElement> {
+	const section = element("section", "pb-section");
+	const status = element("p", "pb-muted");
+	const detail = element("p", "pb-muted");
+	const warning = element("p", "pb-muted");
+	warning.hidden = true;
+	const platform = window.piDesktop?.platform ?? "win32";
+	let current: BrowserKernelState | null = null;
+
+	const installButton = button(t("kernelInstall"), () => void runAction("kernel.install"));
+	const terminalHint = element("p", "pb-muted");
+	terminalHint.hidden = true;
+	const terminalCommand = element("code", "pb-muted");
+	terminalCommand.hidden = true;
+	const restartButton = button(t("kernelRestart"), () => void runAction("kernel.restart"));
+	const envLine = element("p", "pb-muted");
+	envLine.hidden = true;
+	const upgradeButton = button(t("kernelUpgrade"), () => void runAction("kernel.upgrade"));
+	upgradeButton.hidden = true;
+	const installNodeButton = button(t("kernelInstallNode"), () => void runAction("kernel.installNode"));
+	installNodeButton.hidden = true;
+
+	const applyActions = (state: BrowserKernelState | null): void => {
+		const actions = kernelActions({ state, platform, shellCapability: SHELL_CAPABILITY });
+		installButton.hidden = actions.install.kind !== "enabled";
+		restartButton.hidden = actions.restart.kind !== "enabled";
+		const terminal = actions.install.kind === "terminal";
+		terminalHint.hidden = !terminal;
+		terminalCommand.hidden = !terminal;
+		if (terminal) {
+			terminalHint.textContent = t("kernelTerminalHint");
+			terminalCommand.textContent = actions.install.command ?? "";
+		}
+		warning.hidden = actions.warning !== "min-shell-above";
+		if (!warning.hidden) warning.textContent = t("kernelMinShellWarning");
+	};
+
+	const show = (state: BrowserKernelState | null): void => {
+		current = state;
+		if (!state) {
+			status.textContent = t("disconnected");
+			detail.textContent = "";
+			applyActions(null);
+			return;
+		}
+		status.textContent = describeKernelState(state);
+		detail.textContent = kernelPersistenceHint(state);
+		applyActions(state);
+	};
+	const refresh = async (): Promise<void> => {
+		try {
+			show(await call<BrowserKernelState | null>("kernel.status"));
+		} catch (error) {
+			reportError(error);
+		}
+		void refreshEnv();
+	};
+	const SUCCESS_TEXT: Partial<Record<string, MessageKey>> = {
+		"kernel.install": "kernelInstalled",
+		"kernel.restart": "kernelRestarted",
+		"kernel.upgrade": "kernelUpgraded",
+		"kernel.installNode": "kernelNodeInstalled",
+	};
+	const refreshEnv = async (): Promise<void> => {
+		try {
+			const env = await call<KernelEnvironmentView>("kernel.env");
+			envLine.textContent = describeKernelEnvironment(env);
+			envLine.hidden = !envLine.textContent;
+			const actions = kernelEnvironmentActions(env);
+			upgradeButton.hidden = !actions.upgrade;
+			installNodeButton.hidden = !actions.installNode;
+		} catch {
+			// 环境探测失败不影响内核状态展示（registry 不可达时静默）
+		}
+	};
+	let busy = false;
+	const runAction = async (
+		action: "kernel.install" | "kernel.restart" | "kernel.upgrade" | "kernel.installNode",
+	): Promise<void> => {
+		if (busy) return;
+		busy = true;
+		detail.textContent = t("kernelBusy");
+		try {
+			const result = await call<{ ok: boolean; message: string }>(action);
+			if (result?.ok) notify(SUCCESS_TEXT[action] ? t(SUCCESS_TEXT[action]!) : t("kernelRestarted"));
+			else detail.textContent = [t("kernelFailed"), String(result?.message ?? "")].filter(Boolean).join("：");
+		} catch (error) {
+			detail.textContent = [t("kernelFailed"), error instanceof Error ? error.message : ""].filter(Boolean).join("：");
+		} finally {
+			busy = false;
+			await refresh();
+		}
+	};
+	section.append(
+		element("h3", "", t("kernelTitle")),
+		element("p", "pb-muted", t("kernelHelp")),
+		status,
+		detail,
+		warning,
+		toolbar(installButton, restartButton, upgradeButton, installNodeButton),
+		envLine,
+		terminalHint,
+		terminalCommand,
+	);
+	void current;
+	await refresh();
+	return section;
+}
+
 async function settingsPanel(container: HTMLElement): Promise<void> {
 	const settings = await call<Settings>("settings.get");
 	const form = element("form", "pb-form");
@@ -514,6 +636,42 @@ async function settingsPanel(container: HTMLElement): Promise<void> {
 	startupMode.value =
 		settings.defaultMode === "browser" || settings.defaultMode === "split" ? settings.defaultMode : "agent";
 	const agentUrl = input(settings.agentUrl || currentState?.agentUrl || "", "url", "http://127.0.0.1:3000");
+	// 翻译引擎：腾讯翻译（国内可直连，默认）/ Google 网页翻译；目标语言两边共用一份白名单
+	const translateEngine = element("select", "pb-input");
+	for (const [value, text] of [
+		["tencent", t("translateTencent")],
+		["google", t("translateGoogle")],
+	]) {
+		const option = element("option", "", text);
+		option.value = value;
+		translateEngine.append(option);
+	}
+	translateEngine.value = settings.translateEngine === "google" ? "google" : "tencent";
+	const translateTarget = element("select", "pb-input");
+	for (const [value, text] of [
+		["zh-CN", "简体中文 / zh-CN"],
+		["zh-TW", "繁體中文 / zh-TW"],
+		["en", "English / en"],
+		["ja", "日本語 / ja"],
+		["ko", "한국어 / ko"],
+		["fr", "Français / fr"],
+		["de", "Deutsch / de"],
+		["es", "Español / es"],
+		["ru", "Русский / ru"],
+		["pt", "Português / pt"],
+		["it", "Italiano / it"],
+		["tr", "Türkçe / tr"],
+	]) {
+		const option = element("option", "", text);
+		option.value = value;
+		translateTarget.append(option);
+	}
+	translateTarget.value = typeof settings.translateTarget === "string" ? settings.translateTarget : "zh-CN";
+	// Edge 式自动提示：页面语言与目标语言不一致时，在页面里弹一颗「要翻译吗？」胶囊
+	const translateAutoPrompt = input("", "checkbox");
+	translateAutoPrompt.checked = settings.translateAutoPrompt !== false;
+	const translateAutoPromptRow = element("label", "pb-switch");
+	translateAutoPromptRow.append(translateAutoPrompt, element("span", "", t("translateAutoPrompt")));
 	const connection = element(
 		"p",
 		"pb-muted",
@@ -561,6 +719,9 @@ async function settingsPanel(container: HTMLElement): Promise<void> {
 				searchEngine: engine.value,
 				newTabOpenMode: openMode.value,
 				defaultMode: startupMode.value,
+				translateEngine: translateEngine.value,
+				translateTarget: translateTarget.value,
+				translateAutoPrompt: translateAutoPrompt.checked,
 				allowScripts: allowScripts.checked,
 				...Object.fromEntries([...switches].map(([key, control]) => [key, control.checked])),
 			},
@@ -592,6 +753,7 @@ async function settingsPanel(container: HTMLElement): Promise<void> {
 		),
 		connection,
 	);
+	const kernelSection = await kernelSectionView();
 	const importing = element("section", "pb-section");
 	importing.append(
 		element("h3", "", t("importData")),
@@ -607,6 +769,15 @@ async function settingsPanel(container: HTMLElement): Promise<void> {
 		}),
 	);
 	const vault = element("section", "pb-section");
+	// 网页翻译：引擎与目标语言。翻译请求只在主进程出入，页面脚本只拿译文
+	const translateSection = element("section", "pb-section");
+	translateSection.append(
+		element("h3", "", t("translate")),
+		element("p", "pb-muted", t("translateEngineHelp")),
+		label(t("translateEngine"), translateEngine),
+		label(t("translateTarget"), translateTarget),
+		translateAutoPromptRow,
+	);
 	const design = element("section", "pb-section");
 	design.append(
 		element("h3", "", t("design")),
@@ -623,6 +794,8 @@ async function settingsPanel(container: HTMLElement): Promise<void> {
 	container.replaceChildren(
 		form,
 		agentSection,
+		translateSection,
+		kernelSection,
 		vault,
 		design,
 		extensions,

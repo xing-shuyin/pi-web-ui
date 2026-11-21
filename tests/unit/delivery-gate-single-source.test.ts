@@ -58,17 +58,14 @@ describe("agent-service 不许再长出第十五种投递（issues/929 防回归
 		expect(serviceSource).toContain("private async submitText(");
 	});
 
-	it("SDK 的 steering 队列只允许两处使用（活轮投递 + 队列编辑回滚）", () => {
+	it("agent-service 不再直连 SDK 的 steering / sendUserMessage（#958 起全走 session-turns）", () => {
 		expect(
 			count(serviceSource, /\.steer\(/),
-			"往 steering 队列塞消息只在「有一轮活着」时成立；门关时请 park 到 ConversationDelivery",
-		).toBe(2);
-	});
-
-	it("直接调用 SDK 投递的站点数量有上限（新增请走 submitText / deliverFromOutside）", () => {
+			"往 steering 队列塞消息只在「有一轮活着」时成立；门关时请 park 到 ConversationDelivery，活轮投递请用 session-turns 的 steerSession()",
+		).toBe(0);
 		expect(
 			count(serviceSource, "sendUserMessage("),
-			"新增投递点请用 this.submitText() 或 this.deliverFromOutside()，不要直连 SDK",
-		).toBeLessThanOrEqual(10);
+			"喂轮只有 server/session-turns.ts 一个出口：用 promptSession() / steerSession() / runTurn()，再按门槛决定 submitText 还是 deliverFromOutside",
+		).toBe(0);
 	});
 });

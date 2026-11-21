@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { appSend } from "../app-globals";
-import { appUrl } from "../base-url";
-import { withToken } from "../auth-token";
+import { requestJson } from "../api-client";
 import { useT } from "../i18n";
 import { useEscapeKey } from "../shortcut-stack";
 import { useOverlayZIndex } from "../overlay-stack";
@@ -22,12 +21,10 @@ type SessionRow = {
 };
 
 async function fetchSessions(botId: string): Promise<SessionRow[]> {
-	const response = await fetch(
-		withToken(appUrl(`/api/device-center/local-bots/${encodeURIComponent(botId)}/sessions`)),
-		{ credentials: "same-origin", signal: AbortSignal.timeout(20_000) },
+	const data = await requestJson<{ sessions?: SessionRow[] }>(
+		`/api/device-center/local-bots/${encodeURIComponent(botId)}/sessions`,
+		{ signal: AbortSignal.timeout(20_000) },
 	);
-	const data = (await response.json().catch(() => ({}))) as { sessions?: SessionRow[]; error?: string };
-	if (!response.ok) throw new Error(data.error || String(response.status));
 	return data.sessions ?? [];
 }
 

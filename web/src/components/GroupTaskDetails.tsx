@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { appUrl } from "../base-url";
-import { withToken } from "../auth-token";
+import { requestJson } from "../api-client";
 import { useT } from "../i18n";
 import type {
 	DeviceTaskDetails,
@@ -16,16 +15,9 @@ export interface GroupTaskDetailsProps {
 }
 
 async function fetchJson<T>(path: string, signal: AbortSignal): Promise<T> {
-	const res = await fetch(withToken(appUrl(`/api/device-center/${path}`)), {
-		method: "GET",
-		credentials: "same-origin",
+	return requestJson<T>(`/api/device-center/${path}`, {
 		signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
 	});
-	const data = await res.json().catch(() => ({}));
-	if (!res.ok) {
-		throw new Error(data.error || `HTTP ${res.status}`);
-	}
-	return data as T;
 }
 
 export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsProps) {

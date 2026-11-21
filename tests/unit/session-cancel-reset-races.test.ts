@@ -17,19 +17,25 @@ function deferred<T>() {
 	return { promise, resolve };
 }
 function conversation(id: string): any {
-	const session = {
-		agent: { state: { model: null, messages: [] } },
-		isIdle: false,
-		subscribe: vi.fn(() => vi.fn()),
-		bindExtensions: vi.fn().mockResolvedValue(undefined),
-		sendUserMessage: vi.fn().mockResolvedValue(undefined),
-		abort: vi.fn().mockResolvedValue(undefined),
+	const runtime = {
+		session: {
+			agent: { state: { model: null, messages: [] } },
+			isIdle: false,
+			subscribe: vi.fn(() => vi.fn()),
+			bindExtensions: vi.fn().mockResolvedValue(undefined),
+			sendUserMessage: vi.fn().mockResolvedValue(undefined),
+			abort: vi.fn().mockResolvedValue(undefined),
+		},
+		dispose: vi.fn().mockResolvedValue(undefined),
 	};
 	return {
 		id,
 		cwd: resolve("race-project"),
-		session,
-		runtime: { session, dispose: vi.fn().mockResolvedValue(undefined) },
+		runtime,
+		// `conv.session` 是 `runtime.session` 的只读投影：换运行态即换会话，假体同构。
+		get session() {
+			return this.runtime.session;
+		},
 		terminals: { killAll: vi.fn() },
 	};
 }
@@ -68,7 +74,7 @@ function spawnFixture() {
 		agentDir: resolve("race-agent"),
 		makeTerminalManager: vi.fn(() => child.terminals),
 		makeRuntimeFactory: vi.fn(() => ({})),
-		makeConversation: vi.fn((runtime, id) => Object.assign(child, { id, runtime, session: runtime.session })),
+		makeConversation: vi.fn((runtime, id) => Object.assign(child, { id, runtime })),
 		makeExtensionErrorReporter: vi.fn(),
 		applySessionOverrides: vi.fn(),
 		pushProjects: vi.fn().mockResolvedValue(undefined),
@@ -309,8 +315,8 @@ describe("interrupt and reset singleflight", () => {
 		const old = conv.runtime;
 		const pending = cs.interruptRun(conv, "stop");
 		const replacement = conversation("new").runtime;
+		// 换运行态就换了会话（`conv.session` 跟着 `runtime.session` 走），无需另写会话。
 		conv.runtime = replacement;
-		conv.session = replacement.session;
 		await pending;
 		expect(old.session.abort).not.toHaveBeenCalled();
 		expect(replacement.session.abort).not.toHaveBeenCalled();
@@ -324,7 +330,6 @@ describe("interrupt and reset singleflight", () => {
 		await vi.waitFor(() => expect(cs.openManagerAndRuntime).toHaveBeenCalledOnce());
 		const replacement = conversation("replacement").runtime;
 		conv.runtime = replacement;
-		conv.session = replacement.session;
 		const candidate = conversation("candidate").runtime;
 		gate.resolve({ runtime: candidate });
 		await first;

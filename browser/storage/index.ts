@@ -5,6 +5,14 @@ import type { BrowserMode } from "../contracts.js";
 import { readPageScripts, type PageScript } from "../runtime/scripts.js";
 import { normalizeTotpEntries, sortTotpEntries, type TotpEntry } from "../runtime/totp.js";
 import { normalizePasskeys, type StoredPasskey } from "../runtime/passkeys.js";
+import {
+	DEFAULT_TRANSLATE_ENGINE,
+	DEFAULT_TRANSLATE_TARGET,
+	normalizeTranslateEngine,
+	normalizeTranslateTarget,
+	type TranslateEngine,
+	type TranslateTarget,
+} from "../runtime/translate-engines.js";
 import { isWebUrl } from "../runtime/urls.js";
 
 export interface Bookmark {
@@ -32,6 +40,13 @@ export interface BrowserSettings {
 	searchEngine: string;
 	theme: string;
 	newTabOpenMode: string;
+	/** 网页翻译引擎：tencent（腾讯翻译，国内可直连）/ google（谷歌手页翻译）；下线的 edge 已在 normalize 里迁到默认 */
+	translateEngine: TranslateEngine;
+	/** 网页翻译目标语言（zh-CN 为默认），取自 `TRANSLATE_TARGETS` 白名单 */
+	translateTarget: TranslateTarget;
+	/** 页面语言与目标语言不同时，自动弹「要翻译吗？」胶囊（Edge 同款行为，可关） */
+	translateAutoPrompt: boolean;
+	/** 历史字段：悬浮圆钮已下线（工具全在外壳工具行），读写保留只为不让旧 settings.json 报错 */
 	smartDock: boolean;
 	customScrollbar: boolean;
 	officeEnabled: boolean;
@@ -61,6 +76,9 @@ const DEFAULT_SETTINGS: BrowserSettings = {
 	searchEngine: "bing",
 	theme: "dark",
 	newTabOpenMode: "current",
+	translateEngine: DEFAULT_TRANSLATE_ENGINE,
+	translateTarget: DEFAULT_TRANSLATE_TARGET,
+	translateAutoPrompt: true,
 	smartDock: true,
 	customScrollbar: true,
 	officeEnabled: true,
@@ -99,6 +117,9 @@ function settings(value: unknown, base = DEFAULT_SETTINGS): BrowserSettings {
 	const next = { ...base, shortcuts: { ...base.shortcuts }, sitePermissions: { ...base.sitePermissions } };
 	for (const key of ["searchEngine", "theme", "newTabOpenMode"] as const)
 		if (typeof value[key] === "string") next[key] = value[key];
+	// 翻译：引擎与目标语言都只收白名单值（非法值退回默认、下线的 edge 迁到当前默认，不让设置文件决定行为）
+	next.translateEngine = normalizeTranslateEngine(value.translateEngine ?? base.translateEngine);
+	next.translateTarget = normalizeTranslateTarget(value.translateTarget ?? base.translateTarget);
 	for (const key of [
 		"smartDock",
 		"customScrollbar",
@@ -107,6 +128,7 @@ function settings(value: unknown, base = DEFAULT_SETTINGS): BrowserSettings {
 		"allowShot",
 		"allowEval",
 		"allowScripts",
+		"translateAutoPrompt",
 	] as const)
 		if (typeof value[key] === "boolean") next[key] = value[key];
 	if (["browser", "agent", "split"].includes(String(value.defaultMode)))

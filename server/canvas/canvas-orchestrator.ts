@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { isRemoteWorkspaceUri } from "../remote-ssh-service.js";
+import { runTurn } from "../session-turns.js";
 import type {
 	CanvasEngineId,
 	CanvasMessage,
@@ -1158,7 +1159,7 @@ export class CanvasOrchestrator {
 		const execution = this.activeExecutions.get(execKey);
 		if (execution?.session && typeof execution.session.prompt === "function") {
 			try {
-				await execution.session.prompt(message);
+				await runTurn(execution.session, message);
 				if (execution.abortController?.signal.aborted || this.activeExecutions.get(execKey) !== execution) return;
 				this.appendLog(
 					graphId,

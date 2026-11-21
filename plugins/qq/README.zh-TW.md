@@ -37,7 +37,7 @@ QQ 工作臺 →「機器人憑證與進階設定」→「自動回覆語音」�
 - 單聊、群聊及已繫結網頁會話的最終回答支援語音；頻道、指令回執和進度提示使用文字。長回覆朗讀開頭，同時保留完整文字；語音生成、轉碼或傳送失敗時自動回退到完整文字，原因可在進階設定檢視。
 - 首次合成 QQ 語音時按需安裝 `silk-wasm`；AAC 等壓縮音訊按需安裝 `ffmpeg-static`。系統 WAV 只需 SILK 編碼元件。
 
-引擎註冊、系統音色、API 與取消規則見 [`docs/architecture-tts.md`](../../docs/architecture-tts.zh-TW.md)。
+引擎註冊、系統音色、API 與取消規則見 [`docs/architecture-tts.md`](../../docs/architecture-tts.md)。
 
 ## 配置指南
 
