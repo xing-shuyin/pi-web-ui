@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { normalizeNativeCliInheritModel, type NativeCliInheritModel } from "./engine-catalog.js";
 import { normalizeUploadMaxMb } from "./payload-limits.js";
 import * as fsPromises from "node:fs/promises";
@@ -1019,6 +1019,10 @@ function freezeSettings<T>(value: T): T {
 	return value;
 }
 
+function isStateRecord(value: unknown): value is Record<string, ClientState> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export class ClientStateStore {
 	private cache: Record<string, ClientState> | null = null;
 	private settingsVersion = 0;
@@ -1055,11 +1059,24 @@ export class ClientStateStore {
 			this.sweepStaleClientsIfNeeded();
 			return this.cache;
 		}
+		let raw: string | undefined;
 		try {
-			const parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as Record<string, ClientState>;
-			this.cache = parsed && typeof parsed === "object" ? parsed : {};
+			raw = readFileSync(this.filePath, "utf8");
 		} catch {
-			this.cache = {};
+			raw = undefined;
+		}
+		this.cache = {};
+		if (raw !== undefined) {
+			try {
+				const parsed: unknown = JSON.parse(raw);
+				if (isStateRecord(parsed)) {
+					this.cache = parsed;
+				} else {
+					this.preserveUnreadable(raw, new Error(`顶层类型不可用：${Array.isArray(parsed) ? "array" : typeof parsed}`));
+				}
+			} catch (error) {
+				this.preserveUnreadable(raw, error);
+			}
 		}
 		let migrated = false;
 		const globalState = (this.cache[ClientStateStore.GLOBAL_SETTINGS_KEY] ??= { projects: [] });
@@ -1136,6 +1153,18 @@ export class ClientStateStore {
 	private touchClient(all: Record<string, ClientState>, clientId: string): void {
 		const state = all[clientId];
 		if (state) state.lastActive = Date.now();
+	}
+
+	/** 解析失败/结构不认识时不能直接降级成空库——下一次 save 会把用户全部设置覆盖掉。先留一份原文件。 */
+	private preserveUnreadable(raw: string, error: unknown): void {
+		if (!raw.trim()) return;
+		const backup = `${this.filePath}.corrupt-${Date.now()}`;
+		try {
+			writeFileSync(backup, raw, "utf8");
+			console.error(`[client-state] ${this.filePath} 无法解析，已备份到 ${backup}，本次以空设置启动`, error);
+		} catch (backupError) {
+			console.error(`[client-state] ${this.filePath} 无法解析且备份失败，下一次保存将覆盖原文件`, backupError);
+		}
 	}
 
 	private save(): void {
