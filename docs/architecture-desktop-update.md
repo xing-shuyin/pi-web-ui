@@ -136,7 +136,7 @@ PI_DESKTOP_UPDATE_MODE=auto PI_DESKTOP_UPDATE_FEED=http://127.0.0.1:8799 <桌面
 测试模式下主进程会自动下载（不自动安装），并把每次状态迁移打到日志：`[updater] phase=… target=… percent=…`。
 
 能验到哪一步：**检查 → 发现新版 → 下载 → 校验哈希 → downloaded**。
-验不到：**替换安装**——需要真实安装包（本机按 [`release.md`](release.md) 的口径产不出 NSIS），以及安装器能被执行。macOS 另需签名/公证，见下一节。
+验不到：**替换安装**——需要真实安装包（本机用 `npm run desktop:nsis` 产出，与 CI 的 desktop-release 同一条命令），以及安装器能被执行。macOS 另需签名/公证，见下一节。
 
 > 下一层演进（壳/运行时分离、自有密钥签名、三平台矩阵）见 [`architecture-desktop-runtime.md`](architecture-desktop-runtime.md)。
 
@@ -156,3 +156,12 @@ MSI（WiX）安装器不会主动关闭正在运行的旧版应用，用户手�
 - 看门狗 ps1：循环 `Get-Process -Id <pid>`（500ms 一次，最多 120 秒）→ 进程消失后 `Start-Process msiexec.exe -ArgumentList '/i', <msi>, '/passive'` → 结尾自删 ps1（`try/catch` 包住，删不掉不报错）。PowerShell 单引号转义为双写（`'` → `''`）。
 - 主进程：先过 `assertTrustedDesktopRequest`；`dialog.showOpenDialog`（filters 限 `msi`，取消返回 `{ok:false, cancelled:true}`）；`validateMsiPath` 拒绝空 / 超长（>4096）/ 控制字符 / 非 `.msi` 后缀 / 不存在的文件；ps1 原子写（`os.tmpdir()` 下 tmp+rename）；`spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1], {detached:true, stdio:"ignore", windowsHide:true})` 后 `unref()`，成功才 `app.quit()`；任何一步失败只返回 `{ok:false, error}` 且不退出；非 win32 直接返回 `{ok:false, error:"unsupported-platform"}`。
 - 三面对齐（与 §六 同一守卫思路）：`desktop/main.ts` 的通道名 `pi-desktop:update-install-local-msi` ＝ `desktop/preload.cts` 的 `updater.installLocalMsi` ＝ `web/src/desktop-updater.ts` 的桥方法（旧壳缺失时为 `undefined`，面板不显示按钮）。面板在 `web/src/components/DesktopUpdatePanel.tsx`（仅 win32 + 桌面壳）：`window.confirm` 二次确认 → 调用 → ok 即显示「正在退出并安装…」（应用随即退出，无需处理返回后的状态）。
+
+## 十二、NSIS 覆盖安装（FilesInUse 绕行：关不掉的 node 侧车）
+
+NSIS 安装器自带的 `CHECK_APP_RUNNING` 只认两类进程：镜像名 = 主 exe（cmd 分支），或镜像路径落在 `$INSTDIR` 下（PowerShell 分支）。但桌面主进程起的 server 侧车（`desktop/main.ts` 的 `serverProc`）在全局 npm 内核下是**系统 node.exe**：镜像在安装目录之外，只是命令行里带了安装目录下的 asar 入口。两边都匹配不到 → 主 exe 关了、侧车还抱着 `app.asar` / `app.asar.unpacked` 原生模块 → 覆盖写文件时 `Error opening file for writing`，安装卡在进度条。事实源：`desktop/installer.nsh`（`customInit` / `customUnInstall` 共用的清场宏）· `desktop/electron-builder.yml`（`nsis.include` 接线）。守卫：`tests/unit/nsis-installer.test.ts`。
+
+- 清场宏只动两类进程，绝不裸杀 `node.exe`（会误伤用户本机开发服务）：① 可执行路径落在 `$INSTDIR` 下的（全是自家文件）；② 镜像名是 `node.exe` **且**命令行包含 `$INSTDIR` 的（就是自家 server 侧车；安装器自身跑在 `%TEMP%`，不可能命中，无需 pid 自排除）。
+- 先礼后兵：`Stop-Process` 优雅关 → `Sleep 800` → `-Force` → `Sleep 500`。PowerShell 被执行策略禁掉时退回 `wmic … delete`（同样两条规则）；都没有就静默跳过，股票逻辑仍兜住主 exe。
+- 注入点：`customInit`（`.onInit` 里 `initMultiUser` 之后，`$INSTDIR` 已定，目录页出来前清场；oneClick/assisted 都走）；`customUnInstall`（股票 `un.checkAppRunning` 之后，否则卸载也删不干净被锁的 asar）。
+- 用户侧即时解法（没新包时）：彻底退出旧版（确认任务管理器里没有 `pi-web-ui-desktop.exe`），再跑 `setup.exe`；`setup.exe`（assisted，per-user）与 `*-oneclick.exe` / `*.msi` 落盘位置不同，混装等于装三份，升级前先只留一种并卸载其余。

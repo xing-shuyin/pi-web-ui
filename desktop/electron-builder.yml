@@ -57,6 +57,10 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   artifactName: ${productName}-${version}-setup.${ext}
+  # 安装/卸载前先清场：关掉旧版主进程 + 命令行指向安装目录的 node 侧车
+  # （股票 CHECK_APP_RUNNING 看不见镜像在安装目录之外的系统 node 侧车，见 §十二）。
+  # 路径相对项目根目录（app-builder getResource 先找 buildResourcesDir 再找项目根）。
+  include: desktop/installer.nsh
 # MSI（可选目标，只有显式 `--win msi` 才出）：WiX 4 直接把 win-unpacked 压成安装包，不执行产物，
 # 所以本地 Windows 也能出——NSIS 那步本地要执行刚生成的 setup.exe 去生成卸载器，会被系统拦掉。
 # warningsAsErrors 必须关：msi target 默认带 WiX 的 -wx（警告当错误），一个 ICE 警告就整包失败。
