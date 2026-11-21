@@ -67,6 +67,7 @@ function portRows(tracker: BgServerTracker): number[] {
 		.list()
 		.filter((s) => s.kind === "port")
 		.map((s) => s.port)
+		.filter((port): port is number => typeof port === "number")
 		.sort((a, b) => a - b);
 }
 
