@@ -16,6 +16,17 @@
  * 页面内容不跟着走：Agent 有自己的浏览器工具，拿着地址自己读。
  */
 
+import { en, interpolate, isZhLocale, zh } from "./i18n";
+
+/**
+ * 文案走 i18n 字典（`i18n-hardcoded-guard` 要求）：本模块是纯函数、不拿 hook，
+ * 所以按 `document.documentElement.lang`（i18n 自己写的那个）选字典，node 环境下回退中文。
+ */
+function tr(key: keyof typeof zh, vars?: Record<string, string | number>): string {
+	const lang = typeof document !== "undefined" ? document.documentElement.lang : "zh";
+	return interpolate((isZhLocale(lang) ? zh : en)[key] ?? zh[key], vars);
+}
+
 /** 选段上限与主进程侧（`QUOTE_MAX_CHARS`）同量级：再长就不是「引用」而是「搬正文」了。 */
 export const BROWSER_QUOTE_MAX_CHARS = 6000;
 
@@ -50,7 +61,7 @@ export function formatQuotedSelection(text: string, maxChars = BROWSER_QUOTE_MAX
 		body = body.slice(0, maxChars);
 		const lastBreak = body.lastIndexOf("\n");
 		if (lastBreak > 0) body = body.slice(0, lastBreak);
-		body = `${body}…（已截断）`;
+		body = body + tr("browserRefTruncated");
 	}
 	return body
 		.split("\n")
@@ -63,7 +74,7 @@ export function formatBrowserTabReference(input: BrowserReferenceInput): string 
 	const url = usableUrl(String(input.url ?? "").trim());
 	if (!url) return "";
 	const title = cleanTitle(String(input.title ?? ""), url);
-	return `页面引用：${title ? `${title} — ${url}` : url}`;
+	return tr("browserRefPage", { target: title ? `${title} — ${url}` : url });
 }
 
 /**
@@ -74,5 +85,5 @@ export function browserReferenceInsertion(input: BrowserReferenceInput): string 
 	const header = formatBrowserTabReference(input);
 	if (!header) return "";
 	const quote = formatQuotedSelection(input.text ?? "");
-	return quote ? `${header}\n选中内容：\n${quote}\n\n` : `${header}\n`;
+	return quote ? `${header}\n${tr("browserRefSelection")}\n${quote}\n\n` : `${header}\n`;
 }

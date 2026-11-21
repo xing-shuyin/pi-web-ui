@@ -3976,5 +3976,8 @@
 	"kernelUptimeUnderMinute": "under a minute",
 	"kernelUptimeMinutes": "{minutes} min",
 	"kernelUptimeHours": "{hours} h {minutes} min",
-	"kernelUptimeDays": "{days} d {hours} h"
+	"kernelUptimeDays": "{days} d {hours} h",
+	"browserRefPage": "Page reference: {target}",
+	"browserRefSelection": "Selected text:",
+	"browserRefTruncated": "… (truncated)"
 }

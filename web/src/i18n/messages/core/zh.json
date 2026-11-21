@@ -3976,5 +3976,8 @@
 	"kernelUptimeUnderMinute": "不到 1 分钟",
 	"kernelUptimeMinutes": "{minutes} 分钟",
 	"kernelUptimeHours": "{hours} 小时 {minutes} 分钟",
-	"kernelUptimeDays": "{days} 天 {hours} 小时"
+	"kernelUptimeDays": "{days} 天 {hours} 小时",
+	"browserRefPage": "页面引用：{target}",
+	"browserRefSelection": "选中内容：",
+	"browserRefTruncated": "…（已截断）"
 }
