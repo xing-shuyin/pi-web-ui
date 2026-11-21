@@ -57,7 +57,6 @@ export function* installDirectories(options: NativeCliDiscoveryOptions): Generat
 		windows ? path.join(home, "scoop", "shims") : path.join(home, ".local", "share", "pnpm"),
 		windows && localData && path.join(localData, "pnpm"),
 		windows && path.join(localData || path.join(home, "AppData", "Local"), "agy", "bin"),
-		...(!windows ? ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/snap/bin"] : []),
 	];
 	for (const directory of candidates) if (directory) yield directory;
 
@@ -80,6 +79,11 @@ export function* installDirectories(options: NativeCliDiscoveryOptions): Generat
 	const nvm = windows ? get("NVM_HOME") : path.join(get("NVM_DIR") || path.join(home, ".nvm"), "versions", "node");
 	if (nvm)
 		for (const version of versions(nvm)) yield windows ? path.join(nvm, version) : path.join(nvm, version, "bin");
+
+	// 固定系统目录是**最后的猜测**（不是用户配置的），排在版本管理器之后：PATH 里看不到 node 时，
+	// 用户显式装的 fnm/nvm 版本比 `/usr/local/bin` 的猜中优先。
+	if (!windows)
+		for (const directory of ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/snap/bin"]) yield directory;
 }
 
 export function findNativeCliExecutable(
