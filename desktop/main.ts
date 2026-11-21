@@ -209,9 +209,14 @@ function queryNpmGlobalPrefix(): Promise<string | null> {
 		const launch = resolveLaunch("npm", ["prefix", "-g"]);
 		const node = findSystemNode();
 		const env = node ? envWithNodeOnPath(process.env, node) : process.env;
-		execFile(launch.file, launch.args, { timeout: 5000, windowsHide: true, env, ...launch.options }, (error, stdout) => {
-			resolve(error ? null : parseNpmPrefix(stdout));
-		});
+		execFile(
+			launch.file,
+			launch.args,
+			{ timeout: 5000, windowsHide: true, env, ...launch.options },
+			(error, stdout) => {
+				resolve(error ? null : parseNpmPrefix(stdout));
+			},
+		);
 	});
 }
 
@@ -698,7 +703,9 @@ async function restartServerSidecar(expectedVersion?: string | null): Promise<st
 // （server/command-spawn.ts 解析用户命令走的也是它），壳这边直接复用，不另写一套。
 function findSystemNode(): string | null {
 	try {
-		return findNativeCliExecutable("node", { platform: process.platform, env: process.env, homeDir: homedir() }) ?? null;
+		return (
+			findNativeCliExecutable("node", { platform: process.platform, env: process.env, homeDir: homedir() }) ?? null
+		);
 	} catch {
 		return null;
 	}
