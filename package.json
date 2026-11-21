@@ -27,6 +27,7 @@
 		"scripts/patch-ffmpeg-desktop.mjs",
 		"scripts/verify-desktop-codec.mjs",
 		"dist/server/",
+		"dist/shared/",
 		"web/dist/",
 		"web/public/",
 		"themes/",
