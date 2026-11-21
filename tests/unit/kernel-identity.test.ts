@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	buildKernelInfo,
-	classifyKernelInstall,
-	describeKernelInstall,
-	tailPackageRoot,
-} from "../../server/kernel-identity.js";
+import { buildKernelInfo, classifyKernelInstall, describeKernelInstall } from "../../server/kernel-identity.js";
 
 describe("classifyKernelInstall", () => {
 	it("全局 npm 包（三平台路径）", () => {
@@ -79,16 +74,10 @@ describe("buildKernelInfo", () => {
 	});
 });
 
-describe("describeKernelInstall / tailPackageRoot", () => {
+describe("describeKernelInstall", () => {
 	it("三种形态都有中文描述", () => {
 		expect(describeKernelInstall("global-npm")).toBe("全局 npm 包");
 		expect(describeKernelInstall("packaged")).toBe("桌面安装包内置");
 		expect(describeKernelInstall("source")).toBe("源码");
-	});
-
-	it("日志里只留包根末两级，不泄露完整用户目录", () => {
-		expect(tailPackageRoot("C:/Users/c/AppData/Roaming/npm/node_modules/pi-web-ui")).toBe("node_modules/pi-web-ui");
-		expect(tailPackageRoot("/usr/local/lib/node_modules/pi-web-ui/")).toBe("node_modules/pi-web-ui");
-		expect(tailPackageRoot("D:/pi-web-ui")).toBe("pi-web-ui");
 	});
 });

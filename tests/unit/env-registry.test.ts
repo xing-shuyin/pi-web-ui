@@ -9,6 +9,9 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 /** 扫描范围：仓库自己的源码（不含 tests/ —— 那里只是在用变量，不是在定义配置面）。 */
 const SCAN_ROOTS = [
 	"server",
+	// `shared/` 是 server / desktop 共用的底层模块（`shared/instance-lock.ts` 就是从 server/ 搬过去的）。
+	// 漏掉它会静默缩小守卫覆盖：变量只在这里读时，删掉 registry 登记也不会红。
+	"shared",
 	"web/src",
 	"desktop",
 	"bin",
