@@ -229,8 +229,10 @@ export function pidAlive(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
 		return true;
-	} catch {
-		return false;
+	} catch (err) {
+		// EPERM = 进程在，只是没权限给它发信号（Windows 上别人/提权起的进程最常见）。
+		// 当成「已退出」会把 kill 失败误判成成功（#974 §1）。
+		return (err as NodeJS.ErrnoException | null)?.code === "EPERM";
 	}
 }
 
@@ -248,15 +250,25 @@ export async function killPidTree(pid: number): Promise<void> {
 				killer.once("close", () => resolve());
 			});
 		} else {
-			process.kill(-pid, "SIGKILL");
+			try {
+				// 有自己进程组的（spawn 时 detached）才能整组杀。
+				process.kill(-pid, "SIGKILL");
+			} catch {
+				// 后台服务多是 shell 的后代、pgid 不是自己 → 组杀 ESRCH，退一步杀单个 pid。
+				// 不兜这一层，POSIX 上「停止后台任务」永远杀不掉，只会报错。
+				process.kill(pid, "SIGKILL");
+			}
 		}
 	} catch {}
 }
 
-/** killPidTree 返回时目标进程可能尚未退出（taskkill 退出 / SIGKILL 送达都异步），按 50ms 轮询判定。 */
+/**
+ * killPidTree 返回时目标进程可能尚未退出（taskkill 退出 / SIGKILL 送达都异步），按 50ms 轮询判定。
+ * 默认 2s：`taskkill /T` 收整裸子树本来就可能超过两百毫秒，窗口给太短会把成功当成失败。
+ */
 export async function waitForPidGone(
 	pid: number,
-	timeoutMs = 500,
+	timeoutMs = 2000,
 	isAlive: (pid: number) => boolean = pidAlive,
 ): Promise<boolean> {
 	const deadline = Date.now() + timeoutMs;

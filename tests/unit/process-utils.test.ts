@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { parseLsofListening, parseNetstatListening } from "../../server/process-utils.js";
+import { describe, expect, it, vi } from "vitest";
+import { parseLsofListening, parseNetstatListening, pidAlive } from "../../server/process-utils.js";
 
 describe("parseNetstatListening", () => {
 	it("解析 IPv4 / IPv6 监听行（netstat -ano -p tcp）", () => {
@@ -59,5 +59,33 @@ describe("parseLsofListening", () => {
 		expect(parseLsofListening("").size).toBe(0);
 		expect(parseLsofListening(header).size).toBe(0);
 		expect(parseLsofListening(`${header}\nnode 1 u 3u IPv4 1 0t0 TCP *:99999`).size).toBe(0);
+	});
+});
+
+describe("pidAlive", () => {
+	it("EPERM 视为「还在」：没权限发信号不等于进程已经没了", () => {
+		const err = Object.assign(new Error("operation not permitted"), { code: "EPERM" });
+		const spy = vi.spyOn(process, "kill").mockImplementation(() => {
+			throw err;
+		});
+		try {
+			expect(pidAlive(4242)).toBe(true);
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
+	it("ESRCH / 非法 pid 视为「不在」", () => {
+		const err = Object.assign(new Error("no such process"), { code: "ESRCH" });
+		const spy = vi.spyOn(process, "kill").mockImplementation(() => {
+			throw err;
+		});
+		try {
+			expect(pidAlive(4242)).toBe(false);
+		} finally {
+			spy.mockRestore();
+		}
+		expect(pidAlive(0)).toBe(false);
+		expect(pidAlive(process.pid)).toBe(false);
 	});
 });

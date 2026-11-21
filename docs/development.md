@@ -127,6 +127,8 @@ Windows 上 `npx` / `npm` / `pnpm` / `yarn` 是 `.cmd` 垫片，直接 `spawn` �
 
 `--shell` 只在命令必须整行交给 shell 时用（`--shell "<整行命令>"`，必要时配 `--shell-bin`）。`--shell-bin auto` 在 Windows 下优先探测真 Git Bash（`C:\Program Files\Git\bin\bash.exe`），类 Unix 用 `bash -c`，因此 `cd /e/pi-web-ui && ...` 这类 POSIX 路径才不会被 `cmd.exe` 认错盘符；解释器也可以是 `powershell` / `pwsh`（走 `-NoProfile -NonInteractive -Command`）。
 
+**杀完必须复核，别「发完就宣布成功」**：`killPidTree` 自己 `catch {}` 吞错，`taskkill` / `SIGKILL` 又都是异步送达——发完立刻读状态会把成功误判成失败，不读就直接宣布成功则会把失败当成功。判定口径：`pidAlive()`（EPERM = 进程还在，只是没权限给它发信号）+ `waitForPidGone(pid)`（50ms 轮询，默认 2s）；范式见 `server/bg-servers.ts` 的 `stopProcess()`——确认退出才删条目并公告成功，确认不了就**保留条目**并发 `level:"error"` 通知（[#974](https://github.com/xing-shuyin/pi-web-ui/issues/974) §1）。POSIX 侧组杀（`kill(-pid)`）只对进程组组长有效，不是组长时退一步杀单个 pid，否则「停止后台任务」在 Linux/macOS 上永远杀不掉。
+
 ## CI
 
 GitHub Actions ubuntu-latest（`.github/workflows/ci.yml`，push/PR → main 触发）拆成四个并行 job：
