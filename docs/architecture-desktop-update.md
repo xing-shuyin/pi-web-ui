@@ -165,3 +165,23 @@ NSIS 安装器自带的 `CHECK_APP_RUNNING` 在 cmd 分支（PowerShell 不可�
 - 先礼后兵：`Stop-Process` 优雅关 → `Sleep 800` → `-Force` → `Sleep 500`。PowerShell 被执行策略禁掉时退回 `wmic … delete`（同样两条规则）；都没有就静默跳过，股票逻辑仍兜住主 exe。
 - 注入点：`customInit`（`.onInit` 里 `initMultiUser` 之后，`$INSTDIR` 已定，目录页出来前清场；oneClick/assisted 都走）；`customUnInstall`（股票 `un.checkAppRunning` 之后，否则卸载也删不干净被锁的 asar）。
 - 用户侧即时解法（没新包时）：彻底退出旧版（确认任务管理器里没有 `pi-web-ui-desktop.exe`），再跑 `setup.exe`；`setup.exe`（assisted，per-user）与 `*-oneclick.exe` / `*.msi` 落盘位置不同，混装等于装三份，升级前先只留一种并卸载其余。
+
+### 十二补：安装器必须提权（「不能打开要写入的文件」的真实原因）
+
+2026-11-21 实机定位：NSIS 安装到一半弹「不能打开要写入的文件：`<安装目录>\Uninstall pi-web-ui-desktop.exe`」，
+换任何目录（`%LOCALAPPDATA%\Programs`、`C:\app\pwu`、`D:\t4`）都一样，**改动前的旧包同样复现** —— 与路径无关。
+
+在三处埋点后拿到决定性证据（`desktop/installer.nsh` 的 `customFiles_<arch>` 钩子写探针）：
+
+| 启动方式                 | `$TEMP`       | 写 `$INSTDIR` 探针 | 结果                           |
+| ------------------------ | ------------- | ------------------ | ------------------------------ |
+| 普通双击（非提权）       | `…\Temp\Low\` | `OPEN-FAILED`      | 装到一半报上面那句             |
+| 右键「以管理员身份运行」 | `…\Temp\`     | `ok`               | 19 个文件 + 注册表卸载项写成功 |
+
+`…\Temp\Low` 是 Windows 给**低完整性令牌**进程的临时目录 —— 也就是说非提权启动时安装器落在 Low IL，
+对中完整性的安装目录**没有写权限**，NSIS 把「拒绝访问」一律显示成「不能打开要写入的文件」。
+所以在 `nsis` 里加 `perMachine: true`（NSIS 侧的提权开关，安装器起手就 UAC），
+**不要用 `win.requestedExecutionLevel`** —— 那个作用于「应用 exe」，会让装好之后每次启动都要管理员。
+
+同处还修掉一个隐式依赖：electron-builder 把卸载器的落盘位置记成解包宏留下的 `$R0` 寄存器
+（`7z l` 产物能看到 `$R0\Uninstall …exe`），这里显式 `SetOutPath "$INSTDIR"` 钉死。

@@ -56,6 +56,10 @@ linux:
   target: AppImage
   icon: web/public/icons/icon-1024.png
 nsis:
+  # 安装器必须提权（实测：非提权启动会拿到低完整性令牌，安装目录不可写 →
+  # NSIS 报“不能打开要写入的文件：<目录>Uninstall …exe”，换任何目录都一样）。
+  # perMachine 是 NSIS 侧的提权开关；requestedExecutionLevel 只作用于应用 exe，别用那个。
+  perMachine: true
   oneClick: false
   allowToChangeInstallationDirectory: true
   artifactName: ${productName}-${version}-setup.${ext}

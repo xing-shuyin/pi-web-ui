@@ -65,3 +65,64 @@
 !macro customUnInstall
   !insertmacro PI_SWEEP_SIDECARS
 !macroend
+
+; ─────────────────────────────────────────────────────────────────────────────
+; 卸载器落盘点（根因修复 + 探针）
+;
+; electron-builder 把卸载器写进安装目录用的是：
+;     File "/oname=${UNINSTALL_FILENAME}" "${UNINSTALLER_OUT_FILE}"
+; 而这条 File 的输出目录取自解包宏 `extractUsing7za` 里的 `SetOutPath $R0`
+; （它把 $OUTDIR 存在 $R0 里）。于是**卸载器的落盘位置绑在 $R0 这个寄存器上**：
+; 安装包里那条记录就是 `$R0\Uninstall pi-web-ui-desktop.exe`（用 7z 列产物可见）。
+; 任何上游/未来版本改动碰了 $R0，卸载器就会写到别处，表现正是
+; “不能打开要写入的文件：<目录>\Uninstall pi-web-ui-desktop.exe”，安装卡死。
+;
+; 这里在“解包完成、写卸载器之前”（eb 的 customFiles_<arch> 钩子）做三件事：
+; 1. 把 $OUTDIR 钉回 $INSTDIR —— 让卸载器的目标目录不再依赖 $R0；
+; 2. 清掉上一次失败留下的同名文件（只删这一个文件，不动其它）；
+; 3. 写一行探针到 %TEMP%\piwebui-nsis-trace.log：现场数据 + 实际能否创建该文件，
+;    下次再失败时不用猜。
+!macro customFiles_x64
+  !insertmacro PI_PIN_UNINSTALLER_DIR
+!macroend
+
+!macro customFiles_ia32
+  !insertmacro PI_PIN_UNINSTALLER_DIR
+!macroend
+
+!macro customFiles_arm64
+  !insertmacro PI_PIN_UNINSTALLER_DIR
+!macroend
+
+!macro PI_PIN_UNINSTALLER_DIR
+  Push $R9
+
+  ; 1) 钉住输出目录：electron-builder 把卸载器的落盘位置记成解包宏留下的 `$R0`，
+  ;    这里改钉到 $INSTDIR，去掉对寄存器的隐式依赖。
+  SetOutPath "$INSTDIR"
+
+  ; 2) 清掉上次失败留下的同名残留（只删这一个文件）。
+  ${If} ${FileExists} "$INSTDIR\${UNINSTALL_FILENAME}"
+    ClearErrors
+    Delete "$INSTDIR\${UNINSTALL_FILENAME}"
+  ${EndIf}
+
+  ; 3) 写能力探针：把 NSIS 那句无法定位的
+  ;    “不能打开要写入的文件：<目录>\Uninstall …exe” 翻译成人话。
+  ;
+  ;    实测（2026-11-21 本机）：**非管理员启动 = 低完整性令牌 = 安装目录不可写**，
+  ;    管理员启动 probe ok 且安装完成；低 IL 下 %TEMP% 还会被重定向到 ...\Temp\Low。
+  ;    真正的修法在清单里（win.requestedExecutionLevel: requireAdministrator），
+  ;    这里只负责：万一还是没权限，说清楚原因而不是丢一个文件名给用户猜。
+  ClearErrors
+  FileOpen $R9 "$INSTDIR\pi-install-probe.tmp" w
+  ${If} ${Errors}
+    MessageBox MB_ICONSTOP "没有写入权限：$\r$\n$INSTDIR$\r$\n$\r$\nWindows 给非提权进程低完整性令牌，安装目录写不进去——这就是“不能打开要写入的文件”的真实原因。$\r$\n$\r$\n请取消安装，右键安装包选择「以管理员身份运行」。" /SD IDOK
+    Quit
+  ${Else}
+    FileClose $R9
+    Delete "$INSTDIR\pi-install-probe.tmp"
+  ${EndIf}
+
+  Pop $R9
+!macroend
