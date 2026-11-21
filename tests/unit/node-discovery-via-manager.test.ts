@@ -93,7 +93,7 @@ describe("系统 node 发现（版本管理器）", () => {
 		const onPath = join(homeDir, "custom-bin");
 		mkdirSync(onPath, { recursive: true });
 		const nodePath = join(onPath, NODE_BIN);
-		writeFileSync(nodePath, "");
+		writeFileSync(nodePath, "", { mode: 0o755 }); // POSIX 上候选要过 X_OK 检查
 		expect(
 			findNativeCliExecutable("node", {
 				platform: process.platform,
