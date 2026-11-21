@@ -967,7 +967,9 @@ function buildWinStartPs1(env, cwd, logPath, pidPath) {
 		"    Start-Sleep 10",
 		"  }",
 		"} finally {",
-		`  Remove-Item ${psQuote(pidPath)} -ErrorAction SilentlyContinue`,
+		// 只删自己的 pid 文件：以前无条件删，两个看门狗并存时后死的那个会把活着的那个的记录抹掉，
+		// `server status`/`stop` 从此找不到服务（实测 2026-11-21）。与 `releaseKernelLock` 同一语义。
+		`  if ((Test-Path ${psQuote(pidPath)}) -and (((Get-Content ${psQuote(pidPath)} -Raw) -replace '\\s', '') -eq [string]$PID)) { Remove-Item ${psQuote(pidPath)} -ErrorAction SilentlyContinue }`,
 		"}",
 		"",
 	].join("\r\n");
@@ -997,6 +999,67 @@ function winPidImageName(pid) {
 	const line = (res.stdout ?? "").split(/\r?\n/).find((l) => l.trim());
 	if (!line) return null;
 	return (line.match(/^"([^"]+)"/) ?? [])[1] ?? null;
+}
+
+/**
+ * 停掉正持有这份数据目录的内核（本地 sidecar、旧版安装、别的 CLI 拉的那份都算）。
+ *
+ * 为什么需要：`server install` 以前只管写配置并起新进程，已有内核持着 `<dataDir>/kernel.lock`
+ * 与端口时，新内核会被单实例锁拒绝 → 看门狗每 10s 空转，而老内核继续不动（用户以为"装完了"）。
+ * 锁文件是唯一事实源，所以只杀"这份数据目录的持有者"，不会误伤别的 dataDir 的内核。
+ */
+function stopKernelHoldingDataDir(dataDir) {
+	if (!dataDir) return;
+	const lockPath = join(dataDir, "kernel.lock");
+	let holder = null;
+	try {
+		holder = JSON.parse(readFileSync(lockPath, "utf8"));
+	} catch {
+		return;
+	}
+	const pid = Number(holder?.pid);
+	if (!Number.isInteger(pid) || pid <= 0 || !pidAlive(pid)) {
+		// 陈旧锁：直接清掉，让新内核能拿到。
+		try {
+			rmSync(lockPath, { force: true });
+		} catch {}
+		return;
+	}
+	const image = winPidImageName(pid);
+	if (image === null || !WIN_SERVICE_IMAGE_RE.test(image)) {
+		console.warn(
+			ZH
+				? `⚠ 数据目录被 PID ${pid}（${image ?? "未知"}）占用，不是内核进程，跳过强杀`
+				: `⚠ Data directory is held by PID ${pid} (${image ?? "unknown"}), not a kernel process; skipping force-kill`,
+		);
+		return;
+	}
+	run("taskkill", ["/PID", String(pid), "/T", "/F"], { ignoreError: true, silent: true });
+	const deadline = Date.now() + 5000;
+	while (Date.now() < deadline && pidAlive(pid)) {
+		spawnSync("ping", ["-n", "2", "127.0.0.1"], { windowsHide: true, stdio: "ignore" });
+	}
+}
+
+/** 停掉遗留的看门狗：pid 文件丢了也要能停（按 ps1 路径匹配命令行，连子树一起杀）。 */
+function stopStrayWindowsWatchdogs(name) {
+	const ps1 = winPs1Path(name);
+	const script = [
+		"$ErrorActionPreference='SilentlyContinue'",
+		`Get-CimInstance Win32_Process -Filter "Name='powershell.exe' or Name='pwsh.exe'" | Where-Object { $_.CommandLine -like ${psQuote(
+			`*${ps1}*`,
+		)} } | ForEach-Object { $_.ProcessId }`,
+	].join("\n");
+	const res = spawnSync(
+		winPowershell(),
+		["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+		{ windowsHide: true, encoding: "utf8" },
+	);
+	for (const line of String(res.stdout ?? "").split(/\r?\n/)) {
+		const pid = Number(line.trim());
+		if (!Number.isInteger(pid) || pid <= 0) continue;
+		run("taskkill", ["/PID", String(pid), "/T", "/F"], { ignoreError: true, silent: true });
+	}
 }
 
 function stopWinInstance(name) {
@@ -1333,6 +1396,12 @@ function installWindows(opts) {
 		return;
 	}
 	mkdirSync(dirname(ps1Path), { recursive: true });
+	// 幂等：先停掉**这份数据目录的持有者**（本地 sidecar / 旧内核）与遗留看门狗，再写配置并拉起。
+	// 不停就会留下两个看门狗抢同一份数据目录：被拒的那个每 10s 空转一次，
+	// 而且它退出时会顺手删掉活着的那个的 pid 文件（实机 2026-11-21）。
+	stopKernelHoldingDataDir(dataDir ?? join(homedir(), ".pi-web"));
+	stopWinInstance(name);
+	stopStrayWindowsWatchdogs(name);
 	writeFileSync(ps1Path, "\uFEFF" + ps1, "utf8");
 	writeFileSync(vbsPath, "\uFEFF" + vbs, "utf16le");
 	if (existsSync(winCmdPath(name))) rmSync(winCmdPath(name));

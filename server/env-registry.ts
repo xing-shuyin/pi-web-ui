@@ -125,6 +125,7 @@ export const ENV_SPECS: readonly EnvSpec[] = [
 	// ── 对外配置（用户/部署方真的要设）──────────────────────────────────────
 	{ name: "PI_CODING_AGENT_DIR", scope: "public" },
 	{ name: "PI_DESKTOP_FFMPEG", scope: "public" },
+	{ name: "PI_DESKTOP_KERNEL_SERVICE_FIRST", scope: "public" },
 	{ name: "PI_DESKTOP_RUNTIME_AUTOAPPLY", scope: "public" },
 	{ name: "PI_DESKTOP_RUNTIME_AUTOCHECK", scope: "public" },
 	{ name: "PI_DESKTOP_RUNTIME_ROOT", scope: "public" },

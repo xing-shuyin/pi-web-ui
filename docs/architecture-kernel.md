@@ -22,19 +22,22 @@
 
 目标形态只有一条：**内核永远独立于客户端、由系统托管、一份数据目录；客户端随便开随便关。**
 
+现在已经落地为**默认行为**（§4.1）：打包版首次启动就把全局包内核装成系统服务，壳只做客户端；
+本地 sidecar 只剩开发/冒烟、Linux（无 TTY）与离线兜底三种临时形态。
+
 ## 2. 事实源
 
-| 关注点                                  | 唯一事实源                                       | 说明                                                                               |
-| --------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| 内核身份（版本/安装形态/托管者/uptime） | `server/kernel-identity.ts`                      | 纯推导，无 I/O；`/api/health` 的 `kernel` 块由它产出                               |
-| 数据目录单实例                          | `shared/instance-lock.ts`                        | pid 文件 + 探活 + 陈旧接管                                                         |
-| 内核公开快照的形状                      | `server/protocol.ts` 的 `KernelPublicInfo`       | 客户端与内核之间的线形状                                                           |
-| 权威链（哪份代码是内核）                | `desktop/kernel-authority.ts`                    | 全局 npm 包 > `<userData>/runtime`（离线兜底）> 包内自带；`npm prefix -g` 缓存一天 |
-| 环境探测（node/服务/安装指引）          | `desktop/kernel-env.ts`                          | 纯函数 + 可注入 `exists`/`env`；不读注册表、不 spawn                               |
-| 壳要不要自己拉内核                      | `desktop/kernel-mode.ts` 的 `decideKernelMode()` | main.ts 里不许再写第二份 if                                                        |
-| 一键装成系统服务                        | `desktop/kernel-install.ts`                      | 只拼参数 + 起子进程，判断在 kernel-mode                                            |
-| 状态文案（人话）                        | `browser/kernel-view.ts`                         | 面板与未来设备页共用                                                               |
-| 跨层视图形状                            | `browser/contracts.ts` 的 `BrowserKernelState`   | 进 `pi-browser:state`，面板读 `kernel.status`                                      |
+| 关注点                                  | 唯一事实源                                                                                                             | 说明                                                                                                                     |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 内核身份（版本/安装形态/托管者/uptime） | `server/kernel-identity.ts`                                                                                            | 纯推导，无 I/O；`/api/health` 的 `kernel` 块由它产出                                                                     |
+| 数据目录单实例                          | `shared/instance-lock.ts`                                                                                              | pid 文件 + 探活 + 陈旧接管                                                                                               |
+| 内核公开快照的形状                      | `server/protocol.ts` 的 `KernelPublicInfo`                                                                             | 客户端与内核之间的线形状                                                                                                 |
+| 权威链（哪份代码是内核）                | `desktop/kernel-authority.ts`                                                                                          | 全局 npm 包 > `<userData>/runtime`（离线兜底）> 包内自带；`npm prefix -g` 缓存一天                                       |
+| 环境探测（node/服务/安装指引）          | `desktop/kernel-env.ts`                                                                                                | 纯函数 + 可注入 `exists`/`env`；不读注册表、不 spawn                                                                     |
+| 壳要不要自己拉内核 / 装服务             | `desktop/kernel-mode.ts` 的 `planKernelBoot()` + `resolveKernelServiceFirst()`；策略常量在 `desktop/runtime-config.ts` | 唯一出口：`connect` / `provision-service` / `install-kernel` / `install-node` / `ephemeral`；main.ts 里不许再写第二份 if |
+| 装服务（装/启/健康检查/交棒）           | `desktop/main.ts` 的 `provisionKernelService()`                                                                        | 参数拼装与子进程在 `kernel-install.ts`；启动、面板、升级后三处共用                                                       |
+| 状态文案（人话）                        | `browser/kernel-view.ts`                                                                                               | 面板与未来设备页共用                                                                                                     |
+| 跨层视图形状                            | `browser/contracts.ts` 的 `BrowserKernelState`                                                                         | 进 `pi-browser:state`，面板读 `kernel.status`                                                                            |
 
 ## 3. `/api/health` 的 `kernel` 块
 
@@ -62,37 +65,76 @@ pi-web-ui"），公网绑定场景不该把本机路径吐给任何人。要路�
 `installKind` 只认结构事实（`app.asar` → `packaged`；`node_modules/pi-web-ui` → `global-npm`；其余 `source`），
 不看环境变量——否则同一份代码在不同启动方式下会报不同的形态。
 
-## 4. 壳的判定顺序（`decideKernelMode`）
+## 4. 启动判定（`planKernelBoot`）
+
+壳**要不要自己拉进程**只由 `desktop/kernel-mode.ts` 的 `planKernelBoot()` 裁定，`main.ts` 只执行结论。
+每一步的输入都是探测结果（配置地址 / 数据目录锁 / 默认端口 / 服务配置有没有 / 全局包在不在 / node 可用不可用），
+所以判定本身是纯函数，跑在 `tests/unit/desktop-kernel-boot.test.ts`。
 
 ```text
-磁盘上配置的 Agent 地址
-        │
-        ├─ 没配 ─────────────────────► local：拉本地 sidecar（既有行为）
-        │
-        └─ 配了 ─► 探 /api/health
-                    ├─ 可达 ─────────► external：只连，**不 spawn**（"关掉壳内核还在跑"的前提）
-                    └─ 不可达 ───────► local：回退本地 sidecar + 把失败原因透给面板
+启动
+ ├─ 设置里配的内核可达 ──────────────────► connect(configured)：只连不拉
+ ├─ 数据目录锁里有活内核（系统服务）────► connect(adopted)：只连不拉
+ ├─ 默认端口 8790 上已有内核 ────────────► connect(default-port)：只连不拉
+ │
+ ├─ 打包版（策略开）＋ 全局包内核 ＋ node ≥22
+ │        └─────────────────────────────► provision-service：装/起系统服务后只连
+ │              （服务已装 → 先 `server start`；起不来再 `server install` 重写一遍自愈）
+ │
+ ├─ Linux（systemd 要 root，无 TTY）─────► ephemeral：临时内核 + 面板给命令
+ ├─ 开发/冒烟（策略关）──────────────────► ephemeral：临时内核
+ └─ 前置条件不满足
+          ├─ 还有能跑的代码（包内自带/全局包）► ephemeral：临时内核
+          ├─ 连内核都没有 + node 可用 ─────► install-kernel：界面给「安装内核」
+          └─ 连 node 都没有 / 太老 ────────► install-node：界面给「安装 Node」
 ```
 
 - 探测超时 1500ms（`KERNEL_PROBE_TIMEOUT_MS`），判据与 `page-picker` 扩展一致（`ok: true`）。
 - 回退必须**可见**：面板会显示"配置的内核不可达：…"，不允许静默切到本地内核让用户以为连的还是远程那份。
 - 老版本内核不返回 `kernel` 块也照样可达（向后兼容），只是面板少几行信息。
+- `ephemeral` 是**唯一**会 `spawn` 的形态：随壳退出而停，`browser/kernel-view.ts` 的 `kernelPersistenceHint`
+  会明说"当前内核随本窗口退出而停止"。
+
+### 4.1 打包版默认：首次启动就把内核交给系统托管
+
+**不要求用户点任何按钮**：打包版第一次启动发现"本机有全局包内核但没被系统托管"，就自己跑
+`pi-web-ui server install`（参数取**当前内核正在用的** `--port / --data-dir / --cwd`），健康检查通过后把
+`agentUrl` 写成服务地址。之后每次启动都只连它 —— 关掉桌面端、重启桌面端、同时开两个客户端，都不影响内核。
+
+- 开关：`desktop/runtime-config.ts` 的 `KERNEL_SERVICE_FIRST`（默认 `true`），环境变量
+  `PI_DESKTOP_KERNEL_SERVICE_FIRST=0/1` 单机覆盖。开发态（`app.isPackaged === false`）默认关，
+  保持 `npm run dev` 与冒烟脚本的本地 sidecar 手感。
+- **不静默下载内核**：磁盘上没有全局包内核时只在界面提示「安装内核」（`npm i -g pi-web-ui@latest`）；
+  该按钮成功后会**接着装成服务并交棒**（`upgradeKernel()` → `provisionKernelService()`），
+  不会又退回"壳自己拉一份"。
+- **装服务必须用内核自己的 CLI 与系统 node**：`runKernelCli()` 传 `pkgRoot`（全局包根）与 `nodePath`
+  （系统 node）。CLI 会把 `process.execPath` 烘焙进看门狗脚本，用 Electron 的 execPath 装出来的服务会拿
+  `electron.exe` 去跑内核，永远起不来。
+- 数据目录沿用壳当前那份（`PI_WEB_DATA_DIR` → 否则 `<userData>/data`），装完看到的还是同一批会话。
+- 离线 / 纯壳包机器：没有全局包内核就没有可托管的代码，只能先跑临时内核（面板会提示可以升级成服务）。
 
 ## 5. 一键装成系统服务
 
-按钮 → 壳主进程 → 本包 CLI（`bin/pi-web-ui.mjs server install`，**不经 shell**）。顺序是有原因的：
+按钮 / 启动流程 → 壳主进程 → 本包 CLI（`bin/pi-web-ui.mjs server install`，**不经 shell**）。顺序是有原因的：
 
 ```text
 1. 本地 sidecar 正持着数据目录锁 → 先停它（否则服务启动会被单实例锁拒绝）
-2. 装并启动服务：--port（服务已存在则沿用当前端口，否则用稳定默认 8790）
+2. 先 `server start`（配置在、用户只是停过它）→ 8s 内没就绪才 `server install` 重写一遍（自愈：实机见过 vbs 丢失）
+3. 装并启动服务：--port（沿用当前内核的端口，否则稳定默认 8790）
                  --data-dir / --cwd（取当前内核正在用的那份，装完看到的是同一批会话）
-3. 交棒：把 Agent 地址写成服务地址 → 下次启动不再拉本地 sidecar
-4. 任一步失败：回滚，把本地内核重新拉起来（不能"点完按钮反而没内核了"）
+4. 交棒：把 Agent 地址写成服务地址 → 下次启动不再拉临时内核
+5. 任一步失败：回滚，把本地内核重新拉起来（不能"点完按钮反而没内核了"）
 ```
 
-实现落点：`desktop/main.ts` 的 `installKernelService()`；参数拼装与子进程在 `desktop/kernel-install.ts`
+实现落点：`desktop/main.ts` 的 `provisionKernelService()`（启动流程、面板按钮、升级后三处共用）+
+`installKernelService()`（面板的"该不该装 + 失败回滚"）；参数拼装与子进程在 `desktop/kernel-install.ts`
 （120s 硬超时，超时连同子进程树一起杀）。这套协议与 `server/device-center/hub-setup.ts`（Hub 一键安装）同构，
 差别只在被安装的对象。
+
+**幂等**（实机 2026-11-21）：`server install` 会先停掉**这份数据目录的持有者**（读 `<dataDir>/kernel.lock`）
+与遗留看门狗，再写配置并拉起；pid 文件也只由写它的那个看门狗删。否则会出现"老内核占着锁、
+新看门狗每 10s 空转"的假成功，而活着的那个的 pid 文件会被退出的那个顺手删掉——
+`server status`/`stop` 从此找不到服务。
 
 ## 6. 单实例锁
 
@@ -191,11 +233,11 @@ pi-web-ui server status                          # 服务装没装、起没起
 纯壳包把「壳」和「内核」变成两个独立安装物（`setup.exe` + `npm i -g pi-web-ui`），
 所以**版本不匹配是常态，不是异常**。两边的本钱不同，判定必须分开说：
 
-| 谁的本钱                | 在哪里                                                                     | 不匹配时能不能就地修            |
-| ----------------------- | -------------------------------------------------------------------------- | ------------------------------- |
-| 壳的协议期望            | `desktop/protocol-expectation.ts`（构建期由 `scripts/gen-desktop-protocol.mjs` 从 `server/protocol-version.ts` 烘进来） | 不能（已装好的壳不可热更）      |
-| 壳的能力版本            | `desktop/runtime-config.ts` 的 `SHELL_CAPABILITY_VERSION`                  | 同上                            |
-| 内核的协议 / 兼容下限   | `/api/health.kernel.protocol` / `.minShell`（`server/kernel-identity.ts`）  | 能（`npm i -g pi-web-ui@latest`） |
+| 谁的本钱              | 在哪里                                                                                                                  | 不匹配时能不能就地修              |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| 壳的协议期望          | `desktop/protocol-expectation.ts`（构建期由 `scripts/gen-desktop-protocol.mjs` 从 `server/protocol-version.ts` 烘进来） | 不能（已装好的壳不可热更）        |
+| 壳的能力版本          | `desktop/runtime-config.ts` 的 `SHELL_CAPABILITY_VERSION`                                                               | 同上                              |
+| 内核的协议 / 兼容下限 | `/api/health.kernel.protocol` / `.minShell`（`server/kernel-identity.ts`）                                              | 能（`npm i -g pi-web-ui@latest`） |
 
 **为什么协议要烘进壳里而不是 import**：纯壳包不带 `dist/server`，运行时 `../server/protocol-version.js`
 根本不存在。所以只能在构建期把数字写进 `desktop/protocol-expectation.ts`；
@@ -242,7 +284,6 @@ GUI 里 `sudo` 拿不到终端（`a terminal is required`），硬跑只会得�
 | 缺口                | 现状                                        | 方向                                                                                 |
 | ------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------ |
 | Node 免包管理器安装 | Win 走 winget / mac 走 brew；Linux 只给命令 | `node-downloader-helper` + 官方 `SHASUMS256.txt` 校验后装到 `<userData>/kernel/node` |
-| 全局包升级入口      | 能显示版本，升级仍靠 `npm i -g`             | 面板给"升级内核"按钮 → 跑同一个 CLI                                                  |
 | Web 端只读状态卡    | 只有桌面壳面板                              | 复用 `/api/health.kernel`，在设置里加一行                                            |
 | 多用户同机          | 锁按数据目录，不按用户                      | 每用户独立 `--data-dir`（本文已按此约定）                                            |
 

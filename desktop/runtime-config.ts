@@ -31,4 +31,13 @@ export const KERNEL_AUTHORITY = "npm-global" as KernelAuthority;
 /** 运行时自更新是否可作为权威链。`npm-global` 下它为 false：仍可作离线兜底，但不再自动下载/切换。 */
 export const RUNTIME_SELF_UPDATE_ENABLED: boolean = KERNEL_AUTHORITY === "bundled-runtime";
 
+/**
+ * 内核生命周期策略：**打包版默认「后台服务优先」**——内核由系统托管（`pi-web-ui server install`），
+ * 桌面壳只是客户端，关掉/重启壳都不影响正在跑的会话（细则见 `docs/architecture-kernel.md` §4.1）。
+ *
+ * 置 false 只保留开发、冒烟与离线机器的旧行为（壳自己 spawn sidecar）；
+ * 单机还可以用 `PI_DESKTOP_KERNEL_SERVICE_FIRST=0` 覆盖，方便实机对比两种形态。
+ */
+export const KERNEL_SERVICE_FIRST = true;
+
 export const DEFAULT_RUNTIME_FEED_URL = "https://github.com/xing-shuyin/pi-web-ui/releases/latest/download";

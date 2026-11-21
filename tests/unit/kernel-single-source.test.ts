@@ -31,11 +31,25 @@ describe("内核单源", () => {
 		}
 	});
 
-	it("壳的判定只有一处：main.ts 用 decideKernelMode，不许自己拼条件", () => {
-		const source = read("desktop/main.ts");
-		expect(source).toMatch(/decideKernelMode\(\{ externalUrl/);
-		// 唯一的 sidecar 拉起入口是 startKernel /  restart / 安装回滚三处，且都在判定之后
-		expect(source).toMatch(/async function startKernel\(/);
+	it("壳的判定只有一处：startKernel 只走 planKernelBoot，不自己拼条件", () => {
+		const main = read("desktop/main.ts");
+		expect(main).toMatch(/async function startKernel\(/);
+		expect(main).toMatch(/planKernelBoot\(\{/);
+		// 决策本体住在 kernel-mode.ts（connect / 装服务 / 装内核 / 临时内核四类结论）
+		const mode = read("desktop/kernel-mode.ts");
+		expect(mode).toMatch(/export function planKernelBoot/);
+		expect(mode).toMatch(/decideKernelMode\(\{ externalUrl/);
+		// 临时内核必须拿到结论之后才允许 spawn
+		const kernelBody = main.slice(main.indexOf("async function startKernel("), main.indexOf("function reasonOf("));
+		expect(kernelBody).toContain("planKernelBoot(");
+		expect(kernelBody.indexOf("planKernelBoot(")).toBeLessThan(kernelBody.indexOf("startServerSidecar()"));
+	});
+
+	it("打包版默认服务优先：策略常量只在 runtime-config / kernel-mode 里", () => {
+		expect(read("desktop/runtime-config.ts")).toMatch(/export const KERNEL_SERVICE_FIRST = true/);
+		expect(read("desktop/kernel-mode.ts")).toMatch(/PI_DESKTOP_KERNEL_SERVICE_FIRST/);
+		// main.ts 不许自己读环境变量决定要不要拉 sidecar
+		expect(read("desktop/main.ts")).not.toContain("PI_DESKTOP_KERNEL_SERVICE_FIRST");
 	});
 
 	it("面板文案来自 kernel-view，不在渲染层另写一套措辞", () => {
