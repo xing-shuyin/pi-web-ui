@@ -22,17 +22,31 @@ afterEach(() => {
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
+/**
+ * 按**跑测试的机器**造 fs 目录：发现逻辑按 `platform` 选 path 模块与目录形状
+ * （win：`installation/node.exe`，posix：`installation/bin/node`）。
+ * 以前写死 `platform: "win32"` + `node.exe`，在 Linux CI 上 win32.resolve 会把
+ * 沙箱路径当成盘符外路径 → 守卫四连红、永远绿不了。
+ */
+const WIN = process.platform === "win32";
+const NODE_BIN = WIN ? "node.exe" : "node";
+const NPM_BIN = WIN ? "npm.cmd" : "npm";
+
 /** 造一个 fnm 目录树，返回 FNM_DIR 与「node 可执行文件」落点。 */
 function fakeFnm(versions: string[]): { fnmDir: string; nodeOf: (version: string) => string } {
 	const fnmDir = mkdtempSync(join(tmpdir(), "pi-fnm-"));
 	roots.push(fnmDir);
 	for (const version of versions) {
 		const installation = join(fnmDir, "node-versions", version, "installation");
-		mkdirSync(installation, { recursive: true });
-		writeFileSync(join(installation, "node.exe"), "");
-		writeFileSync(join(installation, "npm.cmd"), "");
+		const binDir = WIN ? installation : join(installation, "bin");
+		mkdirSync(binDir, { recursive: true });
+		writeFileSync(join(binDir, NODE_BIN), "", { mode: 0o755 });
+		writeFileSync(join(binDir, NPM_BIN), "", { mode: 0o755 });
 	}
-	return { fnmDir, nodeOf: (version) => join(fnmDir, "node-versions", version, "installation", "node.exe") };
+	return {
+		fnmDir,
+		nodeOf: (version) => join(fnmDir, "node-versions", version, "installation", WIN ? "" : "bin", NODE_BIN),
+	};
 }
 
 /** 隔离环境：只给 FNM_DIR 与空 PATH，模拟「桌面壳看不到 fnm 注入项」。 */
@@ -44,7 +58,7 @@ function isolatedEnv(fnmDir: string): { env: NodeJS.ProcessEnv; homeDir: string;
 	return {
 		env: { FNM_DIR: fnmDir, PATH: "" } as NodeJS.ProcessEnv,
 		homeDir: home,
-		nodeExecutable: join(home, "no-node-here", "node.exe"),
+		nodeExecutable: join(home, "no-node-here", NODE_BIN),
 	};
 }
 
@@ -52,7 +66,7 @@ describe("系统 node 发现（版本管理器）", () => {
 	it("PATH 里没有 node 时，仍能从 fnm 的 node-versions 找到（桌面壳的真实处境）", () => {
 		const { fnmDir, nodeOf } = fakeFnm(["v26.13.1"]);
 		const { env, homeDir, nodeExecutable } = isolatedEnv(fnmDir);
-		expect(findNativeCliExecutable("node", { platform: "win32", env, homeDir, nodeExecutable })).toBe(
+		expect(findNativeCliExecutable("node", { platform: process.platform, env, homeDir, nodeExecutable })).toBe(
 			nodeOf("v26.13.1"),
 		);
 	});
@@ -60,7 +74,7 @@ describe("系统 node 发现（版本管理器）", () => {
 	it("装了多个版本 → 取最高版本（numeric 排序，不是字典序）", () => {
 		const { fnmDir, nodeOf } = fakeFnm(["v9.11.2", "v26.13.1"]);
 		const { env, homeDir, nodeExecutable } = isolatedEnv(fnmDir);
-		expect(findNativeCliExecutable("node", { platform: "win32", env, homeDir, nodeExecutable })).toBe(
+		expect(findNativeCliExecutable("node", { platform: process.platform, env, homeDir, nodeExecutable })).toBe(
 			nodeOf("v26.13.1"),
 		);
 	});
@@ -69,7 +83,7 @@ describe("系统 node 发现（版本管理器）", () => {
 		const { fnmDir } = fakeFnm(["v26.13.1"]);
 		const { env, homeDir, nodeExecutable } = isolatedEnv(fnmDir);
 		expect(
-			findNativeCliExecutable("npm", { platform: "win32", env, homeDir, nodeExecutable })?.endsWith("npm.cmd"),
+			findNativeCliExecutable("npm", { platform: process.platform, env, homeDir, nodeExecutable })?.endsWith(NPM_BIN),
 		).toBe(true);
 	});
 
@@ -78,11 +92,11 @@ describe("系统 node 发现（版本管理器）", () => {
 		const { env, homeDir, nodeExecutable } = isolatedEnv(fnmDir);
 		const onPath = join(homeDir, "custom-bin");
 		mkdirSync(onPath, { recursive: true });
-		const nodePath = join(onPath, "node.exe");
+		const nodePath = join(onPath, NODE_BIN);
 		writeFileSync(nodePath, "");
 		expect(
 			findNativeCliExecutable("node", {
-				platform: "win32",
+				platform: process.platform,
 				env: { ...env, PATH: onPath } as NodeJS.ProcessEnv,
 				homeDir,
 				nodeExecutable,
