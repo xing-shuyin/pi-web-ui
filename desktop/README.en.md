@@ -61,7 +61,7 @@ In non-portable mode, Electron's own state lives in the system's Electron `userD
 | `PI_WEB_HEALTH_TIMEOUT_MS` | Milliseconds to wait for `/api/health`, default `60000`; a positive value is at least `1000`, invalid or non-positive values fall back to the default                                  |
 | Access-token env var       | Sets the service access token; the desktop window loads with `?token=` once to authenticate, after which the frontend strips the token from the URL                                    |
 | `PI_WEB_DESKTOP_URL`       | Development mode only: points the window at an existing service; ignored in packaged builds, see the integration workflow below                                                        |
-| `PI_WEB_SDK=bundled`       | Forces the bundled pi SDK; by default it follows a newer pi copy detected on the machine, see [environment variables](../docs/env-vars.md)                                          |
+| `PI_WEB_SDK=bundled`       | Forces the bundled pi SDK; by default it follows a newer pi copy detected on the machine, see [environment variables](../docs/env-vars.md)                                             |
 
 A fixed port keeps Chromium's Origin stable, which helps preserve localStorage settings such as theme and panel widths; after falling back to a random port, those per-origin UI states may differ. The desktop sidecar always listens on `127.0.0.1`; for remote deployment see the [deployment guide](../docs/deployment.md).
 

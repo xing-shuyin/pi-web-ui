@@ -24,11 +24,11 @@ describe("外壳第二行工具栏", () => {
 	});
 
 	it("刷新/下载/书签/历史/设置都在工具栏里，不靠悬浮球", () => {
-		expect(SHELL_TS).toContain("browserAction(\"reload\")");
-		expect(SHELL_TS).toContain("showShellPanel(\"downloads\")");
-		expect(SHELL_TS).toContain("showShellPanel(\"bookmarks\")");
-		expect(SHELL_TS).toContain("showShellPanel(\"history\")");
-		expect(SHELL_TS).toContain("showShellPanel(\"settings\")");
+		expect(SHELL_TS).toContain('browserAction("reload")');
+		expect(SHELL_TS).toContain('showShellPanel("downloads")');
+		expect(SHELL_TS).toContain('showShellPanel("bookmarks")');
+		expect(SHELL_TS).toContain('showShellPanel("history")');
+		expect(SHELL_TS).toContain('showShellPanel("settings")');
 		// 悬浮球彻底下线：不再有注入脚本、不再有 smartDock 分支
 		expect(MANAGER_TS).not.toContain("DOCK_SCRIPT");
 		expect(MANAGER_TS).not.toContain("__AIB_DOCK__");
@@ -37,8 +37,8 @@ describe("外壳第二行工具栏", () => {
 	it("翻译与复制 Markdown 走「活动标签页里跑脚本」，剪贴板由主进程写", () => {
 		expect(SHELL_TS).toContain("page.translate");
 		expect(SHELL_TS).toContain("page.markdown");
-		expect(HOST_TS).toContain("case \"page.translate\"");
-		expect(HOST_TS).toContain("case \"page.markdown\"");
+		expect(HOST_TS).toContain('case "page.translate"');
+		expect(HOST_TS).toContain('case "page.markdown"');
 		expect(HOST_TS).toContain("clipboard.writeText(markdown)");
 		// 翻译脚本仍然只对 http(s) 网站注入（外壳按钮调用的就是它）
 		expect(MANAGER_TS).toContain("TRANSLATE_SCRIPT");
@@ -48,8 +48,8 @@ describe("外壳第二行工具栏", () => {
 
 describe("标签页右键 → 引用到输入框", () => {
 	it("外壳发 tabs.menu（原生菜单，DOM 浮层会被原生视图盖住）", () => {
-		expect(SHELL_TS).toContain("\"tabs.menu\"");
-		expect(HOST_TS).toContain("case \"tabs.menu\"");
+		expect(SHELL_TS).toContain('"tabs.menu"');
+		expect(HOST_TS).toContain('case "tabs.menu"');
 		expect(HOST_TS).toContain("引用到输入框");
 	});
 
@@ -60,7 +60,7 @@ describe("标签页右键 → 引用到输入框", () => {
 	});
 
 	it("跨视图只走主进程：host 发、preload 收、Agent 页面插到光标处", () => {
-		expect(HOST_TS).toContain("\"pi-desktop:browser-reference\"");
+		expect(HOST_TS).toContain('"pi-desktop:browser-reference"');
 		expect(PRELOAD_CTS).toContain("pi-desktop:browser-reference");
 		expect(PRELOAD_CTS).toContain("onBrowserReference");
 		const app = read("web/src/App.tsx");
