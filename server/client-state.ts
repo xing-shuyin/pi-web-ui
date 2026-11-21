@@ -1,9 +1,9 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { renameSync } from "node:fs";
 import { normalizeNativeCliInheritModel, type NativeCliInheritModel } from "./engine-catalog.js";
 import { normalizeUploadMaxMb } from "./payload-limits.js";
 import * as fsPromises from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
-import { writeJsonAtomicSync } from "./atomic-file.js";
+import { readFileSyncRetry, writeJsonAtomicSync } from "./atomic-file.js";
 import { normalizeAutoCompactionInstructions, normalizeSoftCapByModel, normalizeSoftCapTokens } from "./soft-cap.js";
 import {
 	deriveLegacy,
@@ -1025,6 +1025,8 @@ function isStateRecord(value: unknown): value is Record<string, ClientState> {
 
 export class ClientStateStore {
 	private cache: Record<string, ClientState> | null = null;
+	/** 原文件读不出来时置位：读不到 ≠ 没有内容，本次运行一律不写盘，避免把读不到的原文件覆盖成空壳。 */
+	private writeBlocked = false;
 	private settingsVersion = 0;
 	private settingsSnapshot: ClientSettings | undefined;
 	private readonly settingsListeners = new Set<(change: SharedSettingsChange) => void | Promise<void>>();
@@ -1061,8 +1063,14 @@ export class ClientStateStore {
 		}
 		let raw: string | undefined;
 		try {
-			raw = readFileSync(this.filePath, "utf8");
-		} catch {
+			// 瞬时占用（Windows 杀毒 / 索引器持句柄）由退避重试消化；ENOENT 原样抛出，那才是真的「从没存过」。
+			raw = readFileSyncRetry(this.filePath);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+				// 读不出来时既备份不了也拿不到原文：再按空库写盘就是销毁用户设置，只能让本次运行只读。
+				this.writeBlocked = true;
+				console.error(`[client-state] 读取 ${this.filePath} 失败，本次以空设置启动并停止写盘（原文件保持不动）`, error);
+			}
 			raw = undefined;
 		}
 		this.cache = {};
@@ -1155,19 +1163,29 @@ export class ClientStateStore {
 		if (state) state.lastActive = Date.now();
 	}
 
-	/** 解析失败/结构不认识时不能直接降级成空库——下一次 save 会把用户全部设置覆盖掉。先留一份原文件。 */
+	/**
+	 * 解析失败/结构不认识时不能直接降级成空库——下一次 save 会把用户全部设置覆盖掉。
+	 * 先把原文件改名留存（与 `composer-drafts` / `model-admin` 同一套 `.corrupt-<ts>` 约定：改名而非拷贝，
+	 * 免得下一次启动又对同一个坏文件留第二份副本），再做空库启动；写盘不禁用——备份已落盘，可写才不会
+	 * 让整个设置面板跟着失效。
+	 */
 	private preserveUnreadable(raw: string, error: unknown): void {
-		if (!raw.trim()) return;
+		if (!raw.trim()) return; // 0 字节 / 全空白：没有内容可救，也不留空副本
 		const backup = `${this.filePath}.corrupt-${Date.now()}`;
 		try {
-			writeFileSync(backup, raw, "utf8");
-			console.error(`[client-state] ${this.filePath} 无法解析，已备份到 ${backup}，本次以空设置启动`, error);
+			renameSync(this.filePath, backup);
+			console.error(`[client-state] ${this.filePath} 无法解析，已改名留存到 ${backup}，本次以空设置启动`, error);
 		} catch (backupError) {
-			console.error(`[client-state] ${this.filePath} 无法解析且备份失败，下一次保存将覆盖原文件`, backupError);
+			console.error(`[client-state] ${this.filePath} 无法解析且无法留存，下一次保存会覆盖原文件`, backupError);
 		}
 	}
 
 	private save(): void {
+		// 备份已完成（见 preserveUnreadable）才允许继续写；读不到原文件的场景没备份可做，
+		// 只能拒绝覆盖并如实报错——不许把“没写盘”装成保存成功。
+		if (this.writeBlocked) {
+			throw new Error(`配置文件读取失败，本次运行不写盘以避免覆盖：${this.filePath}`);
+		}
 		try {
 			writeJsonAtomicSync(this.filePath, this.cache);
 		} catch (error) {
