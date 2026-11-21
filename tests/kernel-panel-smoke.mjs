@@ -67,12 +67,32 @@ async function waitHealth(url, timeoutMs = 30_000) {
 	throw new Error(`等待 ${url}/api/health 超时`);
 }
 
+/** 打包版 exe：设了就对它跑同一套断言（证明 MSI 里的 asar 也能用）。 */
+const packagedExe = process.env.PI_KERNEL_SMOKE_EXE?.trim();
+
+function launchOptions(profile) {
+	if (packagedExe) {
+		if (!existsSync(packagedExe)) throw new Error(`找不到打包版 exe：${packagedExe}`);
+		return { executablePath: packagedExe, args: [`--user-data-dir=${profile}`], timeout: 40_000 };
+	}
+	return {
+		executablePath: createRequire(import.meta.url)("electron"),
+		args: [mainEntry, `--user-data-dir=${profile}`],
+		timeout: 40_000,
+	};
+}
+
 async function main() {
 	for (const [label, file] of [
 		["dist/desktop/main.js", mainEntry],
 		["dist/server/index.js", serverEntry],
 	]) {
-		if (!existsSync(file)) throw new Error(`缺少 ${label}：先跑 npm run build:server && npm run build:desktop`);
+		if (!packagedExe && !existsSync(file))
+			throw new Error(`缺少 ${label}：先跑 npm run build:server && npm run build:desktop`);
+	}
+	if (packagedExe) {
+		if (!existsSync(serverEntry)) throw new Error("缺少 dist/server/index.js：先跑 npm run build:server");
+		console.log(`（本次测的是打包版：${packagedExe}）`);
 	}
 
 	const temporary = await mkdtemp(join(tmpdir(), "pi-kernel-panel-"));
@@ -107,12 +127,7 @@ async function main() {
 		// 2) 拉起桌面壳（隔离 profile，指向这个内核）
 		const env = { ...process.env, PI_WEB_DATA_DIR: dataDir, PI_WEB_CWD: cwd };
 		delete env.ELECTRON_RUN_AS_NODE;
-		application = await _electron.launch({
-			executablePath: createRequire(import.meta.url)("electron"),
-			args: [mainEntry, `--user-data-dir=${profile}`],
-			env,
-			timeout: 40_000,
-		});
+		application = await _electron.launch({ ...launchOptions(profile), env });
 		await application.firstWindow();
 		let shell;
 		for (let attempt = 0; attempt < 120; attempt++) {
@@ -209,12 +224,7 @@ async function main() {
 		const localProfile = join(temporary, "local-profile");
 		const localEnv = { ...process.env, PI_WEB_DATA_DIR: localDataDir, PI_WEB_CWD: cwd };
 		delete localEnv.ELECTRON_RUN_AS_NODE;
-		application = await _electron.launch({
-			executablePath: createRequire(import.meta.url)("electron"),
-			args: [mainEntry, `--user-data-dir=${localProfile}`],
-			env: localEnv,
-			timeout: 40_000,
-		});
+		application = await _electron.launch({ ...launchOptions(localProfile), env: localEnv });
 		await application.firstWindow();
 		let localShell;
 		for (let attempt = 0; attempt < 200; attempt++) {
