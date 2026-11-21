@@ -80,5 +80,7 @@ export function describeKernelInstall(kind: KernelInstallKind): string {
 export function tailPackageRoot(packageRoot: string): string {
 	const normalized = packageRoot.replace(/\\/g, "/").replace(/\/+$/, "");
 	const parent = normalized.slice(0, normalized.lastIndexOf("/"));
-	return [basename(parent), basename(normalized)].filter(Boolean).join("/") || basename(normalized) || sep;
+	// 盘符（`D:`）不是路径段：WSL/macOS 上读到 Windows 路径时也别把它当一级留下。
+	const segments = [basename(parent), basename(normalized)].filter((s) => s && !/^[a-z]:$/i.test(s));
+	return segments.join("/") || basename(normalized) || sep;
 }
