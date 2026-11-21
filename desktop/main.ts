@@ -814,7 +814,7 @@ async function installKernelService(): Promise<{ ok: boolean; message: string }>
 			message:
 				"当前连的内核不是本机装的：本机不知道它的数据目录，装服务只会装出一份空数据。请到内核所在机器执行 pi-web-ui server install",
 		};
-	const node = describeNodeRuntime({ execPath: process.execPath, nodeVersion: process.versions.node });
+	const node = kernelNodeRuntime();
 	if (!node.ok) {
 		const guide = nodeInstallGuide(process.platform);
 		return { ok: false, message: `本机 node 版本太低（v${node.version}，需 ≥22）：${guide.command}` };
@@ -858,9 +858,20 @@ async function installKernelService(): Promise<{ ok: boolean; message: string }>
 	return { ok: true, message: message || `已安装并启动系统服务：${serviceUrl}` };
 }
 
+/**
+ * 面板上要显示的 node 信息。
+ * 桌面壳里 `process.versions.node` 是 **Electron 自带**的 node，不是内核真正用的那个；
+ * 所以先看 PATH 里的系统 node（全局包内核正是用它启动），找不到才退回壳自带的。
+ */
+function kernelNodeRuntime() {
+	const systemNode = findNodeInPath(process.env, existsSync);
+	const info = describeNodeRuntime({ execPath: process.execPath, nodeVersion: process.versions.node });
+	return systemNode ? { ...info, path: systemNode } : info;
+}
+
 /** 内核环境的唯一读法：面板点开时现算一次（会问 npm registry，5s 超时）。 */
 async function readKernelEnvironment(): Promise<KernelEnvironmentView> {
-	const node = describeNodeRuntime({ execPath: process.execPath, nodeVersion: process.versions.node });
+	const node = kernelNodeRuntime();
 	const prefix = await currentNpmPrefix();
 	const globalRoot = prefix ? globalKernelRoot(prefix) : null;
 	const installed = globalRoot ? readGlobalPackageVersion(globalRoot) : null;
