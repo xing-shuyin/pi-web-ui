@@ -114,7 +114,9 @@ export function findNativeCliExecutable(
 		const found = check(path.resolve(cwd, directory, executable));
 		if (found) return found;
 	}
-	if (options.autoDetect) {
+	// 默认开启：只扫 PATH 在桌面壳里等于「装了 fnm/nvm 也当没装」——
+	// 这个默认值踩过一次（main.ts 没传 autoDetect，于是 fnm 里的 node 找不到）。
+	if (options.autoDetect !== false) {
 		for (const directory of installDirectories(options)) {
 			const found = check(path.resolve(cwd, directory, executable));
 			if (found) return found;

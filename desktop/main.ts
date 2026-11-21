@@ -38,6 +38,7 @@ import {
 	runKernelCli,
 } from "./kernel-install.js";
 import { readKernelLock } from "../shared/instance-lock.js";
+import { findNativeCliExecutable } from "../server/native-cli-discovery.js";
 import {
 	fetchLatestVersion,
 	nodeInstallLaunch,
@@ -88,7 +89,6 @@ import {
 } from "./kernel-authority.js";
 import {
 	describeNodeRuntime,
-	findNodeInPath,
 	globalKernelRoot,
 	nodeInstallGuide,
 	parseNpmPrefix,
@@ -541,7 +541,7 @@ async function startServerSidecar(): Promise<string> {
 	const sdkHook = join(dirname(entry), "resolve-global-sdk.js");
 	// 全局 npm 包内核用**系统 node** 跑：包里的原生模块（node-pty 等）按系统 node ABI 编译，
 	// 塞进 ELECTRON_RUN_AS_NODE 可能加载失败。找不到 node 才退回 Electron 自带的那份（并在日志里说清）。
-	const systemNode = kernelSource === "global-npm" ? findNodeInPath(process.env, existsSync) : null;
+	const systemNode = kernelSource === "global-npm" ? findSystemNode() : null;
 	if (kernelSource === "global-npm" && !systemNode)
 		console.warn("[desktop] kernel: 没在 PATH 里找到 node，暂用 Electron 自带运行时（全局包里的原生模块可能加载失败）");
 	const nodeBinary = systemNode ?? process.execPath;
@@ -687,6 +687,20 @@ async function restartServerSidecar(expectedVersion?: string | null): Promise<st
 	});
 }
 
+// 系统 node 的唯一发现口径：server/native-cli-discovery.ts。
+//
+// 为什么不自己扫 PATH：fnm / nvm-windows / Volta 都是按 shell 注入 PATH 的，
+// 从资源管理器双击起来的桌面壳看不到那些注入项 —— 只扫 PATH 会把「用 fnm 装了 node」误判成「没装」。
+// 那个模块本来就在扫 PATH + fnm node-versions/*/installation + nvm + volta + scoop，是仓库单源
+// （server/command-spawn.ts 解析用户命令走的也是它），壳这边直接复用，不另写一套。
+function findSystemNode(): string | null {
+	try {
+		return findNativeCliExecutable("node", { platform: process.platform, env: process.env, homeDir: homedir() }) ?? null;
+	} catch {
+		return null;
+	}
+}
+
 // ── 内核：谁是内核、壳要不要自己拉一份（docs/architecture-kernel.md） ───────────────
 
 /** 最近一次算出的内核状态（面板读它，`pi-browser:state` 也带它）。 */
@@ -734,7 +748,7 @@ async function refreshKernelState(
 
 /** 读系统 node 的版本（`node -v`）。找不到/超时/报错一律 null——只用于告诉用户“够不够用”。 */
 async function probeSystemNode(): Promise<{ path: string; version: string | null } | null> {
-	const path = findNodeInPath(process.env, existsSync);
+	const path = findSystemNode();
 	if (!path) return null;
 	return await new Promise((resolvePromise) => {
 		execFile(path, ["-v"], { timeout: 5000, windowsHide: true }, (error, stdout) => {
@@ -928,7 +942,7 @@ async function installKernelService(): Promise<{ ok: boolean; message: string }>
  * 所以先看 PATH 里的系统 node（全局包内核正是用它启动），找不到才退回壳自带的。
  */
 function kernelNodeRuntime() {
-	const systemNode = findNodeInPath(process.env, existsSync);
+	const systemNode = findSystemNode();
 	const info = describeNodeRuntime({ execPath: process.execPath, nodeVersion: process.versions.node });
 	return systemNode ? { ...info, path: systemNode } : info;
 }
