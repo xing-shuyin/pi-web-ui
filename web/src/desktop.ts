@@ -69,6 +69,8 @@ export interface DesktopShellWindow {
 		onOpenFiles?: (cb: (payload: { files: string[] }) => void) => () => void;
 		/** 浏览器标签页 / 选中文字「引用到输入框」（外壳右键 → 主进程 → 这里） */
 		onBrowserReference?: (cb: (payload: DesktopBrowserReference) => void) => () => void;
+		/** 声明「本界面能收引用」：壳据此区分「页面加载完了」与「界面真能收」 */
+		browserReferenceReady?: () => Promise<boolean>;
 	};
 	navigator?: { userAgent?: unknown };
 }
@@ -137,6 +139,24 @@ export function getDesktopBrowserReferenceBridge(
 		(typeof window === "undefined" ? undefined : (window as unknown as DesktopShellWindow));
 	const subscribe = w?.piDesktop?.onBrowserReference;
 	return typeof subscribe === "function" ? subscribe : null;
+}
+
+/**
+ * 告诉桌面壳「引用到输入框」这条通道已经接上了。
+ *
+ * 必须与订阅成对调用：界面由内核（另一份代码）提供，壳可能比它新。不报这一声，壳就
+ * 无法区分「页面加载完了」与「界面能收」，于是只能二选一——要么假装成功（用户以为插进去了），
+ * 要么全部退剪贴板（能用却不用）。报了之后，壳按实际能力给回执。
+ */
+export function notifyDesktopBrowserReferenceReady(win?: unknown): void {
+	const w =
+		(win as DesktopShellWindow | undefined) ??
+		(typeof window === "undefined" ? undefined : (window as unknown as DesktopShellWindow));
+	const announce = w?.piDesktop?.browserReferenceReady;
+	if (typeof announce !== "function") return;
+	try {
+		void Promise.resolve(announce()).catch(() => {});
+	} catch {}
 }
 
 export function syncDesktopTitleBarTheme(win?: unknown): void {

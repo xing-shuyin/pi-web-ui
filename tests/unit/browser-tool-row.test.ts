@@ -59,13 +59,27 @@ describe("标签页右键 → 引用到输入框", () => {
 		expect(HOST_TS).toContain("引用到输入框 / Quote to input");
 	});
 
-	it("跨视图只走主进程：host 发、preload 收、Agent 页面插到光标处", () => {
+	it("跨视图只走主进程：host 发、preload 收、Agent 页面落成页面 chip", () => {
 		expect(HOST_TS).toContain('"pi-desktop:browser-reference"');
 		expect(PRELOAD_CTS).toContain("pi-desktop:browser-reference");
 		expect(PRELOAD_CTS).toContain("onBrowserReference");
 		const app = read("web/src/App.tsx");
 		expect(app).toContain("getDesktopBrowserReferenceBridge");
-		expect(app).toContain("browserReferenceInsertion");
+		// 引用形式与「浏览器面板里的引用 / @页面」一致：只落 chip，不落文字
+		expect(app).toContain("browserReferenceAttachments");
+		expect(app).toContain("composeToComposer({ attachments })");
+		expect(read("web/src/browser-tab-reference.ts")).toContain("pageCitation");
+	});
+
+	it("跨视图通道要握手：界面自己报「我接了」，壳才敢说已引用（界面由内核提供，可能落版）", () => {
+		// 壳侧：Agent 页自己声明过才投递，否则退剪贴板并说清原因（不假装成功）
+		expect(HOST_TS).toContain('"pi-desktop:browser-reference-ready"');
+		expect(HOST_TS).toContain("agentReferenceReady");
+		expect(HOST_TS).toContain("当前内核界面不支持引用");
+		// 界面侧：订阅的同时报一声，桥口只在 preload 里
+		expect(PRELOAD_CTS).toContain("browserReferenceReady");
+		expect(read("web/src/desktop.ts")).toContain("notifyDesktopBrowserReferenceReady");
+		expect(read("web/src/App.tsx")).toContain("notifyDesktopBrowserReferenceReady");
 	});
 });
 

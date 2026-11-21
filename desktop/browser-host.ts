@@ -255,6 +255,12 @@ export class DesktopBrowserHost {
 	private passkeyPrompt: BrowserWindow | null = null;
 	private agentUrl = "";
 	private agentReady = false;
+	/**
+	 * Agent 页面是否**自己声明**能收「引用到输入框」（`pi-desktop:browser-reference-ready`）。
+	 * 页面就绪 ≠ 界面认这条通道：壳更新了、内核（= 提供界面的那份代码）没更新时，
+	 * 老界面只会把事件丢掉。所以「插进去了」只能以这句话为准，不能拿 agentReady 冒充。
+	 */
+	private agentReferenceReady = false;
 	private agentGeneration = 0;
 	private agentError: string | undefined;
 	/**
@@ -297,6 +303,7 @@ export class DesktopBrowserHost {
 		"pi-desktop:browser-get-startup-mode",
 		"pi-desktop:browser-set-startup-mode",
 		"pi-desktop:browser-get-state",
+		"pi-desktop:browser-reference-ready",
 		"pi-desktop:browser-create-tab",
 		"pi-browser:capture-visible-tab",
 		"pi-browser:translate",
@@ -394,6 +401,13 @@ export class DesktopBrowserHost {
 		ipcMain.handle("pi-browser:shell", (event, action: unknown, args: unknown) => {
 			if (!this.internal(event)) throw new Error("Untrusted browser shell request");
 			return this.call(text(action), object(args), event.sender);
+		});
+		// Agent 页订阅「引用到输入框」后自己报一声：只有这时壳才敢说「已引用」
+		ipcMain.handle("pi-desktop:browser-reference-ready", (event) => {
+			if (event.senderFrame !== event.sender.mainFrame) return false;
+			if (!this.agent || event.sender !== this.agent.webContents) return false;
+			this.agentReferenceReady = true;
+			return true;
 		});
 		ipcMain.handle("pi-browser:page-call", async (event, request: unknown) => {
 			if (!this.controller(event))
@@ -1193,6 +1207,7 @@ export class DesktopBrowserHost {
 		const generation = ++this.agentGeneration;
 		this.agentUrl = url;
 		this.agentReady = false;
+		this.agentReferenceReady = false;
 		this.agentError = undefined;
 		if (persist) this.browser.saveSettings({ ...this.browser.getSettings(), agentUrl: url });
 		if (!this.agent) {
@@ -1225,6 +1240,14 @@ export class DesktopBrowserHost {
 					} catch {}
 				}
 			});
+			// 新的**主帧文档**导航就作废上一份声明：刷新 / 换界面后旧的「我接了」不算数。
+			// 判据只能取 did-start-navigation（文档开始加载那一刻），不能用 did-start-loading：
+			// 页面起来之后子帧 / 后台加载也会再发一次 loading，把刚到的声明抹掉；
+			// 也不能用 did-finish-load：界面报到早于 load 事件结束。
+			this.agent.webContents.on("did-start-navigation", (details) => {
+				if (!details.isMainFrame || details.isSameDocument) return;
+				this.agentReferenceReady = false;
+			});
 			this.agent.webContents.on("did-finish-load", () => {
 				if (!this.agent || !isTrustedAgentUrl(this.agent.webContents.getURL(), this.agentUrl)) return;
 				this.agentReady = true;
@@ -1254,6 +1277,7 @@ export class DesktopBrowserHost {
 
 	setAgentError(error: string): void {
 		this.agentReady = false;
+		this.agentReferenceReady = false;
 		this.agentError = error;
 		this.publish();
 	}
@@ -1979,12 +2003,22 @@ export class DesktopBrowserHost {
 		);
 	}
 
-	/** 跨视图投递的唯一出口：Agent 未就绪就退回剪贴板，不假装成功。 */
+	/**
+	 * 跨视图投递的唯一出口：Agent 未就绪就退回剪贴板，不假装成功。
+	 *
+	 * 「就绪」分两层：`agentReady` 只说页面加载完了，`agentReferenceReady` 才是界面真的订阅了
+	 * 这条通道。壳与内核各自更新（界面由内核提供，版本可以落后于壳）时，前者为真而后者为假——
+	 * 这时发过去也只会被丢掉，所以直接按「不支持」退剪贴板，并让用户知道该升谁。
+	 */
 	private sendBrowserReference(payload: Record<string, unknown>, fallbackCopy: string): string {
 		const target = this.agent?.webContents;
 		if (!target || target.isDestroyed() || !this.agentReady) {
 			clipboard.writeText(fallbackCopy);
 			return "Agent 未就绪，已复制到剪贴板";
+		}
+		if (!this.agentReferenceReady) {
+			clipboard.writeText(fallbackCopy);
+			return "当前内核界面不支持引用（请升级内核后再试），已复制到剪贴板";
 		}
 		target.send("pi-desktop:browser-reference", payload);
 		// 纯浏览器模式下看不到输入框：引用完切成分栏，用户立刻能看到插进去的那一段
@@ -2246,6 +2280,7 @@ export class DesktopBrowserHost {
 		this.closePanelLayer();
 		if (this.agent && !this.agent.webContents.isDestroyed()) this.agent.webContents.close();
 		this.agent = null;
+		this.agentReferenceReady = false;
 		this.fileGrants.clear();
 	}
 }

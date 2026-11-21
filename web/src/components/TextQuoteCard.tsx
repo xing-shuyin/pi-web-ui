@@ -22,7 +22,9 @@ export function TextQuoteCard({
 					? "role.tool"
 					: quote.role === "bashExecution"
 						? "role.bash"
-						: "attachment";
+						: quote.role === "page"
+							? "role.page"
+							: "attachment";
 	return (
 		<div className="quote-card">
 			<details open={open || forceOpen} onToggle={(event) => setOpen(event.currentTarget.open)}>

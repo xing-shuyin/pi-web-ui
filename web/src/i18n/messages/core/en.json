@@ -964,6 +964,7 @@
 	"role.assistant": "pi",
 	"role.tool": "Tool",
 	"role.bash": "Terminal",
+	"role.page": "Web page",
 	"role.branch": "Branch summary",
 	"role.compaction": "Context compacted",
 	"directory": "Directory",
@@ -3977,7 +3978,5 @@
 	"kernelUptimeMinutes": "{minutes} min",
 	"kernelUptimeHours": "{hours} h {minutes} min",
 	"kernelUptimeDays": "{days} d {hours} h",
-	"browserRefPage": "Page reference: {target}",
-	"browserRefSelection": "Selected text:",
 	"browserRefTruncated": "… (truncated)"
 }
