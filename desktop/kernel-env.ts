@@ -106,17 +106,3 @@ export function readServiceInstallState(input: {
 	// Linux 的单元文件在 /etc 下，普通用户看不到 → 不能说"没装"，只能说"不知道"。
 	return input.platform === "linux" ? "unknown" : "absent";
 }
-
-/** 从 PATH 里找 node：全局包内核要用**系统 node**跑（Electron 的 node ABI 不一定兼容原生模块）。 */
-export function findNodeInPath(env: NodeJS.ProcessEnv, exists: (path: string) => boolean): string | null {
-	const names = process.platform === "win32" ? ["node.exe"] : ["node"];
-	const pathValue = env.PATH ?? env.Path ?? "";
-	for (const dir of pathValue.split(process.platform === "win32" ? ";" : ":")) {
-		if (!dir.trim()) continue;
-		for (const name of names) {
-			const candidate = join(dir.trim(), name);
-			if (exists(candidate)) return candidate;
-		}
-	}
-	return null;
-}

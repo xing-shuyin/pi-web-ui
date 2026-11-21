@@ -9,7 +9,6 @@ import {
 } from "../../desktop/kernel-authority.js";
 import {
 	describeNodeRuntime,
-	findNodeInPath,
 	globalKernelRoot,
 	nodeInstallGuide,
 	npmGlobalInstallGuide,
@@ -114,11 +113,4 @@ describe("kernel-env", () => {
 		).toBe("installed");
 	});
 
-	it("PATH 里找 node（拿不到就 null，不抛）", () => {
-		const env = { PATH: ["/a/bin", "/b/bin"].join(process.platform === "win32" ? ";" : ":") };
-		const exe = process.platform === "win32" ? "node.exe" : "node";
-		expect(findNodeInPath(env, (p) => p.endsWith(exe))).toBeTruthy();
-		expect(findNodeInPath(env, () => false)).toBeNull();
-		expect(findNodeInPath({}, () => true)).toBeNull();
-	});
 });
