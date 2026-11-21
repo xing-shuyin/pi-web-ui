@@ -877,6 +877,30 @@ export interface UiServiceInfo {
 	supervisor: ServiceSupervisor;
 }
 
+/**
+ * 内核（唯一的 pi-web-ui 服务进程）的安装形态。客户端据此判断"我连的这份是哪来的、
+ * 关掉桌面壳之后还在不在"，推导只在 `server/kernel-identity.ts`（见 docs/architecture-kernel.md）。
+ */
+export type KernelInstallKind = "global-npm" | "packaged" | "source";
+
+/**
+ * `/api/health` 携带的公开快照。刻意不含 pid / 数据目录 / node 路径：
+ * health 是免鉴权端点（page-picker 扩展靠它探测身份），公网绑定场景不该泄露本机路径。
+ */
+export interface KernelPublicInfo {
+	mode: "service" | "standalone";
+	supervisor: ServiceSupervisor | null;
+	serviceName: string | null;
+	version: string;
+	installKind: KernelInstallKind;
+	startedAt: number;
+	uptimeMs: number;
+	/** 内核要求的最低壳能力版本：高过客户端自己的 SHELL_CAPABILITY_VERSION 就先更新壳。 */
+	minShell: number;
+	/** `disabled` = 显式关掉了数据目录单实例锁（PI_WEB_ALLOW_MULTI_INSTANCE=1）。 */
+	lock: "held" | "disabled";
+}
+
 export interface UiHostMetrics {
 	cpuPercent: number | null;
 	memoryPercent: number;

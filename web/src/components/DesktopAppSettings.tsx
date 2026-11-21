@@ -11,6 +11,7 @@ import {
 import { appSend } from "../app-globals";
 import type { MessageKey } from "../i18n/catalog";
 import { useT } from "../i18n";
+import { KernelStatusCard } from "./KernelStatusCard";
 import type { UiPluginInfo } from "../types";
 
 type StartupMode = "agent" | "browser" | "split";
@@ -366,6 +367,7 @@ function PiEngineSection() {
 					</div>
 				</>
 			)}
+			<KernelStatusCard />
 			{upToDate && !updatedVersion && <div className="set-note">{t("piEngineUpToDate")}</div>}
 			<div className="set-row-actions">
 				<button type="button" className="set-save-btn" disabled={updating || upToDate} onClick={update}>
