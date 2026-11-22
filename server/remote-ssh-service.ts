@@ -9,7 +9,7 @@ import { pathToFileURL } from "node:url";
 import { resolveDefaultPkgRoot } from "./plugin-updater.js";
 // shellQuotePosix 的单源在 shell-quote.ts；这里 re-export 是为了不让 6+ 个既有 import 点全部改一遍。
 import { shellQuotePosix } from "./shell-quote.js";
-import { isAudioFile, previewKind } from "./text-sniff.js";
+import { isAudioFile, previewKind, sniffImageMime } from "./text-sniff.js";
 import type {
 	RemoteSshDirItem,
 	RemoteSshHostTrustOffer,
@@ -247,6 +247,10 @@ export function createRemoteSdkOperations(localSessionDir: string) {
 			},
 			access: async (p: string): Promise<void> => {
 				await getSvc().sftpStat(remoteUri, toRemote(p));
+			},
+			detectImageMimeType: async (p: string): Promise<string | null> => {
+				const { data } = await getSvc().sftpReadFile(remoteUri, toRemote(p), 4100);
+				return sniffImageMime(data, path.extname(p).toLowerCase());
 			},
 		},
 		write: {

@@ -11,6 +11,7 @@ import {
 	resolveRemoteWorkspacePath,
 	resolveWorkspaceSessionDir,
 	restoreWorkspaceUriFromSessionDir,
+	setGlobalRemoteSshService,
 } from "../../server/remote-ssh-service.js";
 import { isInsideWorkspaceRoots } from "../../server/tool-guards.js";
 import {
@@ -102,6 +103,46 @@ describe("Remote Workspace & SSH URI", () => {
 			expect(persona).toContain("REMOTE SSH workspace");
 			expect(persona).toContain("root@198.51.100.10:22");
 			expect(persona).toContain("/project/game-share");
+		} finally {
+			await fs.rm(testDir, { recursive: true, force: true }).catch(() => {});
+		}
+	});
+
+	it("remote read operations sniff image MIME over SFTP so SDK does not treat PNG as text", async () => {
+		const testDir = path.join(
+			os.tmpdir(),
+			`pi-web-remote-image-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+		);
+		await fs.mkdir(testDir, { recursive: true });
+		try {
+			const remoteUri = "ssh://root@198.51.100.10:22/project/game-share";
+			const localSessionDir = resolveWorkspaceSessionDir(testDir, remoteUri);
+			const pngHead = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+			const jpegHead = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
+			const textHead = Buffer.from("hello world\n", "utf8");
+			const reads: Array<{ remoteAbs: string; maxBytes?: number }> = [];
+			const mockSvc = {
+				sftpReadFile: async (_uri: string, remoteAbs: string, maxBytes?: number) => {
+					reads.push({ remoteAbs, maxBytes });
+					if (remoteAbs.endsWith("fig.png")) return { data: pngHead, size: 68_000 };
+					if (remoteAbs.endsWith("shot.jpg")) return { data: jpegHead, size: 12_000 };
+					return { data: textHead, size: textHead.length };
+				},
+			};
+			setGlobalRemoteSshService(mockSvc as never);
+			try {
+				const ops = createRemoteSdkOperations(localSessionDir);
+				expect(ops).not.toBeNull();
+				expect(typeof ops?.read.detectImageMimeType).toBe("function");
+				await expect(ops!.read.detectImageMimeType(path.join(localSessionDir, "assets", "fig.png"))).resolves.toBe(
+					"image/png",
+				);
+				await expect(ops!.read.detectImageMimeType(path.join(localSessionDir, "shot.jpg"))).resolves.toBe("image/jpeg");
+				await expect(ops!.read.detectImageMimeType(path.join(localSessionDir, "readme.md"))).resolves.toBeNull();
+				expect(reads[0]).toEqual({ remoteAbs: "/project/game-share/assets/fig.png", maxBytes: 4100 });
+			} finally {
+				setGlobalRemoteSshService(null as never);
+			}
 		} finally {
 			await fs.rm(testDir, { recursive: true, force: true }).catch(() => {});
 		}

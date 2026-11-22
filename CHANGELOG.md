@@ -10,6 +10,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **远程工作区 `read` 把图片当文本回传二进制**：`createRemoteSdkOperations()` 交给 SDK 的 `read` operations 只有 `readFile` / `access`。SDK 整包替换默认 operations，本地 `detectImageMimeType` 被丢掉，PNG/JPEG 被 UTF-8 解码成 `\x89PNG` 乱码。现在用 SFTP 读文件头再走 `sniffImageMime`（`server/remote-ssh-service.ts`，守卫 `tests/unit/remote-workspace.test.ts`）。
+
 ## [0.121.3] — 2026-11-20
 
 ### Added
