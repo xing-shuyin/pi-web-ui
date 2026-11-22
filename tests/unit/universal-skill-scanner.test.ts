@@ -265,6 +265,36 @@ Another line.`;
 		const res3 = parseSkillFrontmatter(pureMd, "fallback-file");
 		expect(res3.name).toBe("fallback-file");
 		expect(res3.description).toBe("Specialized Diagnostic Protocol");
+
+		const folded = `---
+name: folded-skill
+description: >
+  Multi-line description folded into one line.
+  Second line of it.
+allowed-tools: bash
+---
+# Body`;
+		const res4 = parseSkillFrontmatter(folded, "fallback");
+		expect(res4.description).toBe("Multi-line description folded into one line. Second line of it.");
+		expect(res4.allowedTools).toEqual(["bash"]);
+
+		const foldedDash = `---
+name: dash-skill
+description: >-
+  Trimmed folded description.
+
+  After a blank line.
+---`;
+		const res5 = parseSkillFrontmatter(foldedDash, "fallback");
+		expect(res5.description).toBe("Trimmed folded description. After a blank line.");
+
+		const emptyBlock = `---
+name: empty-block
+description: >
+---
+# Heading Only`;
+		const res6 = parseSkillFrontmatter(emptyBlock, "fallback");
+		expect(res6.description).toBe("Heading Only");
 	});
 
 	it("能够全源扫描识别来自各类 Agent 的技能（Pi, Claude, Agents, Cursor 等）", () => {

@@ -52,6 +52,9 @@ export interface DiscoverSkillsOptions {
 	includeConflicts?: boolean;
 }
 
+/** YAML 块标量标记（`>` / `|` 可带 `-` / `+` 尾缀），值本身不是描述文本。 */
+const BLOCK_SCALAR_MARKER = /^[>|][-+]?$/;
+
 export function parseSkillFrontmatter(
 	content: string,
 	fallbackName: string,
@@ -71,7 +74,19 @@ export function parseSkillFrontmatter(
 		const secondDash = trimmed.indexOf("\n---", 3);
 		if (secondDash !== -1) {
 			const header = trimmed.slice(3, secondDash);
+			// YAML 块标量（`description: >` / `|` / `>-` / `|-`）的描述正文在后续缩进行里。
+			// 块标记本身不是描述；未实现时会被当成字面量 ">"，目录里就只剩一个 ">"。
+			let blockLines: string[] | null = null;
 			for (const line of header.split("\n")) {
+				if (blockLines) {
+					if (/^[ \t]+\S/.test(line)) {
+						blockLines.push(line.trim());
+						continue;
+					}
+					if (!line.trim()) continue;
+					description = blockLines.join(" ");
+					blockLines = null;
+				}
 				const colon = line.indexOf(":");
 				if (colon <= 0) continue;
 				const key = line.slice(0, colon).trim().toLowerCase();
@@ -82,7 +97,11 @@ export function parseSkillFrontmatter(
 				if (key === "name" && val) {
 					name = val;
 				} else if (key === "description" && val) {
-					description = val;
+					if (BLOCK_SCALAR_MARKER.test(val)) {
+						blockLines = [];
+					} else {
+						description = val;
+					}
 				} else if (key === "disable-model-invocation" || key === "disablemodelinvocation") {
 					disableModelInvocation = val === "true" || val === "1" || val === "yes";
 				} else if (key === "allowed-tools" || key === "allowedtools") {
@@ -92,7 +111,8 @@ export function parseSkillFrontmatter(
 						.filter(Boolean);
 				}
 			}
-			if (!description) {
+			if (blockLines && !description) description = blockLines.join(" ");
+			if (!description || BLOCK_SCALAR_MARKER.test(description)) {
 				const rest = trimmed.slice(secondDash + 4).trim();
 				const firstLine = rest.split("\n").find((l) => l.trim() && !l.trim().startsWith("#"));
 				if (firstLine) description = firstLine.trim();
