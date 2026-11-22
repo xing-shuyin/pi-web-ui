@@ -22,8 +22,8 @@ beforeEach(() => {
 	);
 	writeFileSync(join(root, "package", "plugins", "sample", "index.mjs"), "export default {activate(){}};");
 });
-afterEach(() => {
-	manager?.dispose();
+afterEach(async () => {
+	await manager?.dispose();
 	manager = undefined;
 	rmSync(root, { recursive: true, force: true });
 });

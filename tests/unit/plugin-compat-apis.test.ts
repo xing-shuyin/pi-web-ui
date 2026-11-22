@@ -35,8 +35,8 @@ beforeEach(() => {
 	mgr = new PluginManager(dir, dir);
 });
 
-afterEach(() => {
-	mgr.dispose();
+afterEach(async () => {
+	await mgr.dispose();
 	rmSync(dir, { recursive: true, force: true });
 });
 

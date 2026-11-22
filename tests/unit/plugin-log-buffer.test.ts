@@ -46,8 +46,8 @@ beforeEach(() => {
 	delete (globalThis as { __logSeen?: unknown }).__logSeen;
 });
 
-afterEach(() => {
-	mgr.dispose();
+afterEach(async () => {
+	await mgr.dispose();
 	rmSync(dir, { recursive: true, force: true });
 });
 

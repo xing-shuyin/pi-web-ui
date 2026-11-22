@@ -84,8 +84,8 @@ describe("PluginManager 集成：scan 标记 + 门禁 + 授权", () => {
 		mgr = new PluginManager(pdir, pdir);
 	});
 
-	afterEach(() => {
-		mgr.dispose();
+	afterEach(async () => {
+		await mgr.dispose();
 		rmSync(pdir, { recursive: true, force: true });
 	});
 

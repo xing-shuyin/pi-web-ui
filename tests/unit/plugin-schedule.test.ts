@@ -141,8 +141,8 @@ describe("host.schedule 持久版", () => {
 		dir = mkdtempSync(join(tmpdir(), "plugin-sched-test-"));
 		mgr = new PluginManager(dir, dir);
 	});
-	afterEach(() => {
-		mgr.dispose();
+	afterEach(async () => {
+		await mgr.dispose();
 		vi.useRealTimers();
 		rmSync(dir, { recursive: true, force: true });
 	});

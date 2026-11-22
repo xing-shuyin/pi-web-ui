@@ -63,8 +63,8 @@ describe("host.llm.complete 门控（permissions llm 族 + llmProvider 注入）
 		dir = mkdtempSync(join(tmpdir(), "plugin-llm-host-test-"));
 		mgr = new PluginManager(dir, dir);
 	});
-	afterEach(() => {
-		mgr.dispose();
+	afterEach(async () => {
+		await mgr.dispose();
 		rmSync(dir, { recursive: true, force: true });
 	});
 

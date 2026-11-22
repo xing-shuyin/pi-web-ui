@@ -393,9 +393,9 @@ beforeEach(() => {
 	mgr = new PluginManager(dir, dir);
 });
 
-afterEach(() => {
+afterEach(async () => {
 	vi.restoreAllMocks();
-	mgr.dispose();
+	await mgr.dispose();
 	rmSync(dir, { recursive: true, force: true });
 });
 

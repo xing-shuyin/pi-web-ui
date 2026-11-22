@@ -20,8 +20,8 @@ beforeEach(() => {
 	(globalThis as unknown as { __hosts?: Record<string, PluginHost> }).__hosts = {};
 });
 
-afterEach(() => {
-	mgr.dispose();
+afterEach(async () => {
+	await mgr.dispose();
 	rmSync(dir, { recursive: true, force: true });
 	delete (globalThis as unknown as { __hosts?: Record<string, PluginHost> }).__hosts;
 });

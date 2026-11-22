@@ -61,8 +61,8 @@ describe("host.chat 四件套透传（issue #226）", () => {
 		dir = mkdtempSync(join(tmpdir(), "plugin-chat-test-"));
 		mgr = new PluginManager(dir, dir);
 	});
-	afterEach(() => {
-		mgr.dispose();
+	afterEach(async () => {
+		await mgr.dispose();
 		rmSync(dir, { recursive: true, force: true });
 		(globalThis as Record<string, unknown>).__chatHost = undefined;
 	});

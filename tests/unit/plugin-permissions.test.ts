@@ -96,8 +96,8 @@ describe("host.requestPermission", () => {
 		dir = mkdtempSync(join(tmpdir(), "plugin-perm-host-test-"));
 		mgr = new PluginManager(dir, dir);
 	});
-	afterEach(() => {
-		mgr.dispose();
+	afterEach(async () => {
+		await mgr.dispose();
 		rmSync(dir, { recursive: true, force: true });
 	});
 
@@ -186,8 +186,8 @@ describe("执行期强制", () => {
 		dir = mkdtempSync(join(tmpdir(), "plugin-perm-enf-test-"));
 		mgr = new PluginManager(dir, dir);
 	});
-	afterEach(() => {
-		mgr.dispose();
+	afterEach(async () => {
+		await mgr.dispose();
 		rmSync(dir, { recursive: true, force: true });
 	});
 

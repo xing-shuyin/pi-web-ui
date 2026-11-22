@@ -212,8 +212,8 @@ describe("PluginManager alwaysOn 作用域（无 WebSocket 连接时也应激活
 		dir = mkdtempSync(join(tmpdir(), "plugin-alwayson-test-"));
 		mgr = new PluginManager(dir, dir);
 	});
-	afterEach(() => {
-		mgr.dispose();
+	afterEach(async () => {
+		await mgr.dispose();
 		rmSync(dir, { recursive: true, force: true });
 		(globalThis as Record<string, unknown>).__alwaysOnProbe = undefined;
 		delete (globalThis as Record<string, unknown>).__alwaysOnFail;

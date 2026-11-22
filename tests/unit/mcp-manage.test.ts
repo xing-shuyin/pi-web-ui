@@ -178,9 +178,9 @@ describe("PluginHost host.mcp", () => {
 		vi.spyOn(console, "error").mockImplementation(() => {});
 	});
 
-	afterEach(() => {
+	afterEach(async () => {
 		vi.restoreAllMocks();
-		mgr.dispose();
+		await mgr.dispose();
 		rmSync(dir, { recursive: true, force: true });
 	});
 
