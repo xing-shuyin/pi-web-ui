@@ -1,6 +1,12 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { basename } from "node:path";
-import { makeEvalTool, disposeAllEvalKernels, EVAL_TOOL_NAME, toAsciiJson } from "../../server/eval-tool.js";
+import {
+	makeEvalTool,
+	disposeAllEvalKernels,
+	EVAL_TOOL_NAME,
+	hasUsablePython,
+	toAsciiJson,
+} from "../../server/eval-tool.js";
 
 async function run(
 	tool: ReturnType<typeof makeEvalTool>,
@@ -25,6 +31,10 @@ async function run(
 	};
 }
 
+// 本机没有可用 Python 时，Python 用例必须**跳过**而不是假装通过或假装失败。
+const pythonReady = await hasUsablePython();
+const itPy = it.skipIf(!pythonReady);
+
 describe("eval tool (persistent sandbox)", () => {
 	afterAll(() => {
 		disposeAllEvalKernels();
@@ -36,7 +46,7 @@ describe("eval tool (persistent sandbox)", () => {
 		expect(tool.description).toContain("sandbox");
 	});
 
-	it("evaluates Python expressions and statements with state persistence", async () => {
+	itPy("evaluates Python expressions and statements with state persistence", async () => {
 		const tool = makeEvalTool({ cwd: process.cwd(), ownerId: "test-py-persist" });
 
 		const res1 = await run(tool, {
@@ -55,7 +65,7 @@ describe("eval tool (persistent sandbox)", () => {
 		expect(res2.details.ok).toBe(true);
 	});
 
-	it("handles Python errors without crashing the session", async () => {
+	itPy("handles Python errors without crashing the session", async () => {
 		const tool = makeEvalTool({ cwd: process.cwd(), ownerId: "test-py-errors" });
 
 		const res1 = await run(tool, {
@@ -80,7 +90,7 @@ describe("eval tool (persistent sandbox)", () => {
 		expect(res3.details.result).toBe("300");
 	});
 
-	it("handles non-ASCII UTF-8 code and output in Python without breaking IPC", async () => {
+	itPy("handles non-ASCII UTF-8 code and output in Python without breaking IPC", async () => {
 		const tool = makeEvalTool({ cwd: process.cwd(), ownerId: "test-py-utf8" });
 		const res = await run(tool, {
 			language: "py",
@@ -113,7 +123,7 @@ describe("eval tool (persistent sandbox)", () => {
 		expect(JSON.parse(escaped)).toEqual(unicodeInput);
 	});
 
-	it("supports Python reset to clear state", async () => {
+	itPy("supports Python reset to clear state", async () => {
 		const tool = makeEvalTool({ cwd: process.cwd(), ownerId: "test-py-reset" });
 
 		await run(tool, {
@@ -152,7 +162,7 @@ describe("eval tool (persistent sandbox)", () => {
 		expect(res3.details.result).toBe("apple, banana, cherry");
 	});
 
-	it("handles timeout protection gracefully", async () => {
+	itPy("handles timeout protection gracefully", async () => {
 		const tool = makeEvalTool({ cwd: process.cwd(), ownerId: "test-timeout" });
 
 		const t0 = Date.now();
@@ -168,17 +178,21 @@ describe("eval tool (persistent sandbox)", () => {
 		expect(res.text).toContain("timed out after 1s");
 	});
 
-	it("survives timeout: kernel respawns and keeps state", async () => {
-		const tool = makeEvalTool({ cwd: process.cwd(), ownerId: "test-timeout-recover" });
+	itPy(
+		"survives timeout: kernel respawns and keeps state",
+		async () => {
+			const tool = makeEvalTool({ cwd: process.cwd(), ownerId: "test-timeout-recover" });
 
-		await run(tool, { language: "py", code: "keep_me = 'alive'", timeout: 5 });
-		await run(tool, { language: "py", code: "import time\ntime.sleep(30)", timeout: 1 });
-		const res = await run(tool, { language: "py", code: "2 + 2", timeout: 5 });
-		expect(res.details.ok).toBe(true);
-		expect(res.details.result).toBe("4");
-	}, 15000);
+			await run(tool, { language: "py", code: "keep_me = 'alive'", timeout: 5 });
+			await run(tool, { language: "py", code: "import time\ntime.sleep(30)", timeout: 1 });
+			const res = await run(tool, { language: "py", code: "2 + 2", timeout: 5 });
+			expect(res.details.ok).toBe(true);
+			expect(res.details.result).toBe("4");
+		},
+		15000,
+	);
 
-	it("queues concurrent calls instead of dropping the first resolver", async () => {
+	itPy("queues concurrent calls instead of dropping the first resolver", async () => {
 		const tool = makeEvalTool({ cwd: process.cwd(), ownerId: "test-queue" });
 
 		const [a, b] = await Promise.all([
@@ -190,7 +204,7 @@ describe("eval tool (persistent sandbox)", () => {
 		expect(b.details.result).toBe("'second'");
 	});
 
-	it("sandbox cwd is an isolated temp dir; project dir is exposed as PROJECT_DIR", async () => {
+	itPy("sandbox cwd is an isolated temp dir; project dir is exposed as PROJECT_DIR", async () => {
 		const tool = makeEvalTool({ cwd: process.cwd(), ownerId: "test-sandbox-cwd" });
 		const projectCwd = process.cwd();
 		const base = basename(projectCwd);

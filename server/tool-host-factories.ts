@@ -4,16 +4,15 @@ import { normalizePathKey } from "./client-state.js";
 import type { ScheduleToolHost } from "./schedule-agent-tool.js";
 import type { SchedulerStore } from "./scheduler-tasks.js";
 import type { ConversationReadHost } from "./conversation-read-tool.js";
-import { parseTranscriptLines } from "./conversation-read-tool.js";
 import type { ClaimFilesHost } from "./claim-files-tool.js";
 import type { ClaimStore } from "./claim-store.js";
-import { readTouchSidecar } from "./claim-store.js";
 import type { CompactContextHost, PendingCompaction } from "./compact-context-tool.js";
 import { queuedCompaction } from "./conversation-delivery.js";
 import type { SkillToolHost } from "./skill-tool.js";
 import type { AgentMessage } from "./serialize.js";
 import type { Conversation } from "./agent-service.js";
 import { MAX_TRANSCRIPT_SCAN_BYTES, piSessionsRoot } from "./session-search.js";
+import { projectSessionText } from "./session-projection.js";
 
 export function createScheduleToolHost(ctx: {
 	getSchedulerStore: () => SchedulerStore | undefined;
@@ -127,24 +126,6 @@ export function createConversationReadHost(ctx: {
 				cwd: s.cwd,
 			}));
 		},
-		readTouchSidecar: (id, path) => {
-			try {
-				if (id) {
-					const c = ctx.getConversation(id);
-					let file: string | undefined;
-					try {
-						file = c?.session.sessionFile ?? undefined;
-					} catch {
-						file = undefined;
-					}
-					return readTouchSidecar(file);
-				}
-				if (path) return readTouchSidecar(path);
-				return undefined;
-			} catch {
-				return undefined;
-			}
-		},
 		readHistorySession: async (path) => {
 			const extra = piSessionsRoot();
 			const defaultAll = await SessionManager.listAll().catch(() => []);
@@ -168,7 +149,7 @@ export function createConversationReadHost(ctx: {
 					title: hit.name || hit.firstMessage,
 					cwd: hit.cwd,
 					sessionPath: hit.path,
-					messages: parseTranscriptLines(text),
+					messages: projectSessionText(text).messages,
 				};
 			} catch {
 				return undefined;

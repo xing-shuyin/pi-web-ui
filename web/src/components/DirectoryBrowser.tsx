@@ -358,6 +358,8 @@ export function DirectoryBrowser({
 		}
 
 		setConnectionId(res.connectionId);
+		// 连上了但主机配置没落盘（存储文件版本不认识 / 写失败）：连接照常，但绝不装作保存成功。
+		if (res.profileSaveError) setSshError(res.profileSaveError);
 		setRemoteSystem(res.system ?? null);
 		setRemoteTools(res.tools ?? null);
 		setSuggestedTools(res.suggestedInstall ?? []);

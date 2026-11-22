@@ -15,18 +15,18 @@ function directory() {
 }
 
 describe("desktop enable settings", () => {
-	it("defaults to disabled and persists enable and disable across instances", () => {
+	it("defaults to disabled and persists enable and disable across instances", async () => {
 		const dataDir = directory();
 		const options = { dataDir, environmentEnabled: false };
 		const setup = createDesktopSetup(options);
 		expect(setup.enabled).toBe(false);
-		setup.setEnabled(true);
+		await setup.setEnabled(true);
 		expect(setup.enabled).toBe(true);
 		expect(JSON.parse(readFileSync(join(dataDir, "desktop-settings.json"), "utf8"))).toEqual({ enabled: true });
 		setup.close();
 		const reopened = createDesktopSetup(options);
 		expect(reopened.enabled).toBe(true);
-		reopened.setEnabled(false);
+		await reopened.setEnabled(false);
 		expect(reopened.enabled).toBe(false);
 		reopened.close();
 		expect(createDesktopSetup(options).enabled).toBe(false);
@@ -41,37 +41,40 @@ describe("desktop enable settings", () => {
 		},
 	);
 
-	it("keeps the environment override enabled while persisting the local preference", () => {
+	it("keeps the environment override enabled while persisting the local preference", async () => {
 		const dataDir = directory();
 		const setup = createDesktopSetup({ dataDir, environmentEnabled: true });
 		expect(setup.enabled).toBe(true);
-		setup.setEnabled(true);
-		setup.setEnabled(false);
+		await setup.setEnabled(true);
+		await setup.setEnabled(false);
 		expect(setup.enabled).toBe(true);
 		expect(JSON.parse(readFileSync(join(dataDir, "desktop-settings.json"), "utf8"))).toEqual({ enabled: false });
 		setup.close();
 		expect(createDesktopSetup({ dataDir, environmentEnabled: false }).enabled).toBe(false);
 	});
 
-	it("closes idempotently and rejects further writes without changing settings", () => {
+	it("closes idempotently and rejects further writes without changing settings", async () => {
 		const dataDir = directory();
 		const setup = createDesktopSetup({ dataDir, environmentEnabled: false });
-		setup.setEnabled(true);
+		await setup.setEnabled(true);
 		setup.close();
 		setup.close();
-		expect(() => setup.setEnabled(false)).toThrow("Desktop setup closed");
+		await expect(setup.setEnabled(false)).rejects.toThrow("Desktop setup closed");
 		expect(setup.enabled).toBe(true);
 		expect(createDesktopSetup({ dataDir, environmentEnabled: false }).enabled).toBe(true);
 	});
 
-	it.each([false, true])("does not change the in-memory preference after a failed write (enabled=%s)", (enabled) => {
-		const dataDir = join(directory(), "settings");
-		const setup = createDesktopSetup({ dataDir, environmentEnabled: false });
-		setup.setEnabled(enabled);
-		rmSync(dataDir, { recursive: true });
-		writeFileSync(dataDir, "blocks the settings directory");
-		expect(() => setup.setEnabled(!enabled)).toThrow();
-		expect(setup.enabled).toBe(enabled);
-		expect(readFileSync(dataDir, "utf8")).toBe("blocks the settings directory");
-	});
+	it.each([false, true])(
+		"does not change the in-memory preference after a failed write (enabled=%s)",
+		async (enabled) => {
+			const dataDir = join(directory(), "settings");
+			const setup = createDesktopSetup({ dataDir, environmentEnabled: false });
+			await setup.setEnabled(enabled);
+			rmSync(dataDir, { recursive: true });
+			writeFileSync(dataDir, "blocks the settings directory");
+			await expect(setup.setEnabled(!enabled)).rejects.toThrow();
+			expect(setup.enabled).toBe(enabled);
+			expect(readFileSync(dataDir, "utf8")).toBe("blocks the settings directory");
+		},
+	);
 });

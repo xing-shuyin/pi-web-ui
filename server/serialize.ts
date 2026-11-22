@@ -1,5 +1,6 @@
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { TextQuote, UiContentBlock, UiImageBlock, UiMessage } from "./protocol.js";
+import { classifyModelError, modelErrorReport, type ModelRetryRecord } from "./model-error.js";
 import { splitQuotedPrompt, type QueuedAttachmentMeta } from "./text-quote.js";
 import { saveAttachmentSync } from "./attachment-store.js";
 import { stripMarkers } from "./markers/index.js";
@@ -173,6 +174,28 @@ export function stripTransientRetryErrors(messages: UiMessage[], retryActive: bo
 	return end === messages.length ? messages : messages.slice(0, end);
 }
 
+/**
+ * 收尾（issue #978）：给本轮最终失败的错误气泡补上「已重试 N 次后失败」。
+ *
+ * 只认「回合结尾的那条错误气泡」，并要求原文与收尾记录一致——上一轮留下的
+ * 次数不会被这一轮的错误冒领。不改动原消息对象，返回新数组（缓存靠引用比较）。
+ */
+export function withRetrySummary(messages: UiMessage[], summary?: ModelRetryRecord | null): UiMessage[] {
+	if (!summary || summary.attempt <= 0) return messages;
+	const last = messages[messages.length - 1];
+	if (!last || last.role !== "assistant" || !last.errorInfo) return messages;
+	if ((last.errorMessage ?? "").trim() !== summary.errorMessage.trim()) return messages;
+	const next = messages.slice();
+	next[next.length - 1] = {
+		...last,
+		errorInfo: {
+			...last.errorInfo,
+			retries: { attempt: summary.attempt, maxAttempts: summary.maxAttempts },
+		},
+	};
+	return next;
+}
+
 export function uiMessageId(m: AgentMessage, seq: number): string {
 	switch (m.role) {
 		case "user":
@@ -248,6 +271,7 @@ function serializeAssistantMessage(
 	id: string,
 	streaming = false,
 ): UiMessage {
+	const errorMessage = m.errorMessage;
 	return {
 		id,
 		role: "assistant",
@@ -260,7 +284,10 @@ function serializeAssistantMessage(
 		provider: m.provider,
 		usageCost: typeof m.usage?.cost?.total === "number" ? m.usage.cost.total : undefined,
 		stopReason: m.stopReason,
-		errorMessage: m.errorMessage,
+		errorMessage,
+		...(typeof errorMessage === "string" && errorMessage.trim()
+			? { errorInfo: modelErrorReport(classifyModelError(errorMessage)) }
+			: {}),
 	};
 }
 

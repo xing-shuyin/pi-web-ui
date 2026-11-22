@@ -21,7 +21,8 @@ afterEach(() => {
 	} catch {}
 });
 
-describe("plugin install fast path & sparse checkout", () => {
+// 真跑 git 与插件目录复制（慢用例）：给足预算，避免满负载并行时按「代码坏了」红。
+describe("plugin install fast path & sparse checkout", { timeout: 120_000 }, () => {
 	it("短名称 (如 notes) 自动识别为官方插件，并优先命中本地随包", () => {
 		const res = spawnSync(process.execPath, [CLI_PATH, "install", "notes", "--data-dir", testDataDir], {
 			encoding: "utf8",

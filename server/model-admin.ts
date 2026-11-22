@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { writeJsonAtomicSync } from "./atomic-file.js";
+import { createSerializedJsonWriter, type SerializedJsonWriter } from "./serialized-json-writer.js";
 import { stripJsonComments } from "./json-utils.js";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type {
@@ -66,11 +66,41 @@ export function graduateOverlayModels(
 	return graduated;
 }
 
-function atomicWriteCredentialJson(path: string, data: unknown): void {
-	writeJsonAtomicSync(path, data);
+/**
+ * 凭据 / 模型配置的落盘队列：同一个文件只能有一个写入队列，否则「先提交后被覆盖」就是迟早的事。
+ * 排队与等待由同一个链持有，所以 `writeNow` 既保证顺序，也保证落盘成功才返回。
+ */
+const credentialWriters = new Map<string, SerializedJsonWriter>();
+
+function credentialWriter(path: string): SerializedJsonWriter {
+	let writer = credentialWriters.get(path);
+	if (!writer) {
+		writer = createSerializedJsonWriter(path, { label: `model-admin ${path}` });
+		credentialWriters.set(path, writer);
+	}
+	return writer;
+}
+
+/** 凭据文件只给属主读写；FAT 这类存不住权限位的文件系统上告警而非失败（与旧行为一致）。 */
+async function atomicWriteCredentialJson(path: string, data: unknown): Promise<void> {
+	try {
+		await credentialWriter(path).writeNow(data);
+	} catch (error) {
+		// 队列的链一经拒绝就永久拒绝（见 `serialized-json-writer`）：换一条新链，
+		// 否则一次磁盘抖动之后所有凭据写入都只能拿到旧错误。
+		credentialWriters.delete(path);
+		throw error;
+	}
 	try {
 		chmodSync(path, CREDENTIAL_FILE_MODE);
 	} catch {}
+}
+
+/** 可重建的播种投影（provider-keys.json 缺失时从 auth.json 重建）：排队写即可，不阻塞事件循环。 */
+function queueCredentialJson(path: string, data: unknown): void {
+	void atomicWriteCredentialJson(path, data).catch((error: unknown) => {
+		console.error(`[model-admin] 后台写入 ${path} 失败：`, error);
+	});
 }
 
 export function mergeProviderConfigEntry(
@@ -463,7 +493,7 @@ export class ModelAdminService {
 		const keys = this.readProviderKeys();
 		if (keys[provider]) {
 			keys[provider].activeKeyName = null;
-			this.writeProviderKeys(keys);
+			await this.writeProviderKeys(keys);
 		}
 		this.host.onOAuthActivated?.(provider);
 		this.host.invalidatePiConfig?.();
@@ -509,8 +539,8 @@ export class ModelAdminService {
 		return out;
 	}
 
-	private writeProviderKeys(data: Record<string, ProviderKeysData>): void {
-		atomicWriteCredentialJson(this.providerKeysPath(), data);
+	private async writeProviderKeys(data: Record<string, ProviderKeysData>): Promise<void> {
+		await atomicWriteCredentialJson(this.providerKeysPath(), data);
 		try {
 			chmodSync(join(this.host.agentDir, "auth.json"), CREDENTIAL_FILE_MODE);
 		} catch {}
@@ -584,7 +614,9 @@ export class ModelAdminService {
 		const data = this.readProviderKeys();
 		if (!existsSync(path)) {
 			for (const pid of this.builtinProviderIds()) this.seedProviderKeysFromAuth(pid, data);
-			this.writeProviderKeys(data);
+			// 播种只是投影（auth.json 才是真值），而 `listProviderKeys()` 是同步 API：排队写即可。
+			// 队列与真正的写共用同一个 writer，所以后续 `writeNow` 不会被这笔播种覆盖。
+			queueCredentialJson(path, data);
 		}
 		this.host.emit({ type: "provider_keys", ...this.providerKeysInfo(data) });
 		this.host.flushSnapshot();
@@ -632,7 +664,7 @@ export class ModelAdminService {
 		} else {
 			data[pid] = { type: "api_key", key: apiKey };
 		}
-		atomicWriteCredentialJson(authPath, data);
+		await atomicWriteCredentialJson(authPath, data);
 		try {
 			chmodSync(this.providerKeysPath(), CREDENTIAL_FILE_MODE);
 		} catch {}
@@ -670,7 +702,7 @@ export class ModelAdminService {
 				entry.keys.push({ name, apiKey: key });
 				entry.activeKeyName = name;
 			}
-			this.writeProviderKeys(data);
+			await this.writeProviderKeys(data);
 			await this.applyActiveKey(pid, key);
 			this.host.emit({
 				type: "notice",
@@ -721,7 +753,7 @@ export class ModelAdminService {
 			const keyName = this.uniqueKeyName(entry, name);
 			entry.keys.push({ name: keyName, apiKey: key });
 			if (!entry.activeKeyName) entry.activeKeyName = keyName;
-			this.writeProviderKeys(data);
+			await this.writeProviderKeys(data);
 			const isActive = entry.activeKeyName === keyName;
 			if (isActive) {
 				await this.applyActiveKey(pid, key);
@@ -783,7 +815,7 @@ export class ModelAdminService {
 				return true;
 			}
 			entry.activeKeyName = targetName;
-			this.writeProviderKeys(data);
+			await this.writeProviderKeys(data);
 			await this.applyActiveKey(pid, target.apiKey);
 			notice({
 				type: "notice",
@@ -827,14 +859,14 @@ export class ModelAdminService {
 			entry.keys = entry.keys.filter((k) => k.name !== targetName);
 			if (entry.keys.length === 0) {
 				delete data[pid];
-				this.writeProviderKeys(data);
+				await this.writeProviderKeys(data);
 				const authPath = join(this.host.agentDir, "auth.json");
 				let auth: Record<string, unknown> = {};
 				try {
 					auth = JSON.parse(readFileSync(authPath, "utf8")) as Record<string, unknown>;
 				} catch {}
 				delete auth[pid];
-				atomicWriteCredentialJson(authPath, auth);
+				await atomicWriteCredentialJson(authPath, auth);
 				const mr = this.host.modelRuntime?.();
 				if (mr) {
 					await mr.removeRuntimeApiKey(pid);
@@ -850,10 +882,10 @@ export class ModelAdminService {
 			} else {
 				if (wasActive) {
 					entry.activeKeyName = entry.keys[0].name;
-					this.writeProviderKeys(data);
+					await this.writeProviderKeys(data);
 					await this.applyActiveKey(pid, entry.keys[0].apiKey);
 				} else {
-					this.writeProviderKeys(data);
+					await this.writeProviderKeys(data);
 				}
 				this.host.emit({
 					type: "notice",
@@ -914,9 +946,9 @@ export class ModelAdminService {
 				return;
 			}
 			delete data[pid];
-			atomicWriteCredentialJson(authPath, data);
+			await atomicWriteCredentialJson(authPath, data);
 			delete keyData[pid];
-			this.writeProviderKeys(keyData);
+			await this.writeProviderKeys(keyData);
 			const mr = this.host.modelRuntime?.();
 			if (mr) {
 				await mr.removeRuntimeApiKey(pid);
@@ -1566,7 +1598,7 @@ export class ModelAdminService {
 				force: true,
 				signal: AbortSignal.timeout(90_000),
 			});
-			const graduated = this.graduateProvisionalOverlays();
+			const graduated = await this.graduateProvisionalOverlays();
 			if (graduated.length > 0) {
 				await mr.refresh();
 			}
@@ -1613,7 +1645,7 @@ export class ModelAdminService {
 		}
 	}
 
-	private graduateProvisionalOverlays(): OverlayGraduation[] {
+	private async graduateProvisionalOverlays(): Promise<OverlayGraduation[]> {
 		let official: Record<string, Record<string, string | undefined>> = {};
 		try {
 			const storePath = join(dirname(this.modelsConfigPath()), "models-store.json");
@@ -1637,7 +1669,7 @@ export class ModelAdminService {
 		const graduated = graduateOverlayModels(providers, official);
 		if (graduated.length === 0) return graduated;
 		try {
-			atomicWriteCredentialJson(this.modelsConfigPath(), { providers });
+			await atomicWriteCredentialJson(this.modelsConfigPath(), { providers });
 		} catch {
 			return [];
 		}
@@ -1683,7 +1715,7 @@ export class ModelAdminService {
 		pid: string,
 	): Promise<void> {
 		mkdirSync(this.host.agentDir, { recursive: true });
-		atomicWriteCredentialJson(this.modelsConfigPath(), { providers });
+		await atomicWriteCredentialJson(this.modelsConfigPath(), { providers });
 
 		try {
 			const auth = JSON.parse(readFileSync(join(this.host.agentDir, "auth.json"), "utf8")) as Record<string, unknown>;
@@ -1829,7 +1861,7 @@ export class ModelAdminService {
 				return;
 			}
 			delete providers[providerId];
-			atomicWriteCredentialJson(this.modelsConfigPath(), { providers });
+			await atomicWriteCredentialJson(this.modelsConfigPath(), { providers });
 			await this.host.modelRuntime?.()?.refresh();
 			this.host.invalidatePiConfig?.();
 			await this.listModelsConfig();

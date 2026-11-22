@@ -1,12 +1,11 @@
-import { readFileSync, statSync, unlinkSync } from "node:fs";
+import { readFileSync, unlinkSync } from "node:fs";
 import { resolve, sep } from "node:path";
-import { writeJsonAtomicSync } from "./atomic-file.js";
-import { normalizeTouchPath, unionTouchLists, type TouchedFile } from "./conversation-touches.js";
+import { createSerializedJsonWriter, type SerializedJsonWriter } from "./serialized-json-writer.js";
+import { normalizeTouchPath, type TouchedFile } from "./conversation-touches.js";
 
 export const CLAIM_TTL_MS = 30 * 60 * 1000;
 export const CLAIM_TTL_MIN_MS = 60 * 1000;
 export const CLAIM_TTL_MAX_MS = 8 * 60 * 60 * 1000;
-export const SIDECAR_MAX_ENTRIES = 500;
 const CLAIMS_FILE_VERSION = 1;
 
 export interface Claim {
@@ -67,16 +66,24 @@ function isValidClaim(c: unknown): c is Claim {
 
 export class ClaimStore {
 	private tables = new Map<string, Claim[]>();
+	/**
+	 * 认领表是真相（跨对话互斥靠它），所以 mutator 必须等到真正落盘再返回：
+	 * 否则 `new ClaimStore(同一个文件)` 会读到旧数据，互斥当场失效。
+	 * 排队与等待共用同一个队列，`list()` 里的过期清理（同步读侧）也不会逆序覆盖。
+	 */
+	private writer: SerializedJsonWriter;
+
 	constructor(private file: string) {
+		this.writer = createSerializedJsonWriter(file, { label: "claims" });
 		this.load();
 	}
 
-	claim(
+	async claim(
 		cwd: string,
 		owner: { convId: string; title: string },
 		inputs: ClaimInput[],
 		now = Date.now(),
-	): { claimed: Claim[]; conflicts: { path: string; claim: Claim }[] } {
+	): Promise<{ claimed: Claim[]; conflicts: { path: string; claim: Claim }[] }> {
 		const key = cwdKey(cwd);
 		this.sweepTable(key, now);
 		const table = this.tables.get(key) ?? [];
@@ -107,11 +114,11 @@ export class ClaimStore {
 			claimed.push({ ...row });
 		}
 		this.tables.set(key, table);
-		this.save();
+		await this.save();
 		return { claimed, conflicts };
 	}
 
-	release(cwd: string, ownerConvId: string, paths?: string[], now = Date.now()): number {
+	async release(cwd: string, ownerConvId: string, paths?: string[], now = Date.now()): Promise<number> {
 		const key = cwdKey(cwd);
 		this.sweepTable(key, now);
 		const table = this.tables.get(key) ?? [];
@@ -129,26 +136,28 @@ export class ClaimStore {
 			table.filter((c) => c.ownerConvId !== ownerConvId || (drop !== null && !drop.has(c.path))),
 		);
 		const n = before - (this.tables.get(key)?.length ?? 0);
-		if (n > 0) this.save();
+		if (n > 0) await this.save();
 		return n;
 	}
 
-	releaseByOwner(ownerConvId: string, now = Date.now()): number {
+	async releaseByOwner(ownerConvId: string, now = Date.now()): Promise<number> {
 		let n = 0;
+		let swept = false;
 		for (const [key, table] of this.tables) {
-			this.sweepTable(key, now);
+			swept = this.sweepTable(key, now) || swept;
 			const kept = (this.tables.get(key) ?? table).filter((c) => c.ownerConvId !== ownerConvId);
 			n += table.length - kept.length;
 			this.tables.set(key, kept);
 		}
-		if (n > 0) this.save();
+		if (n > 0 || swept) await this.save();
 		return n;
 	}
 
-	touch(ownerConvId: string, now = Date.now()): number {
+	async touch(ownerConvId: string, now = Date.now()): Promise<number> {
 		let n = 0;
+		let swept = false;
 		for (const [key, table] of this.tables) {
-			this.sweepTable(key, now);
+			swept = this.sweepTable(key, now) || swept;
 			for (const c of this.tables.get(key) ?? table) {
 				if (c.ownerConvId === ownerConvId) {
 					c.expiresAt = now + CLAIM_TTL_MS;
@@ -156,24 +165,25 @@ export class ClaimStore {
 				}
 			}
 		}
-		if (n > 0) this.save();
+		if (n > 0 || swept) await this.save();
 		return n;
 	}
 
 	list(cwd: string, now = Date.now()): Claim[] {
 		const key = cwdKey(cwd);
-		this.sweepTable(key, now);
+		// 读侧的过期清理改不了真相的内容（过期的本来就该消失）：排队写即可，不阻塞。
+		if (this.sweepTable(key, now)) this.queueSave();
 		return (this.tables.get(key) ?? []).map((c) => ({ ...c }));
 	}
 
-	private sweepTable(key: string, now: number): void {
+	/** 只做内存清理，返回「内存被改过」，由调用方按同步/异步路径决定怎么落盘。 */
+	private sweepTable(key: string, now: number): boolean {
 		const table = this.tables.get(key);
-		if (!table || table.length === 0) return;
+		if (!table || table.length === 0) return false;
 		const kept = table.filter((c) => c.expiresAt > now);
-		if (kept.length !== table.length) {
-			this.tables.set(key, kept);
-			this.save();
-		}
+		if (kept.length === table.length) return false;
+		this.tables.set(key, kept);
+		return true;
 	}
 
 	private load(): void {
@@ -200,10 +210,24 @@ export class ClaimStore {
 		}
 	}
 
-	private save(): void {
+	private snapshot() {
+		return { version: CLAIMS_FILE_VERSION, tables: Object.fromEntries(this.tables) };
+	}
+
+	/** 真值落盘：等到写完才返回（失败静默，与原契约一致）。 */
+	private async save(): Promise<void> {
 		try {
-			writeJsonAtomicSync(this.file, { version: CLAIMS_FILE_VERSION, tables: Object.fromEntries(this.tables) });
-		} catch {}
+			await this.writer.writeNow(this.snapshot());
+		} catch {
+			// 串行队列的链一经拒绝就永久拒绝（见 `serialized-json-writer`）：换一条新链，
+			// 否则一次磁盘抖动之后所有认领都静默落不了盘。
+			this.writer = createSerializedJsonWriter(this.file, { label: "claims" });
+		}
+	}
+
+	/** 读侧触发的清理：排队写，不等待。 */
+	private queueSave(): void {
+		void this.save();
 	}
 }
 
@@ -230,40 +254,6 @@ export function matchClaims(
 
 function sidecarPath(sessionFile: string): string {
 	return `${sessionFile}.touches.json`;
-}
-
-export function readTouchSidecar(sessionFile: string | undefined): TouchedFile[] | undefined {
-	if (typeof sessionFile !== "string" || !sessionFile) return undefined;
-	let raw = "";
-	try {
-		if (statSync(sidecarPath(sessionFile)).size > 1024 * 1024) return undefined;
-		raw = readFileSync(sidecarPath(sessionFile), "utf8");
-	} catch {
-		return undefined;
-	}
-	try {
-		const data = JSON.parse(raw) as { files?: unknown };
-		if (!data || !Array.isArray(data.files)) return undefined;
-		const valid = data.files.filter(
-			(f): f is TouchedFile => !!f && typeof f === "object" && typeof (f as { path?: unknown }).path === "string",
-		);
-		return valid.map((f) => ({
-			path: f.path,
-			count: typeof f.count === "number" && Number.isFinite(f.count) ? f.count : 1,
-			lastTs: typeof f.lastTs === "number" && Number.isFinite(f.lastTs) ? f.lastTs : 0,
-		}));
-	} catch {
-		return undefined;
-	}
-}
-
-export async function mergeTouchSidecar(sessionFile: string | undefined, fresh: TouchedFile[]): Promise<void> {
-	if (typeof sessionFile !== "string" || !sessionFile) return;
-	if (!Array.isArray(fresh) || fresh.length === 0) return;
-	try {
-		const merged = unionTouchLists(readTouchSidecar(sessionFile) ?? [], fresh).slice(0, SIDECAR_MAX_ENTRIES);
-		writeJsonAtomicSync(sidecarPath(sessionFile), { version: 1, updatedAt: Date.now(), files: merged });
-	} catch {}
 }
 
 export function removeTouchSidecar(sessionFile: string | undefined): void {

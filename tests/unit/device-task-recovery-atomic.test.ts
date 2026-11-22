@@ -14,13 +14,13 @@ afterEach(async () => {
 	cleanup.length = 0;
 });
 
-describe("Device Task Recovery Atomic & Immutability Tests", () => {
-	it("rejects recordTaskStart if the same (taskId, attemptId) already has finalized outbox outcome", () => {
+describe("Device Task Recovery Atomic & Immutability Tests", async () => {
+	it("rejects recordTaskStart if the same (taskId, attemptId) already has finalized outbox outcome", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "recovery-atomic-"));
 		cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
 
 		const manager = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
-		manager.recordTaskStart({
+		await manager.recordTaskStart({
 			taskId: "task-1",
 			attemptId: "att-1",
 			botId: "bot-1",
@@ -30,12 +30,12 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 			leaseGeneration: 1,
 		});
 
-		manager.recordTaskFinish(
+		await manager.recordTaskFinish(
 			{ id: "task-1", attemptId: "att-1", botId: "bot-1", deviceId: "dev1", roomId: "room-1" },
 			{ status: "completed", report: "done" },
 		);
 
-		expect(() => {
+		await expect(
 			manager.recordTaskStart({
 				taskId: "task-1",
 				attemptId: "att-1",
@@ -44,16 +44,16 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 				roomId: "room-1",
 				leaseToken: "tok-2",
 				leaseGeneration: 2,
-			});
-		}).toThrow(/already finalized/i);
+			}),
+		).rejects.toThrow(/already finalized/i);
 	});
 
-	it("rejects repeated recordTaskStart for already active lease to prevent overwriting", () => {
+	it("rejects repeated recordTaskStart for already active lease to prevent overwriting", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "recovery-atomic-"));
 		cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
 
 		const manager = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
-		manager.recordTaskStart({
+		await manager.recordTaskStart({
 			taskId: "task-1",
 			attemptId: "att-1",
 			botId: "bot-1",
@@ -63,7 +63,7 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 			leaseGeneration: 1,
 		});
 
-		expect(() => {
+		await expect(
 			manager.recordTaskStart({
 				taskId: "task-1",
 				attemptId: "att-1",
@@ -72,16 +72,16 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 				roomId: "room-1",
 				leaseToken: "tok-1-duplicate",
 				leaseGeneration: 2,
-			});
-		}).toThrow(/already active/i);
+			}),
+		).rejects.toThrow(/already active/i);
 	});
 
-	it("enforces outcome immutability: identical retry is idempotent, conflicting outcome is rejected", () => {
+	it("enforces outcome immutability: identical retry is idempotent, conflicting outcome is rejected", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "recovery-atomic-"));
 		cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
 
 		const manager = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
-		manager.recordTaskStart({
+		await manager.recordTaskStart({
 			taskId: "task-1",
 			attemptId: "att-1",
 			botId: "bot-1",
@@ -91,23 +91,23 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 			leaseGeneration: 1,
 		});
 
-		const first = manager.recordTaskFinish(
+		const first = await manager.recordTaskFinish(
 			{ id: "task-1", attemptId: "att-1", botId: "bot-1", deviceId: "dev1", roomId: "room-1" },
 			{ status: "completed", report: "Result A" },
 		);
 
-		const second = manager.recordTaskFinish(
+		const second = await manager.recordTaskFinish(
 			{ id: "task-1", attemptId: "att-1", botId: "bot-1", deviceId: "dev1", roomId: "room-1" },
 			{ status: "completed", report: "Result A" },
 		);
 		expect(second.fingerprint).toBe(first.fingerprint);
 
-		expect(() => {
+		await expect(
 			manager.recordTaskFinish(
 				{ id: "task-1", attemptId: "att-1", botId: "bot-1", deviceId: "dev1", roomId: "room-1" },
 				{ status: "failed", error: "Conflict Error" },
-			);
-		}).toThrow(/conflict/i);
+			),
+		).rejects.toThrow(/conflict/i);
 
 		const pending = manager.getPendingOutbox();
 		expect(pending).toHaveLength(1);
@@ -115,12 +115,12 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 		expect(pending[0].report).toBe("Result A");
 	});
 
-	it("preserves leaseToken and leaseGeneration in TaskOutboxEntry for fencing", () => {
+	it("preserves leaseToken and leaseGeneration in TaskOutboxEntry for fencing", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "recovery-atomic-"));
 		cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
 
 		const manager = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
-		manager.recordTaskStart({
+		await manager.recordTaskStart({
 			taskId: "task-fencing-1",
 			attemptId: "att-fencing-1",
 			botId: "bot-1",
@@ -130,7 +130,7 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 			leaseGeneration: 42,
 		});
 
-		const outbox = manager.recordTaskFinish(
+		const outbox = await manager.recordTaskFinish(
 			{ id: "task-fencing-1", attemptId: "att-fencing-1", botId: "bot-1", deviceId: "dev1", roomId: "room-1" },
 			{ status: "completed", report: "All done" },
 		);
@@ -144,12 +144,12 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 		expect(entry?.leaseGeneration).toBe(42);
 	});
 
-	it("strictly requires matching fingerprint on ACK; rejects clearing without or with mismatched fingerprint", () => {
+	it("strictly requires matching fingerprint on ACK; rejects clearing without or with mismatched fingerprint", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "recovery-atomic-"));
 		cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
 
 		const manager = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
-		manager.recordTaskStart({
+		await manager.recordTaskStart({
 			taskId: "task-ack-1",
 			attemptId: "att-ack-1",
 			botId: "bot-1",
@@ -159,24 +159,24 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 			leaseGeneration: 1,
 		});
 
-		const outbox = manager.recordTaskFinish(
+		const outbox = await manager.recordTaskFinish(
 			{ id: "task-ack-1", attemptId: "att-ack-1", botId: "bot-1", deviceId: "dev1", roomId: "room-1" },
 			{ status: "completed", report: "Sensitive report" },
 		);
 
 		expect(outbox.fingerprint).toBeDefined();
 
-		expect(manager.ackOutbox("task-ack-1", "att-ack-1")).toBe(false);
+		expect(await manager.ackOutbox("task-ack-1", "att-ack-1")).toBe(false);
 		expect(manager.getPendingOutbox()).toHaveLength(1);
 
-		expect(manager.ackOutbox("task-ack-1", "att-ack-1", "wrong-fingerprint")).toBe(false);
+		expect(await manager.ackOutbox("task-ack-1", "att-ack-1", "wrong-fingerprint")).toBe(false);
 		expect(manager.getPendingOutbox()).toHaveLength(1);
 
-		expect(manager.ackOutbox("task-ack-1", "att-ack-1", outbox.fingerprint)).toBe(true);
+		expect(await manager.ackOutbox("task-ack-1", "att-ack-1", outbox.fingerprint)).toBe(true);
 		expect(manager.getPendingOutbox()).toHaveLength(0);
 	});
 
-	it("migrates legacy 2 files into single versioned state file atomically and removes old files", () => {
+	it("migrates legacy 2 files into single versioned state file atomically and removes old files", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "recovery-migration-"));
 		cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -226,6 +226,7 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 			onHaltOrphaned: (t) => halted.push(t.taskId),
 		});
 
+		await manager.flush();
 		expect(halted).toEqual(["task-running"]);
 		expect(existsSync(newStateFile)).toBe(true);
 		expect(existsSync(legacyOutboxFile)).toBe(false);
@@ -248,7 +249,7 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 		expect(haltedOrphan?.leaseGeneration).toBe(2);
 	});
 
-	it("preserves results across double-crash restart without losing results or corrupting outbox", () => {
+	it("preserves results across double-crash restart without losing results or corrupting outbox", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "recovery-double-crash-"));
 		cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -277,13 +278,14 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 			}),
 		);
 
-		let manager1 = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
+		const manager1 = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
+		await manager1.flush();
 		expect(manager1.getHaltedOrphans()).toHaveLength(1);
 		expect(manager1.getPendingOutbox()).toHaveLength(1);
 		expect(manager1.getPendingOutbox()[0].status).toBe("interrupted");
 		const orphanFingerprint = manager1.getPendingOutbox()[0].fingerprint;
 
-		let manager2 = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
+		const manager2 = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
 		expect(manager2.getHaltedOrphans()).toHaveLength(0);
 		const pending2 = manager2.getPendingOutbox();
 		expect(pending2).toHaveLength(1);
@@ -294,7 +296,7 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 		expect(pending2[0].leaseGeneration).toBe(1);
 	});
 
-	it("fails closed on corrupted versioned state file and prevents destructive overwrite", () => {
+	it("fails closed on corrupted versioned state file and prevents destructive overwrite", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "recovery-corrupt-state-"));
 		cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -302,7 +304,7 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 		writeFileSync(stateFile, "{ corrupted json: [");
 
 		const manager = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
-		expect(() => {
+		await expect(
 			manager.recordTaskStart({
 				taskId: "t1",
 				attemptId: "a1",
@@ -311,19 +313,19 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 				roomId: "r1",
 				leaseToken: "tok",
 				leaseGeneration: 1,
-			});
-		}).toThrow(/corrupted/i);
+			}),
+		).rejects.toThrow(/corrupted/i);
 
 		expect(readFileSync(stateFile, "utf8")).toBe("{ corrupted json: [");
 	});
 
-	it("validates lease input before writing to disk and prevents state file corruption", () => {
+	it("validates lease input before writing to disk and prevents state file corruption", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "recovery-validation-"));
 		cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
 
 		const manager = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
 
-		expect(() => {
+		await expect(
 			manager.recordTaskStart({
 				taskId: "t-valid",
 				attemptId: "a-valid",
@@ -332,10 +334,10 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 				roomId: "r1",
 				leaseToken: "tok",
 				leaseGeneration: 1,
-			});
-		}).toThrow(/Invalid task lease parameters/i);
+			}),
+		).rejects.toThrow(/Invalid task lease parameters/i);
 
-		expect(() => {
+		await expect(
 			manager.recordTaskStart({
 				taskId: "t-valid",
 				attemptId: "a-valid",
@@ -344,10 +346,10 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 				roomId: "r1",
 				leaseToken: "",
 				leaseGeneration: 1,
-			});
-		}).toThrow(/Invalid task lease parameters/i);
+			}),
+		).rejects.toThrow(/Invalid task lease parameters/i);
 
-		const valid = manager.recordTaskStart({
+		const valid = await manager.recordTaskStart({
 			taskId: "t-valid",
 			attemptId: "a-valid",
 			botId: "bot1",
@@ -362,7 +364,7 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 		expect(reloaded.getHaltedOrphans()).toHaveLength(1);
 	});
 
-	it("strictly isolates tasks and outbox by hubUrl across restarts with different Hubs", () => {
+	it("strictly isolates tasks and outbox by hubUrl across restarts with different Hubs", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "recovery-hub-scope-"));
 		cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -371,7 +373,7 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 			deviceId: "dev1",
 			hubUrl: "http://hub-a.internal:8000",
 		});
-		managerHubA.recordTaskStart({
+		await managerHubA.recordTaskStart({
 			taskId: "task-hub-a",
 			attemptId: "att-a",
 			botId: "bot-1",
@@ -380,7 +382,7 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 			leaseToken: "tok-a",
 			leaseGeneration: 1,
 		});
-		managerHubA.recordTaskFinish(
+		await managerHubA.recordTaskFinish(
 			{ id: "task-hub-a", attemptId: "att-a", botId: "bot-1", deviceId: "dev1", roomId: "room-a" },
 			{ status: "completed", report: "Report A" },
 		);
@@ -396,7 +398,7 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 		expect(managerHubB.getPendingOutbox()).toHaveLength(0);
 		expect(managerHubB.prepareClaims()).toHaveLength(0);
 
-		managerHubB.recordTaskStart({
+		await managerHubB.recordTaskStart({
 			taskId: "task-hub-b",
 			attemptId: "att-b",
 			botId: "bot-1",
@@ -405,7 +407,7 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 			leaseToken: "tok-b",
 			leaseGeneration: 1,
 		});
-		managerHubB.recordTaskFinish(
+		await managerHubB.recordTaskFinish(
 			{ id: "task-hub-b", attemptId: "att-b", botId: "bot-1", deviceId: "dev1", roomId: "room-b" },
 			{ status: "completed", report: "Report B" },
 		);

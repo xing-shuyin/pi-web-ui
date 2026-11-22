@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, open, readFile, readdir, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
+import { forgetStorageIssue, noteStorageIssue } from "../versioned-doc.js";
 
 const PARTITION = /^[A-Za-z0-9_-]{1,128}$/;
 const PARTITION_SUFFIX = ".jsonl";
@@ -38,6 +39,14 @@ export class PartitionedAppendLog<T> {
 	private cache = new Map<string, Map<string, string>>();
 	private deletes = new Map<string, number>();
 	private lines = new Map<string, number>();
+	/**
+	 * 分区里出现了「认不出的行」时冻结该分区：只追加、绝不 rewrite。
+	 *
+	 * rewrite 拿「存活子集」整份替换分区，所以任何被跳过的行都等于永久删除。误读成「坏行」直接跳过
+	 * （issues #982 第 1 条）会造成：历史消息丢、被跳过的 `del` 丢 → 已删记录复活。
+	 * 末尾半行（无换行）是另一回事：那是被中断的 append，trim 掉不丢任何完整记录，可以重写。
+	 */
+	private sealed = new Map<string, string>();
 
 	constructor(options: PartitionedLogOptions<T>) {
 		this.dir = options.dir;
@@ -121,6 +130,12 @@ export class PartitionedAppendLog<T> {
 		const live = new Map<string, T>();
 		let deletes = 0;
 		let lines = 0;
+		/** 完整行里读不懂的第一条：rewrite 会把它悄悄删掉，所以出现即冻结该分区。 */
+		let unreadable: string | null = null;
+		const unknown = (reason: string) => {
+			needsRepair = true;
+			unreadable ??= `第 ${lines} 行${reason}`;
+		};
 		for (const line of complete.split("\n")) {
 			if (!line) continue;
 			lines++;
@@ -128,11 +143,11 @@ export class PartitionedAppendLog<T> {
 			try {
 				parsed = JSON.parse(line) as Line<T>;
 			} catch {
-				needsRepair = true;
+				unknown("不是合法 JSON");
 				continue;
 			}
 			if (!parsed || parsed.v !== 1) {
-				needsRepair = true;
+				unknown(`版本不认识（读到 ${String((parsed as { v?: unknown })?.v)}，支持 1）`);
 				continue;
 			}
 			if (parsed.op === "del" && Array.isArray(parsed.ids)) {
@@ -143,13 +158,24 @@ export class PartitionedAppendLog<T> {
 			if (parsed.op === "upsert" && parsed.value && typeof parsed.value === "object") {
 				const id = this.idOf(parsed.value);
 				if (typeof id !== "string" || !id) {
-					needsRepair = true;
+					unknown("upsert 缺少稳定 id");
 					continue;
 				}
 				live.set(id, parsed.value);
 				continue;
 			}
-			needsRepair = true;
+			unknown("op 不认识");
+		}
+		if (unreadable) {
+			this.sealed.set(partition, unreadable);
+			noteStorageIssue({
+				file,
+				label: "device-partition-log",
+				state: "foreign",
+				reason: `${partition}：${unreadable}；该分区已冻结，只追加不再重写`,
+			});
+		} else if (this.sealed.delete(partition)) {
+			forgetStorageIssue(file);
 		}
 		const rawValues = [...live.values()];
 		const values = this.withRetention(rawValues);
@@ -272,6 +298,8 @@ export class PartitionedAppendLog<T> {
 	}
 
 	private async rewrite(partition: string, values: readonly T[]): Promise<void> {
+		// 认不出的分区永不重写：rewrite 用「存活子集」整份替换，会把读不懂的行无声删掉。
+		if (this.sealed.has(partition)) return;
 		const file = this.file(partition);
 		if (!file) return;
 		const temporary = `${file}.${createHash("sha1").update(`${Date.now()}:${Math.random()}`).digest("hex")}.tmp`;

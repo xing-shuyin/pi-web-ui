@@ -94,7 +94,7 @@ function mountLeftPanel(cwd: string, conversations: ConversationSummary[], sessi
 	return container;
 }
 
-function seedConversations(cwd: string, count: number): UniversalConversation[] {
+function seedConversations(cwd: string, count: number): Promise<UniversalConversation[]> {
 	const store = new UniversalSessionStore(tempDir);
 	const convs: UniversalConversation[] = [];
 	for (let i = 0; i < count; i++) {
@@ -105,14 +105,14 @@ function seedConversations(cwd: string, count: number): UniversalConversation[] 
 			updatedAt: 2_000 - i,
 			messages: [{ id: `m-${i}`, role: "user", content: [{ type: "text", text: `会话 ${i + 1}` }] }],
 		};
-		store.saveConversation(cwd, conv);
+		store.queueWrite(cwd, conv);
 		convs.push(conv);
 	}
-	return convs;
+	return store.flush().then(() => convs);
 }
 
 async function captureSessionLists(cwd: string, count: number) {
-	const seeded = seedConversations(cwd, count);
+	const seeded = await seedConversations(cwd, count);
 	const sent: ServerMessage[] = [];
 	const session = new UniversalSession({
 		clientId: "test-client-dedupe",

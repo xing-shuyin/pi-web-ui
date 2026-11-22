@@ -115,7 +115,7 @@ export default async function(host) {
 	it("dispose immediately releases in-flight effects and rejects stale registrations", async () => {
 		const loading = manager.ensureLoaded();
 		await state.started.promise;
-		manager.dispose();
+		await manager.dispose();
 		expect(state.cleaned).toBe(1);
 		expect(manager.getAgentTools()).toEqual([]);
 		expect(manager.listCommands()).toEqual([]);
@@ -161,7 +161,7 @@ export default async function(host) {
 			await state.started.promise;
 			state.resume.resolve();
 			expect((await loading)[0]).toMatchObject({ id: "race", active: true });
-			manager.dispose();
+			await manager.dispose();
 			expect(state.deactivated).toBe(1);
 			expect(state.cleanupHostBlocked).toBe(0);
 			expect(state.cleanupHostOk).toBe(1);
@@ -177,7 +177,7 @@ export default async function(host) {
 		try {
 			const loading = manager.ensureLoaded();
 			await state.started.promise;
-			manager.dispose();
+			await manager.dispose();
 			state.resume.resolve();
 			await loading;
 			expect(log).toHaveBeenCalledWith("[plugin:race] deactivate failed:", expect.any(Error));

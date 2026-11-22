@@ -8,6 +8,7 @@ import {
 	removeCustomEntry,
 	deriveCatalogId,
 	writeCommunityCatalog,
+	flushPluginCatalog,
 } from "../../server/plugin-catalog.js";
 
 let dir: string;
@@ -75,13 +76,14 @@ describe("host-owned modules", () => {
 		expect(readFileSync(custom, "utf8")).toBe(before);
 	});
 
-	it("does not persist host modules in the community catalog", () => {
+	it("does not persist host modules in the community catalog", async () => {
 		expect(
 			writeCommunityCatalog(community, [
 				{ id: "superagent", source: "a/b", name: "Host", builtin: false },
 				{ id: "keep", source: "a/b", name: "Keep", builtin: false },
 			]),
 		).toBe(1);
+		await flushPluginCatalog();
 		expect(JSON.parse(readFileSync(community, "utf8")).entries.map((e: { id: string }) => e.id)).toEqual(["keep"]);
 	});
 });
@@ -121,11 +123,12 @@ describe("readCatalog", () => {
 		expect(list[0]!.builtin).toBe(false);
 	});
 
-	it("三层合并：builtin + community + custom 标记 origin 并分级优先级", () => {
+	it("三层合并：builtin + community + custom 标记 origin 并分级优先级", async () => {
 		writeCommunityCatalog(community, [
 			{ id: "pi-web-multigit", name: "Multi Git", source: "EinErste/pi-web-multigit", builtin: false },
 			{ id: "webmail", name: "社区邮箱（应被内置阻挡）", source: "other/webmail", builtin: false },
 		]);
+		await flushPluginCatalog();
 		writeFileSync(
 			custom,
 			JSON.stringify({

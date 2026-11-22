@@ -423,11 +423,12 @@ export interface PluginHost {
 	llm: PluginHostLlm;
 	storage: {
 		get<T>(key: string, fallback?: T): T | undefined;
-		set(key: string, value: unknown): void;
-		delete(key: string): void;
+		/** 落盘后 resolve；不 await 也安全（写入排队、同文件有序）。 */
+		set(key: string, value: unknown): Promise<void>;
+		delete(key: string): Promise<void>;
 		has(key: string): boolean;
 		keys(): string[];
-		clear(preserveSettings?: boolean): void;
+		clear(preserveSettings?: boolean): Promise<void>;
 		all(): Record<string, unknown>;
 	};
 	services: {
@@ -441,10 +442,11 @@ export interface PluginHost {
 	get<T>(name: string): T | undefined;
 	onService<T>(name: string, handler: (service: T | undefined) => void): () => void;
 	secrets: {
-		set(name: string, value: string): void;
+		/** 落盘后 resolve；不 await 也安全（写入排队、同文件有序）。 */
+		set(name: string, value: string): Promise<void>;
 		get(name: string): string | undefined;
 		has(name: string): boolean;
-		delete(name: string): void;
+		delete(name: string): Promise<void>;
 		list(): string[];
 		getAll(): Record<string, string>;
 	};

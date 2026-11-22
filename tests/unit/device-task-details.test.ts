@@ -46,7 +46,7 @@ describe("device task details, journal pagination and secure redaction", () => {
 		expect(sanitized).toContain("Finished safe conclusion.");
 	});
 
-	it("sanitizes tool parameters to exclude sensitive command or content dumps", () => {
+	it("sanitizes tool parameters to exclude sensitive command or content dumps", async () => {
 		const bashParams = sanitizeToolParameters("bash", {
 			command: "curl -H 'Authorization: Bearer topsecret' https://api.example.com",
 			timeout: 30,
@@ -164,7 +164,7 @@ describe("device task details, journal pagination and secure redaction", () => {
 			{ accountId: "acc-A", roomId: "room-A" },
 		);
 
-		reportStore.saveFullReport("task-1", "att-1", "room-A", "acc-A", "Report for Account A");
+		await reportStore.saveFullReport("task-1", "att-1", "room-A", "acc-A", "Report for Account A");
 
 		expect(await journalMgr.getMeta("task-1", "acc-A", "room-A")).not.toBeNull();
 		expect(await journalMgr.getPage("task-1", "acc-A", "room-A")).not.toBeNull();
@@ -179,7 +179,7 @@ describe("device task details, journal pagination and secure redaction", () => {
 		expect(reportStore.getReport("task-1", "att-1", "acc-A", "room-B")).toBeNull();
 	});
 
-	it("end-to-end chunks large >16KiB report, reassembles and verifies sha256 consistency", () => {
+	it("end-to-end chunks large >16KiB report, reassembles and verifies sha256 consistency", async () => {
 		const reportStore = createTaskReportStore(testDir, "hub");
 		const lines: string[] = [];
 		for (let i = 1; i <= 600; i++) {
@@ -202,7 +202,7 @@ describe("device task details, journal pagination and secure redaction", () => {
 			const start = i * CHUNK_SIZE;
 			const end = Math.min(start + CHUNK_SIZE, fullBytes);
 			const chunkText = rawBuffer.subarray(start, end).toString("utf8");
-			lastMeta = reportStore.appendReportChunk(
+			lastMeta = await reportStore.appendReportChunk(
 				{
 					taskId: "task-large-40k",
 					attemptId: "att-1",
@@ -237,11 +237,11 @@ describe("device task details, journal pagination and secure redaction", () => {
 		expect(reassembledHash).toBe(expectedSha256);
 	});
 
-	it("correctly stores and retrieves short reports without 404 or false complete truncation", () => {
+	it("correctly stores and retrieves short reports without 404 or false complete truncation", async () => {
 		const reportStore = createTaskReportStore(testDir, "hub");
 		const shortReport = "Task completed successfully. All unit tests passed.";
 
-		const meta = reportStore.appendReportChunk(
+		const meta = await reportStore.appendReportChunk(
 			{
 				taskId: "task-short",
 				attemptId: "att-1",
@@ -289,7 +289,7 @@ describe("device task details, journal pagination and secure redaction", () => {
 		expect(pageB?.items[0].summary).toBe("Task B event");
 	});
 
-	it("correctly chunks and reassembles reports with mixed Chinese and multi-byte emojis across boundaries", () => {
+	it("correctly chunks and reassembles reports with mixed Chinese and multi-byte emojis across boundaries", async () => {
 		const reportStore = createTaskReportStore(testDir, "hub");
 		const text = "报告开始🚀" + "中文字符与测试数据✨🎉".repeat(3000) + "🏁报告结束";
 		const fullBytes = Buffer.byteLength(text, "utf8");
@@ -308,7 +308,7 @@ describe("device task details, journal pagination and secure redaction", () => {
 
 		let lastMeta: any;
 		for (let i = 0; i < chunks.length; i++) {
-			lastMeta = reportStore.appendReportChunk(
+			lastMeta = await reportStore.appendReportChunk(
 				{
 					taskId: "task-emoji-cjk",
 					attemptId: "att-1",

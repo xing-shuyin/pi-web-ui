@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import * as helpers from "../lib/hub-upgrade-release.mjs";
+import { makeTestTmpDir } from "../helpers/tmp.js";
 const {
 	createDiagnosticRedactor,
 	summarizeUpgradeJob,
@@ -230,7 +231,7 @@ describe("Hub release safe failure diagnostics", () => {
 	});
 
 	it("reads a bounded tail and discards any partial first line that lost its sensitive key", async () => {
-		const root = await mkdtemp(join(process.platform === "win32" ? "E:/tmp" : tmpdir(), "hub-release-diagnostics-"));
+		const root = await makeTestTmpDir("hub-release-diagnostics");
 		roots.push(root);
 		const path = join(root, "worker.log");
 		await writeFile(path, `API_KEY=${"private".repeat(40)}\nlast failure\n`);

@@ -4,12 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { RemoteSshService } from "../../server/remote-ssh-service.js";
+import { makeTestTmpDir } from "../helpers/tmp.js";
 
 const uri = "ssh://tester@example.test/work";
 let dataDir: string;
 const services: RemoteSshService[] = [];
 beforeEach(async () => {
-	dataDir = await fs.mkdtemp(path.join(process.platform === "win32" ? "E:/tmp" : os.tmpdir(), "remote-ssh-command-"));
+	dataDir = await makeTestTmpDir("remote-ssh-command");
 });
 afterEach(async () => {
 	for (const service of services.splice(0))

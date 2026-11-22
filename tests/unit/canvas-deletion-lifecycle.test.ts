@@ -39,7 +39,7 @@ describe("canvas deletion lifecycle", () => {
 		const graph = createDefaultCanvasGraph("duplicate");
 		graph.nodes = graph.nodes.slice(0, 2).map((node) => ({ ...node, role: "end", cwd: dir, useWorktree: false }));
 		graph.edges = [{ id: "edge", sourceNodeId: graph.nodes[0].id, targetNodeId: graph.nodes[1].id, type: "handoff" }];
-		saveCanvasGraph(dir, graph);
+		await saveCanvasGraph(dir, graph);
 		const runtime = new CanvasOrchestrator(dir, dir);
 		const originalPrepare = workspace.prepareCanvasWorkspace;
 		vi.spyOn(workspace, "prepareCanvasWorkspace").mockImplementationOnce(async (options) => {
@@ -61,9 +61,9 @@ describe("canvas deletion lifecycle", () => {
 		while ((runtime as any).activeExecutions.size) await new Promise((resolve) => setTimeout(resolve, 5));
 	});
 
-	it("runtime updates cannot create missing graphs", () => {
+	it("runtime updates cannot create missing graphs", async () => {
 		const graph = createDefaultCanvasGraph("missing");
-		saveCanvasRuntimeState(dir, graph);
+		await saveCanvasRuntimeState(dir, graph);
 		expect(existsSync(join(dir, "canvas", "missing.json"))).toBe(false);
 	});
 
@@ -84,7 +84,7 @@ describe("canvas deletion lifecycle", () => {
 				.map((node) => ({ ...node, role: "coder", engine: "pi", cwd: dir, useWorktree: false }));
 			graph.edges = [{ id: "edge", sourceNodeId: graph.nodes[0].id, targetNodeId: graph.nodes[1].id, type: "handoff" }];
 			graph.executionMode = "real";
-			saveCanvasGraph(dir, graph);
+			await saveCanvasGraph(dir, graph);
 			const runtime = new CanvasOrchestrator(dir, dir, () => ({
 				attach: async () => ({ cwd: dir, prompt, abort, switchModelOrThrow: async () => {} }),
 				detach,
@@ -123,15 +123,15 @@ describe("canvas deletion lifecycle", () => {
 			const graph = createDefaultCanvasGraph("reentrant");
 			graph.nodes = graph.nodes.slice(0, 2).map((node) => ({ ...node, role: "end", cwd: dir, useWorktree: false }));
 			graph.edges = [{ id: "edge", sourceNodeId: graph.nodes[0].id, targetNodeId: graph.nodes[1].id, type: "handoff" }];
-			saveCanvasGraph(dir, graph);
+			await saveCanvasGraph(dir, graph);
 			const runtime = new CanvasOrchestrator(dir, dir);
 			const starts: string[] = [];
-			runtime.setBroadcaster((event) => {
+			runtime.setBroadcaster(async (event) => {
 				if (event.type !== "canvas_node_event") return;
 				if (event.event === "started") starts.push(event.nodeId);
 				if (recreate && event.event === "done" && event.nodeId === graph.nodes[0].id) {
 					runtime.deleteGraph(graph.id);
-					saveCanvasGraph(dir, graph);
+					await saveCanvasGraph(dir, graph);
 					(runtime as any).runningGraphs.set(graph.id, graph);
 				}
 			});
@@ -149,7 +149,7 @@ describe("canvas deletion lifecycle", () => {
 		const graph = createDefaultCanvasGraph("attach");
 		graph.nodes = [{ ...graph.nodes[0], role: "coder", engine: "pi", cwd: dir, useWorktree: false }];
 		graph.executionMode = "real";
-		saveCanvasGraph(dir, graph);
+		await saveCanvasGraph(dir, graph);
 		const runtime = new CanvasOrchestrator(dir, dir, () => ({
 			attach: async () => {
 				entered.resolve();
@@ -177,7 +177,7 @@ describe("canvas deletion lifecycle", () => {
 		const graph = createDefaultCanvasGraph("restart");
 		graph.nodes = [{ ...graph.nodes[0], role: "coder", engine: "pi", cwd: dir, useWorktree: false }];
 		graph.executionMode = "real";
-		saveCanvasGraph(dir, graph);
+		await saveCanvasGraph(dir, graph);
 		const runtime = new CanvasOrchestrator(dir, dir, () => ({
 			attach: async () => {
 				const index = attempt++;

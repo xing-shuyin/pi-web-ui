@@ -16,11 +16,13 @@ import {
 	checkPluginCwd,
 } from "./client-id-utils.js";
 const isSharedExecutionClientId = (id: string) => isPseudoClientId(id) || isDeviceTaskClientId(id);
-import { pickAdoptableOrphan, type OrphanCandidate } from "./orphan-manager.js";
+import { pickAdoptableOrphan, sameCwd, type OrphanCandidate } from "./orphan-manager.js";
 import { findMostRecentSessionFileFast } from "./session-parser.js";
 import { isRemoteWorkspaceUri, resolveWorkspaceSessionDir } from "./remote-ssh-service.js";
 import { getMaxOpenConversations } from "./agent-formatters.js";
+import { classifyModelError, formatModelErrorBrief } from "./model-error.js";
 import { collectSubagentDescendantIds } from "./subagents.js";
+import { conversationIdentity } from "./conversation-identity.js";
 import { pickLatestClientSnapshot } from "./plugin-conversation-view.js";
 import { normalizePluginChatAttachments } from "./plugin-chat-attachments.js";
 import type { ToolGuardHook } from "./tool-guards.js";
@@ -547,27 +549,18 @@ export class AgentService implements EngineService {
 		}
 
 		let ownerId = msg.owner;
-		let owner = ownerId ? this.clients.get(ownerId) : undefined;
-		let conv = owner?.getConversation(msg.id);
+		const owner = ownerId ? this.clients.get(ownerId) : undefined;
+		const conv = owner?.getConversation(msg.id);
 
-		if (!owner || !conv) {
-			for (const [cid, c] of this.clients) {
-				const found = c.getConversation(msg.id);
-				if (found) {
-					ownerId = cid;
-					owner = c;
-					conv = found;
-					break;
-				}
-			}
-		}
-
+		// 跨端关闭必须带 owner 且 owner 确实持有它（issue #971）：
+		// 以前 owner 失效就静默退回全局扫描，传错 owner 就会关掉另一个客户端的同 id 对话（`cN` 是局部 id）。
+		// 下拉栏里本来总是带 owner，所以“找不到就直接拒”不损正常路径。
 		if (!owner || !conv || !ownerId) {
 			requester?.sendNotice({
 				type: "notice",
 				level: "warning",
-				text: "该对话不存在或已关闭",
-				textEn: "This conversation does not exist or is already closed",
+				text: "该对话已关闭或不在指定页面（请刷新左栏后重试）",
+				textEn: "That conversation is closed or not on the specified page (refresh the sidebar and retry)",
 			});
 			return false;
 		}
@@ -609,8 +602,14 @@ export class AgentService implements EngineService {
 					this.closeSharedConversation(viewerId);
 				}
 			}
-			this.clients.delete(ownerId);
-			await owner.dispose().catch(() => {});
+			// teardown 粒度（issue #971）：关一条对话不等于拆掉整个无人值守持有方。
+			// 只有它手里就只有这一条对话时才整包 dispose（`activeConversations()` 只数流式，不能用）。
+			const heldBefore = owner.conversationCount?.() ?? 1;
+			await owner.dismissConversation(conv.id, msg.withFinishedSubagents, msg.force);
+			if (heldBefore <= 1) {
+				this.clients.delete(ownerId);
+				await owner.dispose().catch(() => {});
+			}
 			this.pokeExternalRunning(ownerId);
 			requester?.sendNotice({
 				type: "notice",
@@ -640,6 +639,18 @@ export class AgentService implements EngineService {
 	pluginStopBgTask: ((taskId: string) => boolean) | undefined = undefined;
 	schedulerStore: SchedulerStore | undefined = undefined;
 	private clients = new Map<string, ClientSession>();
+	/**
+	 * 正在 dispose 的持有方（issue #975）：从调用 dispose 到它真正结束之间，
+	 * 登记簿里仍留着它（否则这段时间打开同一对话会判成「无主」而多出第二个 writer）。
+	 */
+	private readonly disposingClients = new Set<string>();
+	/**
+	 * 正在过户的对话（issue #975）：过户是 `prepare → insert → commit → bind` 的多步异步协议，
+	 * 没有互斥时两次并发请求（两页同时接管 / 重试双击）会各自 insert 同一个 conv 对象，
+	 * 后一个改 `conv.id` 会把前一个刚接管的 runtime 关掉。
+	 * key 用会话稳定身份而不是 `${owner}:${convId}`：窗口里 source/target 可能同时持有一份。
+	 */
+	private readonly takeoverFlights = new Map<string, Promise<void>>();
 	private sharedInteractionSinks = new WeakMap<ClientSession, (msg: ServerMessage) => void>();
 
 	private globalInteractions(excludeOwner?: ClientSession): Extract<ServerMessage, { type: "global_interactions" }> {
@@ -777,85 +788,162 @@ export class AgentService implements EngineService {
 		return undefined;
 	}
 
+	/**
+	 * 把一段文字投进「任务当时那条对话」（#959）。
+	 *
+	 * 寻址只认**持久身份**：转录文件（`sessionFile`）。顺序是
+	 * ① 全库找这条转录的活持有者 → ② 没有持有者就按转录**恢复**一个持有者再投 →
+	 * ③ 都不行才如实失败。**不**换成其它对话：那是换了一个实体，不是回落。
+	 *
+	 * 投递一律走 `steerOwnConversation`（#929 唯一出门）：门关着 = 入队，不是失败。
+	 * 所以这里只有「找到/恢复不了」一种失败，不会把一次压缩窗口当成对话没了。
+	 */
 	async wakeConversation(
 		id: string,
 		text: string,
-		opts?: { sessionFile?: string; cwd?: string },
+		opts?: { sessionFile?: string; cwd?: string; taskId?: string },
 	): Promise<{
 		ok: boolean;
 		conversationId?: string;
 		sessionFile?: string;
 		clientId?: string;
-		busy?: boolean;
+		/** true = 这次是按转录恢复出持有方（原对话当时没打开）。 */
+		resumed?: boolean;
 		error?: string;
 	}> {
 		const wantFile = String(opts?.sessionFile ?? "").trim();
 		const wantCwd = String(opts?.cwd ?? "").trim();
 		if ((!id && !wantFile) || !text.trim()) return { ok: false, error: "唤醒目标或文本为空" };
 		if (this.quiesced) return { ok: false, error: "服务器正忙（quiesced），请稍后重试" };
-		const liveFile = (c: Conversation): string => {
-			try {
-				return String(c.session.sessionFile ?? "");
-			} catch {
-				return "";
-			}
-		};
-		const flush = (cs: ClientSession): void => {
-			try {
-				cs.flushSnapshot();
-			} catch {}
-		};
+
 		if (wantFile) {
-			const hits: { cs: ClientSession; clientId: string; conv: Conversation }[] = [];
-			for (const [clientId, cs] of this.clients) {
-				try {
-					const conv = cs.resolveSchedulerTarget({ sessionFile: wantFile });
-					if (conv) hits.push({ cs, clientId, conv });
-				} catch {}
-			}
-			hits.sort((a, b) => b.conv.lastActiveAt - a.conv.lastActiveAt);
-			let busyError: string | undefined;
-			for (const h of hits) {
-				try {
-					const r = await h.cs.trySteerScheduler(h.conv, text);
-					if (r.ok) {
-						flush(h.cs);
-						return { ok: true, conversationId: h.conv.id, sessionFile: liveFile(h.conv), clientId: h.clientId };
-					}
-					if (r.busy) busyError = r.error;
-				} catch {}
-			}
-			if (hits.length > 0) {
-				if (busyError) return { ok: false, busy: true, error: busyError };
-				return { ok: false, error: "目标对话投递失败（持有方异常）" };
-			}
+			const live = await this.steerIntoTranscript(wantFile, text);
+			if (live) return live;
+			// 没有活持有者：按转录恢复一个持有者再投（服务重启 / 标签页被收起 / LRU 驱逐都走这条）。
+			return this.wakeByResumingTranscript(wantFile, text, String(opts?.taskId ?? ""));
 		}
-		if (id) {
-			const hits: { cs: ClientSession; clientId: string; conv: Conversation }[] = [];
-			for (const [clientId, cs] of this.clients) {
-				try {
-					const conv = cs.resolveSchedulerTarget({
-						conversationId: id,
-						...(wantCwd ? { cwd: wantCwd } : {}),
-					});
-					if (conv) hits.push({ cs, clientId, conv });
-				} catch {}
-			}
-			hits.sort((a, b) => b.conv.lastActiveAt - a.conv.lastActiveAt);
-			let busyError: string | undefined;
-			for (const h of hits) {
-				try {
-					const r = await h.cs.trySteerScheduler(h.conv, text);
-					if (r.ok) {
-						flush(h.cs);
-						return { ok: true, conversationId: h.conv.id, sessionFile: liveFile(h.conv), clientId: h.clientId };
-					}
-					if (r.busy) busyError = r.error;
-				} catch {}
-			}
-			if (busyError) return { ok: false, busy: true, error: busyError };
+
+		// 老任务只存了运行时 id（新任务都存 sessionFile）：先收齐候选，**只有一个才投**。
+		// c1/c2 是每个客户端各自的序号，两个客户端很可能各有一个 c2——猜一个就是把报告投进别人的对话。
+		const cands: { clientId: string; cs: ClientSession; conv: Conversation }[] = [];
+		for (const [clientId, cs] of this.clients) {
+			try {
+				const conv = cs.getConversation(id);
+				if (!conv?.session) continue;
+				if (wantCwd && !sameCwd(conv.cwd, wantCwd)) continue;
+				cands.push({ clientId, cs, conv });
+			} catch {}
 		}
-		return { ok: false, error: "目标对话不在运行中（已关闭或服务重启过）" };
+		if (cands.length === 0) return { ok: false, error: `目标对话不在运行中，且没有可恢复的转录地址：${id}` };
+		if (cands.length > 1) {
+			return {
+				ok: false,
+				error: `目标对话 id「${id}」在本进程内有 ${cands.length} 个同名候选（老任务没记录转录），无法安全投递`,
+			};
+		}
+		const only = cands[0]!;
+		const r = await only.cs.steerOwnConversation(only.conv.id, text);
+		if (!r?.ok) return { ok: false, error: r?.error ?? "对话无法接收消息" };
+		only.cs.flushSnapshot();
+		return {
+			ok: true,
+			conversationId: only.conv.id,
+			sessionFile: this.sessionFileOf(only.conv),
+			clientId: only.clientId,
+		};
+	}
+
+	private sessionFileOf(conv: Conversation): string | undefined {
+		try {
+			const file = String(conv.session.sessionFile ?? "");
+			return file ? resolve(file) : undefined;
+		} catch {
+			return undefined;
+		}
+	}
+
+	/** 找到这条转录此刻的活持有者就投进去；没有持有者返回 undefined（让上层去恢复）。 */
+	private async steerIntoTranscript(
+		file: string,
+		text: string,
+	): Promise<
+		| {
+				ok: boolean;
+				conversationId?: string;
+				sessionFile?: string;
+				clientId?: string;
+				resumed?: boolean;
+				error?: string;
+		  }
+		| undefined
+	> {
+		let abs: string;
+		try {
+			abs = resolve(file);
+		} catch {
+			return undefined;
+		}
+		// 同一份转录全库只有一个持有者（打开路径也靠这一个判定放手），所以这里只问一次。
+		const owner = this.findSessionOwner(abs, "");
+		if (!owner) return undefined;
+		const cs = this.clients.get(owner.clientId);
+		if (!cs) return undefined;
+		const r = await cs.steerOwnConversation(owner.convId, text);
+		if (!r) return undefined;
+		if (!r.ok) return { ok: false, error: r.error ?? "对话无法接收消息" };
+		cs.flushSnapshot();
+		return { ok: true, conversationId: owner.convId, sessionFile: abs, clientId: owner.clientId };
+	}
+
+	/**
+	 * 按转录恢复一个持有者再投递。
+	 *
+	 * 用 `scheduler:wake-<taskId>` 这个后台持有方（与无人值守持有方同族）：
+	 * - 用户从历史/面板把这条对话当普通对话打开时，`releaseScheduledConversation` 会让它放手，
+	 *   不会出现两个 writer 抢同一份转录；
+	 * - 保活到任务被取消（`releaseSchedulerClient`）或服务重启，下一轮触发直接命中它、不再重复恢复。
+	 */
+	private async wakeByResumingTranscript(
+		file: string,
+		text: string,
+		taskId: string,
+	): Promise<{
+		ok: boolean;
+		conversationId?: string;
+		sessionFile?: string;
+		clientId?: string;
+		resumed?: boolean;
+		error?: string;
+	}> {
+		const safe = String(taskId || "wake").replace(/[^A-Za-z0-9_-]/g, "") || "wake";
+		const clientId = `scheduler:wake-${safe}`;
+		let abs: string;
+		try {
+			abs = resolve(file);
+		} catch {
+			return { ok: false, error: `转录路径无法解析：${file}` };
+		}
+		let cs: ClientSession;
+		try {
+			cs = await this.attach(clientId, () => {});
+		} catch (err) {
+			return { ok: false, error: `无法为这条对话建立持有方：${(err as Error).message}` };
+		}
+		// attach 期间用户可能刚把这条对话打开：再瞄一眼，有持有者就投给它，别抢。
+		const raced = await this.steerIntoTranscript(abs, text);
+		if (raced) return raced;
+		// 工作目录由转录头决定（`switchSession` 自己会按记录里的 cwd 建 runtime），不在这里推。
+		try {
+			if (!cs.findConversationBySessionFile(abs)) await cs.switchSession(abs);
+		} catch (err) {
+			return { ok: false, error: `转录无法恢复：${(err as Error).message}` };
+		}
+		const conv = cs.findConversationBySessionFile(abs);
+		if (!conv) return { ok: false, error: "转录无法恢复（会话目录里没有这份记录，或已被移走）" };
+		const r = await cs.steerOwnConversation(conv.id, text);
+		if (!r?.ok) return { ok: false, error: r?.error ?? "恢复后的对话仍无法接收消息" };
+		cs.flushSnapshot();
+		return { ok: true, conversationId: conv.id, sessionFile: abs, clientId, resumed: true };
 	}
 
 	resolveSharedQuestion(
@@ -921,52 +1009,9 @@ export class AgentService implements EngineService {
 		return false;
 	}
 
-	async wakeViewportInCwd(
-		cwd: string,
-		text: string,
-		excludeIds?: Set<string>,
-	): Promise<{
-		ok: boolean;
-		conversationId?: string;
-		sessionFile?: string;
-		clientId?: string;
-		busy?: boolean;
-		error?: string;
-	}> {
-		const want = String(cwd ?? "").trim();
-		if (!want || !text.trim()) return { ok: false, error: "回退目标或文本为空" };
-		if (this.quiesced) return { ok: false, error: "服务器正忙（quiesced），请稍后重试" };
-		const cands: { cs: ClientSession; clientId: string; conv: Conversation }[] = [];
-		for (const [clientId, cs] of this.clients) {
-			try {
-				const conv = cs.findViewportInCwd(want, excludeIds);
-				if (conv) cands.push({ cs, clientId, conv });
-			} catch {}
-		}
-		cands.sort((a, b) => b.conv.lastActiveAt - a.conv.lastActiveAt);
-		if (cands.length === 0) return { ok: false, error: "同项目无存活对话" };
-		let busyError: string | undefined;
-		for (const c of cands) {
-			try {
-				const r = await c.cs.trySteerScheduler(c.conv, text);
-				if (r.ok) {
-					try {
-						c.cs.flushSnapshot();
-					} catch {}
-					let f = "";
-					try {
-						f = String(c.conv.session.sessionFile ?? "");
-					} catch {
-						f = "";
-					}
-					return { ok: true, conversationId: c.conv.id, sessionFile: f, clientId: c.clientId };
-				}
-				if (r.busy) busyError = r.error;
-			} catch {}
-		}
-		if (busyError) return { ok: false, busy: true, error: busyError };
-		return { ok: false, error: "同项目对话投递失败" };
-	}
+	// #959：「同项目最活跃对话」回落已删。它不是回落，是换了一个实体：
+	// 把报告投进用户恰好在聊的另一条对话。原对话不可达时的正确做法只有两种——
+	// 「按转录恢复」或「如实失败 + 后台执行」，都在 `wakeConversation` 里。
 
 	listProjectRunners(cwd: string, excludeClientId: string): ProjectRunnerInfo[] {
 		const out: ProjectRunnerInfo[] = [];
@@ -1098,12 +1143,23 @@ export class AgentService implements EngineService {
 
 	releaseSchedulerClient(taskId: string): void {
 		const safe = String(taskId ?? "").replace(/[^A-Za-z0-9_-]/g, "") || "task";
-		const clientId = `scheduler:${safe}`;
-		const cs = this.clients.get(clientId);
-		if (!cs) return;
-		this.clients.delete(clientId);
-		void cs.dispose().catch(() => {});
-		this.pokeExternalRunning(clientId);
+		// 无人值守持有方与「按转录唤醒」的后台持有方都是这个任务的，一起放手。
+		for (const clientId of [`scheduler:${safe}`, `scheduler:wake-${safe}`]) {
+			const cs = this.clients.get(clientId);
+			if (!cs) continue;
+			// 先标记「正在释放」，再在 dispose 完成后才从登记簿里摘掉（issue #975）：
+			// 先 delete 再 fire-and-forget dispose，会留下一段「登记簿查不到、runtime 还没清完」的真空，
+			// 此刻打开同一对话会判成无主，多出一个 writer。
+			this.disposingClients.add(clientId);
+			void cs
+				.dispose()
+				.catch(() => {})
+				.finally(() => {
+					this.disposingClients.delete(clientId);
+					if (this.clients.get(clientId) === cs) this.clients.delete(clientId);
+					this.pokeExternalRunning(clientId);
+				});
+		}
 	}
 
 	/** 定时任务那条对话的转录文件（活会话在内存里时才能解析）。 */
@@ -1379,7 +1435,11 @@ export class AgentService implements EngineService {
 					streaming = false;
 				}
 				if (!streaming) {
-					if (lastError) return done({ ok: false, error: lastError });
+					// 机读字段仍是原文，但通知文案要给可读摘要（issue #978：不要把 <html>408… 推给手机）。
+					if (lastError) {
+						// 这里就是给用户看的通知文案（issue #978）：不要把 <html>408… 原样推给手机。
+						return done({ ok: false, error: formatModelErrorBrief(classifyModelError(lastError)) });
+					}
 					return done({ ok: true });
 				}
 				if (Date.now() >= deadline) {
@@ -1535,6 +1595,44 @@ export class AgentService implements EngineService {
 	async takeOverConversation(targetId: string, ownerId: string, convId: string): Promise<void> {
 		const target = this.clients.get(targetId);
 		if (!target) return;
+		// 同一会话的过户串行化（issue #975）：并发第二次直接告「正在接管中」，
+		// 不再让两个请求各自 insert 同一对象（会把对方刚接管的 runtime 关掉）。
+		const flightKey = this.takeoverFlightKey(ownerId, convId);
+		if (flightKey && this.takeoverFlights.has(flightKey)) {
+			target.sendNotice({
+				type: "notice",
+				level: "info",
+				text: "这条对话正在接管中，请稍候（不要重复点击）。",
+				textEn: "This conversation is already being taken over; please wait (do not click again).",
+			});
+			return;
+		}
+		if (flightKey) this.takeoverFlights.set(flightKey, Promise.resolve());
+		try {
+			await this.runTakeOverConversation(target, targetId, ownerId, convId);
+		} finally {
+			if (flightKey) this.takeoverFlights.delete(flightKey);
+		}
+	}
+
+	/** 过户互斥键：优先用会话稳定身份（跨 remap 不变），拿不到再退化到 owner+id。 */
+	private takeoverFlightKey(ownerId: string, convId: string): string {
+		const source = this.clients.get(ownerId);
+		const conv = source?.getConversation?.(convId);
+		if (conv) {
+			try {
+				return conversationIdentity(conv);
+			} catch {}
+		}
+		return `${ownerId}:${convId}`;
+	}
+
+	private async runTakeOverConversation(
+		target: ClientSession,
+		targetId: string,
+		ownerId: string,
+		convId: string,
+	): Promise<void> {
 		const fail = (text: string, textEn: string): void => {
 			target.sendNotice({ type: "notice", level: "warning", text, textEn });
 		};

@@ -26,49 +26,50 @@ describe("PluginPermissionStore", () => {
 	});
 	afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-	it("grant/has：net 按主机命中，llm 按模型作用域", () => {
+	it("grant/has：net 按主机命中，llm 按模型作用域", async () => {
 		expect(store.has("p", "net", { host: "a.com" })).toBe(false);
-		store.grant("p", "net", { hosts: ["a.com"], remember: true });
+		await store.grant("p", "net", { hosts: ["a.com"], remember: true });
 		expect(store.has("p", "net", { host: "a.com" })).toBe(true);
 		expect(store.has("p", "net", { host: "sub.a.com" })).toBe(true);
 		expect(store.has("p", "net", { host: "b.com" })).toBe(false);
 		expect(store.has("p", "net")).toBe(false);
-		store.grant("p", "llm", { models: ["x/cheap"], remember: true });
+		await store.grant("p", "llm", { models: ["x/cheap"], remember: true });
 		expect(store.modelAllowed("p", "x/cheap")).toBe(true);
 		expect(store.modelAllowed("p", "x/opus")).toBe(false);
 		expect(store.modelAllowed("p")).toBe(true);
 	});
-	it("不限模型的 llm 授权全开", () => {
-		store.grant("p", "llm", { remember: true });
+	it("不限模型的 llm 授权全开", async () => {
+		await store.grant("p", "llm", { remember: true });
 		expect(store.modelAllowed("p", "anything/model")).toBe(true);
 		expect(store.has("p", "llm")).toBe(true);
 	});
-	it("remember=false 只记内存：同进程可见，重建 store 即失", () => {
-		store.grant("p", "net", { hosts: ["a.com"] });
+	it("remember=false 只记内存：同进程可见，重建 store 即失", async () => {
+		await store.grant("p", "net", { hosts: ["a.com"] });
 		expect(store.has("p", "net", { host: "a.com" })).toBe(true);
 		const store2 = new PluginPermissionStore(dir);
 		expect(store2.has("p", "net", { host: "a.com" })).toBe(false);
 		expect(store2.list().some((g) => g.session)).toBe(false);
 	});
-	it("同范围覆盖（不堆条目），坏文件当空表", () => {
-		store.grant("p", "net", { hosts: ["a.com"], remember: true });
-		store.grant("p", "net", { hosts: ["a.com"], reason: "again", remember: true });
+	it("同范围覆盖（不堆条目），坏文件当空表", async () => {
+		await store.grant("p", "net", { hosts: ["a.com"], remember: true });
+		await store.grant("p", "net", { hosts: ["a.com"], reason: "again", remember: true });
 		expect(store.list().filter((g) => !g.session)).toHaveLength(1);
 		writeFileSync(join(dir, "plugin-permissions.json"), "{坏");
 		expect(store.list()).toEqual([]);
 		expect(store.has("p", "net", { host: "a.com" })).toBe(false);
 	});
-	it("revoke 粒度：整表 / 按插件 / 按族 / 按主机", () => {
-		store.grant("p", "net", { hosts: ["a.com", "b.com"], remember: true });
-		store.grant("p", "llm", { remember: true });
-		store.grant("q", "net", { hosts: ["c.com"], remember: true });
+	it("revoke 粒度：整表 / 按插件 / 按族 / 按主机", async () => {
+		await store.grant("p", "net", { hosts: ["a.com", "b.com"], remember: true });
+		await store.grant("p", "llm", { remember: true });
+		await store.grant("q", "net", { hosts: ["c.com"], remember: true });
 		expect(store.revoke("p", "net", { host: "sub.a.com" })).toBe(1);
 		expect(store.has("p", "net", { host: "a.com" })).toBe(false);
 		expect(store.revoke("p")).toBe(1);
 		expect(store.revoke()).toBe(1);
 		expect(store.list()).toEqual([]);
+		await store.flush();
 	});
-	it("非法 id 拒绝（grant 抛错，has 回 false）", () => {
+	it("非法 id 拒绝（grant 同步抛错，has 回 false）", () => {
 		expect(() => store.grant("../x", "net", { hosts: ["a.com"] })).toThrow();
 		expect(store.has("../x", "net", { host: "a.com" })).toBe(false);
 		expect(() => store.grant("p", "bogus" as never, {})).toThrow();

@@ -7,8 +7,6 @@ import {
 	formatTouchEntry,
 	formatTouchesCompact,
 	toolCallRefsOfContent,
-	type TouchedFile,
-	unionTouchLists,
 } from "./conversation-touches.js";
 import type { ClaimView } from "./claim-store.js";
 
@@ -45,7 +43,6 @@ export interface TranscriptInputMessage {
 }
 
 export interface ConversationReadHost {
-	readTouchSidecar?(id?: string, path?: string): TouchedFile[] | undefined;
 	listRunningConversations(): ConversationListEntry[];
 	readRunningConversation(
 		id: string,
@@ -193,52 +190,6 @@ export function formatTranscript(messages: TranscriptInputMessage[], opts?: Form
 	}
 	if (total === 0) text = "";
 	return { text, total, from, to, truncated };
-}
-
-export function parseTranscriptLines(text: string): TranscriptInputMessage[] {
-	const out: TranscriptInputMessage[] = [];
-	for (const line of text.split("\n")) {
-		const t = line.trim();
-		if (!t) continue;
-		let e: {
-			type?: unknown;
-			message?: {
-				role?: unknown;
-				content?: unknown;
-				toolName?: unknown;
-				isError?: unknown;
-				details?: unknown;
-				timestamp?: unknown;
-			};
-			summary?: unknown;
-		};
-		try {
-			e = JSON.parse(t);
-		} catch {
-			continue;
-		}
-		if (e?.type === "message" && e.message && typeof e.message.role === "string") {
-			const msg = e.message;
-			const m: TranscriptInputMessage = { role: msg.role as string };
-			if (typeof msg.content !== "undefined") {
-				m.content = msg.content;
-				fillToolCalls(m, msg.content);
-			}
-			if (typeof msg.toolName === "string") m.toolName = msg.toolName;
-			if (typeof msg.isError === "boolean") m.isError = msg.isError;
-			if (typeof msg.details !== "undefined") m.details = msg.details;
-			if (typeof msg.timestamp === "number") m.timestamp = msg.timestamp;
-			out.push(m);
-			continue;
-		}
-		if ((e?.type === "compaction" || e?.type === "branch_summary") && typeof e.summary === "string") {
-			out.push({
-				role: e.type === "compaction" ? "compactionSummary" : "branchSummary",
-				summary: e.summary,
-			});
-		}
-	}
-	return out;
 }
 
 function matchesHay(hay: string, q: string): boolean {
@@ -772,7 +723,7 @@ export function makeConversationReadTool(
 				const where = id ? { id } : { path };
 				if (action === "files") {
 					const fq = (typeof p.query === "string" ? p.query : "").trim().toLowerCase();
-					const all = unionTouchLists(host.readTouchSidecar?.(id, path) ?? [], extractTouches(messages));
+					const all = extractTouches(messages);
 					const filtered = fq ? all.filter((t) => t.path.toLowerCase().includes(fq)) : all;
 					const listedClaims = (() => {
 						try {
@@ -843,7 +794,7 @@ export function makeConversationReadTool(
 					});
 				}
 				const sum = summarizeConversation(messages);
-				const touched = unionTouchLists(host.readTouchSidecar?.(id, path) ?? [], extractTouches(messages)).slice(0, 6);
+				const touched = extractTouches(messages).slice(0, 6);
 				let statusClaims: ClaimView[] = [];
 				try {
 					statusClaims = extras?.listClaims?.(cwd) ?? [];

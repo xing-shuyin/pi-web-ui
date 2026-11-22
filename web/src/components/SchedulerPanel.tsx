@@ -325,6 +325,13 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 								<span>·</span>
 								<span title={task.kind === "cron" ? task.spec : `${task.spec} ms`}>{specSummary(task, t)}</span>
 							</div>
+							{task.materials && task.materials.length > 0 && (
+								<div className="scheduler-line2">
+									<span title={task.materials.join("\n")}>
+										{t("attachContent", { path: task.materials.join("、") })} · {task.materials.length}
+									</span>
+								</div>
+							)}
 							<div className="scheduler-line2">
 								<span>
 									{t("schedulerNextFire")}: {task.nextFire ? formatTime(task.nextFire) : "—"}

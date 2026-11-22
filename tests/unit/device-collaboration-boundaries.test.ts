@@ -206,8 +206,8 @@ describe("device-collaboration-boundaries", () => {
 			expect(floatVal.valid).toBe(false);
 		});
 
-		it("saveExecutionSettings writes atomically and loadExecutionSettings restores cleanly", () => {
-			const saved = saveExecutionSettings(dataDir, { maxActiveTasks: 8, maxWaitingTasks: 64 });
+		it("saveExecutionSettings writes atomically and loadExecutionSettings restores cleanly", async () => {
+			const saved = await saveExecutionSettings(dataDir, { maxActiveTasks: 8, maxWaitingTasks: 64 });
 			expect(saved).toEqual({ ...DEFAULT_EXECUTION_SETTINGS, maxActiveTasks: 8, maxWaitingTasks: 64 });
 
 			const loaded = loadExecutionSettings(dataDir);
@@ -217,7 +217,7 @@ describe("device-collaboration-boundaries", () => {
 			expect(onDisk).toEqual({ ...DEFAULT_EXECUTION_SETTINGS, maxActiveTasks: 8, maxWaitingTasks: 64 });
 		});
 
-		it("runtime.updateExecutionSettings persists to disk before applying to scheduler", () => {
+		it("runtime.updateExecutionSettings persists to disk before applying to scheduler", async () => {
 			const mockBots = new Map<string, any>([["bot-1", { id: "bot-1", cwd: repoDir, enabled: true, revision: 1 }]]);
 			const runtime = createDeviceRuntime({
 				config: {
@@ -234,7 +234,7 @@ describe("device-collaboration-boundaries", () => {
 				} as any,
 			});
 
-			const updated = runtime.updateExecutionSettings({ maxActiveTasks: 6, maxWaitingTasks: 20 });
+			const updated = await runtime.updateExecutionSettings({ maxActiveTasks: 6, maxWaitingTasks: 20 });
 			expect(updated).toEqual({ ...DEFAULT_EXECUTION_SETTINGS, maxActiveTasks: 6, maxWaitingTasks: 20 });
 			expect(runtime.getSchedulerSnapshot().settings).toEqual({
 				...DEFAULT_EXECUTION_SETTINGS,
@@ -248,7 +248,7 @@ describe("device-collaboration-boundaries", () => {
 				maxWaitingTasks: 20,
 			});
 
-			expect(() => runtime.updateExecutionSettings({ maxActiveTasks: 9999, maxWaitingTasks: 20 })).toThrow(
+			await expect(runtime.updateExecutionSettings({ maxActiveTasks: 9999, maxWaitingTasks: 20 })).rejects.toThrow(
 				DeviceExecutionSettingsError,
 			);
 			expect(runtime.getSchedulerSnapshot().settings).toEqual({

@@ -334,32 +334,38 @@ export function createDeviceDesktop({
 			}
 		},
 	);
-	app.post("/api/device-desktop/local/enable", localGuard, setupGuard, express.json({ limit: 256 }), (req, res) => {
-		if (!req.body || typeof req.body.enabled !== "boolean" || Object.keys(req.body).length !== 1) {
-			res.status(400).json({ error: "Expected only enabled boolean" });
-			return;
-		}
-		try {
-			setup.setEnabled(req.body.enabled);
-			if (!setup.enabled) {
-				resetPreviews();
-				clipboard.reset();
-				files.reset();
+	app.post(
+		"/api/device-desktop/local/enable",
+		localGuard,
+		setupGuard,
+		express.json({ limit: 256 }),
+		async (req, res) => {
+			if (!req.body || typeof req.body.enabled !== "boolean" || Object.keys(req.body).length !== 1) {
+				res.status(400).json({ error: "Expected only enabled boolean" });
+				return;
 			}
-			if (!setup.enabled) for (const cleanup of bridges) cleanup();
-			res.json(status());
-		} catch {
-			res.status(500).json({ error: "Could not save desktop settings" });
-		}
-	});
+			try {
+				await setup.setEnabled(req.body.enabled);
+				if (!setup.enabled) {
+					resetPreviews();
+					clipboard.reset();
+					files.reset();
+				}
+				if (!setup.enabled) for (const cleanup of bridges) cleanup();
+				res.json(status());
+			} catch {
+				res.status(500).json({ error: "Could not save desktop settings" });
+			}
+		},
+	);
 	app.post("/api/device-desktop/setup/install", setupGuard, (_req, res) => res.json({ installation }));
-	app.post("/api/device-desktop/setup/enable", setupGuard, express.json({ limit: 256 }), (req, res) => {
+	app.post("/api/device-desktop/setup/enable", setupGuard, express.json({ limit: 256 }), async (req, res) => {
 		if (!req.body || typeof req.body.enabled !== "boolean" || Object.keys(req.body).length !== 1) {
 			res.status(400).json({ error: "Expected only enabled boolean" });
 			return;
 		}
 		try {
-			setup.setEnabled(req.body.enabled);
+			await setup.setEnabled(req.body.enabled);
 			if (!setup.enabled) {
 				resetPreviews();
 				clipboard.reset();

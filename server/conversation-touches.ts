@@ -259,25 +259,6 @@ export function extractTouches(
 		.sort((a, b) => b.count - a.count || b.lastTs - a.lastTs);
 }
 
-export function unionTouchLists(a: TouchedFile[], b: TouchedFile[]): TouchedFile[] {
-	const acc = new Map<string, { count: number; lastTs: number }>();
-	for (const f of [...(Array.isArray(a) ? a : []), ...(Array.isArray(b) ? b : [])]) {
-		if (!f || typeof f.path !== "string") continue;
-		const e = acc.get(f.path);
-		const count = typeof f.count === "number" && Number.isFinite(f.count) ? f.count : 0;
-		const lastTs = typeof f.lastTs === "number" && Number.isFinite(f.lastTs) ? f.lastTs : 0;
-		if (e) {
-			if (count > e.count) e.count = count;
-			if (lastTs > e.lastTs) e.lastTs = lastTs;
-		} else {
-			acc.set(f.path, { count, lastTs });
-		}
-	}
-	return [...acc.entries()]
-		.map(([path, e]) => ({ path, count: e.count, lastTs: e.lastTs }))
-		.sort((x, y) => y.count - x.count || y.lastTs - x.lastTs);
-}
-
 export function intersectTouches(a: TouchedFile[], b: TouchedFile[]): TouchedFile[] {
 	if (!Array.isArray(a) || !Array.isArray(b) || a.length === 0 || b.length === 0) return [];
 	const inB = new Set(b.map((f) => f.path));

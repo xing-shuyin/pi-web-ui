@@ -29,7 +29,7 @@ describe("Universal Agent 底座体系单测", () => {
 	});
 
 	describe("1. UniversalSessionStore 会话持久化", () => {
-		it("能够正确创建、保存、读取与列出会话", () => {
+		it("能够正确创建、保存、读取与列出会话", async () => {
 			const store = new UniversalSessionStore(tempDir);
 			const cwd = join(tempDir, "workspace");
 
@@ -47,7 +47,7 @@ describe("Universal Agent 底座体系单测", () => {
 				],
 			};
 
-			store.saveConversation(cwd, conv);
+			await store.saveConversation(cwd, conv);
 
 			const loaded = store.loadConversation(cwd, "uconv-1");
 			expect(loaded).toBeDefined();
@@ -60,7 +60,7 @@ describe("Universal Agent 底座体系单测", () => {
 			expect(list[0].id).toBe("uconv-1");
 		});
 
-		it("能够重命名、置顶与删除会话", () => {
+		it("能够重命名、置顶与删除会话", async () => {
 			const store = new UniversalSessionStore(tempDir);
 			const cwd = join(tempDir, "workspace");
 
@@ -71,15 +71,15 @@ describe("Universal Agent 底座体系单测", () => {
 				updatedAt: 1000,
 				messages: [],
 			};
-			store.saveConversation(cwd, conv);
+			await store.saveConversation(cwd, conv);
 
-			store.renameConversation(cwd, "uconv-2", "新标题");
+			await store.renameConversation(cwd, "uconv-2", "新标题");
 			expect(store.loadConversation(cwd, "uconv-2")?.title).toBe("新标题");
 
-			store.pinConversation(cwd, "uconv-2", true);
+			await store.pinConversation(cwd, "uconv-2", true);
 			expect(store.loadConversation(cwd, "uconv-2")?.pinned).toBe(true);
 
-			store.deleteConversation(cwd, "uconv-2");
+			await store.deleteConversation(cwd, "uconv-2");
 			expect(store.loadConversation(cwd, "uconv-2")).toBeNull();
 			expect(store.listConversations(cwd).length).toBe(0);
 		});

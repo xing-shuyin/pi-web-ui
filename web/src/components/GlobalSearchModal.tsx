@@ -10,7 +10,7 @@ import {
 } from "react";
 import { FiFileText, FiFolder, FiMessageSquare, FiPackage, FiSearch, FiX } from "react-icons/fi";
 import type { FileSearchResult, MessageAnchor, ProjectSummary, SessionSearchResult } from "../types";
-import { useT, type Translate } from "../i18n";
+import { isZhLocale, useT, useI18n, type Translate } from "../i18n";
 import { getPluginSearchProvider, listPluginSearchProviders, triggerPluginUiAction } from "../plugin-host";
 import { appSend, useAppField, useEngineCapabilities } from "../app-globals";
 import { composeToComposer } from "../composer-bridge";
@@ -19,6 +19,9 @@ import { closeContextMenu, contextMenuItems, getContextMenu, openContextMenu } f
 import { openQuickAsk, type QuickAskReferenceSource } from "../quick-ask";
 import { copyTextToClipboard } from "../use-copy-feedback";
 import type { UiSlotEntry } from "../ui-slots";
+
+/** 搜索请求的兜底等待上限：超时就把「正在搜索…」收掉（服务端不回包不许变成永驻 loading）。 */
+const SEARCH_PENDING_TIMEOUT_MS = 8_000;
 
 interface GlobalSearchModalProps {
 	open: boolean;
@@ -141,9 +144,17 @@ export function GlobalSearchModal({
 	onOpenFolder,
 }: GlobalSearchModalProps) {
 	const t = useT();
+	const { locale } = useI18n();
 	const capabilities = useEngineCapabilities();
 	const pluginSectionLabel = t("pluginMenuTitle");
 	const cwd = useAppField("cwd");
+	const tabs = useAppField("tabs");
+	// `search` tab 未启用的实例（PI_WEB_TABS）上，服务端会拒这两个请求，
+	// 客户端不再“发出去等一辈子”，直接说清楚（issue #980）。
+	const searchTabEnabled = !tabs || tabs.includes("search");
+	const searchTabDisabledText = isZhLocale(locale)
+		? "该页面未在此实例启用（PI_WEB_TABS）"
+		: "This tab is not enabled on this instance (PI_WEB_TABS)";
 	const inputRef = useRef<HTMLInputElement>(null);
 	const [query, setQuery] = useState("");
 	const deferredQuery = useDeferredValue(query);
@@ -152,7 +163,29 @@ export function GlobalSearchModal({
 	const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const menuTargetRef = useRef<SearchMenuTarget | null>(null);
 	const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [flash, setFlash] = useState("");
+	const [searchPending, setSearchPending] = useState(false);
+
+	const clearPendingTimer = useCallback(() => {
+		if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
+		pendingTimerRef.current = null;
+	}, []);
+
+	const settleSearchPending = useCallback(() => {
+		clearPendingTimer();
+		setSearchPending(false);
+	}, [clearPendingTimer]);
+
+	const beginSearchPending = useCallback(() => {
+		clearPendingTimer();
+		setSearchPending(true);
+		// 兜底：服务端拒不回包/回包丢失时不能让「正在搜索…」永驻。
+		pendingTimerRef.current = setTimeout(() => {
+			pendingTimerRef.current = null;
+			setSearchPending(false);
+		}, SEARCH_PENDING_TIMEOUT_MS);
+	}, [clearPendingTimer]);
 
 	const flashCopied = useCallback(() => {
 		setFlash(t("copied"));
@@ -163,8 +196,9 @@ export function GlobalSearchModal({
 	useEffect(
 		() => () => {
 			if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+			clearPendingTimer();
 		},
-		[],
+		[clearPendingTimer],
 	);
 
 	useEffect(() => {
@@ -184,10 +218,10 @@ export function GlobalSearchModal({
 		appSend({ type: "list_sessions" });
 		appSend({ type: "list_projects" });
 		const qq = query.trim();
-		if (qq) {
+		if (qq && searchTabEnabled) {
 			const reqId = nextSearchReqId();
 			lastReqRef.current = reqId;
-			setSearchPending(true);
+			beginSearchPending();
 			appSend({ type: "search_files", reqId, query: qq });
 			appSend({ type: "search_sessions", reqId, query: qq });
 		}
@@ -195,20 +229,22 @@ export function GlobalSearchModal({
 		// eslint-disable-next-line react-hooks/exhaustive-deps -- open 触发即可，query 变更走 debounce effect
 	}, [open]);
 
-	const [searchPending, setSearchPending] = useState(false);
-
 	useEffect(() => {
 		if (debounceRef.current) clearTimeout(debounceRef.current);
 		const q = deferredQuery.trim();
 		if (!q) {
-			setSearchPending(false);
+			settleSearchPending();
 			setActiveFileSearch(null);
 			return;
 		}
 		debounceRef.current = setTimeout(() => {
+			if (!searchTabEnabled) {
+				settleSearchPending();
+				return;
+			}
 			const reqId = nextSearchReqId();
 			lastReqRef.current = reqId;
-			setSearchPending(true);
+			beginSearchPending();
 			appSend({ type: "search_files", reqId, query: q });
 			appSend({ type: "search_sessions", reqId, query: q });
 		}, 300);
@@ -216,7 +252,7 @@ export function GlobalSearchModal({
 			if (debounceRef.current) clearTimeout(debounceRef.current);
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps -- send is stable
-	}, [deferredQuery]);
+	}, [deferredQuery, searchTabEnabled]);
 
 	useEffect(() => {
 		if (fileSearch && fileSearch.reqId === lastReqRef.current) {
@@ -244,9 +280,9 @@ export function GlobalSearchModal({
 			sessionSearch.reqId === lastReqRef.current &&
 			lastReqRef.current !== 0
 		) {
-			setSearchPending(false);
+			settleSearchPending();
 		}
-	}, [activeFileSearch, sessionSearch]);
+	}, [activeFileSearch, sessionSearch, settleSearchPending]);
 	const fileTruncated = !!activeFileSearch && activeFileSearch.ok && activeFileSearch.truncated;
 
 	interface PluginHit {
@@ -376,10 +412,10 @@ export function GlobalSearchModal({
 				appSend({ type: "list_sessions" });
 				appSend({ type: "list_projects" });
 				const qq = deferredQuery.trim();
-				if (qq) {
+				if (qq && searchTabEnabled) {
 					const reqId = nextSearchReqId();
 					lastReqRef.current = reqId;
-					setSearchPending(true);
+					beginSearchPending();
 					appSend({ type: "search_files", reqId, query: qq });
 					appSend({ type: "search_sessions", reqId, query: qq });
 				}
@@ -390,7 +426,15 @@ export function GlobalSearchModal({
 				void triggerPluginUiAction(item.providerId, item.action, item.action).catch(() => {});
 			} else onPreviewFile(item.path, item.name);
 		},
-		[onSwitchSession, onSwitchProject, onPreviewFile, onOpenFolder, deferredQuery],
+		[
+			onSwitchSession,
+			onSwitchProject,
+			onPreviewFile,
+			onOpenFolder,
+			deferredQuery,
+			searchTabEnabled,
+			beginSearchPending,
+		],
 	);
 
 	const navItemOf = useCallback((target: SearchMenuTarget): NavItem => {
@@ -579,9 +623,10 @@ export function GlobalSearchModal({
 
 				<div className="gs-results">
 					{!q && <div className="gs-empty">{t("gsHint")}</div>}
-					{q && total === 0 && !fileTruncated && (
+					{q && total === 0 && !fileTruncated && searchTabEnabled && (
 						<div className="gs-empty">{searchPending ? t("gsSearching") : t("gsNoResults")}</div>
 					)}
+					{q && !searchTabEnabled && <div className="gs-empty">{searchTabDisabledText}</div>}
 
 					{sessionHits.length > 0 && (
 						<div className="gs-section">

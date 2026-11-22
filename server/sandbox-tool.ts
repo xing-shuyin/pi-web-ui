@@ -242,7 +242,7 @@ export function makeSandboxTool(
 
 					case "persist": {
 						const target = params.sandbox?.trim() || activeSbx?.id || cwd;
-						const sandbox = host.sandboxes.persist(target);
+						const sandbox = await host.sandboxes.persist(target);
 						await host.onSandboxesChanged();
 						return {
 							content: [

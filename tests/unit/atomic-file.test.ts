@@ -1,17 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import * as atomicFs from "node:fs";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	ATOMIC_RETRY_DELAY_MS,
+	commitAtomic,
 	portableAtomicWriteSyncSource,
 	readFileRetry,
 	readFileSyncRetryPortableSync,
 	writeAtomic,
 	writeAtomicPortableSync,
 	writeAtomicSync,
+	writeJsonAtomic,
 	writeJsonAtomicSync,
 } from "../../server/atomic-file.js";
 
@@ -192,6 +203,23 @@ describe("atomic-file", () => {
 			expect(readdirSync(base)).toEqual(["state.json"]);
 			expect(await readFileRetry(target)).toBe("second");
 			await expect(readFileRetry(join(base, "nope.json"))).rejects.toThrow("ENOENT");
+		} finally {
+			rmSync(base, { recursive: true, force: true });
+		}
+	});
+
+	it("writeJsonAtomic / commitAtomic: 请求路径的异步写与流式提交共用同一发布出口", async () => {
+		const base = mkdtempSync(join(tmpdir(), "pi-atomic-async-commit-"));
+		try {
+			const target = join(base, "data.json");
+			await writeJsonAtomic(target, { key: "value", count: 42 });
+			expect(JSON.parse(readFileSync(target, "utf8"))).toEqual({ key: "value", count: 42 });
+
+			const temp = join(base, "streamed.tmp");
+			writeFileSync(temp, "streamed payload");
+			await commitAtomic(temp, target);
+			expect(readFileSync(target, "utf8")).toBe("streamed payload");
+			expect(readdirSync(base)).toEqual(["data.json"]);
 		} finally {
 			rmSync(base, { recursive: true, force: true });
 		}

@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync, type Dirent } from "node:fs";
+import { existsSync, mkdirSync, rmSync, statSync, writeFileSync, type Dirent } from "node:fs";
 import { readdir as fspReaddir } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { gitEnv, runGit } from "./git-run.js";
+import { isInsideRoots, realPathOrNearest } from "./path-boundary.js";
 import { runProcess, type RunProcessResult } from "./run-process.js";
 
 /** 调用方（`deps.gitTimeoutMs`）缺省值：clone 是慢命令，不能用 git-run 的 15s 默认。 */
@@ -11,7 +12,6 @@ const MAX_FILES = 32;
 const MAX_LINE_CHARS = 400;
 const MAX_LOG_LINES = 500;
 const MAX_STDERR_TAIL = 1200;
-const MAX_ANCESTOR_HOPS = 64;
 
 export interface ProjectRepoSpec {
 	url: string;
@@ -49,10 +49,8 @@ export function samePath(a: string, b: string): boolean {
 }
 
 export function isInsideRoot(root: string, abs: string): boolean {
-	const rel = relative(foldCase(root), foldCase(abs));
-	if (rel === "") return true;
-	if (isAbsolute(rel)) return false;
-	return rel !== ".." && !rel.startsWith(`..${sep}`);
+	// 边界判定单源在 server/path-boundary.ts（参数次序：target 在前）；这里只保留旧导出名。
+	return isInsideRoots(abs, [root]);
 }
 
 export function resolveInsideRoot(root: string, raw: string): string | null {
@@ -63,26 +61,8 @@ export function resolveInsideRoot(root: string, raw: string): string | null {
 	return isInsideRoot(root, abs) ? abs : null;
 }
 
-function realpathOf(p: string): string {
-	try {
-		return realpathSync.native(p);
-	} catch {
-		return realpathSync(p);
-	}
-}
-
-export function realPathOfNearest(abs: string): string | null {
-	let probe = abs;
-	for (let i = 0; i < MAX_ANCESTOR_HOPS; i++) {
-		try {
-			return realpathOf(probe);
-		} catch {
-			const parent = dirname(probe);
-			if (parent === probe) return null;
-			probe = parent;
-		}
-	}
-	return null;
+export function realPathOfNearest(abs: string): string {
+	return realPathOrNearest(abs);
 }
 
 function toSlash(p: string): string {
@@ -221,7 +201,7 @@ export async function createProject(
 	} catch {
 		return fail(`项目根目录不存在：${root}（本模块不创建新的根目录）`);
 	}
-	const rootReal = realPathOfNearest(root) ?? root;
+	const rootReal = realPathOfNearest(root);
 
 	const rawRepos = spec?.repos;
 	if (rawRepos !== undefined && !Array.isArray(rawRepos)) return fail("repos 必须是数组");
@@ -258,7 +238,6 @@ export async function createProject(
 			return fail(`repos[${i}]: replace 不能用于项目根目录（拒绝删除 dir 本身）`);
 		}
 		const real = realPathOfNearest(r.dest);
-		if (real === null) return fail(`repos[${i}].subdir 无法解析真实路径：${r.destRel}`);
 		if (!isInsideRoot(rootReal, real)) {
 			return fail(`repos[${i}].subdir 路径越界（符号链接指向 dir 之外）：${r.destRel}`);
 		}
@@ -278,7 +257,7 @@ export async function createProject(
 		const bytes = Buffer.byteLength(content, "utf8");
 		if (bytes > MAX_FILE_BYTES) return fail(`files["${rel}"] 超过单文件上限 1MB（${bytes} 字节）`);
 		const real = realPathOfNearest(abs);
-		if (real === null || !isInsideRoot(rootReal, real)) {
+		if (!isInsideRoot(rootReal, real)) {
 			return fail(`files 路径越界（符号链接指向 dir 之外）：${rel}`);
 		}
 		plannedFiles.push({ rel: toSlash(relative(root, abs)), abs, content });
@@ -337,7 +316,7 @@ export async function createProject(
 
 		for (const f of plannedFiles) {
 			const real = realPathOfNearest(f.abs);
-			if (real === null || !isInsideRoot(rootReal, real)) {
+			if (!isInsideRoot(rootReal, real)) {
 				cleanupThisRun();
 				return fail(`files 路径越界（clone 后复核：符号链接指向 dir 之外）：${f.rel}`);
 			}

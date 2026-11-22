@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { writeJsonAtomicSync } from "./atomic-file.js";
+import { writeJsonAtomic } from "./atomic-file.js";
 import { copyTree, listTreeFiles, pruneTreeFiles, SKIP_VCS_AND_DEPS } from "./fs-copy.js";
 
 /**
@@ -94,8 +94,8 @@ function readInstalledVersion(targetDir: string, fallback: string): string {
 	}
 }
 
-function writeReceipt(targetDir: string, receipt: MaterializeReceipt): void {
-	writeJsonAtomicSync(join(targetDir, MATERIALIZE_RECEIPT), receipt, 0);
+async function writeReceipt(targetDir: string, receipt: MaterializeReceipt): Promise<void> {
+	await writeJsonAtomic(join(targetDir, MATERIALIZE_RECEIPT), receipt, 0);
 }
 
 /** 回执在、id 对得上、manifest 在、登记的文件一个不少 → 这份物化结果完整 */
@@ -131,7 +131,7 @@ function replaceDir(staging: string, targetDir: string): void {
  * - `upgraded`：`upgrade` 且目标已有 manifest → 先 `beforeOverwrite()`，再整份覆盖 + 清理旧登记文件
  * - `repaired`：半残（无回执 / 缺文件 / 没有 manifest）→ **只补缺**，绝不覆盖已有文件
  */
-export function materializePlugin(opts: MaterializeOptions): MaterializeOutcome {
+export async function materializePlugin(opts: MaterializeOptions): Promise<MaterializeOutcome> {
 	const { id, sourceDir, targetDir } = opts;
 	const skip = opts.skip ?? SKIP_VCS_AND_DEPS;
 	const sourceVersion = readSourceVersion(sourceDir, id);
@@ -156,7 +156,7 @@ export function materializePlugin(opts: MaterializeOptions): MaterializeOutcome 
 				if (!existsSync(join(staging, "manifest.json")) || files.length === 0) {
 					throw new Error(`copy produced no payload (${files.length} files) — source ${sourceDir}`);
 				}
-				writeReceipt(staging, { version: 1, id, installedVersion: sourceVersion, files, at: stamp });
+				await writeReceipt(staging, { version: 1, id, installedVersion: sourceVersion, files, at: stamp });
 				replaceDir(staging, targetDir);
 			} finally {
 				rmSync(staging, { recursive: true, force: true });
@@ -171,7 +171,7 @@ export function materializePlugin(opts: MaterializeOptions): MaterializeOutcome 
 				throw new Error(`copy left no manifest.json in ${targetDir}`);
 			}
 			const files = listTreeFiles(targetDir, { skip });
-			writeReceipt(targetDir, { version: 1, id, installedVersion: sourceVersion, files, at: stamp });
+			await writeReceipt(targetDir, { version: 1, id, installedVersion: sourceVersion, files, at: stamp });
 			pruneStale(targetDir, previous, files, id);
 			return { status: "upgraded", id, files: files.length };
 		}
@@ -183,7 +183,7 @@ export function materializePlugin(opts: MaterializeOptions): MaterializeOutcome 
 			throw new Error(`copy left no manifest.json in ${targetDir}`);
 		}
 		const files = listTreeFiles(targetDir, { skip });
-		writeReceipt(targetDir, {
+		await writeReceipt(targetDir, {
 			version: 1,
 			id,
 			installedVersion: readInstalledVersion(targetDir, sourceVersion),

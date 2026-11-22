@@ -172,14 +172,15 @@ async function completeLogin(attempt: LoginAttempt, code: string, iss?: string):
 			throw new Error("No OAuth grant returned.");
 		await withMcpAuthStoreLock(
 			getMcpAuthStorePath(attempt.options),
-			() => {
+			async () => {
 				attempt.controller.signal.throwIfAborted();
 				const saved = { ...attempt.store.load()! };
 				delete saved.codeVerifier;
 				delete saved.oauthState;
 				const credentials = readMcpAuthStore(attempt.options);
 				credentials[mcpAuthStoreKey(attempt.options.name, attempt.options.serverUrl)] = saved as McpOAuthState;
-				writeMcpAuthStore(credentials, attempt.options);
+				// 凭据先落盘再算授权完成：锁要等到它写完才能放开。
+				await writeMcpAuthStore(credentials, attempt.options);
 			},
 			attempt.controller.signal,
 		);

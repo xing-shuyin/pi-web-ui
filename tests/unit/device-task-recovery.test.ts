@@ -32,12 +32,12 @@ function deferred<T = void>() {
 }
 
 describe("TaskRecoveryManager unit tests", () => {
-	it("records task start, tracks activity, and commits terminal outcome to outbox", () => {
+	it("records task start, tracks activity, and commits terminal outcome to outbox", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "recovery-unit-"));
 		cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
 
 		const manager = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
-		const lease = manager.recordTaskStart({
+		const lease = await manager.recordTaskStart({
 			taskId: "task-1",
 			attemptId: "att-1",
 			botId: "bot-1",
@@ -60,7 +60,7 @@ describe("TaskRecoveryManager unit tests", () => {
 		expect(secondRenews).toHaveLength(1);
 		expect(secondRenews[0].hasActivity).toBe(false);
 
-		const outbox = manager.recordTaskFinish(
+		const outbox = await manager.recordTaskFinish(
 			{ id: "task-1", attemptId: "att-1", botId: "bot-1", deviceId: "dev1", roomId: "room-1" },
 			{ status: "completed", report: "All done" },
 		);
@@ -70,19 +70,19 @@ describe("TaskRecoveryManager unit tests", () => {
 		expect(manager.getActiveLeases()).toHaveLength(0);
 		expect(manager.getPendingOutbox()).toHaveLength(1);
 
-		const duplicate = manager.recordTaskFinish(
+		const duplicate = await manager.recordTaskFinish(
 			{ id: "task-1", attemptId: "att-1", botId: "bot-1", deviceId: "dev1", roomId: "room-1" },
 			{ status: "completed", report: "All done" },
 		);
 		expect(duplicate.id).toBe(outbox.id);
 
-		expect(manager.ackOutbox("task-1", "att-1")).toBe(false);
-		expect(manager.ackOutbox("task-1", "att-1", "wrong-fp")).toBe(false);
-		expect(manager.ackOutbox("task-1", "att-1", outbox.fingerprint)).toBe(true);
+		expect(await manager.ackOutbox("task-1", "att-1")).toBe(false);
+		expect(await manager.ackOutbox("task-1", "att-1", "wrong-fp")).toBe(false);
+		expect(await manager.ackOutbox("task-1", "att-1", outbox.fingerprint)).toBe(true);
 		expect(manager.getPendingOutbox()).toHaveLength(0);
 	});
 
-	it("detects orphaned leases on restart and halts them safely as interrupted without rerun", () => {
+	it("detects orphaned leases on restart and halts them safely as interrupted without rerun", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "recovery-restart-"));
 		cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -113,6 +113,7 @@ describe("TaskRecoveryManager unit tests", () => {
 			onHaltOrphaned: (t) => halted.push(t.taskId),
 		});
 
+		await manager.flush();
 		expect(halted).toEqual(["orphan-task"]);
 		expect(manager.getHaltedOrphans()).toHaveLength(1);
 		expect(manager.getActiveLeases()).toHaveLength(0);
@@ -124,19 +125,19 @@ describe("TaskRecoveryManager unit tests", () => {
 		expect(pending[0].report).toContain("safely halted on device process restart");
 	});
 
-	it("fails closed on corrupted outbox/lease files to protect historical data", () => {
+	it("fails closed on corrupted outbox/lease files to protect historical data", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "recovery-corrupt-"));
 		cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
 
 		writeFileSync(join(dir, "task-recovery-outbox.json"), "{ invalid json ");
 
 		const manager = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
-		expect(() => {
+		await expect(
 			manager.recordTaskFinish(
 				{ id: "t1", attemptId: "a1", botId: "b1", deviceId: "dev1", roomId: "r1" },
 				{ status: "completed" },
-			);
-		}).toThrow("Outbox persistence blocked");
+			),
+		).rejects.toThrow("Outbox persistence blocked");
 	});
 });
 
@@ -207,7 +208,7 @@ describe("End-to-End Task Disconnect Recovery and Reconnect Claim", () => {
 			localOrigin: f.origin,
 			recovery: f.recovery,
 			onTask: async (task, signal) => {
-				f.recovery.recordTaskStart({
+				await f.recovery.recordTaskStart({
 					taskId: task.id,
 					attemptId: task.attemptId,
 					botId: task.botId,
@@ -281,7 +282,7 @@ describe("End-to-End Task Disconnect Recovery and Reconnect Claim", () => {
 		};
 		const f = await createFixture(committedTask);
 
-		f.recovery.recordTaskFinish(
+		await f.recovery.recordTaskFinish(
 			{ id: "task-outbox-1", attemptId: "att-out-1", botId: "bot1", deviceId: "dev1", roomId: "room1" },
 			{ status: "completed", report: "Pre-recorded finish" },
 		);
@@ -320,7 +321,7 @@ describe("End-to-End Task Disconnect Recovery and Reconnect Claim", () => {
 			localOrigin: f.origin,
 			recovery: f.recovery,
 			onTask: async (task, signal) => {
-				f.recovery.recordTaskStart({
+				await f.recovery.recordTaskStart({
 					taskId: task.id,
 					attemptId: task.attemptId,
 					botId: task.botId,
@@ -615,7 +616,7 @@ describe("Full real runtime admission and crash-safety lifecycle", () => {
 		let executionCount = 0;
 		const taskUnblock = deferred<void>();
 		const localRecovery = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
-		localRecovery.recordTaskStart({
+		await localRecovery.recordTaskStart({
 			taskId: "task-once-1",
 			attemptId: "att-once-1",
 			botId: "bot1",
@@ -628,7 +629,7 @@ describe("Full real runtime admission and crash-safety lifecycle", () => {
 		const executeTaskLocally = async () => {
 			executionCount++;
 			await taskUnblock.promise;
-			localRecovery.recordTaskFinish(
+			await localRecovery.recordTaskFinish(
 				{ id: "task-once-1", attemptId: "att-once-1", botId: "bot1", deviceId: "dev1", roomId: "room1" },
 				{ status: "completed", report: "Execution succeeded exactly once" },
 			);
@@ -688,13 +689,13 @@ describe("Full real runtime admission and crash-safety lifecycle", () => {
 		expect(executionCount).toBe(1);
 	});
 
-	it("enforces outbox capacity reservation limit to protect existing results", () => {
+	it("enforces outbox capacity reservation limit to protect existing results", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "recovery-capacity-"));
 		cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
 
 		const manager = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
 		for (let i = 0; i < 128; i++) {
-			manager.recordTaskFinish(
+			await manager.recordTaskFinish(
 				{ id: `t-${i}`, attemptId: `a-${i}`, botId: "b1", deviceId: "dev1", roomId: "r1" },
 				{ status: "completed", report: "done" },
 			);

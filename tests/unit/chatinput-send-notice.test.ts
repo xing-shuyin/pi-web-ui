@@ -1,23 +1,41 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { ChatInput } from "../../web/src/components/ChatInput.js";
 import { TemplateProvider } from "../../web/src/components/PromptTemplates.js";
 import { resetAppGlobals, setAppGlobals, setAppSend } from "../../web/src/app-globals.js";
+import { setGoalCompose, setGoalPlan, setGoalRefine } from "../../web/src/goal-compose.js";
 import { LanguageProvider, zh } from "../../web/src/i18n.js";
 
 let root: Root | null = null;
+
+beforeEach(() => {
+	// 带附件会挂上尺寸观察（jsdom 没有 ResizeObserver），见 group-conversation.test.ts 同款桩。
+	vi.stubGlobal(
+		"ResizeObserver",
+		class {
+			observe() {}
+			disconnect() {}
+		},
+	);
+});
 
 function mount(opts: {
 	ready: boolean;
 	sendResult: boolean;
 	onNotice: (level: string, text: string) => void;
 	onSent: () => void;
+	attachments?: { path: string; name: string; imageData?: string; key?: string }[];
+	onRemoveAttachment?: (key: string) => void;
+	sentMessages?: unknown[];
 }) {
 	setAppGlobals({ ready: opts.ready });
-	setAppSend(() => opts.sendResult);
+	setAppSend((m) => {
+		opts.sentMessages?.push(m);
+		return opts.sendResult;
+	});
 	try {
 		localStorage.setItem("pi-web-ui:lang", "zh");
 	} catch {}
@@ -39,8 +57,8 @@ function mount(opts: {
 						modelState: null,
 						models: [],
 						modelsLoading: false,
-						attachments: [],
-						onRemoveAttachment: () => {},
+						attachments: opts.attachments ?? [],
+						onRemoveAttachment: opts.onRemoveAttachment ?? (() => {}),
 						onAddImageFiles: () => {},
 						onAddLocalFiles: () => {},
 						onNotice: opts.onNotice,
@@ -93,6 +111,9 @@ function dispatchCompositionEnd(container: HTMLElement) {
 
 afterEach(() => {
 	resetAppGlobals();
+	setGoalCompose(false);
+	setGoalPlan(false);
+	setGoalRefine(false);
 	setAppSend(null);
 	if (root) {
 		act(() => root!.unmount());
@@ -100,6 +121,7 @@ afterEach(() => {
 	}
 	document.body.innerHTML = "";
 	vi.restoreAllMocks();
+	vi.unstubAllGlobals();
 });
 
 describe("ChatInput 发送失败提示", () => {
@@ -168,5 +190,128 @@ describe("ChatInput 发送失败提示", () => {
 
 		expect(onSent).not.toHaveBeenCalled();
 		expect((c.querySelector("textarea") as HTMLTextAreaElement).value).toBe("hello");
+	});
+});
+
+describe("ChatInput 目标撰写态 × 附件（issue #962：不再拦截，改走 materials 指针）", () => {
+	it("带可寻址附件的目标可以发送：路径作 materials 出现在 set_goal 里，发送后调 onSent（清空附件）", () => {
+		const notices: [string, string][] = [];
+		const sent: unknown[] = [];
+		const onSent = vi.fn();
+		const c = mount({
+			ready: true,
+			sendResult: true,
+			onNotice: (l, t) => notices.push([l, t]),
+			onSent,
+			attachments: [{ path: "docs/spec.md", name: "spec.md", key: "k1" }],
+			sentMessages: sent,
+		});
+		// compose 在 mount 的 effect 里会被重置，必须挂载后再点亮
+		act(() => setGoalCompose(true));
+
+		typeText(c, "按 spec.md 把接口补完");
+		const send = c.querySelector(".btn.send") as HTMLButtonElement;
+		expect(send.disabled).toBe(false);
+		clickSend(c);
+
+		expect(notices).toEqual([]);
+		expect(onSent).toHaveBeenCalledTimes(1);
+		expect(sent).toHaveLength(1);
+		const msg = sent[0] as { type: string; goal: string; materials?: string[] };
+		expect(msg.type).toBe("set_goal");
+		expect(msg.goal).toBe("按 spec.md 把接口补完");
+		expect(msg.materials).toEqual(["docs/spec.md"]);
+		// 附件随普通发送一样在发送成功后清空（App 的 onSent 负责），这里以 onSent 为契约。
+	});
+
+	it("只有 base64 没有路径的图片：随消息上传成 materialBlobs，不阻断发送、也不误报为不支持", () => {
+		const notices: [string, string][] = [];
+		const sent: unknown[] = [];
+		const onSent = vi.fn();
+		const c = mount({
+			ready: true,
+			sendResult: true,
+			onNotice: (l, t) => notices.push([l, t]),
+			onSent,
+			attachments: [
+				{ path: "shot.png", name: "shot.png", imageData: "AAA", key: "k1" },
+				{ path: "spec.md", name: "spec.md", key: "k2" },
+			],
+			sentMessages: sent,
+		});
+		act(() => setGoalCompose(true));
+
+		typeText(c, "看着截图修一下");
+		clickSend(c);
+
+		expect(notices).toEqual([]);
+		expect(onSent).toHaveBeenCalledTimes(1);
+		const msg = sent[0] as { materials?: string[]; materialBlobs?: { name?: string; data: string }[] };
+		expect(msg.materials).toEqual(["spec.md"]);
+		expect(msg.materialBlobs).toEqual([{ name: "shot.png", data: "AAA" }]);
+	});
+
+	it("目标态 + 只有附件没有文字：不发送（目标是一个字符串，材料不能代替它）", () => {
+		const onSent = vi.fn();
+		const sent: unknown[] = [];
+		const c = mount({
+			ready: true,
+			sendResult: true,
+			onNotice: vi.fn(),
+			onSent,
+			attachments: [{ path: "spec.md", name: "spec.md", key: "k1" }],
+			sentMessages: sent,
+		});
+		act(() => setGoalCompose(true));
+
+		const send = c.querySelector(".btn.send") as HTMLButtonElement;
+		expect(send.disabled).toBe(true);
+		pressEnter(c);
+
+		expect(sent).toEqual([]);
+		expect(onSent).not.toHaveBeenCalled();
+	});
+
+	it("目标调研（wizard）也带 materials：提炼阶段就能看到文件", () => {
+		const sent: unknown[] = [];
+		const onSent = vi.fn();
+		const c = mount({
+			ready: true,
+			sendResult: true,
+			onNotice: vi.fn(),
+			onSent,
+			attachments: [{ path: "docs/spec.md", name: "spec.md", key: "k1" }],
+			sentMessages: sent,
+		});
+		act(() => setGoalCompose(true));
+		act(() => setGoalRefine(true));
+
+		typeText(c, "围绕 spec 定个目标");
+		clickSend(c);
+
+		const msg = sent[0] as { type: string; materials?: string[] };
+		expect(msg.type).toBe("start_goal_wizard");
+		expect(msg.materials).toEqual(["docs/spec.md"]);
+		expect(onSent).toHaveBeenCalledTimes(1);
+	});
+
+	it("「计划」是一次性修饰：目标发送后自动熄灭，不留常亮 flag（#961）", () => {
+		const sent: unknown[] = [];
+		const c = mount({
+			ready: true,
+			sendResult: true,
+			onNotice: vi.fn(),
+			onSent: vi.fn(),
+			sentMessages: sent,
+		});
+		act(() => setGoalCompose(true));
+		act(() => setGoalPlan(true));
+		expect(localStorage.getItem("pi-web-ui:goal-plan")).toBe("1");
+
+		typeText(c, "把目标做完");
+		clickSend(c);
+
+		expect(sent.map((m) => (m as { type: string }).type)).toEqual(["set_goal", "set_plan_mode"]);
+		expect(localStorage.getItem("pi-web-ui:goal-plan")).toBe("0");
 	});
 });

@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { normalize, resolve } from "node:path";
 import { sleep } from "./async-utils.js";
+import { normalizePathKey } from "./client-state.js";
 import { runGitText } from "./git-run.js";
 import { pick, type ServerLang } from "./i18n.js";
 import type { LinkedWorktreeEntry, WorktreeInfo } from "./protocol.js";
@@ -177,6 +178,32 @@ export interface CreateWorktreeOptions {
 	branch?: string;
 	newBranch?: boolean | string;
 	commit?: string;
+}
+
+/**
+ * #973：`switch` / `create(switchTo)` 只能落到**已注册的 git worktree**。
+ * 切 cwd 会把整个会话的写入边界一起搬走（`workspace-write-never` 的「工作区」就是 cwd），
+ * 所以参数来自工具调用时必须先过这道归属校验：不是 git 仓库、或目标不在 `git worktree list` 里一律拒绝。
+ */
+export async function assertRegisteredWorktree(cwd: string, target: string, lang?: () => ServerLang): Promise<void> {
+	const l = lang?.() ?? "en";
+	const inside = await isInsideGitRepo(cwd);
+	if (!inside) {
+		throw new Error(pick(l, "当前目录不是 Git 仓库", "Current directory is not a Git repository", "worktree.not.git"));
+	}
+	const list = await listWorktrees(cwd);
+	const targetKey = normalizePathKey(target);
+	if (!list.some((entry) => normalizePathKey(entry.path) === targetKey)) {
+		throw new Error(
+			pick(
+				l,
+				`目标目录不是已注册的 Git 工作树：${target}（请先用 action="list" 查看，或 action="create" 创建）`,
+				`Target is not a registered Git worktree: ${target} (use action="list" to inspect, or action="create" to add one)`,
+				"worktree.not.registered",
+				{ target },
+			),
+		);
+	}
 }
 
 export async function createWorktree(

@@ -135,7 +135,7 @@ export const GoalBar = memo(function GoalBar({
 		"host:goal-set": (
 			<TipButton
 				tip={t("goalBarHelp")}
-				className={`goalbar-btn mode${goalCompose ? " active" : ""}`}
+				className="goalbar-btn mode"
 				aria-pressed={goalCompose}
 				onClick={() => {
 					if (goalCompose) setGoalCompose(false);
@@ -148,7 +148,7 @@ export const GoalBar = memo(function GoalBar({
 		"host:goal-wizard": (
 			<TipButton
 				tip={t("goalWizardTip")}
-				className={`goalbar-btn action wizard${goalRefine ? " active" : ""}`}
+				className="goalbar-btn action wizard"
 				aria-pressed={goalRefine}
 				onClick={() => setGoalRefine(!goalRefine)}
 			>
@@ -158,7 +158,7 @@ export const GoalBar = memo(function GoalBar({
 		"host:goal-plan": !capabilities.planMode ? null : (
 			<TipButton
 				tip={t("planActionTip")}
-				className={`goalbar-btn action plan${goalPlan ? " active" : ""}`}
+				className="goalbar-btn action plan"
 				aria-pressed={goalPlan}
 				onClick={() => setGoalPlan(!goalPlan)}
 			>

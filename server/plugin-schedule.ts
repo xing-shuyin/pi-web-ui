@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { writeJsonAtomicSync } from "./atomic-file.js";
+import { createSerializedJsonWriter, type SerializedJsonWriter } from "./serialized-json-writer.js";
 
 export interface CronParts {
 	minute: number[];
@@ -160,7 +160,33 @@ export function scheduleFile(stateDir: string): string {
 	return join(stateDir, "schedules.json");
 }
 
+/**
+ * `host.schedule()` 是同步 API（返回 `off`），保存只能排队：同文件有序、不阻塞，
+ * 并保留「已登记未落盘」视图，让紧跟 `save()` 的 `load()` 不会读到旧表。
+ * 关停与测试用 `flushScheduleRecords()` 等落定。
+ */
+const writers = new Map<string, SerializedJsonWriter>();
+const queuedRecords = new Map<string, Record<string, PersistentScheduleRecord>>();
+
+function writerFor(file: string): SerializedJsonWriter {
+	let writer = writers.get(file);
+	if (!writer) {
+		writer = createSerializedJsonWriter(file, { label: "schedules.json" });
+		writers.set(file, writer);
+	}
+	return writer;
+}
+
+/** 等排队中的任务表写落地。 */
+export async function flushScheduleRecords(stateDir?: string): Promise<void> {
+	const files = stateDir ? [scheduleFile(stateDir)] : [...writers.keys()];
+	await Promise.all(files.map((file) => writers.get(file)?.flush() ?? Promise.resolve()));
+}
+
 export function loadScheduleRecords(stateDir: string): Record<string, PersistentScheduleRecord> {
+	const file = scheduleFile(stateDir);
+	const queued = queuedRecords.get(file);
+	if (queued) return JSON.parse(JSON.stringify(queued)) as Record<string, PersistentScheduleRecord>;
 	try {
 		const parsed = JSON.parse(readFileSync(scheduleFile(stateDir), "utf8")) as {
 			v?: unknown;
@@ -189,8 +215,18 @@ export function loadScheduleRecords(stateDir: string): Record<string, Persistent
 }
 
 export function saveScheduleRecords(stateDir: string, records: Record<string, PersistentScheduleRecord>): void {
+	const file = scheduleFile(stateDir);
 	try {
-		writeJsonAtomicSync(scheduleFile(stateDir), { v: 1, schedules: records });
+		const snapshot = JSON.parse(JSON.stringify(records)) as Record<string, PersistentScheduleRecord>;
+		queuedRecords.set(file, snapshot);
+		const settled = writerFor(file).writeNow({ v: 1, schedules: snapshot });
+		const clear = (): void => {
+			if (queuedRecords.get(file) === snapshot) queuedRecords.delete(file);
+		};
+		settled.then(clear, (err: unknown) => {
+			clear();
+			console.error(`[plugin-schedule] persist failed (${stateDir}):`, err);
+		});
 	} catch (err) {
 		console.error(`[plugin-schedule] persist failed (${stateDir}):`, err);
 	}

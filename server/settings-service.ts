@@ -1183,7 +1183,7 @@ export class SettingsService {
 	}
 
 	async saveTemplate(template: Parameters<SubagentTemplatesStore["upsert"]>[0]): Promise<void> {
-		const err = this.templates.upsert(template);
+		const err = await this.templates.upsert(template);
 		if (err) {
 			this.host.emit({
 				type: "notice",
@@ -1204,7 +1204,7 @@ export class SettingsService {
 	}
 
 	async deleteTemplate(name: string): Promise<void> {
-		this.templates.remove(name);
+		await this.templates.remove(name);
 		this.push();
 		this.host.emit({
 			type: "notice",
@@ -1216,7 +1216,7 @@ export class SettingsService {
 
 	async saveApprovalRule(rule: UiApprovalRule): Promise<void> {
 		if (!this.approvalRules) return;
-		const err = this.approvalRules.upsert(rule);
+		const err = await this.approvalRules.upsert(rule);
 		if (err) {
 			this.host.emit({
 				type: "notice",
@@ -1237,7 +1237,7 @@ export class SettingsService {
 
 	async saveApprovalRules(rules: UiApprovalRule[]): Promise<void> {
 		if (!this.approvalRules) return;
-		const err = this.approvalRules.saveAll(rules);
+		const err = await this.approvalRules.saveAll(rules);
 		if (err) {
 			this.host.emit({
 				type: "notice",
@@ -1258,7 +1258,7 @@ export class SettingsService {
 
 	async deleteApprovalRule(id: string): Promise<void> {
 		if (!this.approvalRules) return;
-		const ok = this.approvalRules.remove(id);
+		const ok = await this.approvalRules.remove(id);
 		if (!ok) {
 			this.host.emit({
 				type: "notice",
@@ -1279,7 +1279,7 @@ export class SettingsService {
 
 	async resetBuiltinApprovalRule(id: string): Promise<void> {
 		if (!this.approvalRules) return;
-		const ok = this.approvalRules.resetBuiltin(id);
+		const ok = await this.approvalRules.resetBuiltin(id);
 		if (!ok) {
 			this.host.emit({
 				type: "notice",

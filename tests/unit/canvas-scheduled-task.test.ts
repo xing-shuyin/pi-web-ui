@@ -17,8 +17,14 @@ import {
 import { SchedulerStore, normalizeSchedulerInput } from "../../server/scheduler-tasks.js";
 import { CanvasOrchestrator } from "../../server/canvas/canvas-orchestrator.js";
 
+/** 真实定时器（fake timers 不推进真实 I/O）：等异步落盘真正完成。 */
+const realSetTimeout = globalThis.setTimeout;
+async function flushDisk(check: () => boolean): Promise<void> {
+	for (let i = 0; i < 200 && !check(); i++) await new Promise((resolve) => realSetTimeout(resolve, 1));
+}
+
 let dir: string;
-beforeEach(() => {
+beforeEach(async () => {
 	dir = mkdtempSync(join(tmpdir(), "scheduled-canvas-"));
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
@@ -32,19 +38,19 @@ const task = () =>
 		prompt: "requirements",
 		cwd: dir,
 	});
-function saveFlow() {
+async function saveFlow() {
 	const graph = createDefaultCanvasGraph("flow");
 	graph.nodes = [graph.nodes[0]];
 	graph.nodes[0].role = "transform";
 	graph.nodes[0].config = { mode: "template", template: "processed {{input}}" };
 	graph.edges = [];
-	saveCanvasGraph(dir, graph);
+	await saveCanvasGraph(dir, graph);
 	return graph;
 }
 
 describe("scheduled canvas executor", () => {
 	it("fires a due timer through the store and persists canvas run history", async () => {
-		saveFlow();
+		await saveFlow();
 		vi.useFakeTimers();
 		const orchestrator = new CanvasOrchestrator(dir, dir, () => {
 			throw new Error("must not call a model");
@@ -54,9 +60,10 @@ describe("scheduled canvas executor", () => {
 			validateTask: (scheduled) => validateScheduledCanvas(dir, scheduled),
 		});
 		try {
-			const scheduled = store.upsert(task());
+			const scheduled = await store.upsert(task());
 			store.start();
 			await vi.advanceTimersByTimeAsync(60001);
+			await flushDisk(() => !store.list().find((entry) => entry.id === scheduled.id)?.running);
 			const result = store.list().find((entry) => entry.id === scheduled.id);
 			expect(result?.lastRun).toMatchObject({ ok: true, graphId: "flow" });
 			expect(result?.lastRun?.runId).toBeTruthy();
@@ -67,7 +74,7 @@ describe("scheduled canvas executor", () => {
 		}
 	});
 	it("runs a persisted deterministic workflow without model calls and records its run identity", async () => {
-		saveFlow();
+		await saveFlow();
 		const orchestrator = new CanvasOrchestrator(dir, dir, () => {
 			throw new Error("must not call a model");
 		});
@@ -76,20 +83,21 @@ describe("scheduled canvas executor", () => {
 		expect(result.runId).toBeTruthy();
 		expect(loadCanvasGraph(dir, "flow").status).toBe("completed");
 	});
-	it("validates references without recreating deleted default graphs or accepting path traversal", () => {
+	it("validates references without recreating deleted default graphs or accepting path traversal", async () => {
 		expect(() => loadScheduledCanvas(dir, "default")).toThrow("not found");
 		expect(() => loadScheduledCanvas(dir, "../flow")).toThrow("Invalid");
 		expect(() => validateScheduledCanvas(dir, task())).toThrow("not found");
 	});
 	it("reports approval pauses and forwards the saved prompt and project root", async () => {
-		saveFlow();
+		await saveFlow();
 		const runAll = vi.fn(async (graph) => {
 			graph.run = { id: "approval-run", graphRev: graph.rev ?? 0, startedAt: 1, scope: "all" };
 			graph.status = "waiting_approval";
-			saveCanvasRuntimeState(dir, graph);
+			await saveCanvasRuntimeState(dir, graph);
 		});
 		const result = await executeScheduledCanvas(dir, { runAll }, task());
-		expect(runAll).toHaveBeenCalledWith(expect.objectContaining({ id: "flow" }), "requirements", dir);
+		// 第 4 个参数是 run 级材料（材料规格契约 §3）；本用例没配材料 → undefined
+		expect(runAll).toHaveBeenCalledWith(expect.objectContaining({ id: "flow" }), "requirements", dir, undefined);
 		expect(result).toMatchObject({
 			ok: false,
 			graphId: "flow",
@@ -98,7 +106,7 @@ describe("scheduled canvas executor", () => {
 		});
 	});
 	it("records deletion during execution as failure rather than resurrecting the graph", async () => {
-		saveFlow();
+		await saveFlow();
 		const result = await executeScheduledCanvas(
 			dir,
 			{
@@ -113,7 +121,7 @@ describe("scheduled canvas executor", () => {
 		expect(result.error).toContain("not found");
 	});
 	it("propagates the orchestrator overlap refusal without claiming an existing run", async () => {
-		saveFlow();
+		await saveFlow();
 		const result = await executeScheduledCanvas(
 			dir,
 			{

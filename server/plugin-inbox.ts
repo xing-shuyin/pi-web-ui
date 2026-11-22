@@ -168,13 +168,14 @@ export class PluginInbox {
 		return this.ledger.byDirection("in").map(snapshotOf);
 	}
 
-	flush(): void {
-		this.ledger.flush();
+	/** 触发一次落盘并等到它落定（测试 / 关停用；落盘本身不阻塞事件循环）。 */
+	async flush(): Promise<void> {
+		await this.ledger.drain();
 	}
 
-	dispose(): void {
-		if (this.ownsLedger) this.ledger.dispose();
-		else this.ledger.flush();
+	async dispose(): Promise<void> {
+		if (this.ownsLedger) await this.ledger.dispose();
+		else await this.ledger.drain();
 	}
 }
 

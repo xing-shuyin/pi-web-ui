@@ -1,4 +1,5 @@
 import type { PromptAttachment, UiContentBlock, UiMessage, UiState } from "./types";
+import { hasSendableContent } from "./composer-gate";
 import { removeQueuedByIndexOrText } from "../../server/queue-utils.js";
 import { formatStreamingPrompt, readTextQuote, splitQuotedPrompt } from "../../server/text-quote.js";
 
@@ -153,8 +154,7 @@ export function shouldOptimisticallyQueuePrompt(opts: {
 	if (!state || !state.isStreaming) return false;
 	if (state.delegateMode === true) return false;
 	const trimmed = (text ?? "").trim();
-	const hasAttach = Boolean(attachments && attachments.length > 0);
-	if (!trimmed && !hasAttach) return false;
+	if (!hasSendableContent(trimmed, attachments)) return false;
 	if (trimmed.startsWith("/")) return false;
 	if (goalReviewing && !queue) return false;
 	return true;
@@ -169,8 +169,7 @@ export function shouldOptimisticallyEchoPrompt(opts: {
 	if (!state || state.isStreaming) return false;
 	if (state.delegateMode === true) return false;
 	const trimmed = (text ?? "").trim();
-	const hasAttach = Boolean(attachments && attachments.length > 0);
-	if (!trimmed && !hasAttach) return false;
+	if (!hasSendableContent(trimmed, attachments)) return false;
 	if (trimmed.startsWith("/")) return false;
 	return true;
 }

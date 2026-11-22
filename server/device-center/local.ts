@@ -56,7 +56,7 @@ interface Connection {
 	 */
 	runtime?: {
 		getSchedulerSnapshot(): TaskSchedulerSnapshot;
-		updateExecutionSettings(next: unknown): DeviceExecutionSettings;
+		updateExecutionSettings(next: unknown): DeviceExecutionSettings | Promise<DeviceExecutionSettings>;
 		cancelScheduledTask(taskId: string, attemptId?: string): boolean;
 		onTask?: import("./local-task-bridge.js").LocalTaskRuntime["onTask"];
 		steerTask?: import("./local-task-bridge.js").LocalTaskRuntime["steerTask"];
@@ -1840,9 +1840,9 @@ export async function installLocalDeviceCenter(options: Options) {
 	route("execution-settings", async (req) => {
 		const boundConnection = connection;
 		// Persist first, then apply to captured active runtime
-		const saved = saveExecutionSettings(options.dataDir, req.body);
+		const saved = await saveExecutionSettings(options.dataDir, req.body);
 		if (boundConnection?.runtime) {
-			boundConnection.runtime.updateExecutionSettings(saved);
+			await boundConnection.runtime.updateExecutionSettings(saved);
 		}
 		return { settings: saved };
 	});

@@ -70,6 +70,8 @@ export function requestRemoteProbe(
 	packageManager?: string;
 	suggestedInstall?: string[];
 	hostTrust?: RemoteSshHostTrustOffer;
+	/** 连上了但 profile 没落盘的原因（存储文件认不出 / 写失败）：不阻断连接，但必须让用户看到。 */
+	profileSaveError?: string;
 }> {
 	const reqId = `probe_${Date.now()}_${nextReqId++}`;
 	return new Promise((resolve) => {
@@ -85,6 +87,7 @@ export function requestRemoteProbe(
 					packageManager: msg.packageManager,
 					suggestedInstall: msg.suggestedInstall,
 					hostTrust: (msg as any).hostTrust,
+					profileSaveError: msg.profileSaveError,
 				});
 			}
 		});

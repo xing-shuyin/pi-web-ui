@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { normalizeSyncPayload, writeCustomCatalog } from "../../server/plugin-catalog.js";
+import { normalizeSyncPayload, writeCustomCatalog, flushPluginCatalog } from "../../server/plugin-catalog.js";
 import { syncPluginCatalog } from "../../server/plugin-catalog-sync.js";
 import type { PluginInstaller, PluginJobSpec } from "../../server/plugin-installer.js";
 
@@ -48,7 +48,7 @@ describe("host-owned module sync", () => {
 		});
 	});
 
-	it.each([false, true])("filters incoming modules and stale entries on write (replace=%s)", (replace) => {
+	it.each([false, true])("filters incoming modules and stale entries on write (replace=%s)", async (replace) => {
 		writeFileSync(custom, JSON.stringify({ entries: [{ id: "superagent", source: "a/b" }, ENTRY] }));
 		expect(
 			writeCustomCatalog(
@@ -60,6 +60,7 @@ describe("host-owned module sync", () => {
 				replace,
 			),
 		).toBe(1);
+		await flushPluginCatalog();
 		expect(JSON.parse(readFileSync(custom, "utf8")).entries.map((e: { id: string }) => e.id)).toEqual(["third-party"]);
 	});
 
@@ -81,6 +82,7 @@ describe("host-owned module sync", () => {
 		);
 		expect(res.ok).toBe(true);
 		expect(calls.map((c) => c.id)).toEqual(["third-party"]);
+		await flushPluginCatalog();
 		expect(JSON.parse(readFileSync(custom, "utf8")).entries.map((e: { id: string }) => e.id)).toEqual(["third-party"]);
 	});
 });
@@ -112,7 +114,7 @@ describe("normalizeSyncPayload", () => {
 });
 
 describe("writeCustomCatalog", () => {
-	it("默认 merge：文档没提到的旧条目保留，同 id 覆盖", () => {
+	it("默认 merge：文档没提到的旧条目保留，同 id 覆盖", async () => {
 		writeFileSync(
 			custom,
 			JSON.stringify({
@@ -125,24 +127,27 @@ describe("writeCustomCatalog", () => {
 		const payload = normalizeSyncPayload([ENTRY]);
 		if ("error" in payload) throw new Error("不应报错");
 		writeCustomCatalog(custom, payload.entries, false);
+		await flushPluginCatalog();
 		const written = JSON.parse(readFileSync(custom, "utf8")) as { entries: { id: string; source: string }[] };
 		expect(written.entries.map((e) => e.id).sort()).toEqual(["keep", "third-party"]);
 		expect(written.entries.find((e) => e.id === "third-party")?.source).toBe("someone/repo");
 	});
 
-	it("replace=true：整体替换（文档即真相）", () => {
+	it("replace=true：整体替换（文档即真相）", async () => {
 		writeFileSync(custom, JSON.stringify({ entries: [{ id: "keep", source: "a/b" }] }));
 		const payload = normalizeSyncPayload([ENTRY]);
 		if ("error" in payload) throw new Error("不应报错");
 		writeCustomCatalog(custom, payload.entries, true);
+		await flushPluginCatalog();
 		const written = JSON.parse(readFileSync(custom, "utf8")) as { entries: { id: string }[] };
 		expect(written.entries.map((e) => e.id)).toEqual(["third-party"]);
 	});
 
-	it("只写白名单字段（远端文档里的其它键不落盘）", () => {
+	it("只写白名单字段（远端文档里的其它键不落盘）", async () => {
 		const payload = normalizeSyncPayload([{ ...ENTRY, evil: "x", __proto__: { y: 1 } }]);
 		if ("error" in payload) throw new Error("不应报错");
 		writeCustomCatalog(custom, payload.entries, true);
+		await flushPluginCatalog();
 		const raw = readFileSync(custom, "utf8");
 		expect(raw).not.toContain("evil");
 	});
@@ -171,6 +176,7 @@ describe("syncPluginCatalog", () => {
 		expect(res.installed).toBeUndefined();
 		expect(afterWrites).toBe(1);
 		expect(calls).toHaveLength(0);
+		await flushPluginCatalog();
 		const written = JSON.parse(readFileSync(custom, "utf8")) as { entries: { id: string }[] };
 		expect(written.entries.map((e) => e.id)).toEqual(["third-party"]);
 	});
@@ -264,6 +270,7 @@ describe("syncPluginCatalog", () => {
 			["installed-already", "update"],
 		]);
 		expect(afterWrites).toBe(2);
+		await flushPluginCatalog();
 		expect(existsSync(custom)).toBe(true);
 	});
 
@@ -290,6 +297,7 @@ describe("syncPluginCatalog", () => {
 		expect(res.installed).toEqual([]);
 		expect(calls).toHaveLength(0);
 		expect(afterWrites).toBe(1);
+		await flushPluginCatalog();
 		expect(JSON.parse(readFileSync(custom, "utf8"))).toMatchObject({ entries: [{ id: "third-party" }] });
 	});
 

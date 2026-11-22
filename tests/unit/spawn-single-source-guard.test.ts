@@ -8,9 +8,11 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
 
 /**
- * 子进程只有两个出口（详见 docs/agent-rules.md §四）：
+ * 子进程只有三个出口（详见 docs/agent-rules.md §四）：
  * - `server/run-process.ts`：**有限命令**（等 close、收输出、超时杀树）；
- * - `server/spawn-child.ts`：**常驻 / 交互式**（raw 流由调用方接，收场走 `stop()`）。
+ * - `server/spawn-child.ts`：**常驻 / 交互式**（raw 流由调用方接，收场走 `stop()`）；
+ * - `server/shell-activate.ts`：**系统外壳委派**（把路径交给 explorer/open/xdg-open，火并即忘、
+ *   `windowsHide: false` —— 窗口才是产品，见 #960）。
  *
  * 这条守卫盯的是「直接 `spawn(...)` 又把 windowsHide / detached / stdio / 杀树各写一遍」——
  * 那是所有 Windows 特有 bug（弹黑窗、漏杀孙进程、孤儿占端口）的来源。
@@ -21,6 +23,7 @@ const SPAWN_APIS = /(?<![\w.$])(spawn|spawnSync|execFile|execFileSync|execSync|f
 const OUTLETS: Record<string, string> = {
 	"server/run-process.ts": "出口一：有限命令",
 	"server/spawn-child.ts": "出口二：常驻子进程",
+	"server/shell-activate.ts": "出口三：系统外壳委派（火并即忘，windowsHide 必须关）",
 	"server/process-utils.ts": "基座：killPidTree / 进程探测（run-process 依赖它，反向依赖成环）",
 	"server/terminals.ts": "node-pty：不是 child_process API",
 	"server/device-center/desktop-linux.ts":
@@ -48,7 +51,7 @@ const hits = scanned.flatMap((file) => {
 	}));
 });
 
-describe("子进程只走两个出口（server/）", () => {
+describe("子进程只走三个出口（server/）", () => {
 	it("扫描器本身可靠：注释/字符串/模板里的调用不算，真实调用要抓到", () => {
 		const sample = [
 			'// spawn("x") 注释里不算',
@@ -63,13 +66,13 @@ describe("子进程只走两个出口（server/）", () => {
 		expect(found).toEqual(["spawn", "execFileSync"]);
 	});
 
-	it("除两个出口与登记过的基座外，server/ 不直接起子进程", () => {
+	it("除三个出口与登记过的基座外，server/ 不直接起子进程", () => {
 		const offending = hits
 			.filter((hit) => !(hit.file in OUTLETS))
 			.map((hit) => `${hit.file}:${hit.line} → ${hit.api}(…)`);
 		expect(
 			offending,
-			"要起子进程请走 `runProcess`（有限命令）或 `spawnChild`（常驻/交互式）；确实不能用时把理由写进本守卫的 OUTLETS 并同步 docs/agent-rules.md §四。",
+			"要起子进程请走 `runProcess`（有限命令）、`spawnChild`（常驻/交互式）或 `launchShell`（系统外壳委派）；确实不能用时把理由写进本守卫的 OUTLETS 并同步 docs/agent-rules.md §四。",
 		).toEqual([]);
 	});
 

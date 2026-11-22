@@ -154,7 +154,7 @@ export function createLocalTaskBridge(options: LocalTaskBridgeOptions): LocalTas
 		report: string | undefined,
 	): Promise<void> {
 		leases.delete(leaseKey(task.id, task.attemptId));
-		const entry = runtime.reportOutbox?.get(task) ?? runtime.reportOutbox?.markMissing(task);
+		const entry = runtime.reportOutbox?.get(task) ?? (await runtime.reportOutbox?.markMissing(task));
 		if (entry) await uploadReport(entry).catch(() => undefined);
 		const metadata = entry ? reportUploadMetadata(entry) : undefined;
 		const event: HubTaskEvent = {

@@ -1,0 +1,12 @@
+{
+	"name": "emotional-voice-local",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "本机离线：打字 → 带情绪的中文语音回复（Ollama + CosyVoice2）",
+	"scripts": {
+		"setup": "node setup.mjs",
+		"start": "node start.mjs",
+		"serve": "node server.mjs"
+	}
+}

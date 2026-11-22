@@ -7,6 +7,7 @@ const sdk = vi.hoisted(() => ({
 }));
 vi.mock("../../mobile/node_modules/@capacitor/core/dist/index.cjs.js", () => ({
 	Capacitor: { isNativePlatform: () => true, getPlatform: () => "android" },
+	registerPlugin: () => ({}),
 }));
 vi.mock("../../mobile/native/push/src/index.ts", () => ({
 	PiPush: {

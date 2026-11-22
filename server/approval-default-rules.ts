@@ -1,6 +1,6 @@
 import type { ApprovalRule } from "./approval-rules.js";
 import { PHONE_APPROVAL_GROUPS, phoneOpRulePattern } from "./phone-tool.js";
-import { PHONE_TOOL_NAME } from "./tool-manager.js";
+import { PHONE_TOOL_NAME, WORKTREE_TOOL_NAME } from "./tool-manager.js";
 
 /** 手机操控档（#902）：按 `PHONE_APPROVAL_GROUPS` 逐档生成 ask 规则；读屏档不建规则（默认不拦截）。 */
 const PHONE_CONTROL_RULES: ApprovalRule[] = PHONE_APPROVAL_GROUPS.map((group) => ({
@@ -94,9 +94,26 @@ export const DEFAULT_APPROVAL_RULES: ApprovalRule[] = [
 		action: "ask",
 		label: "Git 工作树操作 (git worktree)",
 		labelEn: "Git worktree operation (git worktree)",
-		reason: "检测到通过 Bash 执行 git worktree 操作；建议使用专门的 worktree 工具以确保界面感知与工作区同步",
-		reasonEn: "Detected git worktree via Bash; prefer using the dedicated worktree tool to keep the UI synchronized",
+		reason: "检测到通过 Bash 执行 git worktree 操作；建议使用专门的 worktree 工具（该工具同样受注册校验与审批）",
+		reasonEn:
+			"Detected git worktree via Bash; prefer the dedicated worktree tool (that tool is also subject to registration checks and approval)",
 		categoryId: "bash.git-worktree",
+		builtin: true,
+	},
+	{
+		id: "builtin.worktree.outside-workspace",
+		enabled: true,
+		tools: [WORKTREE_TOOL_NAME],
+		field: "path",
+		match: "outside_workspace",
+		value: "",
+		action: "ask",
+		label: "工作树切到工作区外",
+		labelEn: "Worktree switch outside workspace",
+		reason: "尝试把当前工作区切换到工作区之外的目录（切换后本会话的写入边界会跟着变）",
+		reasonEn:
+			"Attempting to switch the active workspace to a directory outside the workspace (the write boundary follows the switch)",
+		categoryId: "worktree.outside-workspace",
 		builtin: true,
 	},
 	{

@@ -19081,25 +19081,54 @@
 		cursor: default;
 	}
 
-	.goalbar-btn.wizard {
-		background: var(--amber);
-	}
-
-	.goalbar-btn.action.plan {
-		background: var(--accent);
-		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 70%, transparent);
-	}
-
+	/* `提炼` / `计划` / `写目标` 的基态改写在中性规则里（见下方 `.goalbar-btn.action`），
+	   旧的两条实心 accent / amber 已删：同一个变体只能有一个基态真相。
+	   `.goalbar-btn.mode.active` 也一并收进通用 pressed 规则（状态的视觉键只认 aria-pressed）。 */
 	.goalbar-btn.mode {
 		background: var(--bg-elev2);
 		color: var(--text-dim);
 		border: 1px solid var(--border);
 	}
 
-	.goalbar-btn.mode.active {
+	/* 按下态只认 aria-pressed（状态的语义单源），基态一律中性。
+	   `提炼` / `计划` 原先直接穿实心 accent / amber，等于把「最强调」花在了「关」上，
+	   补出来的 active 只能靠加粗描边，扫一眼依旧分不出开没开（#961）。
+	   顺序有约束：pressed 规则必须在下面各变体之后，靠同特异性后写道赢。 */
+	.goalbar-btn.action {
+		background: transparent;
+		color: var(--text-dim);
+		border: 1px solid var(--border);
+		box-shadow: none;
+	}
+
+	.goalbar-btn.action.wizard {
+		background: color-mix(in srgb, var(--amber) 10%, transparent);
+		color: var(--text);
+		border-color: color-mix(in srgb, var(--amber) 42%, var(--border));
+	}
+
+	.goalbar-btn.action.plan {
+		background: transparent;
+		color: var(--text);
+		border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+	}
+
+	/* pressed 与各变体同特异性（`.action` 是 (0,3,0)，`[aria-pressed]` 只算 (0,1,0)，
+	   所以光加 `.goalbar-btn[aria-pressed]` 会被 `.goalbar-btn.action.plan` 压住），
+	   并且必须排在各变体基态之后。 */
+	.goalbar-btn[aria-pressed="true"],
+	.goalbar-btn.action[aria-pressed="true"] {
 		background: var(--accent-soft);
 		color: var(--text);
 		border-color: var(--accent);
+		box-shadow: inset 0 0 0 1px var(--accent);
+	}
+
+	.goalbar-btn.wizard[aria-pressed="true"] {
+		background: color-mix(in srgb, var(--amber) 26%, transparent);
+		color: var(--text);
+		border-color: var(--amber);
+		box-shadow: inset 0 0 0 1px var(--amber);
 	}
 
 	.goalbar-stale {
@@ -19914,6 +19943,22 @@
 		color: var(--on-send-blue-hover);
 		transform: translateY(-1px);
 		box-shadow: 0 4px 16px rgba(59, 130, 246, 0.45);
+	}
+
+	/* 输入框内控件的按下态：同样只认 aria-pressed，不再靠组件自造 class。
+	   hover 已经把边框染成 accent（--button-hover-border），所以按下态用 accent-soft 底
+	   + accent 图标，移开鼠标也还在（#961）。
+	   顺序约束：必须排在 `.btn:hover:not(:disabled)` 之后，靠同特异性后写道赢。 */
+	.inputbox .btn[aria-pressed="true"] {
+		background: var(--accent-soft);
+		color: var(--accent);
+		border-color: var(--accent);
+	}
+
+	.inputbox .btn[aria-pressed="true"]:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--accent-soft) 62%, var(--accent));
+		color: var(--accent);
+		border-color: var(--accent);
 	}
 
 	.inputbox .btn.stop {

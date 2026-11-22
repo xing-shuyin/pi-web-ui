@@ -1545,6 +1545,23 @@ const CLIENT_ID_KEY = "pi-web-client-id";
 const WINDOW_NAME_PREFIX = "pi-web-client-id:";
 const WINDOW_NAME_PI_CID = "__PI_CID__:";
 
+const UNKNOWN_SERVER_LOG_INTERVAL_MS = 60_000;
+const unknownServerCounts = new Map<string, number>();
+const unknownServerLastLogged = new Map<string, number>();
+
+/**
+ * 未处理的服务端消息类型（拼错字段 / 对端新增类型）：每个类型最多每 60s 一条 debug，
+ * 不静默丢弃，也不刷屏（issue #980）。
+ */
+function logUnknownServerMessage(type: string, now: number = Date.now()): void {
+	const count = (unknownServerCounts.get(type) ?? 0) + 1;
+	unknownServerCounts.set(type, count);
+	const last = unknownServerLastLogged.get(type) ?? Number.NEGATIVE_INFINITY;
+	if (now - last < UNKNOWN_SERVER_LOG_INTERVAL_MS) return;
+	unknownServerLastLogged.set(type, now);
+	console.debug(`[ws] 未处理的服务端消息类型「${type}」（累计 ${count} 条）`);
+}
+
 let cachedClientId: string | null = null;
 
 function readStoredClientId(): string | null {
@@ -3110,6 +3127,8 @@ export function useChat() {
 					dispatchRemoteSshMessage(msg);
 					break;
 				default:
+					// 未处理的服务端消息：去抖 debug 一条，不再静默吞掉（issue #980）。
+					logUnknownServerMessage(msg.type);
 					break;
 			}
 		};

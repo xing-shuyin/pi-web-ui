@@ -38,14 +38,23 @@ import {
 	rememberCommitMessage,
 	type CommitRecallState,
 } from "../scm-commit-history";
-import { useT } from "../i18n";
-import { appSend } from "../app-globals";
+import { isZhLocale, useI18n, useT } from "../i18n";
+import { appSend, useAppField } from "../app-globals";
 import type { UiSlotEntry } from "../ui-slots";
 import { renderMergedToolbar } from "../slot-toolbar";
 import { Dropdown } from "./Dropdown";
 import { ScmChangesList } from "./scm/ScmChangesList";
 import { ScmCommandPalette } from "./scm/ScmCommandPalette";
 import "../scm-panel.css";
+
+/** `scm_status` 的兜底等待上限：服务端不回包时不能让刷新按钮一直转（issue #980）。 */
+const SCM_BUSY_TIMEOUT_MS = 8_000;
+
+/** 收掉 busy 看门狗定时器：不握 hooks，供回调里无 hooks 依赖地调用。 */
+function clearBusyTimer(ref: { current: ReturnType<typeof setTimeout> | null }): void {
+	if (ref.current) clearTimeout(ref.current);
+	ref.current = null;
+}
 
 interface ScmFile {
 	path: string;
@@ -353,6 +362,17 @@ export function ScmPanel({
 	onClose,
 }: ScmPanelProps) {
 	const t = useT();
+	const { locale } = useI18n();
+	const tabs = useAppField("tabs");
+	// `git` tab 未启用的实例（PI_WEB_TABS）上，服务端会拒 `scm_data` 系列请求；
+	// 客户端不再“发出去等一辈子”，而是直接说清楚（issue #980）。
+	const gitTabEnabled = !tabs || tabs.includes("git");
+	const gitTabDisabledText = isZhLocale(locale)
+		? "Git 页面未在此实例启用（PI_WEB_TABS）"
+		: "The Git tab is not enabled on this instance (PI_WEB_TABS)";
+	const busyTimeoutText = isZhLocale(locale)
+		? "查询超时：服务端没有回应"
+		: "Query timed out — the server did not reply";
 	const [status, setStatus] = useState<ScmStatus | null>(null);
 	const [branches, setBranches] = useState<ScmBranch[]>([]);
 	const [branchMenuOpen, setBranchMenuOpen] = useState(false);
@@ -408,6 +428,25 @@ export function ScmPanel({
 	sidebarWidthRef.current = sidebarWidth;
 	const bodyRef = useRef<HTMLDivElement | null>(null);
 
+	const busyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const clearBusyWatchdog = useCallback(() => clearBusyTimer(busyTimerRef), []);
+	const settleBusy = useCallback(() => {
+		clearBusyWatchdog();
+		setBusy(false);
+	}, [clearBusyWatchdog]);
+	/** 刷新按钮转着圈等 `scm_data`：回包丢了也要把圈收掉并给出可见失败。 */
+	const armBusyWatchdog = useCallback(() => {
+		clearBusyWatchdog();
+		busyTimerRef.current = setTimeout(() => {
+			busyTimerRef.current = null;
+			statusReqRef.current = -1;
+			setBusy(false);
+			setError(busyTimeoutText);
+		}, SCM_BUSY_TIMEOUT_MS);
+	}, [clearBusyWatchdog, busyTimeoutText]);
+
+	useEffect(() => () => clearBusyWatchdog(), [clearBusyWatchdog]);
+
 	const persistSidebarWidth = useCallback((width: number) => {
 		try {
 			localStorage.setItem(SCM_SIDEBAR_WIDTH_KEY, String(width));
@@ -446,6 +485,7 @@ export function ScmPanel({
 	const applyScmData = useCallback((data: Extract<ServerMessage, { type: "scm_data" }>) => {
 		if (data.reqId === statusReqRef.current) {
 			statusReqRef.current = -1;
+			clearBusyTimer(busyTimerRef);
 			setBusy(false);
 			setError(null);
 			if (!data.ok) {
@@ -556,6 +596,12 @@ export function ScmPanel({
 		(manual = false, silent = false) => {
 			if (!chat.ready || chat.status !== "open") return;
 			if (!chat.state?.cwd) return;
+			if (!gitTabEnabled) {
+				// 不发请求：服务端一定会拒，发出去只会把刷新按钮转成永动机。
+				settleBusy();
+				setError(gitTabDisabledText);
+				return;
+			}
 			if (lastCwdRef.current !== undefined && lastCwdRef.current !== chat.state.cwd) {
 				setStatus(null);
 				setBranches([]);
@@ -575,10 +621,13 @@ export function ScmPanel({
 			lastCwdRef.current = chat.state.cwd;
 			setError(null);
 			if (sendScm({ type: "scm_status" }, statusReqRef)) {
-				if (!silent) setBusy(true);
+				if (!silent) {
+					setBusy(true);
+					armBusyWatchdog();
+				}
 			}
 		},
-		[chat.ready, chat.state?.cwd, chat.status, sendScm],
+		[chat.ready, chat.state?.cwd, chat.status, sendScm, gitTabEnabled, gitTabDisabledText, settleBusy, armBusyWatchdog],
 	);
 
 	const showFileDiff = useCallback(

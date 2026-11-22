@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { writeJsonAtomicSync } from "./atomic-file.js";
+import { writeJsonAtomic } from "./atomic-file.js";
+import { createSerializedJsonWriter, type SerializedJsonWriter } from "./serialized-json-writer.js";
 import type { PromptMode } from "./client-state.js";
 import { isTraditionalLocale, type ServerLang } from "./i18n.js";
 import { BUILTIN_TEMPLATES_HANT } from "./subagent-templates-hant.js";
@@ -604,10 +605,23 @@ function normalize(raw: unknown): SubagentTemplate | null {
 	};
 }
 
+function seededPathOf(filePath: string): string {
+	return /.json$/i.test(filePath) ? filePath.replace(/.json$/i, ".seeded.json") : `${filePath}.seeded.json`;
+}
+
 export class SubagentTemplatesStore {
 	private templates: SubagentTemplate[] | null = null;
+	/** `.seeded.json` 的可重建标记：`load()` 是同步读，只能排队写；同一文件共用一个队列。 */
+	private seededWriter: SerializedJsonWriter | null = null;
 
 	constructor(private readonly filePath: string) {}
+
+	private writer(): SerializedJsonWriter {
+		if (!this.seededWriter) {
+			this.seededWriter = createSerializedJsonWriter(this.seededPath(), { label: "subagent-templates.seeded" });
+		}
+		return this.seededWriter;
+	}
 
 	private load(): SubagentTemplate[] {
 		if (this.templates) return this.templates;
@@ -642,9 +656,9 @@ export class SubagentTemplatesStore {
 		return this.templates;
 	}
 
-	private persist(): void {
+	private async persist(): Promise<void> {
 		try {
-			writeJsonAtomicSync(this.filePath, this.templates);
+			await writeJsonAtomic(this.filePath, this.templates);
 		} catch {}
 	}
 
@@ -669,9 +683,13 @@ export class SubagentTemplatesStore {
 
 	private saveSeeded(names: Set<string>): void {
 		this.seededNames = names;
-		try {
-			writeJsonAtomicSync(this.seededPath(), [...names].sort());
-		} catch {}
+		// 播种标记是投影（内存里刚刚已经记下），丢了顶多把内置模板再露一次：排队写。
+		// 队列的链一经拒绝就永久拒绝（见 `serialized-json-writer`），所以失败后换新链。
+		void this.writer()
+			.writeNow([...names].sort())
+			.catch(() => {
+				this.seededWriter = null;
+			});
 	}
 
 	list(): SubagentTemplate[] {
@@ -686,7 +704,7 @@ export class SubagentTemplatesStore {
 		return this.load().find((t) => t.name === name);
 	}
 
-	upsert(input: unknown): string | null {
+	async upsert(input: unknown): Promise<string | null> {
 		const normalized = normalize(input);
 		if (!normalized) return `模板名称不合法（去空白后 1-${NAME_MAX} 字符）`;
 		const t = canonicalizeTemplate(normalized);
@@ -699,15 +717,15 @@ export class SubagentTemplatesStore {
 		const i = list.findIndex((x) => x.name === t.name);
 		if (i >= 0) list[i] = t;
 		else list.push(t);
-		this.persist();
+		await this.persist();
 		return null;
 	}
 
-	remove(name: string): void {
+	async remove(name: string): Promise<void> {
 		const list = this.load();
 		const next = list.filter((t) => t.name !== name);
 		if (next.length === list.length) return;
 		this.templates = next;
-		this.persist();
+		await this.persist();
 	}
 }

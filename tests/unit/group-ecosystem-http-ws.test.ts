@@ -139,72 +139,79 @@ describe("group ecosystem real HTTP and WS", () => {
 		expect(revoked.status).toBe(200);
 		expect(revoked.data.bot).toMatchObject({ revision: 3, cwd, tools: [], systemPrompt: "reviewed" });
 	});
-	it("persists group references through HTTP without running, then explicitly runs the chosen graph/cwd over WS", async () => {
-		const { server, dataDir, request, base, bot, cwd } = await fixture();
-		const room = await request("rooms", { name: "Canvas group", botIds: [bot.id] });
-		expect(room.status).toBe(201);
-		const roomId = room.data.room.id;
-		const orchestrator = new CanvasOrchestrator(cwd, dataDir);
-		const wss = new WebSocketServer({ server, path: "/ws" });
-		orchestrator.setBroadcaster((msg: ServerMessage) => {
-			for (const client of wss.clients) client.send(JSON.stringify(msg));
-		});
-		wss.on("connection", (socket) =>
-			socket.on("message", (raw) =>
-				handleCanvasMessage(
-					JSON.parse(String(raw)) as ClientMessage,
-					dataDir,
-					orchestrator,
-					(msg) => socket.send(JSON.stringify(msg)),
-					{ runBase: dataDir },
+	// 落盘已异步（issue #966）：这条用例真起 HTTP/WS，满负载下默认 5s 不够。
+	it(
+		"persists group references through HTTP without running, then explicitly runs the chosen graph/cwd over WS",
+		{ timeout: 30_000 },
+		async () => {
+			const { server, dataDir, request, base, bot, cwd } = await fixture();
+			const room = await request("rooms", { name: "Canvas group", botIds: [bot.id] });
+			expect(room.status).toBe(201);
+			const roomId = room.data.room.id;
+			const orchestrator = new CanvasOrchestrator(cwd, dataDir);
+			const wss = new WebSocketServer({ server, path: "/ws" });
+			orchestrator.setBroadcaster((msg: ServerMessage) => {
+				for (const client of wss.clients) client.send(JSON.stringify(msg));
+			});
+			wss.on("connection", (socket) =>
+				socket.on("message", (raw) =>
+					handleCanvasMessage(
+						JSON.parse(String(raw)) as ClientMessage,
+						dataDir,
+						orchestrator,
+						(msg) => socket.send(JSON.stringify(msg)),
+						{ runBase: dataDir },
+					),
 				),
-			),
-		);
-		const ws = new WebSocket(base.replace("http:", "ws:") + "/ws");
-		cleanup.push(async () => {
-			ws.terminate();
-			for (const socket of wss.clients) socket.terminate();
-			await new Promise<void>((resolve) => wss.close(() => resolve()));
-			orchestrator.stopAll(graph().id);
-		});
-		const messages: ServerMessage[] = [];
-		ws.on("message", (data) => messages.push(JSON.parse(String(data))));
-		await new Promise<void>((resolve, reject) => {
-			ws.once("open", resolve);
-			ws.once("error", reject);
-		});
-		const send = (msg: ClientMessage) => ws.send(JSON.stringify(msg));
-		const wait = async (predicate: (msg: ServerMessage) => boolean) => {
-			for (let attempt = 0; attempt < 200; attempt++) {
-				const found = messages.find(predicate);
-				if (found) return found;
-				await new Promise((resolve) => setTimeout(resolve, 10));
-			}
-			throw new Error(`WS result missing: ${JSON.stringify(messages)}`);
-		};
-		send({ type: "canvas_save", graph: graph(), baseRev: 0, requestId: "save" });
-		await wait((msg) => msg.type === "canvas_graph_state" && msg.requestId === "save");
-		send({ type: "canvas_list" });
-		await wait((msg) => msg.type === "canvas_list_result" && msg.graphs.some((item) => item.id === graph().id));
-		const binding = { deviceId: "local-device", graphId: graph().id, cwd, title: graph().name };
-		expect((await request(`rooms/${roomId}/canvas`, { binding })).status).toBe(200);
-		expect((await request(`rooms/${roomId}`)).data.room.canvasBinding).toEqual(binding);
-		const persisted = await DeviceHubStore.open(join(dataDir, "local-device-hub"));
-		expect(persisted.snapshot().rooms.find((item) => item.id === roomId)?.canvasBinding).toEqual(binding);
-		expect(messages.some((msg) => msg.type === "canvas_node_event")).toBe(false);
-		expect(
-			(await request(`rooms/${roomId}/canvas`, { binding: { ...binding, deviceId: "remote-unknown" } })).status,
-		).toBe(403);
-		send({ type: "canvas_load", id: binding.graphId, requestId: "reference-only" });
-		await wait((msg) => msg.type === "canvas_graph_state" && msg.requestId === "reference-only");
-		expect(messages.some((msg) => msg.type === "canvas_node_event")).toBe(false);
-		send({ type: "canvas_run_all", graphId: binding.graphId, cwd: join(cwd, "missing") });
-		await wait((msg) => msg.type === "canvas_error" && msg.graphId === binding.graphId);
-		expect(messages.some((msg) => msg.type === "canvas_node_event")).toBe(false);
-		send({ type: "canvas_run_all", graphId: binding.graphId, cwd: binding.cwd });
-		await wait((msg) => msg.type === "canvas_node_event" && msg.graphId === binding.graphId && msg.event === "done");
-		expect(orchestrator.getNodeLog(binding.graphId, "input").some((entry) => entry.text.includes(cwd))).toBe(true);
-		expect((await request(`rooms/${roomId}/canvas`, { binding: null })).status).toBe(200);
-		expect((await request(`rooms/${roomId}`)).data.room.canvasBinding).toBeUndefined();
-	});
+			);
+			const ws = new WebSocket(base.replace("http:", "ws:") + "/ws");
+			cleanup.push(async () => {
+				ws.terminate();
+				for (const socket of wss.clients) socket.terminate();
+				await new Promise<void>((resolve) => wss.close(() => resolve()));
+				orchestrator.stopAll(graph().id);
+			});
+			const messages: ServerMessage[] = [];
+			ws.on("message", (data) => messages.push(JSON.parse(String(data))));
+			await new Promise<void>((resolve, reject) => {
+				ws.once("open", resolve);
+				ws.once("error", reject);
+			});
+			const send = (msg: ClientMessage) => ws.send(JSON.stringify(msg));
+			// 落盘已异步（issue #966）：满负载（整套并行跑）时 2s 预算不够，给足 20s。
+			const wait = async (predicate: (msg: ServerMessage) => boolean) => {
+				const deadline = Date.now() + 20_000;
+				while (Date.now() < deadline) {
+					const found = messages.find(predicate);
+					if (found) return found;
+					await new Promise((resolve) => setTimeout(resolve, 20));
+				}
+				throw new Error(`WS result missing: ${JSON.stringify(messages)}`);
+			};
+			send({ type: "canvas_save", graph: graph(), baseRev: 0, requestId: "save" });
+			await wait((msg) => msg.type === "canvas_graph_state" && msg.requestId === "save");
+			send({ type: "canvas_list" });
+			await wait((msg) => msg.type === "canvas_list_result" && msg.graphs.some((item) => item.id === graph().id));
+			const binding = { deviceId: "local-device", graphId: graph().id, cwd, title: graph().name };
+			expect((await request(`rooms/${roomId}/canvas`, { binding })).status).toBe(200);
+			expect((await request(`rooms/${roomId}`)).data.room.canvasBinding).toEqual(binding);
+			const persisted = await DeviceHubStore.open(join(dataDir, "local-device-hub"));
+			expect(persisted.snapshot().rooms.find((item) => item.id === roomId)?.canvasBinding).toEqual(binding);
+			expect(messages.some((msg) => msg.type === "canvas_node_event")).toBe(false);
+			expect(
+				(await request(`rooms/${roomId}/canvas`, { binding: { ...binding, deviceId: "remote-unknown" } })).status,
+			).toBe(403);
+			send({ type: "canvas_load", id: binding.graphId, requestId: "reference-only" });
+			await wait((msg) => msg.type === "canvas_graph_state" && msg.requestId === "reference-only");
+			expect(messages.some((msg) => msg.type === "canvas_node_event")).toBe(false);
+			send({ type: "canvas_run_all", graphId: binding.graphId, cwd: join(cwd, "missing") });
+			await wait((msg) => msg.type === "canvas_error" && msg.graphId === binding.graphId);
+			expect(messages.some((msg) => msg.type === "canvas_node_event")).toBe(false);
+			send({ type: "canvas_run_all", graphId: binding.graphId, cwd: binding.cwd });
+			await wait((msg) => msg.type === "canvas_node_event" && msg.graphId === binding.graphId && msg.event === "done");
+			expect(orchestrator.getNodeLog(binding.graphId, "input").some((entry) => entry.text.includes(cwd))).toBe(true);
+			expect((await request(`rooms/${roomId}/canvas`, { binding: null })).status).toBe(200);
+			expect((await request(`rooms/${roomId}`)).data.room.canvasBinding).toBeUndefined();
+		},
+	);
 });

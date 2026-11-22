@@ -168,7 +168,35 @@ describe("subagent-notify (Issue #713)", () => {
 
 			const text = formatSubagentsCompletionNotice([conv], "en");
 			expect(text).toContain("[Subagent Completion Notice] 1 subagent(s) completed:");
-			expect(text).toContain("❌ Failed (Out of memory)");
+			expect(text).toContain("❌ Failed (Model call failed · Out of memory)");
+		});
+
+		it("网关 HTML 错误页：通知只给分类摘要，不把标签原样塞进父对话（issue #978）", () => {
+			const raw =
+				"408 <html><body><h1>408 Request Time-out</h1>\nYour browser didn't send a complete request in time.\n</body></html>";
+			const conv = makeMockConv({ id: "sa-html-408", title: "审 PDF", error: raw });
+
+			const textEn = formatSubagentsCompletionNotice([conv], "en");
+			expect(textEn).toContain("❌ Failed (Gateway/proxy error · HTTP 408 · 408 Request Time-out");
+			expect(textEn).not.toMatch(/<\/?(?:html|body|h1)>/);
+
+			const textZh = formatSubagentsCompletionNotice([conv], "zh");
+			expect(textZh).toContain("❌ 运行失败（网关/代理错误 · HTTP 408");
+			expect(textZh).not.toMatch(/<\/?(?:html|body|h1)>/);
+		});
+
+		it("鉴权 / 配额错误分别归类（同一 helper，口径一致）", () => {
+			const auth = formatSubagentsCompletionNotice(
+				[makeMockConv({ id: "sa-auth", error: "401 invalid_api_key" })],
+				"en",
+			);
+			expect(auth).toContain("Authentication failed · HTTP 401 · invalid_api_key");
+
+			const quota = formatSubagentsCompletionNotice(
+				[makeMockConv({ id: "sa-quota", error: "429 insufficient_quota" })],
+				"en",
+			);
+			expect(quota).toContain("Quota exhausted · HTTP 429 · insufficient_quota");
 		});
 
 		it("中止子代理显示已中止标签", () => {

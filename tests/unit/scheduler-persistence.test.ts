@@ -4,19 +4,33 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SchedulerStore } from "../../server/scheduler-tasks.js";
 
+/** 等异步落盘真正完成（fake timers 不推进真实 I/O）。 */
+const realSetTimeout = globalThis.setTimeout;
+async function flushDisk(check: () => boolean): Promise<void> {
+	for (let i = 0; i < 200 && !check(); i++) await new Promise((resolve) => realSetTimeout(resolve, 1));
+}
+
 const fault = vi.hoisted(() => ({ stage: "" }));
-vi.mock("node:fs", async (importOriginal) => {
-	const fs = await importOriginal<typeof import("node:fs")>();
+// 落盘改走 writeAtomic（node:fs/promises）：故障注入必须拦在同一层，否则「写失败」根本不会发生。
+vi.mock("node:fs/promises", async (importOriginal) => {
+	const fsp = await importOriginal<typeof import("node:fs/promises")>();
 	return {
-		...fs,
-		writeFileSync: (...args: Parameters<typeof fs.writeFileSync>) => {
-			if (fault.stage === "write") throw Object.assign(new Error("disk full"), { code: "ENOSPC" });
-			return fs.writeFileSync(...args);
-		},
-		renameSync: (...args: Parameters<typeof fs.renameSync>) => {
+		...fsp,
+		open: (async (...args: Parameters<typeof fsp.open>) => {
+			const handle = await fsp.open(...args);
+			if (fault.stage !== "write") return handle;
+			Object.defineProperty(handle, "writeFile", {
+				configurable: true,
+				value: async () => {
+					throw Object.assign(new Error("disk full"), { code: "ENOSPC" });
+				},
+			});
+			return handle;
+		}) as typeof fsp.open,
+		rename: (async (...args: Parameters<typeof fsp.rename>) => {
 			if (fault.stage === "rename") throw Object.assign(new Error("disk rename failed"), { code: "EIO" });
-			return fs.renameSync(...args);
-		},
+			return fsp.rename(...args);
+		}) as typeof fsp.rename,
 	};
 });
 
@@ -46,11 +60,11 @@ const disk = () => readFileSync(join(dir, "scheduler-tasks.json"), "utf8");
 describe.each(["write", "rename"])("scheduler persistence failure: %s", (stage) => {
 	it.each(["create", "update", "delete", "disable", "enable", "rebind"])(
 		"%s commits neither memory nor callbacks",
-		(op) => {
+		async (op) => {
 			const onChanged = vi.fn();
 			const onTaskRemoved = vi.fn();
 			const store = new SchedulerStore(dir, { onChange: onChanged, onTaskRemoved });
-			store.upsert({ ...base, enabled: op !== "enable" });
+			await store.upsert({ ...base, enabled: op !== "enable" });
 			const before = store.list();
 			const bytes = disk();
 			onChanged.mockClear();
@@ -72,14 +86,14 @@ describe.each(["write", "rename"])("scheduler persistence failure: %s", (stage) 
 						return store.rebind(base.id, { conversationId: "new-conversation", sessionFile: "/new/session.jsonl" });
 				}
 			};
-			expect(mutate).toThrow(/disk/);
+			await expect(mutate()).rejects.toThrow(/disk/);
 			expect(store.list()).toEqual(before);
 			expect(disk()).toBe(bytes);
 			expect(onChanged).not.toHaveBeenCalled();
 			expect(onTaskRemoved).not.toHaveBeenCalled();
 			expect(readdirSync(dir)).toEqual(["scheduler-tasks.json"]);
 			fault.stage = "";
-			expect(mutate).not.toThrow();
+			await mutate();
 			expect(disk()).not.toBe(bytes);
 			expect(onChanged).toHaveBeenCalledOnce();
 		},
@@ -100,7 +114,7 @@ describe.each(["write", "rename"])("scheduler persistence failure: %s", (stage) 
 							}),
 						}),
 			});
-			store.upsert(base);
+			await store.upsert(base);
 			await store.runNow(base.id);
 			const before = store.list();
 			const bytes = disk();
@@ -130,10 +144,10 @@ describe.each(["write", "rename"])("scheduler persistence failure: %s", (stage) 
 				return { ok: true };
 			},
 		});
-		store.upsert(base);
+		await store.upsert(base);
 		const pending = store.runNow(base.id);
-		store.upsert({ ...base, name: "Edited while running", spec: "120000" });
-		store.rebind(base.id, { conversationId: "latest" });
+		await store.upsert({ ...base, name: "Edited while running", spec: "120000" });
+		await store.rebind(base.id, { conversationId: "latest" });
 		const bytes = disk();
 		fault.stage = stage;
 		release();
@@ -154,13 +168,15 @@ describe.each(["write", "rename"])("scheduler persistence failure: %s", (stage) 
 		const executor = vi.fn(async () => ({ ok: true }));
 		const notify = vi.fn();
 		const store = new SchedulerStore(dir, { executor, notify });
-		store.upsert(base);
+		await store.upsert(base);
 		const bytes = disk();
 		fault.stage = stage;
 		store.start();
 		try {
 			await vi.advanceTimersByTimeAsync(60000);
-			expect(executor).toHaveBeenCalledOnce();
+			await flushDisk(() => store.list()[0]?.running !== true);
+			// 开始记录落不了盘 = 本次不执行（避免没有任何痕迹的副作用）。
+			expect(executor).not.toHaveBeenCalled();
 			expect(store.list()[0]).toMatchObject({
 				history: [],
 				lastRun: null,
@@ -172,13 +188,13 @@ describe.each(["write", "rename"])("scheduler persistence failure: %s", (stage) 
 				expect.stringContaining("persist"),
 				expect.stringContaining("persist"),
 			);
-			await vi.advanceTimersByTimeAsync(50000);
-			expect(executor).toHaveBeenCalledOnce();
 			expect(disk()).toBe(bytes);
 			expect(store.list()[0].history).toEqual([]);
+			// 故障消失后，同一槽位不会被无限重试；下一个槽位正常执行并留下历史。
 			fault.stage = "";
-			await vi.advanceTimersByTimeAsync(10000);
-			expect(executor).toHaveBeenCalledTimes(2);
+			await vi.advanceTimersByTimeAsync(60000);
+			await flushDisk(() => store.list()[0]?.running !== true);
+			expect(executor).toHaveBeenCalledOnce();
 			expect(store.list()[0].history).toHaveLength(1);
 		} finally {
 			store.stop();
@@ -197,27 +213,32 @@ describe.each(["write", "rename"])("scheduler persistence failure: %s", (stage) 
 				return { ok: true };
 			});
 			const store = new SchedulerStore(dir, { executor });
-			store.upsert(base);
+			await store.upsert(base);
 			store.start();
 			try {
 				await vi.advanceTimersByTimeAsync(60000);
+				// 落盘是异步的：等这一轮真的走到执行器再继续（fake timers 不推进真实 I/O）。
+				await flushDisk(() => executor.mock.calls.length > 0);
 				expect(executor).toHaveBeenCalledOnce();
-				store.upsert({ ...base, spec: "180000", enabled });
+				await store.upsert({ ...base, spec: "180000", enabled });
 				const bytes = disk();
 				await vi.advanceTimersByTimeAsync(20000);
 				fault.stage = stage;
 				release();
 				await vi.advanceTimersByTimeAsync(0);
+				await flushDisk(() => store.list()[0]?.running !== true);
 				expect(store.list()[0]).toMatchObject({
 					running: false,
 					history: [],
 					nextFire: enabled ? Date.now() + 180000 : null,
 				});
 				await vi.advanceTimersByTimeAsync(170000);
+				await flushDisk(() => store.list()[0]?.running !== true);
 				expect(executor).toHaveBeenCalledOnce();
 				expect(disk()).toBe(bytes);
 				fault.stage = "";
 				await vi.advanceTimersByTimeAsync(10000);
+				await flushDisk(() => store.list()[0]?.running !== true);
 				expect(executor).toHaveBeenCalledTimes(enabled ? 2 : 1);
 			} finally {
 				store.stop();
@@ -234,17 +255,21 @@ it("catch-up handles failed persistence even if the notification callback throws
 			throw new Error("notification failed");
 		},
 	});
-	store.upsert({ ...base, catchUp: "once" });
+	await store.upsert({ ...base, catchUp: "once" });
 	vi.advanceTimersByTime(120000);
 	fault.stage = "rename";
 	store.start();
 	try {
 		await vi.advanceTimersByTimeAsync(0);
-		expect(executor).toHaveBeenCalledOnce();
+		// 落盘是异步的：开始记录落不了盘时本次不执行，等同一次「没有开始」的收敛。
+		await flushDisk(() => store.list()[0]?.running !== true);
+		expect(executor).not.toHaveBeenCalled();
 		expect(store.list()[0]).toMatchObject({ running: false, history: [], nextFire: Date.now() + 60000 });
 		const bytes = disk();
 		await vi.advanceTimersByTimeAsync(50000);
-		expect(executor).toHaveBeenCalledOnce();
+		await flushDisk(() => store.list()[0]?.running !== true);
+		// 失败后仍被推进到下一槽位：50s 内不该再跑。
+		expect(executor).not.toHaveBeenCalled();
 		expect(disk()).toBe(bytes);
 		fault.stage = "";
 		expect((await store.runNow(base.id)).ok).toBe(true);

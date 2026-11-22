@@ -158,7 +158,7 @@ describe("PluginManager", () => {
 		expect(second.map((p) => p.id).sort()).toEqual(["bad", "good"]);
 		expect(mgr.epoch).toBe(1);
 
-		mgr.dispose();
+		await mgr.dispose();
 		expect((globalThis as { __deact?: number[] }).__deact?.length).toBe(2);
 
 		makePlugin("broken", THROW_PLUGIN);
@@ -299,7 +299,7 @@ describe("PluginManager cwd 跟随", () => {
 	it("dispose 反激活后旧钩子不再被触发且清理全局表与定时器", async () => {
 		makePlugin("ed", CWD_PLUGIN);
 		await mgr.ensureLoaded();
-		mgr.dispose();
+		await mgr.dispose();
 		mgr.notifyCwd(join(dir, "y"));
 		expect(probe().seen).toHaveLength(0);
 		expect(mgr.listCommands()).toHaveLength(0);
@@ -369,7 +369,7 @@ describe("PluginManager #542 客户端会话快照与模型事件", () => {
 		mgr.emitClientModelChanged(snap({ model: "anthropic/sonnet" }));
 		mgr.emitClientModelChanged(snap({ model: "anthropic/sonnet", conversationId: "conv-2" }));
 		expect(seen()).toEqual(["anthropic/sonnet", "anthropic/sonnet"]);
-		mgr.dispose();
+		await mgr.dispose();
 		mgr.emitClientModelChanged(snap({ model: "other/model" }));
 		expect(seen()).toHaveLength(2);
 	});

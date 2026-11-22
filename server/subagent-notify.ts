@@ -1,7 +1,8 @@
 import type { Conversation } from "./agent-service.js";
 import { pick, type ServerLang } from "./i18n.js";
-import { subagentRunOutcome } from "./subagent-helpers.js";
+import { subagentErrorInfo, subagentRunOutcome } from "./subagent-helpers.js";
 import { formatEvidenceSummary } from "./subagent-evidence.js";
+import { formatModelErrorBrief } from "./model-error.js";
 
 export function extractSubagentConclusion(output: string, lang: ServerLang = "en"): string {
 	const trimmed = (output ?? "").trim();
@@ -64,13 +65,12 @@ export function formatSubagentsCompletionNotice(
 		const outcome = subagentRunOutcome(conv);
 		let statusLabel: string;
 		if (outcome.error) {
-			statusLabel = pick(
-				lang,
-				`❌ 运行失败（${outcome.error}）`,
-				`❌ Failed (${outcome.error})`,
-				"subagents.notify.status.failed",
-				{ error: outcome.error },
-			);
+			// 与错误气泡同一口径（classification 单源）：分类 + 状态码 + 无标签摘要，原文走 get_result。
+			const errorInfo = subagentErrorInfo(conv);
+			const brief = errorInfo ? formatModelErrorBrief(errorInfo, lang) : outcome.error;
+			statusLabel = pick(lang, `❌ 运行失败（${brief}）`, `❌ Failed (${brief})`, "subagents.notify.status.failed", {
+				error: brief,
+			});
 		} else if (outcome.canceled) {
 			statusLabel = pick(lang, "⚠️ 已中止", "⚠️ Canceled", "subagents.notify.status.canceled");
 		} else {

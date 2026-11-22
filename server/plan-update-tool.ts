@@ -71,19 +71,18 @@ export function makePlanUpdateTool(
 			const sessionId = typeof target === "string" ? undefined : target.sessionId;
 			const p = params as { steps: PlanStep[]; activeStepId?: string | null };
 			const plan = planManager.setPlan(convId, p.steps, p.activeStepId, sessionId);
-			if (typeof target !== "string" && target.sessionManager) {
-				try {
-					const sm = target.sessionManager as { appendCustomEntry?: (type: string, data: unknown) => void };
-					sm?.appendCustomEntry?.("plan/update", { plan });
-				} catch {}
+			// 落盘与公告只有一个出口（issue #979）：`writePlan()` 负责 append `plan/update` + 回写游标 + emit。
+			// 这里绝不再自己 `appendCustomEntry`，否则同一条计划会有两个写入点。
+			if (onPersist) {
+				onPersist(convId, plan);
+			} else {
+				emit({
+					type: "plan_updated",
+					conversationId: convId,
+					plan,
+				});
+				flushSnapshot();
 			}
-			onPersist?.(convId, plan);
-			emit({
-				type: "plan_updated",
-				conversationId: convId,
-				plan,
-			});
-			flushSnapshot();
 			const summary = planManager.describePlan(convId);
 			return {
 				content: [{ type: "text", text: `Plan updated successfully.\n\n${summary}` }],

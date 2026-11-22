@@ -3,6 +3,7 @@ import type { RoleWaitOutcome } from "./goal-service.js";
 import type { Conversation } from "./agent-service.js";
 import { SUBAGENT_PROMPT_SNAPSHOT_CAP } from "./agent-formatters.js";
 import { conversationIdentity, parentConversationIdentity, conversationParent } from "./conversation-identity.js";
+import { classifyModelError, type ModelErrorInfo } from "./model-error.js";
 
 export function isSubagentActive(conv: Conversation): boolean {
 	if (!conv.isSubagent) return false;
@@ -22,6 +23,63 @@ export function countActiveSubagents(convs: Iterable<Conversation>, spawningCoun
 	return count;
 }
 
+/**
+ * 子代理的账本状态（issues #981 / #964）：一个 run 到底算不算结束，只由这里回答。
+ *
+ * 旧代码在 `turn_end` 处一律写 `running`，于是一本账永远停在 running；`completion_requested` 也写 running，
+ * 把「已经交卷」改回「还在跑」。这里把判据固定成：取消 > 失败 > 真在跑 > done。
+ * 「真在跑」= 有提示词在飞 / 还在流式 / 还有未收尾的任务（含待投递的完成请求）。
+ */
+export function subagentLedgerStateOf(
+	conv: Conversation,
+	opts: { taskPending?: boolean } = {},
+): "running" | LedgerState {
+	const { error, canceled } = subagentRunOutcome(conv);
+	if (canceled) return "canceled";
+	if (error) return "failed";
+	const pending = opts.taskPending ?? conv.subagentTaskPending?.() ?? false;
+	if (pending || conv.promptInFlight) return "running";
+	try {
+		if (conv.session.isStreaming) return "running";
+	} catch {
+		// 会话不可读（退役窗口）：当作未结束，宁可写 running 也不谎报 done。
+		return "running";
+	}
+	return "done";
+}
+
+type LedgerState = "done" | "blocked" | "failed" | "canceled" | "interrupted" | "dismissed";
+
+/** 完成通知的三态（issues #981 / #964）。 */
+export type SubagentNoticeVerdict = "deliver" | "defer" | "invalidate";
+
+/**
+ * 完成通知到底该不该发：旧实现只有「该 / 不该」两态，于是「这一轮刚要结束、又开了一轮」的
+ * 短暂窗口被当成「永远不该发」，通知静默消失。
+ *
+ * - `invalidate`：这一批真作废了（run 换代 / 已被父取走 / 已通知）→ 丢弃并告知用户；
+ * - `defer`：现在不能发、但之后仍该发（还在流式 / 提示词在飞 / 还有未收尾的完成请求）
+ *   → 留在原队列，靠既有排空点重试；
+ * - `deliver`：发。
+ */
+export function subagentNoticeVerdict(
+	conv: Conversation,
+	generation: number,
+	taskPending: boolean,
+): SubagentNoticeVerdict {
+	if ((conv.subagentRunGeneration ?? 0) !== generation) return "invalidate";
+	if (conv.subagentConsumedByParent || conv.subagentDoneNotified) return "invalidate";
+	if (taskPending || conv.promptInFlight) return "defer";
+	try {
+		if (conv.session.isStreaming) return "defer";
+	} catch {
+		// 会话不可读（退役窗口）：不是作废，等下一轮再说。
+		return "defer";
+	}
+	return "deliver";
+}
+
+/** 子代理结论：`error` 是原文（会话文件、左栏悬停提示、账本都保留原文）。 */
 export function subagentRunOutcome(conv: Conversation): { error?: string; canceled?: boolean } {
 	if (conv.subagentTaskStopped) return { canceled: true };
 	if (conv.retryState) return {};
@@ -42,6 +100,15 @@ export function subagentRunOutcome(conv: Conversation): { error?: string; cancel
 		}
 	} catch {}
 	return {};
+}
+
+/**
+ * 子代理失败的分类投影（issue #978）：通知与 verdict 只消费这份，不各自拼文案。
+ * 判据只有 `server/model-error.ts` 一处；`error` 本身仍是原文，线协议形状不变。
+ */
+export function subagentErrorInfo(conv: Conversation): ModelErrorInfo | undefined {
+	const { error } = subagentRunOutcome(conv);
+	return error ? classifyModelError(error) : undefined;
 }
 
 export function roleOutcomeOf(conv: Conversation): RoleWaitOutcome {

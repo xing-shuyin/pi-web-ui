@@ -6,18 +6,20 @@ import os from "node:os";
 import { Server, utils, type Connection } from "ssh2";
 import * as nodePty from "node-pty";
 import { RemoteSshService, shellQuotePosix } from "../../server/remote-ssh-service.js";
+import { makeTestTmpDir } from "../helpers/tmp.js";
 
 const posix = (file: string) =>
 	file.replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_, drive: string) => `/${drive.toLowerCase()}`);
 const shell =
 	process.platform === "win32"
-		? path.join(process.env.ProgramFiles ?? "C:/Program Files", "Git/bin/bash.exe")
+		? path.join(
+				process.env.ProgramFiles ?? path.join(process.env.SystemDrive ?? "C:", "Program Files"),
+				"Git/bin/bash.exe",
+			)
 		: "/bin/sh";
 
 it("uses saved authentication and known_hosts over real SSH, transfers env without echo and closes only its PTY channel", async () => {
-	const root = await fs.mkdtemp(
-		path.join(process.platform === "win32" ? "E:/tmp" : os.tmpdir(), "remote-ssh-integration-"),
-	);
+	const root = await makeTestTmpDir("remote-ssh-integration");
 	const service = new RemoteSshService(root);
 	const { privateKey } = generateKeyPairSync("rsa", {
 		modulusLength: 2048,

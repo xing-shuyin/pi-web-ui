@@ -240,7 +240,7 @@ describe("revoke 三种粒度", () => {
 });
 
 describe("坏文件 / 边界持久化", () => {
-	it("JSON 坏 → 视为空表（list 空 / has false / get 空），且文件内容未被改写", () => {
+	it("JSON 坏 → 视为空表（list 空 / has false / get 空），且文件内容未被改写", async () => {
 		const { store, dir, file } = makeStore();
 		const broken = "{ this is not json\n";
 		writeFileSync(file, broken);
@@ -253,6 +253,7 @@ describe("坏文件 / 边界持久化", () => {
 		expect(readFileSync(file, "utf8")).toBe(broken);
 
 		expect(store.grant("demo", join(dir, "x"))).toBe(true);
+		await store.flush();
 		expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ grants: { demo: [resolve(join(dir, "x"))] } });
 	});
 
@@ -277,16 +278,18 @@ describe("坏文件 / 边界持久化", () => {
 		expect(new PluginGrantsStore(dir).get("demo")).toEqual([resolve(base)]);
 	});
 
-	it("持久化：新建 store 读回同一 dataDir 的授权", () => {
+	it("持久化：新建 store 读回同一 dataDir 的授权", async () => {
 		const { store, dir } = makeStore();
 		const proj = join(dir, "proj");
 		store.grant("demo", proj);
+		await store.flush();
 
 		const again = new PluginGrantsStore(dir);
 		expect(again.has("demo", join(proj, "sub"))).toBe(true);
 		expect(again.list()).toEqual([{ pluginId: "demo", paths: [resolve(proj)] }]);
 
 		expect(again.revoke("demo", proj)).toBe(1);
+		await again.flush();
 		expect(store.has("demo", proj)).toBe(true);
 		store.reload();
 		expect(store.has("demo", proj)).toBe(false);
@@ -303,11 +306,12 @@ describe("坏文件 / 边界持久化", () => {
 		expect(store.has("demo", proj)).toBe(true);
 	});
 
-	it("dataDir 不存在时也能写（自动建目录），磁盘不可写时不抛异常", () => {
+	it("dataDir 不存在时也能写（自动建目录），磁盘不可写时不抛异常", async () => {
 		const dir = tmpDataDir();
 		const nested = join(dir, "nested", "deeper");
 		const store = new PluginGrantsStore(nested);
 		expect(store.grant("demo", join(dir, "proj"))).toBe(true);
+		await store.flush();
 		expect(existsSync(join(nested, "plugin-grants.json"))).toBe(true);
 
 		const badDir = tmpDataDir();
@@ -315,6 +319,7 @@ describe("坏文件 / 边界持久化", () => {
 		const bad = new PluginGrantsStore(badDir);
 		mkdirSync(join(badDir, "plugin-grants.json"), { recursive: true });
 		expect(() => bad.grant("demo", join(badDir, "proj"))).not.toThrow();
+		await bad.flush();
 		expect(bad.has("demo", join(badDir, "proj"))).toBe(true);
 	});
 });

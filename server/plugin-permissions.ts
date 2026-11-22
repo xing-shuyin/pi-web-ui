@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { writeJsonAtomicSync } from "./atomic-file.js";
+import { commitJsonQueued, flushQueuedJson, readQueuedView } from "./plugin-secrets.js";
 
 export type PermissionFamily = "net" | "llm";
 
@@ -54,7 +54,15 @@ export class PluginPermissionStore {
 		return join(this.dataDir, "plugin-permissions.json");
 	}
 
+	/** 等排队中的授权写落地（关停与测试用）。 */
+	flush(): Promise<void> {
+		return flushQueuedJson();
+	}
+
+	/** 读顺序：已登记未落盘的最新内容 → 盘上内容（排队写未落盘时也能读到自己的写）。 */
 	private read(): PermissionFile {
+		const queued = readQueuedView<PermissionFile>(this.file());
+		if (queued && Array.isArray(queued.grants)) return { v: 1, grants: queued.grants.map((g) => ({ ...g })) };
 		try {
 			const parsed = JSON.parse(readFileSync(this.file(), "utf8")) as PermissionFile;
 			if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.grants)) return { v: 1, grants: [] };
@@ -64,12 +72,10 @@ export class PluginPermissionStore {
 		}
 	}
 
-	private write(grants: PermissionGrant[]): void {
-		try {
-			writeJsonAtomicSync(this.file(), { v: 1, grants });
-		} catch (err) {
-			console.error(`[plugin-permissions] persist failed (${this.file()}):`, err);
-		}
+	private write(grants: PermissionGrant[]): Promise<void> {
+		const run = commitJsonQueued(this.file(), { v: 1, grants });
+		run.catch((err: unknown) => console.error(`[plugin-permissions] persist failed (${this.file()}):`, err));
+		return run;
 	}
 
 	private static validId(id: string): boolean {
@@ -98,7 +104,7 @@ export class PluginPermissionStore {
 		pluginId: string,
 		family: PermissionFamily,
 		opts?: { hosts?: unknown; models?: unknown; reason?: string; remember?: boolean },
-	): void {
+	): Promise<void> {
 		if (!PluginPermissionStore.validId(pluginId)) throw new Error(`非法插件 id：${pluginId}`);
 		if (family !== "net" && family !== "llm") throw new Error(`不支持的能力族：${String(family)}`);
 		const grant: PermissionGrant = {
@@ -114,13 +120,13 @@ export class PluginPermissionStore {
 				(g) => !(g.pluginId === pluginId && g.family === family && sameScope(g, grant)),
 			);
 			grants.push(grant);
-			this.write(grants);
-		} else {
-			this.sessionGrants = this.sessionGrants.filter(
-				(g) => !(g.pluginId === pluginId && g.family === family && sameScope(g, grant)),
-			);
-			this.sessionGrants.push(grant);
+			return this.write(grants);
 		}
+		this.sessionGrants = this.sessionGrants.filter(
+			(g) => !(g.pluginId === pluginId && g.family === family && sameScope(g, grant)),
+		);
+		this.sessionGrants.push(grant);
+		return Promise.resolve();
 	}
 
 	revoke(pluginId?: string, family?: PermissionFamily, scope?: { host?: string; model?: string }): number {
@@ -136,7 +142,7 @@ export class PluginPermissionStore {
 		const kept = disk.filter((g) => !drop(g));
 		if (kept.length !== disk.length) {
 			removed += disk.length - kept.length;
-			this.write(kept);
+			void this.write(kept);
 		}
 		const before = this.sessionGrants.length;
 		this.sessionGrants = this.sessionGrants.filter((g) => !drop(g));

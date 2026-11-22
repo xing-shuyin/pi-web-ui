@@ -632,6 +632,24 @@ export function CanvasNodeDrawer({
 								</div>
 							</div>
 
+							{/* 节点材料（只读）：给模型看的清单由 server/material.ts 单源生成，这里只列路径指针 */}
+							{(node.materials?.length ?? 0) > 0 && (
+								<div className="canvas-drawer-section" style={{ marginTop: 8 }}>
+									<h4 className="canvas-section-title">📎 {t("openFiles")}</h4>
+									<ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 4 }}>
+										{(node.materials ?? []).map((path) => (
+											<li
+												key={path}
+												className="canvas-tip"
+												style={{ margin: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}
+											>
+												{t("attachContent", { path })}
+											</li>
+										))}
+									</ul>
+								</div>
+							)}
+
 							{/* 通用工作流控制参数：条件 / 循环 / 审批 / 工具 / API 等 */}
 							{visibleRoleFields(node.role, drawerCfg, t).length > 0 && (
 								<div className="canvas-drawer-section" style={{ marginTop: 8 }}>

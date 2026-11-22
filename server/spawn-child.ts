@@ -12,6 +12,10 @@
  * 加上各自的 `child.kill()` / `taskkill` / `killPidTree` 收场逻辑 —— 谁漏一条就出 Windows 特有 bug
  * （弹控制台窗口、漏杀孙进程、孤儿进程占端口）。
  *
+ * **不在这里的一类**：把路径交给系统外壳（资源管理器 / 访达 / 默认应用）是**委派**，不是监护 ——
+ * 它火并即忘、永不收回，且必须 `windowsHide: false`（否则 explorer 建的窗口会沿用 SW_HIDE，用户侧
+ * 就是「点了没反应」）。那一类走 `server/shell-activate.ts` 的 `launchShell`，见 #960。
+ *
  * 约定：
  * - **总是 `windowsHide: true`**（桌面壳与 sidecar 没有控制台，见 `hide-console-windows.ts`）。
  * - **POSIX 默认建进程组**（`detached: true`），`stop()` 才能一次带走整棵树；Windows 用 `taskkill /T /F`。

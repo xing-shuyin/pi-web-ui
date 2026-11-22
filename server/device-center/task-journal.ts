@@ -1,6 +1,7 @@
-import { mkdir, readFile, readdir, unlink, appendFile, writeFile, stat } from "node:fs/promises";
+import { mkdir, readFile, readdir, unlink, appendFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
+import { writeAtomic } from "../atomic-file.js";
 import { sanitizeTextForJournal, sanitizeToolParameters } from "./task-progress.js";
 
 export const MAX_JOURNAL_SEGMENT_ENTRIES = 50;
@@ -99,15 +100,8 @@ export function decodeJournalCursor(cursorStr: string): DecodedCursor | null {
 }
 
 async function writeAtomicAsync(filePath: string, content: string): Promise<void> {
-	const tmpPath = `${filePath}.${process.pid}.${Date.now()}.${randomUUID().slice(0, 8)}.tmp`;
-	await writeFile(tmpPath, content, "utf8");
-	try {
-		const { rename } = await import("node:fs/promises");
-		await rename(tmpPath, filePath);
-	} catch (err) {
-		await unlink(tmpPath).catch(() => {});
-		throw err;
-	}
+	// 原子写只有 `server/atomic-file.ts` 一份（带瞬时占用退避）；这里不再自带一套裸 rename。
+	await writeAtomic(filePath, content);
 }
 
 interface InMemoryTaskState {
@@ -142,6 +136,81 @@ export function createTaskJournalManager(baseDir: string) {
 		}
 	}
 
+	async function listSegmentFiles(dir: string): Promise<string[]> {
+		try {
+			return (await readdir(dir)).filter((f) => f.startsWith("segment-") && f.endsWith(".jsonl")).sort();
+		} catch {
+			return [];
+		}
+	}
+
+	function segmentIndexOf(file: string): number {
+		const match = /^segment-(\d{6})\.jsonl$/.exec(file);
+		return match ? Number(match[1]) : -1;
+	}
+
+	/**
+	 * 启动对账（issues #976 / #982）：`meta.json` 是**投影**，segments 才是已落盘的事实。
+	 *
+	 * 崩溃窗口是真实存在的：append 成功、meta 没来得及写回（或被另一个分隔符计数的写替掉），
+	 * 下次启动就会从旧的 `nextSequence` 继续分配，直接撞出重复 sequence —— 翻页按
+	 * `sequence > cursor` 过滤，重复序号意味着有的条目再也翻不出来。
+	 * 所以每次冷加载都按实际 segments 把计数拉回来，并把纠正后的 meta 写回。
+	 */
+	async function recalibrateMeta(dir: string, meta: TaskJournalMeta): Promise<TaskJournalMeta> {
+		const files = await listSegmentFiles(dir);
+		if (files.length === 0) return meta;
+		let maxSequence = 0;
+		let lines = 0;
+		let firstSequence = 0;
+		let lastIndex = meta.activeSegmentIndex;
+		for (const file of files) {
+			lastIndex = Math.max(lastIndex, segmentIndexOf(file));
+			let content: string;
+			try {
+				content = await readFile(join(dir, file), "utf8");
+			} catch {
+				continue;
+			}
+			for (const line of content.split("\n")) {
+				if (!line.trim()) continue;
+				lines++;
+				let sequence = 0;
+				try {
+					sequence = Number((JSON.parse(line) as { sequence?: unknown }).sequence);
+				} catch {
+					// 半写的尾行 / 读不懂的旧行：不参与计数，也不因此丢进过的数据。
+					continue;
+				}
+				if (!Number.isSafeInteger(sequence) || sequence <= 0) continue;
+				if (firstSequence === 0 || sequence < firstSequence) firstSequence = sequence;
+				if (sequence > maxSequence) maxSequence = sequence;
+			}
+		}
+		const next = { ...meta };
+		next.nextSequence = Math.max(meta.nextSequence, maxSequence + 1, 1);
+		next.totalEvents = Math.max(meta.totalEvents, lines);
+		next.segmentCount = Math.max(meta.segmentCount, files.length);
+		next.activeSegmentIndex = lastIndex;
+		if (firstSequence > 0) next.minRetainedSequence = firstSequence;
+		const changed =
+			next.nextSequence !== meta.nextSequence ||
+			next.totalEvents !== meta.totalEvents ||
+			next.segmentCount !== meta.segmentCount ||
+			next.activeSegmentIndex !== meta.activeSegmentIndex ||
+			next.minRetainedSequence !== meta.minRetainedSequence;
+		if (!changed) return meta;
+		console.warn(
+			`[task-journal] ${meta.taskId}: meta 与 segments 不一致（nextSequence ${meta.nextSequence} → ${next.nextSequence}，totalEvents ${meta.totalEvents} → ${next.totalEvents}），已按磁盘校准`,
+		);
+		try {
+			await writeAtomicAsync(join(dir, "meta.json"), JSON.stringify(next, null, 2));
+		} catch (error) {
+			console.error(`[task-journal] ${meta.taskId}: 校准后的 meta 写回失败`, error);
+		}
+		return next;
+	}
+
 	async function getOrInitTaskState(
 		taskId: string,
 		context?: { roomId: string; accountId: string; botId: string; attemptId: string },
@@ -174,6 +243,9 @@ export function createTaskJournalManager(baseDir: string) {
 			};
 			await mkdir(dir, { recursive: true });
 			await writeAtomicAsync(join(dir, "meta.json"), JSON.stringify(meta, null, 2));
+		} else {
+			// 已有 meta：按实际 segments 对账，绝不沿用可能落后的计数（重复 sequence = 翻页丢条目）。
+			meta = await recalibrateMeta(dir, meta);
 		}
 
 		const segPath = join(dir, segmentFileName(meta.activeSegmentIndex));

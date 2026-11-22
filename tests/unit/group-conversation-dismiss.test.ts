@@ -104,6 +104,8 @@ describe("Group / Device-Task conversation dismissal", () => {
 		const res1 = await service.dismissConversation("browser-client", {
 			id: "c1",
 			force: false,
+			// 跨端关闭必须带 owner（issue #971）：不带就无法区分两个客户端各自的 c1。
+			owner: task.clientId,
 		});
 		expect(res1).toBe(false);
 		expect(botCs.abortConversation).not.toHaveBeenCalled();
@@ -113,6 +115,7 @@ describe("Group / Device-Task conversation dismissal", () => {
 		const res2 = await service.dismissConversation("browser-client", {
 			id: "c1",
 			force: true,
+			owner: task.clientId,
 		});
 		expect(res2).toBe(true);
 		expect(botCs.abortConversation).toHaveBeenCalledWith(conv);

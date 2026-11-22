@@ -578,7 +578,7 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 			leaseGeneration: 1,
 		});
 
-		const outboxEntry = runtime1.recovery.recordTaskFinish(
+		const outboxEntry = await runtime1.recovery.recordTaskFinish(
 			{
 				id: "task-recovery-1",
 				attemptId: "attempt-1",
@@ -611,15 +611,15 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 		expect(recovered?.executionCompleted).toBe(true);
 		expect(recovered?.artifactProduced).toBe(true);
 
-		const badAck1 = runtime2.recovery.ackOutbox("task-recovery-1", "attempt-1", "wrong-fingerprint");
+		const badAck1 = await runtime2.recovery.ackOutbox("task-recovery-1", "attempt-1", "wrong-fingerprint");
 		expect(badAck1).toBe(false);
 
-		const badAck2 = runtime2.recovery.ackOutbox("task-recovery-1", "attempt-1", recovered!.fingerprint, {
+		const badAck2 = await runtime2.recovery.ackOutbox("task-recovery-1", "attempt-1", recovered!.fingerprint, {
 			artifactDigest: "mismatched-digest",
 		});
 		expect(badAck2).toBe(false);
 
-		const goodAck = runtime2.recovery.ackOutbox("task-recovery-1", "attempt-1", recovered!.fingerprint, {
+		const goodAck = await runtime2.recovery.ackOutbox("task-recovery-1", "attempt-1", recovered!.fingerprint, {
 			artifactDigest: fakeArtifact.digest,
 		});
 		expect(goodAck).toBe(true);
@@ -632,7 +632,7 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 		const runtime = createDeviceRuntime(f.options);
 		cleanups.push(() => runtime.close());
 
-		runtime.recovery.recordTaskStart({
+		await runtime.recovery.recordTaskStart({
 			taskId: "task-conflict",
 			attemptId: "attempt-1",
 			botId: f.bot.id,
@@ -642,7 +642,7 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 			leaseGeneration: 1,
 		});
 
-		expect(() => {
+		await expect(
 			runtime.recovery.recordTaskStart({
 				taskId: "task-conflict",
 				attemptId: "attempt-2",
@@ -651,8 +651,8 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 				roomId: "room-1",
 				leaseToken: "lease-2",
 				leaseGeneration: 1,
-			});
-		}).toThrow(/Conflicting attempt active/i);
+			}),
+		).rejects.toThrow(/Conflicting attempt active/i);
 	});
 
 	it("prevents forged workspace handle and enforces executionCwd in agent-service", async () => {

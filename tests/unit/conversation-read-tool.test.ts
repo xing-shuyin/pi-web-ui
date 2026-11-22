@@ -5,7 +5,6 @@ import {
 	formatClaimLines,
 	formatTranscript,
 	makeConversationReadTool,
-	parseTranscriptLines,
 	readExtraLines,
 	selectReadMessages,
 	shortPath,
@@ -16,6 +15,7 @@ import {
 	type ConversationReadHost,
 	type TranscriptInputMessage,
 } from "../../server/conversation-read-tool.js";
+import { projectSessionText } from "../../server/session-projection.js";
 
 const MSGS: TranscriptInputMessage[] = [
 	{ role: "user", content: "看看这个 bug" },
@@ -91,22 +91,27 @@ describe("formatTranscript", () => {
 	});
 });
 
-describe("parseTranscriptLines", () => {
-	it("message 取 message，compaction/branch 取 summary，坏行跳过", () => {
+describe("历史转录投影", () => {
+	it("message 取 message，compaction 取 summary，坏行跳过", () => {
 		const text = [
 			JSON.stringify({ type: "session", id: "s1" }),
-			JSON.stringify({ type: "message", message: { role: "user", content: "hi", timestamp: 1 } }),
+			JSON.stringify({ type: "message", id: "m1", message: { role: "user", content: "hi", timestamp: 1 } }),
 			"not json {",
 			"",
-			JSON.stringify({ type: "message", message: { role: "assistant", content: [{ type: "text", text: "yo" }] } }),
-			JSON.stringify({ type: "compaction", summary: "sum" }),
-			JSON.stringify({ type: "branch_summary", summary: "b" }),
-			JSON.stringify({ type: "thinking_level_change" }),
+			JSON.stringify({
+				type: "message",
+				id: "m2",
+				parentId: "m1",
+				message: { role: "assistant", content: [{ type: "text", text: "yo" }] },
+			}),
+			JSON.stringify({ type: "compaction", id: "c1", parentId: "m2", summary: "sum", firstKeptEntryId: "m1" }),
+			JSON.stringify({ type: "thinking_level_change", id: "t1", parentId: "c1" }),
 		].join("\n");
-		const out = parseTranscriptLines(text);
-		expect(out.map((m) => m.role)).toEqual(["user", "assistant", "compactionSummary", "branchSummary"]);
-		expect(out[0].content).toBe("hi");
-		expect(out[2].summary).toBe("sum");
+		// 历史读取的唯一入口是投影：msg 从 message 取，压缩条变成 compactionSummary。
+		const out = projectSessionText(text).messages;
+		expect(out.map((m) => m.role)).toEqual(["compactionSummary", "user", "assistant"]);
+		expect(out[0].summary).toBe("sum");
+		expect(out[1].content).toBe("hi");
 	});
 });
 
@@ -134,14 +139,16 @@ describe("filterRunning / filterHistory / shortPath", () => {
 });
 
 describe("toolCalls additive 字段", () => {
-	it("toTranscriptInput 与 parseTranscriptLines 都填 toolCalls，且格式化输出不变", () => {
+	it("toTranscriptInput 与投影都填 toolCalls，且格式化输出不变", () => {
 		const live = toTranscriptInput({
 			role: "assistant",
 			content: [{ type: "toolCall", name: "edit", arguments: { path: "a.ts" } }],
 		} as never);
 		expect(live.toolCalls).toEqual([{ name: "edit", args: { path: "a.ts" } }]);
 		expect(transcriptText(live)).toBe("[tool call: edit]");
-		const hist = parseTranscriptLines(JSON.stringify({ type: "message", message: live }) + "\n");
+		const hist = projectSessionText(
+			JSON.stringify({ type: "message", id: "m1", message: { ...live, timestamp: 1 } }) + "\n",
+		).messages;
 		expect(hist[0].toolCalls).toEqual([{ name: "edit", args: { path: "a.ts" } }]);
 		expect(transcriptText(hist[0])).toBe("[tool call: edit]");
 	});
@@ -254,7 +261,7 @@ describe("formatClaimLines", () => {
 	});
 });
 
-describe("files/status 认领与 sidecar 接线（execute 级）", () => {
+describe("files/status 认领与 touches 单源（execute 级）", () => {
 	const MSGS: TranscriptInputMessage[] = [
 		{ role: "user", content: "修一下" },
 		{
@@ -269,23 +276,30 @@ describe("files/status 认领与 sidecar 接线（execute 级）", () => {
 			id === "c1" ? { title: "T", cwd: "/r", isSubagent: false, messages: MSGS } : undefined,
 		listHistorySessions: async () => [],
 		readHistorySession: async () => undefined,
-		readTouchSidecar: () => [{ path: "/r/old.ts", count: 3, lastTs: 1 }],
 	};
 	const extras = {
 		listClaims: () => [{ path: "/r/x.ts", ownerTitle: "B", note: "n" }],
 	};
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const ctx = {} as any;
-	it("files 合并 sidecar + 展示认领块", async () => {
+	it("files 只认投影后的可见消息 + 展示认领块", async () => {
 		const tool = makeConversationReadTool(host, () => "zh", extras);
 		const r = (await tool.execute("t", { action: "files", id: "c1" }, undefined, undefined, ctx)) as {
 			content: { type: string; text: string }[];
 		};
 		const text = r.content[0].text;
-		expect(text).toContain("/r/old.ts");
 		expect(text).toContain("/r/new.ts");
 		expect(text).toContain("认领");
 		expect(text).toContain("/r/x.ts");
+	});
+	it("sidecar 接口已删：host 不再提供 readTouchSidecar，旧的 .touches.json 不再并集", async () => {
+		expect("readTouchSidecar" in host).toBe(false);
+		const tool = makeConversationReadTool(host, () => "zh", extras);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const r = (await tool.execute("t", { action: "files", id: "c1" }, undefined, undefined, ctx as any)) as {
+			content: { type: string; text: string }[];
+		};
+		expect(r.content[0].text).not.toContain(".touches.json");
 	});
 	it("status 带认领行；无 extras 时不展示也不报错", async () => {
 		const tool = makeConversationReadTool(host, () => "zh", extras);

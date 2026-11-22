@@ -81,8 +81,8 @@ describe("Canvas scheduler run semantics", () => {
 		edges,
 		executionMode: "real",
 	});
-	const admit = (g: CanvasGraph) => {
-		saveCanvasGraph(dir, g);
+	const admit = async (g: CanvasGraph) => {
+		await saveCanvasGraph(dir, g);
 		return g;
 	};
 
@@ -91,7 +91,7 @@ describe("Canvas scheduler run semantics", () => {
 		trigger.config = { payload: "pass" };
 		const condition = node("condition", "condition");
 		condition.config = { condition: "pass" };
-		const g = admit(
+		const g = await admit(
 			graph(
 				[trigger, condition, node("yes"), node("no"), node("join", "merge")],
 				[
@@ -121,20 +121,21 @@ describe("Canvas scheduler run semantics", () => {
 	});
 
 	it("broadcasts settled runtime from the latest persisted topology", async () => {
-		const g = admit(graph([node("start", "trigger"), node("end")], [edge("start", "end")]));
+		const g = await admit(graph([node("start", "trigger"), node("end")], [edge("start", "end")]));
 		const states: CanvasGraph[] = [];
 		let edited = false;
-		orch.setBroadcaster((message) => {
+		orch.setBroadcaster(async (message) => {
 			if (message.type === "canvas_node_event" && message.event === "started" && !edited) {
 				edited = true;
 				const latest = loadCanvasGraph(dir, g.id);
 				latest.name = "Edited during execution";
-				saveCanvasGraph(dir, latest);
+				await saveCanvasGraph(dir, latest);
 			}
 			if (message.type === "canvas_graph_state") states.push(message.graph);
 		});
 		await orch.runAll(g);
 		expect(states.at(-1)?.status).toBe("completed");
+		expect(states.at(-1)?.name).toBe("Edited during execution");
 		expect(states.at(-1)?.name).toBe("Edited during execution");
 		expect(states.at(-1)?.nodes.every((n) => n.status === "done")).toBe(true);
 	});
@@ -154,7 +155,7 @@ describe("Canvas scheduler run semantics", () => {
 			[{ ...node("work", "coder"), useWorktree: true }, node("qa"), node("human", "human")],
 			[edge("work", "qa"), edge("qa", "human"), edge("human", "work", "reject")],
 		);
-		saveCanvasGraph(join(dir, "data"), g);
+		await saveCanvasGraph(join(dir, "data"), g);
 		const observed: string[] = [];
 		vi.spyOn(local as any, "executeRealEngineNode").mockImplementation(async (...args: unknown[]) => {
 			const cwd = args[2] as string;
@@ -183,7 +184,7 @@ describe("Canvas scheduler run semantics", () => {
 	}, 90_000);
 
 	it("an explicit false AI verdict requests rework while an ordinary completion does not", async () => {
-		const g = admit(
+		const g = await admit(
 			graph(
 				[node("work", "coder"), node("judge", "ai_judge")],
 				[edge("work", "judge"), { ...edge("judge", "work", "reject"), maxLoopRetries: 1 }],
@@ -212,9 +213,9 @@ describe("Canvas scheduler run semantics", () => {
 		const secondDir = join(dir, "other");
 		mkdirSync(secondDir);
 		const other = new CanvasOrchestrator(secondDir, secondDir);
-		const g = admit(graph([{ ...node("one", "coder"), cwd: dir }], []));
+		const g = await admit(graph([{ ...node("one", "coder"), cwd: dir }], []));
 		const h = { ...graph([{ ...node("two", "coder"), cwd: dir }], []), id: "other" };
-		saveCanvasGraph(secondDir, h);
+		await saveCanvasGraph(secondDir, h);
 		const execute = async () => {
 			entered++;
 			if (entered === 1) await gate;
@@ -240,7 +241,7 @@ describe("Canvas scheduler run semantics", () => {
 	});
 
 	it("ignores feedback in roots and joins and only reworks after human rejection, carrying comments", async () => {
-		const g = admit(
+		const g = await admit(
 			graph(
 				[node("work", "trigger"), node("review", "human"), node("delivery")],
 				[edge("work", "review"), edge("review", "work", "reject"), edge("review", "delivery", "approve")],
@@ -262,7 +263,7 @@ describe("Canvas scheduler run semantics", () => {
 
 	it("reports unsupported executors and blocks downstream without invoking an engine", async () => {
 		for (const role of ["cron", "webhook", "memory", "loop"] as const) {
-			const g = admit(graph([node("unsupported", role), node("after")], [edge("unsupported", "after")]));
+			const g = await admit(graph([node("unsupported", role), node("after")], [edge("unsupported", "after")]));
 			await orch.runAll(g);
 			expect(g.nodes[0].error).toContain("Unsupported canvas executor");
 			expect(g.status).toBe("error");
@@ -271,7 +272,7 @@ describe("Canvas scheduler run semantics", () => {
 	});
 
 	it("rejects forward cycles without choosing an arbitrary starting node", async () => {
-		const g = admit(graph([node("a"), node("b")], [edge("a", "b"), edge("b", "a")]));
+		const g = await admit(graph([node("a"), node("b")], [edge("a", "b"), edge("b", "a")]));
 		expect(() => validateCanvasTopology(g)).toThrow("forward cycle");
 		await expect(orch.runAll(g)).rejects.toThrow("forward cycle");
 		expect(g.nodes.every((n) => n.status === "idle")).toBe(true);
@@ -280,7 +281,7 @@ describe("Canvas scheduler run semantics", () => {
 	it("does not silently substitute a missing engine or an unavailable model", async () => {
 		const getter = vi.fn(() => undefined);
 		const local = new CanvasOrchestrator(dir, dir, getter);
-		const g = admit(graph([{ ...node("task", "coder"), engine: "claude" }], []));
+		const g = await admit(graph([{ ...node("task", "coder"), engine: "claude" }], []));
 		await local.runAll(g);
 		expect(g.status).toBe("error");
 		expect(getter).toHaveBeenCalledExactlyOnceWith("claude");
@@ -317,7 +318,7 @@ describe("Canvas scheduler run semantics", () => {
 			},
 			detach: () => {},
 		}));
-		const g = admit(graph([node("task", "coder"), node("after")], [edge("task", "after")]));
+		const g = await admit(graph([node("task", "coder"), node("after")], [edge("task", "after")]));
 		const pending = real.runAll(g);
 		await expect(real.runAll(g)).rejects.toThrow("already running");
 		await expect(real.runNode(g, "task")).rejects.toThrow("already running");
@@ -330,7 +331,7 @@ describe("Canvas scheduler run semantics", () => {
 	});
 
 	it("expires an approval-paused run at the graph deadline", async () => {
-		const g = admit(graph([node("human", "human")], []));
+		const g = await admit(graph([node("human", "human")], []));
 		vi.useFakeTimers();
 		try {
 			await orch.runAll(g);
@@ -345,7 +346,7 @@ describe("Canvas scheduler run semantics", () => {
 	});
 
 	it("settles a direct run against reachable nodes and resets stale descendant output", async () => {
-		const g = admit(
+		const g = await admit(
 			graph(
 				[node("start", "trigger"), node("join", "merge"), node("unrelated")],
 				[edge("start", "join"), edge("unrelated", "join")],
@@ -370,7 +371,7 @@ describe("Canvas scheduler run semantics", () => {
 		const start = node("start", "trigger");
 		const payload = "BEGIN-CONTRACT\n" + "important details ".repeat(1000) + "END-CONTRACT";
 		start.config = { payload };
-		const g = admit(graph([start, node("after")], [edge("start", "after")]));
+		const g = await admit(graph([start, node("after")], [edge("start", "after")]));
 		await orch.runAll(g);
 		expect(g.nodes[0].artifact?.text).toContain(payload);
 		expect(g.nodes[1].artifact?.text).toContain(payload);

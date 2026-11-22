@@ -194,14 +194,14 @@ describe("Device Group Architecture Redesign - Proposal B", () => {
 		expect(roomMessages.length).toBe(801);
 	});
 
-	it("persists resource locks to disk and restores active locks across Hub restarts", () => {
+	it("persists resource locks to disk and restores active locks across Hub restarts", async () => {
 		const lockFile = join(dataDir, "persisted-hub-locks.json");
 		const manager1 = createHubLockManager({
 			persistPath: lockFile,
 			defaultTtlMs: 60000,
 		});
 
-		const res1 = manager1.acquireLocks({
+		const res1 = await manager1.acquireLocks({
 			roomId: "room-persist-1",
 			taskId: "task-001",
 			botId: "bot-alpha",
@@ -209,7 +209,7 @@ describe("Device Group Architecture Redesign - Proposal B", () => {
 		});
 		expect(res1.success).toBe(true);
 
-		const resConflict = manager1.acquireLocks({
+		const resConflict = await manager1.acquireLocks({
 			roomId: "room-persist-1",
 			taskId: "task-002",
 			botId: "bot-beta",
@@ -223,13 +223,13 @@ describe("Device Group Architecture Redesign - Proposal B", () => {
 			defaultTtlMs: 60000,
 		});
 
-		const info = manager2.getRoomLockInfo("room-persist-1");
+		const info = await manager2.getRoomLockInfo("room-persist-1");
 		expect(info.activeLocks.map((l) => l.lockKey).sort()).toEqual(["git:repo:main", "workspace:packages/core"]);
 		expect(info.activeLocks.find((l) => l.lockKey === "git:repo:main")?.taskId).toBe("task-001");
 		expect(info.waitingQueue.length).toBe(1);
 		expect(info.waitingQueue[0].taskId).toBe("task-002");
 
-		const promoted = manager2.releaseLocks("room-persist-1", "task-001");
+		const promoted = await manager2.releaseLocks("room-persist-1", "task-001");
 		expect(promoted).toEqual(["task-002"]);
 
 		manager1.close();

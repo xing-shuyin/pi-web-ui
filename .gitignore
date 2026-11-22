@@ -7,6 +7,8 @@ web/dist/
 
 .pi/
 .pi-web/
+# 材料规格：跨 worktree/沙盒暂存的材料目录（server/material.ts MATERIAL_STAGE_DIR）
+.pi-materials/
 .pi-subagents/
 .pi-wechat-media/
 .pi-qq-media/

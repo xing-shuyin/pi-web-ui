@@ -18,12 +18,12 @@ export type SetupSaveResult =
 			saved: ServerFileConfig;
 	  };
 
-export function saveSetupConfig(
+export async function saveSetupConfig(
 	input: unknown,
 	previous: ServerFileConfig,
 	current: SetupRuntimeConfig,
-	save: (config: ServerFileConfig) => void,
-): SetupSaveResult {
+	save: (config: ServerFileConfig) => void | Promise<void>,
+): Promise<SetupSaveResult> {
 	const body = (input ?? {}) as Record<string, unknown>;
 	const next = { ...previous };
 	const nextToken = typeof body.token === "string" ? body.token.trim() : current.token;
@@ -66,7 +66,9 @@ export function saveSetupConfig(
 		(typeof body.allowHosts === "string" && norm(body.allowHosts) !== current.allowHosts.join(",")) ||
 		(typeof body.allowOrigins === "string" && norm(body.allowOrigins) !== current.allowOrigins.join(","));
 	try {
-		save(next);
+		// 落盘可能是异步的（`saveServerFileConfig` 已改成 `writeAtomic`）：**失败必须在这里等到**，
+		// 否则会把新口令当作已生效发布出去（事务性就此消失）。
+		await save(next);
 	} catch (err) {
 		return { ok: false, status: 500, error: `写入配置失败：${err instanceof Error ? err.message : String(err)}` };
 	}

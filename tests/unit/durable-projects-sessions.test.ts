@@ -93,7 +93,7 @@ describe("Durable 引擎项目记录与对话持久化真实测试", () => {
 			timestamp: Date.now(),
 		});
 		activeConv.updatedAt = Date.now();
-		store.saveConversation(workspace1, activeConv);
+		await store.saveConversation(workspace1, activeConv);
 
 		const diskConv = store.loadConversation(workspace1, convId);
 		expect(diskConv).toBeDefined();

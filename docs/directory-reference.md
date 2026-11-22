@@ -121,6 +121,7 @@ server/
 ├── plan-manager.ts         # 结构化任务计划看板与步骤状态机（Plan Mode / Step State Machine）
 ├── schedule-agent-tool.ts  # 把内置调度器暴露给 Agent（issue #193）
 ├── scheduler-tasks.ts      # 内置定时任务调度（issue #184）：任务 CRUD + cron/间隔触发 + 无头执行
+├── scheduler-delivery.ts   # 定时任务报告投递策略（#959）：按转录寻址、投不进就退后台且绑定不改（一个地址、一道门、回执如实）
 ├── tool-info.ts            # 工具定义说明（工具卡右键 → 显示工具详细信息）：按名现取 SDK / DSH 运行时的工具定义 → `tool_info`（定义是大对象，不进快照；DSH 拿不到时回 `unsupported`）
 ├── tool-prompt-overrides.ts # 逐工具文案覆盖（设置→工具区「编辑文案」）：归一化 + 给会话 _toolRegistry 打 description/snippet/guidelines 补丁（出厂定义永不动，可复原）
 ├── load-tools-tool.ts      # 工具延迟加载入口（load_tools）：目录（名字 + 一行摘要）在系统提示词里，模型按需把参数 schema 拉进本对话
@@ -223,6 +224,7 @@ web/src/
 ├── context-menu-state.ts # ★ 通用右键菜单状态（contextmenu.* 槽位的 open/close + 定位/禁用/键盘导航纯函数，有单测）
 ├── use-floating-panel.ts # ★ 浮层统一 Hook（scroll/resize 只重算锚点；mousedown/Escape 才关）
 ├── composer-bridge.ts  # ★ 输入框注入桥：宿主（扩展/插件）把内容塞进输入框草稿的模块级 sink 注册点，有单测
+├── composer-gate.ts    # ★ 发送闸门：`hasSendableContent` / `sendBlockedReason` / `attachmentKey`——「这份草稿为什么发不出去」的唯一判定点（模式×材料×能力），`canSubmit` 与提交分支共用，有单测
 ├── composer-draft.ts   # 草稿合并/去重 + advanceComposerSession（附件跟会话走）纯函数，有单测
 ├── use-composer-session.ts # 输入框会话绑定 Hook
 ├── caret-visual-line.ts # ★ 输入框光标的首/末视觉行判定（镜像 div 量 offsetTop），供 ↑/↓ 翻输入历史用，有单测 + 真浏览器回归

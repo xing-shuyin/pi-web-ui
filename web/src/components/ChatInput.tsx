@@ -30,7 +30,8 @@ import {
 	registerRemoveMentionSink,
 } from "../composer-bridge";
 import { shouldSkipInsertion } from "../composer-insert";
-import { setGoalCompose, useGoalCompose, useGoalPlan, useGoalRefine } from "../goal-compose";
+import { attachmentKey, goalMaterialsOf, hasSendableContent, sendBlockedReason } from "../composer-gate";
+import { setGoalCompose, setGoalPlan, useGoalCompose, useGoalPlan, useGoalRefine } from "../goal-compose";
 import { caretVisualLineFlags } from "../caret-visual-line";
 import { isRasterImage } from "../image-paste";
 import { collectClipboardFiles } from "../clipboard-files";
@@ -1136,6 +1137,18 @@ export const ChatInput = memo(function ChatInput({
 			};
 		});
 
+	/**
+	 * 目标态的材料：有路径的直接进规格；只有 base64 的随消息瞬态上传，服务端落盘成路径再进规格。
+	 * 两者都没有的才给 notice（R6 不静默），但**不拦截发送**。
+	 */
+	const goalMaterials = () => {
+		const projection = goalMaterialsOf(buildPromptAttachments());
+		if (projection.unusable.length > 0) {
+			onNotice("warning", t("goalMaterialUnaddressable", { names: projection.unusable.join("、") }));
+		}
+		return projection;
+	};
+
 	const clearDraftAfterConsume = () => {
 		if (draftLocalKey) {
 			try {
@@ -1156,7 +1169,8 @@ export const ChatInput = memo(function ChatInput({
 	const submit = (queue = false) => {
 		const trimmed = text.trim();
 		const hasAttach = attachments.length > 0;
-		if (!trimmed && !hasAttach) return;
+		// 目标是一个字符串：目标态下光有附件不算内容（附件只能是目标的材料，不能代替目标）。
+		if (!trimmed && (goalMode || !hasAttach)) return;
 		if (!connected) {
 			onNotice("error", t("netDisconnected"));
 			return;
@@ -1203,18 +1217,21 @@ export const ChatInput = memo(function ChatInput({
 				});
 			return;
 		}
-		if (!capabilities.conversationRef && attachments.some((a) => a.mode === "conversation")) {
-			onNotice("warning", t("chatInputConversationRefUnsupported"));
+		// 执行期护栏：键盘 Enter / 快捷指令可能绕过禁用的按钮，这里再拦一次（与按钮共用同一条判定）。
+		const block = sendBlockedReason({
+			attachments,
+			conversationRefSupported: Boolean(capabilities.conversationRef),
+		});
+		if (block) {
+			onNotice(block.level, t(block.key));
 			return;
 		}
 		if (goalMode) {
-			if (attachments.length > 0) {
-				onNotice("warning", t("goalAttachBlocked"));
-				return;
-			}
 			const prefsLocked = goal?.locked ?? true;
 			const prefsRounds = goal?.maxRounds ?? 0;
 			const prefsReview = (goal?.reviewModel ?? "").trim() ? (goal?.reviewModel as string) : "";
+			// 附件在目标态不再是死路：能寻址的都作为材料指针带走（issue #962）。
+			const { materials, blobs: materialBlobs } = goalMaterials();
 			let ok = false;
 			if (goalRefine) {
 				ok = appSend({
@@ -1223,6 +1240,8 @@ export const ChatInput = memo(function ChatInput({
 					...(prefsReview ? { wizardModel: prefsReview } : {}),
 					maxRounds: prefsRounds,
 					locked: prefsLocked,
+					...(materials.length > 0 ? { materials } : {}),
+					...(materialBlobs.length > 0 ? { materialBlobs } : {}),
 				});
 			} else {
 				ok = appSend({
@@ -1231,9 +1250,16 @@ export const ChatInput = memo(function ChatInput({
 					...(prefsReview ? { reviewModel: prefsReview } : {}),
 					maxRounds: prefsRounds,
 					locked: prefsLocked,
+					...(materials.length > 0 ? { materials } : {}),
+					...(materialBlobs.length > 0 ? { materialBlobs } : {}),
 				});
 			}
-			if (goalPlan) appSend({ type: "set_plan_mode", enabled: true });
+			if (goalPlan) {
+				appSend({ type: "set_plan_mode", enabled: true });
+				// 「计划」是一次性修饰（这次发送顺带开计划模式），发送即消费；
+				// 否则这个持久偏好会在计划模式已被关掉之后仍然亮着，成为第二个真相源。
+				setGoalPlan(false);
+			}
 			if (ok) {
 				if (trimmed) pushPromptHistory(trimmed);
 				historyIndexRef.current = -1;
@@ -1477,7 +1503,16 @@ export const ChatInput = memo(function ChatInput({
 		}
 	};
 
-	const canSubmit = sessionReady && (text.trim() !== "" || attachments.length > 0);
+	const sendBlock = sendBlockedReason({
+		attachments,
+		conversationRefSupported: Boolean(capabilities.conversationRef),
+	});
+	const canSubmit =
+		sessionReady &&
+		!sendBlock &&
+		hasSendableContent(text, attachments) &&
+		// 目标是一个字符串：目标态下光有附件不算内容（与 submit 的第一道口径一致）。
+		!(goalMode && !text.trim());
 
 	const pluginActions = useMemo(
 		() => groupByAlign((composerActions ?? []).filter((it) => it.source !== "host" && !it.hidden)),
@@ -1534,7 +1569,7 @@ export const ChatInput = memo(function ChatInput({
 	const goalToggle = showGoalToggle ? (
 		<button
 			type="button"
-			className={`btn goal-toggle${goalMode ? " active" : ""}`}
+			className="btn goal-toggle"
 			title={goalMode ? t("goalSendTip") : t("goalComposeEnter")}
 			aria-label={t("goalComposeEnter")}
 			aria-pressed={goalMode}
@@ -1588,15 +1623,17 @@ export const ChatInput = memo(function ChatInput({
 					type="button"
 					className={`btn send${goalMode ? " goal" : ""}`}
 					title={
-						goalMode
-							? t("goalSendTip")
-							: !connected
-								? t("netDisconnected")
-								: !sessionReady
-									? t("sessionInitializingNotice")
-									: isModEnter
-										? t("sendTipMod")
-										: t("sendTip")
+						sendBlock
+							? t(sendBlock.key)
+							: goalMode
+								? t("goalSendTip")
+								: !connected
+									? t("netDisconnected")
+									: !sessionReady
+										? t("sessionInitializingNotice")
+										: isModEnter
+											? t("sendTipMod")
+											: t("sendTip")
 					}
 					disabled={!canSubmit}
 					onClick={() => submit()}
@@ -1697,7 +1734,9 @@ export const ChatInput = memo(function ChatInput({
 				<div className="attach-row" ref={attachRowRef}>
 					{attachments.map((a) => {
 						if (a.mode === "quote" && a.quote) {
-							return <TextQuoteCard key={a.key} quote={a.quote} onRemove={() => onRemoveAttachment(a.key ?? "")} />;
+							return (
+								<TextQuoteCard key={a.key} quote={a.quote} onRemove={() => onRemoveAttachment(attachmentKey(a))} />
+							);
 						}
 						const isImage = Boolean(a.imageData || (a.path && /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(a.path)));
 						const isFile = Boolean(
@@ -1807,10 +1846,7 @@ export const ChatInput = memo(function ChatInput({
 									title={t("removeAttachment")}
 									onClick={(e) => {
 										e.stopPropagation();
-										onRemoveAttachment(
-											a.key ??
-												(a.mode === "conversation" ? `conv|${a.conversationId ?? ""}|${a.sessionPath ?? ""}` : a.path),
-										);
+										onRemoveAttachment(attachmentKey(a));
 									}}
 								>
 									×

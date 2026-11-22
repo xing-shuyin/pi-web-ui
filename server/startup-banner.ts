@@ -3,7 +3,11 @@ import { isLoopbackHost } from "./host-guard.js";
 export interface StartupBannerParams {
 	port: number;
 	host: string;
-	token?: string;
+	/**
+	 * 口令来源的**描述**（`env PI_WEB_TOKEN` / `file <path>` / `generated → <path>`）。
+	 * 横幅永不打印口令本身（issue #969）：stdout 会进日志、CI、截图与工单。
+	 */
+	tokenSource?: string | null;
 	cwd: string;
 	sessionDir: string;
 	version: string;
@@ -12,15 +16,13 @@ export interface StartupBannerParams {
 	kernelNote?: string | null;
 }
 
-export function buildMainUrl(port: number, host: string, token?: string): string {
-	const trimmedToken = token?.trim() ?? "";
+export function buildMainUrl(port: number, host: string): string {
 	const urlHost = isLoopbackHost(host) || host === "0.0.0.0" ? "localhost" : host;
-	const tokenQuery = trimmedToken ? `/?token=${encodeURIComponent(trimmedToken)}` : "";
-	return `http://${urlHost}:${port}${tokenQuery}`;
+	return `http://${urlHost}:${port}`;
 }
 
 export function formatStartupBannerLines(params: StartupBannerParams): string[] {
-	const mainUrl = buildMainUrl(params.port, params.host, params.token);
+	const mainUrl = buildMainUrl(params.port, params.host);
 	const lines = [
 		"",
 		"  ⚡ pi-web-ui — web chat for the pi coding agent",
@@ -36,8 +38,8 @@ export function formatStartupBannerLines(params: StartupBannerParams): string[] 
 	if (params.kernelNote) {
 		lines.push(`    kernel      : ${params.kernelNote}`);
 	}
-	if (params.token?.trim()) {
-		lines.push(`    token       : ${params.token.trim()}`);
+	if (params.tokenSource?.trim()) {
+		lines.push(`    token       : ${params.tokenSource.trim()}`);
 	}
 	lines.push(`    setup       : http://127.0.0.1:${params.port}/setup （仅本机：配 token/监听/白名单）`);
 	return lines;

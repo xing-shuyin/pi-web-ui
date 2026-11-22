@@ -8,7 +8,6 @@ import {
 	normalizeTouchPath,
 	toolCallRefsOfContent,
 	toolCallsOf,
-	unionTouchLists,
 	type TouchableMessage,
 } from "../../server/conversation-touches.js";
 
@@ -155,21 +154,6 @@ describe("patch 工具的写触碰提取", () => {
 		const patch = "[a.txt]\nPUT 1.=1:\n+not [a header]\n- removed [b.txt] line";
 		const out = extractTouches([toolMsg("patch", { patch }, 5)]);
 		expect(out.map((e) => e.path)).toEqual(["a.txt"]);
-	});
-});
-
-describe("unionTouchLists", () => {
-	it("按路径求并，count 取大（sidecar 与 live 消息集重叠，不能相加）", () => {
-		const out = unionTouchLists(
-			[{ path: "a.ts", count: 3, lastTs: 10 }],
-			[
-				{ path: "a.ts", count: 2, lastTs: 20 },
-				{ path: "b.ts", count: 1, lastTs: 5 },
-			],
-		);
-		expect(out.find((f) => f.path === "a.ts")).toEqual({ path: "a.ts", count: 3, lastTs: 20 });
-		expect(out).toHaveLength(2);
-		expect(unionTouchLists(null as never, undefined as never)).toEqual([]);
 	});
 });
 

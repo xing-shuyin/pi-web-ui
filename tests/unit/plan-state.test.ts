@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +6,7 @@ import { PlanManager } from "../../server/plan-manager.js";
 import type { PlanStep } from "../../server/protocol.js";
 import { makePlanUpdateTool } from "../../server/agent-service.js";
 import { readPlanFromSession } from "../../server/permission-preset.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode)", () => {
 	it("初始状态为空", () => {
@@ -173,7 +174,7 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 		expect(atEnd?.steps.map((s) => s.id)).toEqual(["step-1", "step-1.5", "step-2", "step-3"]);
 	});
 
-	it("支持基于 plans.json 文件持久化并在新实例中恢复", () => {
+	it("支持基于 plans.json 文件持久化并在新实例中恢复", async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), "pi-plan-test-"));
 		const filePath = join(tmpDir, "plans.json");
 
@@ -188,6 +189,7 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 			"session-uuid-1",
 		);
 
+		await pm1.flush();
 		const pm2 = new PlanManager(filePath);
 		expect(pm2.getPlan("session-uuid-1")).toBeTruthy();
 		expect(pm2.getPlan("session-uuid-1")?.steps.length).toBe(2);
@@ -198,7 +200,7 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 		expect(pm2.getPlan("c2")?.activeStepId).toBe("2");
 	});
 
-	it("防新会话串台：新实例重启时绝不加载临时 conversationId，全新会话不继承上一个会话的任务", () => {
+	it("防新会话串台：新实例重启时绝不加载临时 conversationId，全新会话不继承上一个会话的任务", async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), "pi-plan-test-"));
 		const filePath = join(tmpDir, "plans.json");
 
@@ -213,6 +215,7 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 			"session-prev-c2",
 		);
 
+		await pm1.flush();
 		const pm2 = new PlanManager(filePath);
 		expect(pm2.getPlan("c2")).toBeNull();
 
@@ -221,7 +224,7 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 		expect(pm2.getPlan("c2")).toBeNull();
 	});
 
-	it("清洗历史脏数据：自动过滤 plans.json 中的 c1/c2 等临时 ID 并在下次保存时清除", () => {
+	it("清洗历史脏数据：自动过滤 plans.json 中的 c1/c2 等临时 ID 并在下次保存时清除", async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), "pi-plan-test-"));
 		const filePath = join(tmpDir, "plans.json");
 
@@ -242,6 +245,7 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 		expect(pm.getPlan("valid-session-uuid")).toBeTruthy();
 
 		pm.setPlan("c3", [{ id: "1", title: "新任务", status: "pending" }], null, "valid-session-uuid-2");
+		await pm.flush();
 
 		const saved = JSON.parse(readFileSync(filePath, "utf8")) as Record<string, unknown>;
 		expect(saved["c1"]).toBeUndefined();
@@ -260,7 +264,7 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 		expect(pm.getPlan("c1")).toBeNull();
 	});
 
-	it("setPlan 传入空数组步骤时自动从持久化文件中清除对应 sessionId 条目", () => {
+	it("setPlan 传入空数组步骤时自动从持久化文件中清除对应 sessionId 条目", async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), "pi-plan-test-"));
 		const filePath = join(tmpDir, "plans.json");
 
@@ -269,18 +273,20 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 		expect(pm.getPlan("session-to-clear")?.steps.length).toBe(1);
 
 		pm.setPlan("c1", [], null, "session-to-clear");
+		await pm.flush();
 		expect(pm.getPlan("c1")?.steps.length).toBe(0);
 
 		const saved = JSON.parse(readFileSync(filePath, "utf8")) as Record<string, unknown>;
 		expect(saved["session-to-clear"]).toBeUndefined();
 	});
 
-	it("readPlanFromSession 能从 sessionManager 的 customType plan/update 恢复", () => {
+	it("readPlanFromSession 沿叶链取最后一条 plan/update，并带回 sourceEntryId 游标", () => {
 		const fakeSm = {
-			getEntries: () => [
-				{ type: "message", role: "user" },
+			getBranch: () => [
+				{ type: "message", id: "m1" },
 				{
 					type: "custom",
+					id: "p1",
 					customType: "plan/update",
 					data: {
 						plan: {
@@ -295,5 +301,115 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 		const plan = readPlanFromSession(fakeSm);
 		expect(plan).toBeTruthy();
 		expect(plan?.steps[0].title).toBe("历史步骤");
+		expect(plan?.sourceEntryId).toBe("p1");
+	});
+
+	it("压缩点之前的 plan 事件仍在叶链上（getBranch 不裁上下文）", () => {
+		const fakeSm = {
+			getBranch: () => [
+				{
+					type: "custom",
+					id: "p1",
+					customType: "plan/update",
+					data: { plan: { steps: [{ id: "1", title: "早先的计划", status: "pending" }], activeStepId: null } },
+				},
+				{ type: "compaction", id: "c1", parentId: "p1", summary: "摘要" },
+				{ type: "message", id: "m2", parentId: "c1" },
+			],
+		};
+		expect(readPlanFromSession(fakeSm)?.steps[0].title).toBe("早先的计划");
+	});
+
+	it("没有 getBranch 的假体不再按整份文件兜底（判据只认叶链）", () => {
+		const legacy = { getEntries: () => [{ type: "custom", customType: "plan/update", data: { plan: { steps: [] } } }] };
+		expect(readPlanFromSession(legacy)).toBeNull();
+	});
+
+	describe("restorePlan：分支事件优先，plans.json 只是可重建缓存", () => {
+		function convWith(manager: { getBranch: () => unknown[] }, planManager: PlanManager) {
+			const conv = {
+				id: "c1",
+				session: { sessionId: "s1", sessionManager: manager, agent: { state: { messages: [] } } },
+			};
+			const cs = fakeClientSession({
+				planManager,
+				convs: new Map([[conv.id, conv]]),
+				emit: vi.fn(),
+				flushSnapshot: vi.fn(),
+			});
+			return { conv, cs };
+		}
+
+		it("分支事件与 plans.json 冲突时选分支", () => {
+			const pm = new PlanManager();
+			pm.setPlan("cache-conv", [{ id: "1", title: "缓存里的旧计划", status: "done" }], null, "s1");
+			const { conv, cs } = convWith(
+				{
+					getBranch: () => [
+						{
+							type: "custom",
+							id: "p-branch",
+							customType: "plan/update",
+							data: {
+								plan: { steps: [{ id: "1", title: "分支上的真计划", status: "in_progress" }], activeStepId: "1" },
+							},
+						},
+					],
+				},
+				pm,
+			);
+			cs.restorePlan(conv);
+			expect(pm.getPlan("c1")?.steps[0].title).toBe("分支上的真计划");
+			// 缓存被事件覆写回写，不再保留旧值。
+			expect(pm.getPlan("s1")?.steps[0].title).toBe("分支上的真计划");
+		});
+
+		it("无事件时缓存兜底；缓存游标不在当前分支就判废", () => {
+			const pm = new PlanManager();
+			pm.setPlan("cache-conv", [{ id: "1", title: "弃用分支的缓存", status: "pending" }], null, "s1");
+			const stale = (pm.getPlan("s1") as unknown as { sourceEntryId?: string }) ?? null;
+			expect(stale).not.toBeNull();
+			// 让缓存看起来来自一个不在当前分支的事件。
+			Object.assign(pm.getPlan("s1")!, { sourceEntryId: "gone-entry" });
+			const { conv, cs } = convWith({ getBranch: () => [{ type: "message", id: "m1" }] }, pm);
+			cs.restorePlan(conv);
+			expect(pm.getPlan("c1")?.steps ?? []).toEqual([]);
+			expect(pm.getPlan("s1")).toBeNull();
+		});
+
+		it("缓存没有游标（旧数据）且分支无事件时仍作为唯一来源保留", () => {
+			const pm = new PlanManager();
+			pm.setPlan("cache-conv", [{ id: "1", title: "旧缓存", status: "pending" }], null, "s1");
+			const { conv, cs } = convWith({ getBranch: () => [{ type: "message", id: "m1" }] }, pm);
+			cs.restorePlan(conv);
+			expect(pm.getPlan("c1")?.steps[0].title).toBe("旧缓存");
+		});
+	});
+
+	it("面板动作（含增量步操作）全部走 writePlan：每次都 append 一条 plan/update", () => {
+		const appended: { type: string; data: { plan?: { steps: PlanStep[] } } }[] = [];
+		const manager = {
+			appendCustomEntry: (type: string, data: { plan?: { steps: PlanStep[] } }) => {
+				appended.push({ type, data });
+				return `entry-${appended.length}`;
+			},
+		};
+		const conv = { id: "c1", session: { sessionId: "s1", sessionManager: manager } };
+		const cs = fakeClientSession({
+			planManager: new PlanManager(),
+			convs: new Map([[conv.id, conv]]),
+			emit: vi.fn(),
+			flushSnapshot: vi.fn(),
+			activeId: "c1",
+		});
+		cs.updatePlan([{ id: "1", title: "第一步", status: "pending" }], null, "c1");
+		cs.addPlanStep({ id: "2", title: "第二步", status: "pending" }, undefined, "c1");
+		cs.updatePlanStep("2", { status: "in_progress" }, "c1");
+		cs.deletePlanStep("2", "c1");
+		expect(appended.map((event) => event.type)).toEqual(["plan/update", "plan/update", "plan/update", "plan/update"]);
+		expect(appended[0].data.plan?.steps.map((step) => step.title)).toEqual(["第一步"]);
+		expect(appended[1].data.plan?.steps.map((step) => step.title)).toEqual(["第一步", "第二步"]);
+		expect(appended[2].data.plan?.steps[1].status).toBe("in_progress");
+		expect(appended[3].data.plan?.steps.map((step) => step.title)).toEqual(["第一步"]);
 	});
 });

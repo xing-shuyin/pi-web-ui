@@ -13,6 +13,10 @@ export default defineConfig({
 	resolve: {
 		alias: {
 			"@pi-web-ui/plugin-sdk/client": join(root, "plugin-sdk", "client.mjs"),
+			// `mobile/` 里 `@pi-mobile/*` 是 `file:` 依赖（拷贝进 mobile/node_modules）。单测要 mock 这些包时，
+			// 从 tests/ 解析到的 id 和源码解析到的不是同一个文件，mock 会静默失效（真模块被执行，跑到
+			// `registerPlugin` 就崩）。统一指向工作区源码，让 mock 路径唯一。
+			"@pi-mobile/native-push": join(root, "mobile", "native", "push", "src", "index.ts"),
 		},
 	},
 	test: {

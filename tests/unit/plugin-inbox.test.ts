@@ -18,7 +18,7 @@ describe("PluginInbox（至少一次 + 幂等键）", () => {
 		return new PluginInbox({ dataDir: dir, pluginId: "qq", flushDelayMs: 0, now: () => 1_000, ...over });
 	}
 
-	it("首次 claim 是 new，完成后同一个 key 是 duplicate(done)", () => {
+	it("首次 claim 是 new，完成后同一个 key 是 duplicate(done)", async () => {
 		const inbox = makeInbox();
 		expect(inbox.claim("msg:1")).toMatchObject({ status: "new", attempts: 1 });
 		inbox.complete("msg:1", { conversationId: "c1", runId: "r1" });
@@ -26,7 +26,7 @@ describe("PluginInbox（至少一次 + 幂等键）", () => {
 		expect(inbox.snapshot()[0]).toMatchObject({ state: "done", conversationId: "c1", runId: "r1" });
 	});
 
-	it("处理中再 claim 判重（防并发双投），超过 stallMs 后允许重投并累加 attempts", () => {
+	it("处理中再 claim 判重（防并发双投），超过 stallMs 后允许重投并累加 attempts", async () => {
 		let now = 1_000;
 		const inbox = makeInbox({ stallMs: 5_000, now: () => now });
 		expect(inbox.claim("m1")).toMatchObject({ status: "new", attempts: 1 });
@@ -36,7 +36,7 @@ describe("PluginInbox（至少一次 + 幂等键）", () => {
 		expect(inbox.pending()).toHaveLength(0); // 刚被重新认领，仍在处理窗口内
 	});
 
-	it("claimed 态反复 stall 到 attempts 上限也进死信，不再无限重投", () => {
+	it("claimed 态反复 stall 到 attempts 上限也进死信，不再无限重投", async () => {
 		let now = 1_000;
 		const inbox = makeInbox({ stallMs: 1_000, maxAttempts: 2, now: () => now });
 		inbox.claim("m1"); // attempts=1：宿主处理到一半崩死，永远到不了 complete/fail
@@ -50,7 +50,7 @@ describe("PluginInbox（至少一次 + 幂等键）", () => {
 		]);
 	});
 
-	it("失败会累加 attempts，到上限后变死信且不再重投", () => {
+	it("失败会累加 attempts，到上限后变死信且不再重投", async () => {
 		let now = 1_000;
 		const inbox = makeInbox({ stallMs: 1_000, maxAttempts: 2, now: () => now });
 		inbox.claim("m1");
@@ -63,12 +63,12 @@ describe("PluginInbox（至少一次 + 幂等键）", () => {
 		expect(inbox.dead()).toEqual([expect.objectContaining({ key: "m1", error: "second failure" })]);
 	});
 
-	it("跨重启恢复：新实例读同一文件，已完成的仍判重、卡住的出现在 pending", () => {
+	it("跨重启恢复：新实例读同一文件，已完成的仍判重、卡住的出现在 pending", async () => {
 		const first = makeInbox({ stallMs: 1_000, now: () => 1_000 });
 		first.claim("done-1");
 		first.complete("done-1");
 		first.claim("stuck-1");
-		first.dispose();
+		await first.dispose();
 
 		const second = makeInbox({ stallMs: 1_000, now: () => 10_000 });
 		expect(second.claim("done-1")).toMatchObject({ status: "duplicate", reason: "done" });
@@ -76,7 +76,7 @@ describe("PluginInbox（至少一次 + 幂等键）", () => {
 		expect(second.claim("stuck-1")).toMatchObject({ status: "new", attempts: 2 });
 	});
 
-	it("落盘是原子写且有界：done 超过 keepMs 被裁剪，条数超过 maxEntries 丢最旧", () => {
+	it("落盘是原子写且有界：done 超过 keepMs 被裁剪，条数超过 maxEntries 丢最旧", async () => {
 		let now = 1_000_000;
 		const inbox = makeInbox({ maxEntries: 16, keepMs: 1_000, now: () => now });
 		for (let i = 0; i < 40; i++) {
@@ -84,7 +84,7 @@ describe("PluginInbox（至少一次 + 幂等键）", () => {
 			inbox.complete(`k${i}`);
 			now += 10;
 		}
-		inbox.flush();
+		await inbox.flush();
 		expect(inbox.snapshot().length).toBeLessThanOrEqual(16);
 		const file = join(dir, "plugin-inbox", "qq.json");
 		expect(existsSync(file)).toBe(true);
@@ -95,13 +95,13 @@ describe("PluginInbox（至少一次 + 幂等键）", () => {
 		expect(inbox.snapshot().some((r) => r.key === "k39")).toBe(true);
 	});
 
-	it("空 key 永远放行（无法去重的入站事件宁可处理也不要丢）", () => {
+	it("空 key 永远放行（无法去重的入站事件宁可处理也不要丢）", async () => {
 		const inbox = makeInbox();
 		expect(inbox.claim("")).toMatchObject({ status: "new" });
 		expect(inbox.claim("")).toMatchObject({ status: "new" });
 	});
 
-	it("key 超长会被截断（避免账本被大 payload 撑爆）", () => {
+	it("key 超长会被截断（避免账本被大 payload 撑爆）", async () => {
 		const inbox = makeInbox();
 		const long = `x${"y".repeat(500)}`;
 		inbox.claim(long);
@@ -109,7 +109,7 @@ describe("PluginInbox（至少一次 + 幂等键）", () => {
 		expect(inbox.snapshot()[0]?.key.length).toBeLessThanOrEqual(200);
 	});
 
-	it("同一账号不同消息互不影响；不同插件各自一本账", () => {
+	it("同一账号不同消息互不影响；不同插件各自一本账", async () => {
 		const qq = makeInbox();
 		const wx = new PluginInbox({ dataDir: dir, pluginId: "wechat", flushDelayMs: 0 });
 		qq.claim("m1");
@@ -118,7 +118,7 @@ describe("PluginInbox（至少一次 + 幂等键）", () => {
 		wx.dispose();
 	});
 
-	it("写盘失败不抛错、不丢内存记录（下次变更再试）", () => {
+	it("写盘失败不抛错、不丢内存记录（下次变更再试）", async () => {
 		const inbox = makeInbox();
 		// 用一个必然失败的路径构造不可写账本
 		const broken = new PluginInbox({
@@ -126,11 +126,9 @@ describe("PluginInbox（至少一次 + 幂等键）", () => {
 			pluginId: "x",
 			flushDelayMs: 0,
 		});
-		expect(() => {
-			broken.claim("a");
-			broken.complete("a");
-			broken.dispose();
-		}).not.toThrow();
-		expect(() => inbox.dispose()).not.toThrow();
+		broken.claim("a");
+		broken.complete("a");
+		await expect(broken.dispose()).resolves.toBeUndefined();
+		await expect(inbox.dispose()).resolves.toBeUndefined();
 	});
 });

@@ -15,7 +15,7 @@ const OWNED: Partial<Record<Tab, readonly string[]>> = {
 		"rename_terminal",
 		"run_command",
 	],
-	git: ["scm_status", "scm_history", "scm_filediff", "scm_commit"],
+	git: ["scm_status", "scm_history", "scm_filediff", "scm_commit", "scm_commitmsg"],
 	tasks: [
 		"list_bg_servers",
 		"kill_background_server",

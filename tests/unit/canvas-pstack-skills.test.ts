@@ -131,7 +131,7 @@ describe("Canvas Tool & Orchestrator Execution for pstack and skill roles", () =
 
 	it("makeCanvasTool 允许创建和识别 pstack 与 skill 角色的节点", async () => {
 		const g = createDefaultCanvasGraph("test_tool_graph");
-		saveCanvasGraph(tempDir, g);
+		await saveCanvasGraph(tempDir, g);
 
 		const tool = makeCanvasTool({
 			dataDir: tempDir,
@@ -198,7 +198,7 @@ describe("Canvas Tool & Orchestrator Execution for pstack and skill roles", () =
 			edges: [],
 		};
 
-		saveCanvasGraph(tempDir, graph);
+		await saveCanvasGraph(tempDir, graph);
 		const execute = vi.spyOn(orchestrator as any, "executeRealEngineNode").mockResolvedValue("Completed");
 		await orchestrator.runNode(graph, "n_pstack_fix");
 
@@ -239,7 +239,7 @@ describe("Canvas Tool & Orchestrator Execution for pstack and skill roles", () =
 			edges: [],
 		};
 
-		saveCanvasGraph(tempDir, graph);
+		await saveCanvasGraph(tempDir, graph);
 		await orchestrator.runNode(graph, "n_skill_node");
 
 		const promptLog = orchestrator.getNodeLog(graph.id, "n_skill_node").find((e) => e.kind === "prompt");

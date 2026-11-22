@@ -42,6 +42,7 @@ const ALL = [
 	"goal-test",
 	"goal-delegated-test",
 	"plan-mode-test",
+	"composer-pressed-state-test",
 	"delegate-mode-test",
 	"left-panel-delete-test",
 	"legado-web-engine-test",

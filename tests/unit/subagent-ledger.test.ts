@@ -185,3 +185,53 @@ describe("buildResumePrompt", () => {
 		expect(prompt).toContain("do not redo finished work");
 	});
 });
+
+describe("终态单调与已通知（issues #981 / #964）", () => {
+	it("done 不会被迟到的 turn_end / 新状态降级回 running", async () => {
+		const dir = dataDir();
+		const ledger = new SubagentLedger(dir);
+		ledger.upsert(record({ state: "running" }));
+		expect(ledger.finish("exec-abc", "done", { outputTail: "ok" })).toBe(true);
+		// 迟到的 turn_end：没有 restart 语义，一律视为重复收口。
+		ledger.upsert(record({ state: "running" }));
+		expect(ledger.read("exec-abc")?.state).toBe("done");
+		expect(ledger.read("exec-abc")?.finishedAt).toBeTypeOf("number");
+		await ledger.flush();
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("只有显式 restart（steer_restart / 新 run）能把终态改回 running", async () => {
+		const dir = dataDir();
+		const ledger = new SubagentLedger(dir);
+		ledger.upsert(record({ state: "running" }));
+		ledger.finish("exec-abc", "done");
+		ledger.upsert(record({ state: "running" }), { restart: true });
+		expect(ledger.read("exec-abc")?.state).toBe("running");
+		await ledger.flush();
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("第一次终态就是定论：finish 不覆盖已有终态", async () => {
+		const dir = dataDir();
+		const ledger = new SubagentLedger(dir);
+		ledger.upsert(record());
+		expect(ledger.finish("exec-abc", "failed", { error: "boom" })).toBe(true);
+		expect(ledger.finish("exec-abc", "done")).toBe(false);
+		expect(ledger.read("exec-abc")).toMatchObject({ state: "failed", error: "boom" });
+		await ledger.flush();
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("notifiedAt 落盘且旧记录能读回（normalizeRecord 兼容）", async () => {
+		const dir = dataDir();
+		const ledger = new SubagentLedger(dir, { now: () => 4242 });
+		ledger.upsert(record({ state: "done" }));
+		ledger.markNotified("exec-abc");
+		await ledger.flush();
+		expect(ledger.read("exec-abc")?.notifiedAt).toBe(4242);
+		const reopened = new SubagentLedger(dir);
+		await reopened.ready();
+		expect(reopened.read("exec-abc")?.notifiedAt).toBe(4242);
+		rmSync(dir, { recursive: true, force: true });
+	});
+});

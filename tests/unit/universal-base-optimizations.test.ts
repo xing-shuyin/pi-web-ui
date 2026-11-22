@@ -126,7 +126,7 @@ describe("Universal Agent 底座核心优化单测", () => {
 					},
 				],
 			};
-			store.saveConversation(tempDir, convA);
+			await store.saveConversation(tempDir, convA);
 
 			const session = new UniversalSession({
 				clientId: "test-client-search",

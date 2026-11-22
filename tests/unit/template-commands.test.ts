@@ -42,7 +42,7 @@ describe("template commands", () => {
 });
 
 describe("stored templates", () => {
-	it("persists per-template mutations and imports without overwriting server entries", () => {
+	it("persists per-template mutations and imports without overwriting server entries", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "prompt-templates-"));
 		try {
 			const handlers: Record<string, Function> = {};
@@ -69,9 +69,13 @@ describe("stored templates", () => {
 				},
 				setHeader: () => {},
 			};
-			const post = (body: object) => handlers.post({ body, is: () => true, headers: {} }, response);
-			post({ action: "upsert", template: { ...template, title: "Review" } });
-			post({
+			// 路由已异步化（issue #966）：每次写入都必须等它落定再断言。
+			const post = async (body: object) => {
+				await handlers.post({ body, is: () => true, headers: {} }, response);
+				await new Promise<void>((resolve) => setImmediate(resolve));
+			};
+			await post({ action: "upsert", template: { ...template, title: "Review" } });
+			await post({
 				action: "migrate",
 				templates: [
 					{ ...template, title: "Legacy" },
@@ -79,13 +83,13 @@ describe("stored templates", () => {
 				],
 			});
 			expect(result.templates.map((t: any) => t.title)).toEqual(["Review", "Other"]);
-			post({ action: "upsert", template: { id: "third", title: "Conflict", prompt: "Text", command: "pr" } });
+			await post({ action: "upsert", template: { id: "third", title: "Conflict", prompt: "Text", command: "pr" } });
 			expect(status).toBe(400);
 			expect(JSON.parse(readFileSync(join(dir, "prompt-templates.json"), "utf8"))).toHaveLength(2);
-			post({ action: "remove", id: "review" });
-			handlers.get({}, response);
+			await post({ action: "remove", id: "review" });
+			await handlers.get({}, response);
 			expect(result.templates.map((t: any) => t.id)).toEqual(["other"]);
-			post({ action: "reset" });
+			await post({ action: "reset" });
 			expect(JSON.parse(readFileSync(join(dir, "prompt-templates.json"), "utf8"))).toEqual([]);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });

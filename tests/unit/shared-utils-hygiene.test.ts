@@ -35,7 +35,6 @@ const ASYNC_ATOMIC_LEGACY = new Set([
 	"server/device-center/partition-log.ts",
 	"server/device-center/publication-journal.ts",
 	"server/device-center/store.ts",
-	"server/device-center/task-journal.ts",
 	"server/device-center/transfer-stream.ts",
 	"server/device-center/transfers.ts",
 ]);

@@ -171,6 +171,30 @@ export function decodeText(buf: Buffer): string {
 	}
 }
 
+/**
+ * 图片嗅探要读的字节数。与 SDK 本地探测（`utils/mime.js` 的 `IMAGE_TYPE_SNIFF_BYTES`）对齐：
+ * 远程桥接读文件头时用同一个上限，别让两处各写一个魔数。
+ */
+export const IMAGE_SNIFF_BYTES = 4100;
+
+/** 扩展名（含点）→ 图片 MIME。只收能当图片输入模型的格式，svg 之类仍按文本读。 */
+const IMAGE_EXT_MIME = new Map<string, string>([
+	[".png", "image/png"],
+	[".jpg", "image/jpeg"],
+	[".jpeg", "image/jpeg"],
+	[".gif", "image/gif"],
+	[".webp", "image/webp"],
+	[".bmp", "image/bmp"],
+]);
+
+/**
+ * 扩展名判定图片类型（未知返回 null）。远程工作区靠它先短路：命名清楚的图片不必为每次
+ * `read` 多付一次 SFTP 往返；与 UI 预览分类（`previewKind`）同一口径。
+ */
+export function imageMimeOfExt(ext: string): string | null {
+	return IMAGE_EXT_MIME.get((ext || "").toLowerCase()) ?? null;
+}
+
 export function sniffImageMime(buf: Buffer, ext: string): string | null {
 	if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
 		return "image/png";
@@ -188,15 +212,7 @@ export function sniffImageMime(buf: Buffer, ext: string): string | null {
 		return "image/webp";
 	}
 	if (buf.length >= 2 && buf[0] === 0x42 && buf[1] === 0x4d) return "image/bmp";
-	const known: Record<string, string> = {
-		".png": "image/png",
-		".jpg": "image/jpeg",
-		".jpeg": "image/jpeg",
-		".gif": "image/gif",
-		".webp": "image/webp",
-		".bmp": "image/bmp",
-	};
-	return known[ext] ?? null;
+	return imageMimeOfExt(ext);
 }
 
 export function hexDump(buf: Buffer, maxBytes = 4096): string {

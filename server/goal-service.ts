@@ -14,7 +14,26 @@ import { promptSession } from "./session-turns.js";
 import type { ClientStateStore } from "./client-state.js";
 import { getServerString, pick, type ServerLang } from "./i18n.js";
 import { parseModelSpec } from "./attachments.js";
+import { MATERIAL_LIMITS, mergeMaterialRefs, persistMaterialBlobs, type MaterialBlob } from "./material.js";
+import {
+	describeMaterials,
+	normalizeMaterials,
+	planMaterialDelivery,
+	stageMaterials,
+	type DeliveryContext,
+	type DroppedMaterial,
+	type MaterialRef,
+} from "./material.js";
 import type { WebUIContext } from "./webui-context.js";
+
+/**
+ * 目标记录：`GoalStatus`（快照 / 回显字段）+ 材料指针。
+ *
+ * 材料只存路径字符串（R1：禁 MaterialRef[] / 禁 JSON / 禁 base64）；
+ * 老目标没有该字段 ≡ `[]`（R9），且为空时**不写字段**，
+ * 让无材料的快速照与今天逐字节一致（R10）。
+ */
+export type GoalRecord = GoalStatus & { materials?: string[] };
 
 export interface GoalConversation {
 	id: string;
@@ -23,7 +42,7 @@ export interface GoalConversation {
 	session: AgentSession;
 	wizardRunning: boolean;
 	goalGeneration: number;
-	goal: GoalStatus;
+	goal: GoalRecord;
 	stagnantRounds?: number;
 	failedRounds?: number;
 	execUsageBefore?: { input: number; output: number };
@@ -33,7 +52,8 @@ export interface GoalConversation {
 	lastDiff?: string;
 	lastErrorSnippet?: string;
 	sameErrorRounds?: number;
-	roleExec?: { convId: string; generation: number };
+	/** `cwd` 是执行对话建立时的工作区：与 goal 的 cwd 不同时材料必须先 stage（R7）。 */
+	roleExec?: { convId: string; generation: number; cwd?: string };
 	awaitingVerdict?: { round: number };
 	deferredPrompts?: string[];
 	promptInFlight?: boolean;
@@ -369,6 +389,135 @@ function wizardPrompt(draft: string, contextSummary = ""): string {
 	].join("\n");
 }
 
+function roundsSuffix(budget: number): string {
+	return budget > 0 && Number.isFinite(budget) ? `/${budget}` : "";
+}
+
+/**
+ * 把材料清单拼进目标段落。
+ *
+ * `materialsBlock` 是 `describeMaterials()` 的唯一产物（R3），空/未传时**原样返回**：
+ * 无材料的目标 prompt 与今天逐字节一致（R10）。
+ */
+export function withMaterialBlock(goalText: string, materialsBlock?: string): string {
+	const block = (materialsBlock ?? "").trim();
+	return block ? `${goalText}\n\n${block}` : goalText;
+}
+
+/**
+ * 规格里只存字符串（R1）：非字符串项丢弃（脏数据不抛错）；全空 → `undefined`。
+ * 缺字段 ≡ `[]`（R9），并让无材料的目标快照与今天逐字节一致（R10）。
+ */
+export function goalMaterialRefs(raw: unknown): string[] | undefined {
+	const items = Array.isArray(raw) ? raw.filter((m): m is string => typeof m === "string") : [];
+	return items.length > 0 ? [...items] : undefined;
+}
+
+/** 执行侧环境：目标执行者 / 向导都是满血对话（自带 read/bash），材料只会以指针形式下发。 */
+const GOAL_EXEC_ENV: DeliveryContext = { hasFs: true, vision: true };
+
+export interface GoalMaterialsComposition {
+	/** 给模型的清单文本（`describeMaterials()` 唯一产物）；空串 = 没有材料 */
+	block: string;
+	pointers: MaterialRef[];
+	/** 记账回执（R6 / R7 不许静默）：`null` = 无需告知 */
+	notice: { text: string; textEn: string } | null;
+}
+
+/**
+ * 纯逻辑：已归一的材料 → 投递计划 + 清单 + 记账回执。
+ *
+ * R5：投递形式（inline / 指针 / 降级）只由 `planMaterialDelivery()` 决定，这里只把执行侧事实递进去；
+ * R3：清单文本只由 `describeMaterials()` 产出，本函数不另写材料文案（`notice` 是用户可见回执，不进 prompt）。
+ */
+export function composeGoalMaterials(
+	materials: readonly MaterialRef[],
+	failed: ReadonlyArray<{ ref: string; reason: string }> = [],
+	dropped: readonly DroppedMaterial[] = [],
+): GoalMaterialsComposition {
+	const plan = planMaterialDelivery(materials, GOAL_EXEC_ENV);
+	const unusable = [
+		...dropped.map((d) => `${d.value}(${d.reason})`),
+		...failed.map((f) => `${f.ref}(unreachable)`),
+		...plan.degraded.map((d) => `${d.ref}(${d.reason})`),
+	];
+	const notice =
+		unusable.length > 0
+			? {
+					text: `🎯 材料有 ${unusable.length} 项不可用，已跳过：${unusable.join("、")}`,
+					textEn: `🎯 ${unusable.length} material(s) unusable and skipped: ${unusable.join(", ")}`,
+				}
+			: null;
+	return { block: describeMaterials(plan.pointers), pointers: plan.pointers, notice };
+}
+
+/** 执行者每轮 prompt（纯函数，供回放单测）。 */
+export function goalExecutorPrompt(
+	lang: ServerLang,
+	input: { goalText: string; round: number; budget: number; feedback?: string; materialsBlock?: string },
+): string {
+	const rounds = roundsSuffix(input.budget);
+	const prev = (input.feedback ?? "").trim();
+	const goalText = withMaterialBlock(input.goalText, input.materialsBlock);
+	return pick(
+		lang,
+		`【目标 · 第 ${input.round}${rounds} 轮】\n\n${goalText}\n\n${prev ? `上一轮审查意见：\n${prev}\n\n` : ""}要求：\n- 直接修改工作区（不要只在回复里描述改动），做完用一段话说明「改了什么、怎么验证的」。\n- 禁止向用户提问（本对话由服务端自动驱动，弹窗会被按取消返回）。\n- 禁止派生或等待其他子代理（轮次由服务端控制，你只负责这一轮）。`,
+		`[Goal · round ${input.round}${rounds}]\n\n${goalText}\n\n${prev ? `Review feedback from the previous round:\n${prev}\n\n` : ""}Requirements:\n- Change the workspace directly (don't just describe it), then summarize in one paragraph what you changed and how you verified it.\n- Do NOT ask the user anything (this conversation is server-driven; dialogs are auto-cancelled).\n- Do NOT spawn or wait for other subagents (the server owns the rounds; you own this one only).`,
+		"goal.role.exec",
+		{ round: input.round, rounds, goalText, prev },
+	);
+}
+
+/** 审查者每轮 prompt（纯函数）。与执行者共用**同一份** `materialsBlock`，保证两侧看到同一张清单。 */
+export function goalReviewerPrompt(
+	lang: ServerLang,
+	input: {
+		goalText: string;
+		round: number;
+		budget: number;
+		execOutput: string;
+		planDesc?: string;
+		evidence?: string;
+		materialsBlock?: string;
+	},
+): string {
+	const rounds = roundsSuffix(input.budget);
+	const out = input.execOutput.trim().slice(0, 4000);
+	const goalText = withMaterialBlock(input.goalText, input.materialsBlock);
+	const planDesc = input.planDesc ?? "";
+	const planBlockZh =
+		planDesc && planDesc !== "No active plan."
+			? `\n\n【任务计划看板当前状态】\n${planDesc}\n核验时请同时核实上述计划步骤的推进与完成状态是否真实。`
+			: "";
+	const planBlockEn =
+		planDesc && planDesc !== "No active plan."
+			? `\n\n# Task Plan Board\n${planDesc}\nWhen verifying, also check whether the above plan steps have been legitimately advanced or completed.`
+			: "";
+	const ev = (input.evidence ?? "").trim();
+	const evidenceBlockZh = ev
+		? `\n\n【执行者最近的工具与命令证据（服务端自动采集，只保留输出尾部，可能被截断）】\n${ev}`
+		: "";
+	const evidenceBlockEn = ev
+		? `\n\n# Executor's recent tool & command evidence (auto-collected, output tails only, may be truncated)\n${ev}`
+		: "";
+	return pick(
+		lang,
+		`你是严格、独立的验收者。只判断目标是否被完全满足：不要相信描述，去看工作区的实际状态。\n\n【目标】\n${goalText}\n\n【这是第 ${input.round}${rounds} 轮】${planBlockZh}\n\n【执行者本轮自述】\n${out || "（执行者本轮没有给出自述）"}${evidenceBlockZh}\n\n你可以用只读手段核实：read / grep / scm（只读 git）/ 只读 bash（跑测试）。\n\n判定口径：\n- 只判【执行者本轮自述】里**声称已完成**的条目；本轮没声称完成的后续阶段不构成 fail 理由（目标写成「完成阶段 3 并收尾后续」也不代表这一轮要做完所有阶段）。\n- 忽略与目标无关的本地改动（其它项目的补丁、工具/模型配置、临时文件）。\n- 声称完成但自述与证据里都没有对应命令输出或文件证据的，必须 fail，并点名缺哪条命令的输出。\n- feedback 不得为空：fail 时必须给出可以直接动手改的具体待改项。\n\n只输出一个 JSON 对象，不要有任何其他文本、不要代码围栏、不要复述下面的形状示例。本回合写类与派发类工具会被服务端直接拒绝（不要试）。字段：verdict 只能填 pass（目标已完全满足，一句话说明满足了什么）或 fail（未满足，给出可以直接动手改的具体待改项）；feedback 是一句话说明。形状示例（不要照抄尖括号里的占位符）：\n{"verdict":"<pass|fail>","feedback":"<一句话说明>"}\n[goal-review]`,
+		`You are a strict, independent acceptor. Judge only whether the goal is fully satisfied: do not trust the summary — inspect the actual workspace state.\n\n# Goal\n${goalText}\n\n# This is round ${input.round}${rounds}${planBlockEn}\n\n# Executor's summary this round\n${out || "(the executor produced no summary)"}${evidenceBlockEn}\n\nYou may verify with read-only means: read / grep / scm (read-only git) / read-only bash (run tests).\n\nJudging rules:\n- Judge only the items the executor's summary **claims to have completed this round**; later phases it did not claim this round are NOT grounds for fail (a goal phrased as "finish phase 3 and wrap up the rest" does not mean all phases must land this round).\n- Ignore local changes unrelated to the goal (other projects' patches, tool/model settings, scratch files).\n- If a claimed item has no matching command output or file evidence in the summary or the evidence above, you MUST fail and name which command's output is missing.\n- feedback must not be empty: on fail, give concrete items the executor can act on directly.\n\nReply with ONLY one JSON object — no other text, no code fences, do not echo the shape example below. Write and dispatch tools are blocked by the server during this round — do not try them. Fields: verdict must be pass (goal fully satisfied, say what in one sentence) or fail (not satisfied, give concrete items the executor must fix); feedback is one short sentence. Shape example (do not copy the placeholders in angle brackets):\n{"verdict":"<pass|fail>","feedback":"<one sentence>"}\n[goal-review]`,
+		"goal.role.review",
+		{
+			goalText,
+			round: input.round,
+			rounds,
+			out: out || "(the executor produced no summary)",
+			planBlockEn,
+			evidenceBlockEn,
+			planBlockZh,
+			evidenceBlockZh,
+		},
+	);
+}
+
 export class GoalService {
 	private prefs = {
 		reviewModel: null as string | null,
@@ -384,6 +533,8 @@ export class GoalService {
 	private verdictSignals = new Map<string, Set<() => void>>();
 	private delegatedLoops = new Map<string, Promise<void>>();
 	private delegatedPending = new Map<string, { goalGeneration: number; goalText: string }>();
+	/** 已告知过用户的材料账（避免每轮刷屏）；同一份账只报一次。 */
+	private materialsReported = new Map<string, string>();
 	private static readonly WIZARD_IDLE_TIMEOUT_MS = 5 * 60_000;
 	private static readonly WIZARD_MAX_TOTAL_MS = 20 * 60_000;
 	private static readonly EXEC_FAILED_ROUNDS_LIMIT = 2;
@@ -459,6 +610,9 @@ export class GoalService {
 			execModel?: string;
 			targetConvId?: string;
 			autoStart?: boolean;
+			/** 材料指针（工作区相对 / 绝对路径 / URI）；只存字符串（R1） */
+			materials?: string[];
+			materialBlobs?: MaterialBlob[];
 		},
 	): Promise<void> {
 		await this.commitGoal(goalText, opts);
@@ -512,6 +666,7 @@ export class GoalService {
 		goal.reviewing = false;
 		goal.conversationId = goalConversationId;
 		goal.goal = text;
+		goal.materials = await this.applyMaterialBlobs(conv, goalMaterialRefs(opts?.materials), opts?.materialBlobs);
 		if (opts?.reviewModel !== undefined) goal.reviewModel = opts.reviewModel || null;
 		if (typeof opts?.maxRounds === "number") {
 			const mr = Math.round(opts.maxRounds);
@@ -566,6 +721,8 @@ export class GoalService {
 			wizardModel?: string;
 			maxRounds?: number;
 			locked?: boolean;
+			materials?: string[];
+			materialBlobs?: MaterialBlob[];
 		},
 		target?: GoalConversation,
 	): Promise<void> {
@@ -613,6 +770,13 @@ export class GoalService {
 		this.wizardAbort = new AbortController();
 		this.wizardSession = null;
 		const wgoal = wizardConversation.goal;
+		// 材料在**提炼阶段**就参与（wizard 是普通会话，能看到图 / 文档）：
+		// 先落到规格里，让向导与后续执行用同一份清单（R1：只存路径）。
+		wgoal.materials = await this.applyMaterialBlobs(
+			wizardConversation,
+			goalMaterialRefs(opts?.materials),
+			opts?.materialBlobs,
+		);
 		wgoal.wizard.active = true;
 		wgoal.wizard.draft = draft;
 		wgoal.wizard.model = opts?.wizardModel ?? null;
@@ -972,9 +1136,11 @@ export class GoalService {
 				(mainSession as unknown as { messages?: unknown[] }).messages ??
 				[];
 			const contextSummary = buildWizardConversationContext(mainMessages);
+			// 清单拼进 wizard 输入文本（R3/R5：形式由 planMaterialDelivery 决定，文案由 describeMaterials 产出）。
+			const wizardMaterials = await this.planRoundMaterials(wizardConversation, wizardConversation.cwd);
 
 			try {
-				await wizard.prompt(wizardPrompt(draft, contextSummary));
+				await wizard.prompt([wizardPrompt(draft, contextSummary), wizardMaterials].filter(Boolean).join("\n\n"));
 			} finally {
 				unsubscribe();
 			}
@@ -1055,6 +1221,7 @@ export class GoalService {
 			maxRounds: opts?.maxRounds,
 			locked: wantLocked,
 			execModel: wgoal.execModel ?? undefined,
+			materials: wgoal.materials,
 			targetConvId: wizardConversationId,
 			autoStart: false,
 		});
@@ -1377,6 +1544,7 @@ export class GoalService {
 		goal.reviewing = false;
 		goal.conversationId = null;
 		goal.goal = null;
+		goal.materials = undefined;
 		goal.verdict = "pending";
 		goal.feedback = undefined;
 		goal.status = "";
@@ -1386,6 +1554,7 @@ export class GoalService {
 		goal.wizard.active = false;
 		goal.wizard.status = "";
 		goal.wizard.statusEn = "";
+		this.materialsReported.delete(conv.id);
 	}
 
 	private roundBudget(goal: GoalStatus): number {
@@ -1480,7 +1649,65 @@ export class GoalService {
 	}
 
 	private roundsLabel(budget: number): string {
-		return budget > 0 && Number.isFinite(budget) ? `/${budget}` : "";
+		return roundsSuffix(budget);
+	}
+
+	/**
+	 * 一轮的材料：归一（记 goal 的 cwd）→ 必要时 stage 到执行侧 cwd → 清单（执行者与审查者共用）。
+	 *
+	 * 无材料时**不做任何 IO**、不产生 notice（R10）；不可归一的项一律记账（R6）。
+	 */
+	/**
+	 * 把随消息上传的内联材料落盘成内容寻址路径，并入规格（契约 R1：规格只存字符串）。
+	 * 落盘失败/超大只记账，不阻断设目标（R6 不静默、R10 不改变无材料时的行为）。
+	 */
+	private async applyMaterialBlobs(
+		conv: GoalConversation,
+		base: string[] | undefined,
+		blobs: MaterialBlob[] | undefined,
+	): Promise<string[] | undefined> {
+		if (!Array.isArray(blobs) || blobs.length === 0) return base;
+		const { paths, dropped } = await persistMaterialBlobs(blobs);
+		if (dropped.length > 0) {
+			const names = dropped.map((d) => d.value).join("、");
+			this.host.emit({
+				type: "notice",
+				level: "warning",
+				text: `${names} 无法保存为目标材料（单张上限 ${Math.round(MATERIAL_LIMITS.maxBlobBytes / 1024 / 1024)}MB），已跳过。`,
+				textEn: `${names} could not be saved as goal material (limit ${Math.round(MATERIAL_LIMITS.maxBlobBytes / 1024 / 1024)}MB each) and was skipped.`,
+			});
+			console.warn(`[goal] material blobs dropped (${conv.id}): ${names}`);
+		}
+		return mergeMaterialRefs(base, paths);
+	}
+
+	private async planRoundMaterials(conv: GoalConversation, targetCwd: string): Promise<string> {
+		const raw = conv.goal.materials ?? [];
+		if (raw.length === 0) return "";
+		const { materials, dropped } = await normalizeMaterials(raw, { cwd: conv.cwd });
+		let refs: MaterialRef[] = materials;
+		let failed: Array<{ ref: string; reason: string }> = [];
+		if (targetCwd !== conv.cwd) {
+			// R7：跨 cwd（worktree / 沙箱 / 执行对话换了工作区）先把材料搬到执行侧能读到的位置。
+			const staged = await stageMaterials(materials, targetCwd);
+			refs = staged.staged;
+			failed = staged.failed;
+		}
+		const composed = composeGoalMaterials(refs, failed, dropped);
+		this.reportGoalMaterials(conv, composed.notice);
+		return composed.block;
+	}
+
+	/** R6：材料账不静默——日志 + 用户可见 notice（同一份账只报一次）。 */
+	private reportGoalMaterials(conv: GoalConversation, notice: { text: string; textEn: string } | null): void {
+		if (!notice) {
+			this.materialsReported.delete(conv.id);
+			return;
+		}
+		if (this.materialsReported.get(conv.id) === notice.text) return;
+		this.materialsReported.set(conv.id, notice.text);
+		console.warn(`[goal] materials skipped (${conv.id}): ${notice.text}`);
+		this.host.emit({ type: "notice", level: "warning", text: notice.text, textEn: notice.textEn });
 	}
 
 	private async runDelegatedLoop(conv: GoalConversation, goalGeneration: number, goalText: string): Promise<void> {
@@ -1507,7 +1734,19 @@ export class GoalService {
 			g.statusEn = `Executing (round ${round}${this.roundsLabel(budget)})…`;
 			this.emitGoalStatus();
 
-			const execId = await this.dispatchExecutor(conv, goalGeneration, goalText, round, budget, feedback);
+			// 一轮一份清单：执行者与审查者拿到的必须是**同一份**（执行会话可被重建）。
+			const materialsBlock = await this.planRoundMaterials(conv, conv.roleExec?.cwd ?? conv.cwd);
+			if (!this.isCurrentDelegated(conv, goalGeneration)) return;
+
+			const execId = await this.dispatchExecutor(
+				conv,
+				goalGeneration,
+				goalText,
+				round,
+				budget,
+				feedback,
+				materialsBlock,
+			);
 			if (!execId) return;
 			if (!this.isCurrentDelegated(conv, goalGeneration)) return;
 
@@ -1558,7 +1797,15 @@ export class GoalService {
 			g.status = `审查中（第 ${round}${this.roundsLabel(budget)} 轮）…`;
 			g.statusEn = `Reviewing (round ${round}${this.roundsLabel(budget)})…`;
 			this.emitGoalStatus();
-			const verdict = await this.askDelegatedReview(conv, goalGeneration, round, budget, sample.output, execId);
+			const verdict = await this.askDelegatedReview(
+				conv,
+				goalGeneration,
+				round,
+				budget,
+				sample.output,
+				execId,
+				materialsBlock,
+			);
 			if (!this.isCurrentDelegated(conv, goalGeneration)) return;
 			if (verdict === "invalid" || verdict === "timeout" || verdict === "gone") {
 				await this.finishDelegated(
@@ -1595,6 +1842,7 @@ export class GoalService {
 		round: number,
 		budget: number,
 		feedback: string,
+		materialsBlock = "",
 	): Promise<string | undefined> {
 		const host = this.host;
 		const g = conv.goal;
@@ -1607,7 +1855,7 @@ export class GoalService {
 			}
 			const sent = await host.sendRoleAgent!(
 				existing.convId,
-				this.executorRoundPrompt(goalText, round, budget, feedback),
+				this.executorRoundPrompt(goalText, round, budget, feedback, materialsBlock),
 			);
 			if (!sent) {
 				await this.finishDelegated(conv, goalGeneration, "blocked", round, this.roleFailureText("exec-gone"), goalText);
@@ -1621,7 +1869,7 @@ export class GoalService {
 		try {
 			const convId = await host.spawnRoleAgent!({
 				role: "executor",
-				prompt: this.executorRoundPrompt(goalText, round, budget, ""),
+				prompt: this.executorRoundPrompt(goalText, round, budget, "", materialsBlock),
 				cwd: conv.cwd,
 				model: g.execModel ?? null,
 				parentId: conv.id,
@@ -1631,7 +1879,8 @@ export class GoalService {
 				void host.stopRoleAgent?.(convId).catch(() => {});
 				return undefined;
 			}
-			conv.roleExec = { convId, generation: (conv.roleExec?.generation ?? 0) + 1 };
+			// 记下执行对话的 cwd：与 goal 的 cwd 不同轮次里的材料必须先 stage 到执行侧（R7）。
+			conv.roleExec = { convId, generation: (conv.roleExec?.generation ?? 0) + 1, cwd: conv.cwd };
 			g.roles = { ...g.roles, executor: { convId, spawned: true } };
 			this.beginRoundVitals(conv, convId);
 			this.emitGoalStatus();
@@ -1730,6 +1979,7 @@ export class GoalService {
 		budget: number,
 		execOutput: string,
 		execId: string,
+		materialsBlock = "",
 	): Promise<DelegatedVerdict> {
 		for (let attempt = 0; attempt < 2; attempt++) {
 			const idle = await this.waitMainIdle(conv);
@@ -1745,6 +1995,7 @@ export class GoalService {
 							execOutput,
 							planDesc,
 							this.readExecutorEvidence(execId),
+							materialsBlock,
 						)
 					: this.verdictRetryPrompt();
 			const verdict = await this.deliverAndWait(conv, round, text);
@@ -1932,6 +2183,8 @@ export class GoalService {
 			g.statusEn = "✅ Goal review passed";
 			g.conversationId = null;
 			g.goal = null;
+			// 目标已结束：材料指针一齐清掉，不留下一个已无目标的清单（R9）。
+			g.materials = undefined;
 			this.host.emit({ type: "notice", level: "info", text: "✅ 目标已通过审查", textEn: "✅ Goal passed review" });
 			this.emitGoalStatus();
 			try {
@@ -2066,16 +2319,14 @@ export class GoalService {
 		this.host.flushSnapshot();
 	}
 
-	private executorRoundPrompt(goalText: string, round: number, budget: number, feedback: string): string {
-		const rounds = this.roundsLabel(budget);
-		const prev = feedback.trim();
-		return pick(
-			this.lang(),
-			`【目标 · 第 ${round}${rounds} 轮】\n\n${goalText}\n\n${prev ? `上一轮审查意见：\n${prev}\n\n` : ""}要求：\n- 直接修改工作区（不要只在回复里描述改动），做完用一段话说明「改了什么、怎么验证的」。\n- 禁止向用户提问（本对话由服务端自动驱动，弹窗会被按取消返回）。\n- 禁止派生或等待其他子代理（轮次由服务端控制，你只负责这一轮）。`,
-			`[Goal · round ${round}${rounds}]\n\n${goalText}\n\n${prev ? `Review feedback from the previous round:\n${prev}\n\n` : ""}Requirements:\n- Change the workspace directly (don't just describe it), then summarize in one paragraph what you changed and how you verified it.\n- Do NOT ask the user anything (this conversation is server-driven; dialogs are auto-cancelled).\n- Do NOT spawn or wait for other subagents (the server owns the rounds; you own this one only).`,
-			"goal.role.exec",
-			{ round, rounds, goalText, prev },
-		);
+	private executorRoundPrompt(
+		goalText: string,
+		round: number,
+		budget: number,
+		feedback: string,
+		materialsBlock = "",
+	): string {
+		return goalExecutorPrompt(this.lang(), { goalText, round, budget, feedback, materialsBlock });
 	}
 
 	private reviewCardText(kind: "start" | "pass" | "fail", round: number, budget: number, feedback: string): string {
@@ -2112,40 +2363,9 @@ export class GoalService {
 		execOutput: string,
 		planDesc = "",
 		evidence = "",
+		materialsBlock = "",
 	): string {
-		const rounds = this.roundsLabel(budget);
-		const out = execOutput.trim().slice(0, 4000);
-		const planBlockZh =
-			planDesc && planDesc !== "No active plan."
-				? `\n\n【任务计划看板当前状态】\n${planDesc}\n核验时请同时核实上述计划步骤的推进与完成状态是否真实。`
-				: "";
-		const planBlockEn =
-			planDesc && planDesc !== "No active plan."
-				? `\n\n# Task Plan Board\n${planDesc}\nWhen verifying, also check whether the above plan steps have been legitimately advanced or completed.`
-				: "";
-		const ev = evidence.trim();
-		const evidenceBlockZh = ev
-			? `\n\n【执行者最近的工具与命令证据（服务端自动采集，只保留输出尾部，可能被截断）】\n${ev}`
-			: "";
-		const evidenceBlockEn = ev
-			? `\n\n# Executor's recent tool & command evidence (auto-collected, output tails only, may be truncated)\n${ev}`
-			: "";
-		return pick(
-			this.lang(),
-			`你是严格、独立的验收者。只判断目标是否被完全满足：不要相信描述，去看工作区的实际状态。\n\n【目标】\n${goalText}\n\n【这是第 ${round}${rounds} 轮】${planBlockZh}\n\n【执行者本轮自述】\n${out || "（执行者本轮没有给出自述）"}${evidenceBlockZh}\n\n你可以用只读手段核实：read / grep / scm（只读 git）/ 只读 bash（跑测试）。\n\n判定口径：\n- 只判【执行者本轮自述】里**声称已完成**的条目；本轮没声称完成的后续阶段不构成 fail 理由（目标写成「完成阶段 3 并收尾后续」也不代表这一轮要做完所有阶段）。\n- 忽略与目标无关的本地改动（其它项目的补丁、工具/模型配置、临时文件）。\n- 声称完成但自述与证据里都没有对应命令输出或文件证据的，必须 fail，并点名缺哪条命令的输出。\n- feedback 不得为空：fail 时必须给出可以直接动手改的具体待改项。\n\n只输出一个 JSON 对象，不要有任何其他文本、不要代码围栏、不要复述下面的形状示例。本回合写类与派发类工具会被服务端直接拒绝（不要试）。字段：verdict 只能填 pass（目标已完全满足，一句话说明满足了什么）或 fail（未满足，给出可以直接动手改的具体待改项）；feedback 是一句话说明。形状示例（不要照抄尖括号里的占位符）：\n{"verdict":"<pass|fail>","feedback":"<一句话说明>"}\n[goal-review]`,
-			`You are a strict, independent acceptor. Judge only whether the goal is fully satisfied: do not trust the summary — inspect the actual workspace state.\n\n# Goal\n${goalText}\n\n# This is round ${round}${rounds}${planBlockEn}\n\n# Executor's summary this round\n${out || "(the executor produced no summary)"}${evidenceBlockEn}\n\nYou may verify with read-only means: read / grep / scm (read-only git) / read-only bash (run tests).\n\nJudging rules:\n- Judge only the items the executor's summary **claims to have completed this round**; later phases it did not claim this round are NOT grounds for fail (a goal phrased as "finish phase 3 and wrap up the rest" does not mean all phases must land this round).\n- Ignore local changes unrelated to the goal (other projects' patches, tool/model settings, scratch files).\n- If a claimed item has no matching command output or file evidence in the summary or the evidence above, you MUST fail and name which command's output is missing.\n- feedback must not be empty: on fail, give concrete items the executor can act on directly.\n\nReply with ONLY one JSON object — no other text, no code fences, do not echo the shape example below. Write and dispatch tools are blocked by the server during this round — do not try them. Fields: verdict must be pass (goal fully satisfied, say what in one sentence) or fail (not satisfied, give concrete items the executor must fix); feedback is one short sentence. Shape example (do not copy the placeholders in angle brackets):\n{"verdict":"<pass|fail>","feedback":"<one sentence>"}\n[goal-review]`,
-			"goal.role.review",
-			{
-				goalText,
-				round,
-				rounds,
-				out: out || "(the executor produced no summary)",
-				planBlockEn,
-				evidenceBlockEn,
-				planBlockZh,
-				evidenceBlockZh,
-			},
-		);
+		return goalReviewerPrompt(this.lang(), { goalText, round, budget, execOutput, planDesc, evidence, materialsBlock });
 	}
 
 	private verdictRetryPrompt(): string {

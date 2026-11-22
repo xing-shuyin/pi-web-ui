@@ -72,9 +72,18 @@ export interface LedgerRunRecord {
 	error?: string;
 	/** 最后一次助手输出的尾部（有界），重启后仍能看一眼结论。 */
 	outputTail?: string;
+	/** 完成通知真正投出去的时刻（只在提交点写， #981）。 */
+	notifiedAt?: number;
 	resumedFrom?: string;
 	resumedBy?: string;
 	eventsTruncated?: boolean;
+}
+
+export type TerminalLedgerState = Exclude<LedgerRunState, "running">;
+
+/** 终态集合：`running` 是唯一的非终态。 */
+export function isTerminalLedgerState(state: LedgerRunState): state is TerminalLedgerState {
+	return state !== "running";
 }
 
 export const LEDGER_DEFAULT_MAX_RUNS = 200;
@@ -180,6 +189,7 @@ function normalizeRecord(raw: unknown): LedgerRunRecord | undefined {
 			: undefined,
 		error: typeof raw.error === "string" ? raw.error : undefined,
 		outputTail: typeof raw.outputTail === "string" ? raw.outputTail : undefined,
+		notifiedAt: typeof raw.notifiedAt === "number" && Number.isFinite(raw.notifiedAt) ? raw.notifiedAt : undefined,
 		resumedFrom: typeof raw.resumedFrom === "string" ? raw.resumedFrom : undefined,
 		resumedBy: typeof raw.resumedBy === "string" ? raw.resumedBy : undefined,
 		eventsTruncated: raw.eventsTruncated === true,
@@ -282,7 +292,7 @@ export class SubagentLedger {
 	}
 
 	/** 写入/更新一条运行记录（与已有记录字段合并）。 */
-	upsert(patch: LedgerRunRecord): void {
+	upsert(patch: LedgerRunRecord, opts: { restart?: boolean } = {}): void {
 		if (!this.enabled || !patch.runId) return;
 		const previous = this.records.get(patch.runId);
 		const next: LedgerRunRecord = {
@@ -294,6 +304,12 @@ export class SubagentLedger {
 			updatedAt: patch.updatedAt ?? this.now(),
 			bootId: patch.bootId || previous?.bootId || BOOT_ID,
 		};
+		// 终态单调（issues #981 / #964）：迟到的 `turn_end` / `completion_requested` 不得把已完成的
+		// run 改回 running。从终态回到 running 只有一个入口：显式 `steer_restart` / 新 run（`restart`）。
+		if (previous && isTerminalLedgerState(previous.state) && next.state === "running" && !opts.restart) {
+			next.state = previous.state;
+			next.finishedAt = previous.finishedAt;
+		}
 		this.records.set(next.runId, next);
 		this.enqueue(next.runId, async () => {
 			await mkdir(this.runDir(next.runId), { recursive: true });
@@ -384,6 +400,27 @@ export class SubagentLedger {
 		}
 		await this.flush();
 		return recovered;
+	}
+
+	/**
+	 * 收口一个 run：只接受终态，且**不会被已终态的记录覆盖**（第一次终态就是定论）。
+	 * 返回 true 表示本次真的写入了终态；false = 已经是终态（迟到的重复收口）或记录不存在。
+	 */
+	finish(runId: string, state: TerminalLedgerState, patch: Partial<LedgerRunRecord> = {}): boolean {
+		if (!this.enabled || !runId) return false;
+		const previous = this.records.get(runId);
+		if (!previous) return false;
+		if (isTerminalLedgerState(previous.state)) return false;
+		this.upsert({ ...previous, ...patch, runId, state, finishedAt: previous.finishedAt ?? this.now() });
+		return true;
+	}
+
+	/** 完成通知真投出去的那一刻（提交点）才记 notifiedAt：失败/排队都不算通知过。 */
+	markNotified(runId: string): void {
+		if (!this.enabled || !runId) return;
+		const record = this.records.get(runId);
+		if (!record || record.notifiedAt) return;
+		this.upsert({ ...record, runId, notifiedAt: this.now() });
 	}
 
 	/** 标记某个 run 已被续跑（记录新 run 身份，避免重复续跑）。 */

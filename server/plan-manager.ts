@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { writeJsonAtomicSync } from "./atomic-file.js";
+import { createSerializedJsonWriter, type SerializedJsonWriter } from "./serialized-json-writer.js";
 import type { PlanState, PlanStep, PlanStepStatus } from "./protocol.js";
 
 const VALID_STATUSES = new Set<PlanStepStatus>(["pending", "in_progress", "done", "failed"]);
@@ -9,11 +9,13 @@ function isEphemeralConvId(id: string): boolean {
 }
 
 export class PlanManager {
+	private readonly writer: SerializedJsonWriter | undefined;
 	private plansBySession = new Map<string, PlanState>();
 	private plansByConv = new Map<string, PlanState>();
 	private convToSession = new Map<string, string>();
 
 	constructor(private readonly filePath?: string) {
+		this.writer = filePath ? createSerializedJsonWriter(filePath, { label: "plans.json" }) : undefined;
 		if (filePath) {
 			this.load();
 		}
@@ -32,16 +34,38 @@ export class PlanManager {
 		} catch {}
 	}
 
+	/**
+	 * 写盘快照：`plans.json` 只是可重建投影（真值在会话分支事件里），所以落盘异步、不阻塞事件循环；
+	 * 但同一文件的写入必须串行，否则后写会把前写吞掉。失败只记日志：缓存丢了能从事件重建。
+	 */
+	/** `plans.json` 只是可重建投影（真值在会话分支事件里），落盘走串行队列、不阻塞事件循环。 */
 	private save(): void {
 		if (!this.filePath) return;
-		try {
-			const obj: Record<string, PlanState> = {};
-			for (const [k, v] of this.plansBySession.entries()) {
-				if (isEphemeralConvId(k)) continue;
-				obj[k] = v;
-			}
-			writeJsonAtomicSync(this.filePath, obj);
-		} catch {}
+		const obj: Record<string, PlanState> = {};
+		for (const [k, v] of this.plansBySession.entries()) {
+			if (isEphemeralConvId(k)) continue;
+			obj[k] = { ...v };
+		}
+		this.writer?.write(obj);
+	}
+
+	/** 等待排队中的缓存写入落定（测试 / 关停用）。 */
+	async flush(): Promise<void> {
+		await this.writer?.flush();
+	}
+
+	/**
+	 * 记录这份缓存镜像自哪条转录事件（issue #979）：`restorePlan()` 用它判断缓存是否还属于当前叶链。
+	 * 写入时机是面板/工具真正落盘事件之后，由 `writePlan()` 调用；缓存本身仍是可重建投影。
+	 */
+	markSourceEntry(conversationId: string, sourceEntryId: string | undefined): void {
+		if (!sourceEntryId) return;
+		const plan = this.plansByConv.get(conversationId);
+		if (!plan) return;
+		plan.sourceEntryId = sourceEntryId;
+		const sessId = this.convToSession.get(conversationId);
+		if (sessId && this.plansBySession.get(sessId) === plan) this.plansBySession.set(sessId, plan);
+		this.save();
 	}
 
 	bindSession(conversationId: string, sessionId: string): PlanState | null {

@@ -30,14 +30,41 @@ describe("投递门单源（conversation-delivery.ts）", () => {
 		// 拿错误文案当门禁的唯一合法位置就是 conversation-delivery 的 isCompactionRejection。
 		expect(count(serviceSource, /\/compaction is in progress\//i)).toBe(0);
 		// 面向用户的提示文案可以提到这件事，但不能再拿它做判定。
-		// import 一行 + 两处调用（开轮时撞上门、调度器抢先一步）。
-		expect(count(serviceSource, /isCompactionRejection/)).toBe(3);
+		// import 一行 + 开轮时撞上门的调用点（#959 删掉调度器旁路后只剩这一处）。
+		expect(count(serviceSource, /isCompactionRejection/)).toBe(2);
 	});
 
 	it("deliveryMode 是唯一判定：门相位的写者只应有 queued/running 两个构造函数", () => {
 		expect(deliverySource).toContain("export function deliveryMode");
 		expect(deliverySource).toContain("export function queuedCompaction");
 		expect(deliverySource).toContain("export function runningCompaction");
+	});
+});
+
+describe("门关着不许被当成投递失败（issue #959）", () => {
+	const daemonSource = readFileSync(`${ROOT}server/agent-service-daemon.ts`, "utf8");
+
+	it("没有第二道投递门：trySteerScheduler 这类「gated 就报 busy」的旁路已删", () => {
+		expect(count(serviceSource + daemonSource, /trySteerScheduler/)).toBe(0);
+	});
+
+	it("「门关 = 失败」只允许长在 delivery 模块里，别处一律入队", () => {
+		// 反例形态：if (mode === "gated") return { ok: false ... }
+		const antiPattern = /if\s*\(\s*mode\s*===\s*"gated"\s*\)\s*return\s*\{[^}]*ok:\s*false/gs;
+		for (const [name, source] of [
+			["agent-service.ts", serviceSource],
+			["agent-service-daemon.ts", daemonSource],
+		] as const) {
+			expect(
+				(source.match(antiPattern) ?? []).length,
+				`${name} 把「压缩中 / 退役窗口」当成了投递失败。门关只意味着排队：走 steerOwnConversation → deliverFromOutside，让 compaction_end 自己排空。`,
+			).toBe(0);
+		}
+	});
+
+	it("定时任务只能按转录寻址：没有「换一个对话」的回落入口", () => {
+		expect(count(serviceSource + daemonSource, /findViewportInCwd|wakeViewportInCwd/)).toBe(0);
+		expect(count(serviceSource, /resolveSchedulerTarget/)).toBe(0);
 	});
 });
 

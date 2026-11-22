@@ -12,7 +12,7 @@ afterEach(() => {
 	for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-function setup() {
+async function setup() {
 	const cwd = mkdtempSync(resolve(tmpdir(), "claim-lifecycle-"));
 	tempDirs.push(cwd);
 	const store = new ClaimStore(resolve(cwd, "claims.json"));
@@ -51,28 +51,30 @@ function setup() {
 		clearConversationToolStates: vi.fn(),
 		settlePendingsForConv: vi.fn(),
 	});
-	store.claim(cwd, { convId: "c1", title: "finished run" }, [{ path: "first.ts" }]);
-	store.claim(cwd, { convId: "c2", title: "other run" }, [{ path: "second.ts" }]);
+	await store.claim(cwd, { convId: "c1", title: "finished run" }, [{ path: "first.ts" }]);
+	await store.claim(cwd, { convId: "c2", title: "other run" }, [{ path: "second.ts" }]);
 	return { owner, conversation, cwd, store };
 }
 
 describe("file claims follow the actual run lifetime", () => {
 	it.each(["stop", "error", "aborted"])(
 		"releases claims on final agent_end (%s), retaining the conversation and other owners",
-		(stopReason) => {
-			const { owner, conversation, cwd, store } = setup();
+		async (stopReason) => {
+			const { owner, conversation, cwd, store } = await setup();
 			conversation.session.agent.state.messages = [{ role: "assistant", stopReason }] as any;
 
 			owner.onEvent(conversation, { type: "agent_end", messages: conversation.session.agent.state.messages });
 
 			expect(store.list(cwd).map((claim) => claim.ownerConvId)).toEqual(["c2"]);
 			expect(owner.convs.get("c1")).toBe(conversation);
-			expect(store.claim(cwd, { convId: "c3", title: "next run" }, [{ path: "first.ts" }]).conflicts).toEqual([]);
+			expect((await store.claim(cwd, { convId: "c3", title: "next run" }, [{ path: "first.ts" }])).conflicts).toEqual(
+				[],
+			);
 		},
 	);
 
-	it("retains claims across automatic retry and releases them when the retry finishes", () => {
-		const { owner, conversation, cwd, store } = setup();
+	it("retains claims across automatic retry and releases them when the retry finishes", async () => {
+		const { owner, conversation, cwd, store } = await setup();
 		owner.onEvent(conversation, { type: "agent_end", messages: [], willRetry: true });
 		expect(store.list(cwd).map((claim) => claim.ownerConvId)).toEqual(["c1", "c2"]);
 
@@ -80,8 +82,8 @@ describe("file claims follow the actual run lifetime", () => {
 		expect(store.list(cwd).map((claim) => claim.ownerConvId)).toEqual(["c2"]);
 	});
 
-	it("retains claims while SDK end hooks or continuations are still running, then releases at settlement", () => {
-		const { owner, conversation, cwd, store } = setup();
+	it("retains claims while SDK end hooks or continuations are still running, then releases at settlement", async () => {
+		const { owner, conversation, cwd, store } = await setup();
 		conversation.session.isIdle = false;
 		owner.onEvent(conversation, { type: "agent_end", messages: [] });
 		expect(store.list(cwd).map((claim) => claim.ownerConvId)).toEqual(["c1", "c2"]);
@@ -91,13 +93,13 @@ describe("file claims follow the actual run lifetime", () => {
 	});
 
 	it("cleans up an idle interrupted run without waiting for another SDK event", async () => {
-		const { owner, conversation, cwd, store } = setup();
+		const { owner, conversation, cwd, store } = await setup();
 		await owner.interruptRun(conversation, "stop");
 		expect(store.list(cwd).map((claim) => claim.ownerConvId)).toEqual(["c2"]);
 	});
 
 	it("releases after forced disposal even when runtime recreation fails", async () => {
-		const { owner, conversation, cwd, store } = setup();
+		const { owner, conversation, cwd, store } = await setup();
 		owner.openManagerAndRuntime = vi.fn().mockRejectedValue(new Error("recreation failed"));
 
 		await owner.forceResetConversation(conversation, "stop");
@@ -107,7 +109,7 @@ describe("file claims follow the actual run lifetime", () => {
 	});
 
 	it("does not release a replacement runtime's claims when an old reset resumes", async () => {
-		const { owner, conversation, cwd, store } = setup();
+		const { owner, conversation, cwd, store } = await setup();
 		let finishDisposal!: () => void;
 		conversation.runtime.dispose = vi.fn(
 			() =>
@@ -124,8 +126,8 @@ describe("file claims follow the actual run lifetime", () => {
 		expect(store.list(cwd).map((claim) => claim.ownerConvId)).toEqual(["c1", "c2"]);
 	});
 
-	it("still notifies turn waiters when claim storage fails", () => {
-		const { owner, conversation, store } = setup();
+	it("still notifies turn waiters when claim storage fails", async () => {
+		const { owner, conversation, store } = await setup();
 		vi.spyOn(store, "releaseByOwner").mockImplementation(() => {
 			throw new Error("storage unavailable");
 		});

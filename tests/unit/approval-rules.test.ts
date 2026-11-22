@@ -181,6 +181,23 @@ describe("审批规则引擎纯函数与匹配逻辑 (Approval Rules Engine)", (
 			expect(matchApprovalRule(ruleWs, "write", { path: "../../external.txt" }, cwd)).toBe(true);
 			expect(matchApprovalRule(ruleWs, "write", { path: "src/index.ts" }, cwd)).toBe(false);
 		});
+
+		it("内置规则已覆盖 worktree 切到工作区外（#973）", () => {
+			const rule = DEFAULT_APPROVAL_RULES.find((r) => r.id === "builtin.worktree.outside-workspace");
+			expect(rule).toBeDefined();
+			expect(rule?.tools).toEqual(["worktree"]);
+			expect(rule?.field).toBe("path");
+			expect(rule?.match).toBe("outside_workspace");
+			expect(rule?.action).toBe("ask");
+			expect(rule?.categoryId).toBe("worktree.outside-workspace");
+			expect(
+				evaluateApprovalRules(DEFAULT_APPROVAL_RULES, "worktree", { action: "switch", path: "../../.ssh" }, cwd)
+					.matchedRule?.id,
+			).toBe("builtin.worktree.outside-workspace");
+			expect(
+				evaluateApprovalRules(DEFAULT_APPROVAL_RULES, "worktree", { action: "switch", path: "src" }, cwd).matchedRule,
+			).toBeUndefined();
+		});
 	});
 
 	describe("evaluateApprovalRules 多规则决策流", () => {
@@ -294,9 +311,9 @@ describe("ApprovalRulesStore 持久化库与播种机制", () => {
 		expect(rmRf?.builtin).toBe(true);
 	});
 
-	it("添加、编辑与删除自定义规则", () => {
+	it("添加、编辑与删除自定义规则", async () => {
 		const store = new ApprovalRulesStore(storePath);
-		const err = store.upsert({
+		const err = await store.upsert({
 			id: "custom.test-rule",
 			enabled: true,
 			tools: ["bash"],
@@ -311,7 +328,7 @@ describe("ApprovalRulesStore 持久化库与播种机制", () => {
 		let list = store.list();
 		expect(list.find((r) => r.id === "custom.test-rule")).toBeDefined();
 
-		store.upsert({
+		await store.upsert({
 			id: "custom.test-rule",
 			enabled: false,
 			tools: ["bash"],
@@ -326,18 +343,18 @@ describe("ApprovalRulesStore 持久化库与播种机制", () => {
 		expect(updated?.enabled).toBe(false);
 		expect(updated?.value).toBe("danger-cmd-2");
 
-		const removed = store.remove("custom.test-rule");
+		const removed = await store.remove("custom.test-rule");
 		expect(removed).toBe(true);
 		list = store.list();
 		expect(list.find((r) => r.id === "custom.test-rule")).toBeUndefined();
 	});
 
-	it("禁止直接删除内置规则（只允许禁用），支持恢复默认", () => {
+	it("禁止直接删除内置规则（只允许禁用），支持恢复默认", async () => {
 		const store = new ApprovalRulesStore(storePath);
-		const rmSuccess = store.remove("builtin.bash.rm-rf");
+		const rmSuccess = await store.remove("builtin.bash.rm-rf");
 		expect(rmSuccess).toBe(false);
 
-		store.upsert({
+		await store.upsert({
 			...DEFAULT_APPROVAL_RULES[0],
 			action: "allow",
 			label: "已魔改",
@@ -345,26 +362,26 @@ describe("ApprovalRulesStore 持久化库与播种机制", () => {
 		let item = store.list().find((r) => r.id === "builtin.bash.rm-rf");
 		expect(item?.action).toBe("allow");
 
-		const resetOk = store.resetBuiltin("builtin.bash.rm-rf");
+		const resetOk = await store.resetBuiltin("builtin.bash.rm-rf");
 		expect(resetOk).toBe(true);
 		item = store.list().find((r) => r.id === "builtin.bash.rm-rf");
 		expect(item?.action).toBe("ask");
 		expect(item?.label).toBe("递归/强制删除 (rm -rf)");
 	});
 
-	it("saveAll 批量重排", () => {
+	it("saveAll 批量重排", async () => {
 		const store = new ApprovalRulesStore(storePath);
 		const list = store.list();
 		const reversed = [...list].reverse();
-		const err = store.saveAll(reversed);
+		const err = await store.saveAll(reversed);
 		expect(err).toBeNull();
 		const current = store.list();
 		expect(current[0].id).toBe(reversed[0].id);
 	});
 
-	it("saveAll 不含内置规则的清单 → 内置规则被补种且追加队尾", () => {
+	it("saveAll 不含内置规则的清单 → 内置规则被补种且追加队尾", async () => {
 		const store = new ApprovalRulesStore(storePath);
-		const err = store.saveAll([
+		const err = await store.saveAll([
 			{
 				id: "custom.only-one",
 				enabled: true,
@@ -389,9 +406,9 @@ describe("ApprovalRulesStore 持久化库与播种机制", () => {
 		expect(DEFAULT_APPROVAL_RULES.some((d) => d.id === last.id)).toBe(true);
 	});
 
-	it("saveAll 送来 builtin:false 的内置规则 → builtin 标记被强制保留", () => {
+	it("saveAll 送来 builtin:false 的内置规则 → builtin 标记被强制保留", async () => {
 		const store = new ApprovalRulesStore(storePath);
-		const err = store.saveAll([
+		const err = await store.saveAll([
 			{
 				id: "builtin.bash.rm-rf",
 				enabled: true,
@@ -407,7 +424,7 @@ describe("ApprovalRulesStore 持久化库与播种机制", () => {
 		expect(err).toBeNull();
 		const item = store.list().find((r) => r.id === "builtin.bash.rm-rf");
 		expect(item?.builtin).toBe(true);
-		expect(store.remove("builtin.bash.rm-rf")).toBe(false);
+		expect(await store.remove("builtin.bash.rm-rf")).toBe(false);
 	});
 });
 

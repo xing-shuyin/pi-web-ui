@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
 import { ClientSession } from "../../server/agent-service.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
 import { countActiveSubagents, toSubagentSnapshot } from "../../server/subagent-helpers.js";
 import { createSubagentTask } from "../../server/subagent-task.js";
 import { UniversalSession } from "../../server/universal/universal-session.js";
+import { settle } from "../helpers/settle.js";
 
 const proto = ClientSession.prototype as any;
 function harness() {
@@ -72,13 +74,18 @@ describe("manual task runtime", () => {
 		a.queueFollowUp = [];
 		proto.onEvent.call(owner, a, { type: "agent_end", messages: a.session.agent.state.messages });
 		await vi.advanceTimersByTimeAsync(500);
+		await settle();
 		expect(root.session.sendUserMessage).not.toHaveBeenCalled();
+		// 模拟 agent_end：在飞标记与流状态一起归位（#983）。
+		a.promptInFlight = false;
 		a.session.isStreaming = false;
 		settled(owner, a);
 		await vi.advanceTimersByTimeAsync(500);
+		await settle();
 		expect(root.session.sendUserMessage).toHaveBeenCalledOnce();
 		settled(owner, a);
 		await vi.advanceTimersByTimeAsync(500);
+		await settle();
 		expect(root.session.sendUserMessage).toHaveBeenCalledOnce();
 	});
 	it("settlement uses the current holder and keeps manual dependencies and opt-out", async () => {
@@ -91,15 +98,18 @@ describe("manual task runtime", () => {
 		owner.communicationPending = () => true;
 		settled(old, a);
 		await vi.advanceTimersByTimeAsync(500);
+		await settle();
 		expect(root.session.sendUserMessage).not.toHaveBeenCalled();
 		owner.communicationPending = () => false;
 		a.notifyOnDone = false;
 		settled(old, a);
 		await vi.advanceTimersByTimeAsync(500);
+		await settle();
 		expect(root.session.sendUserMessage).not.toHaveBeenCalled();
 		a.notifyOnDone = "manual";
 		settled(old, a);
 		await vi.advanceTimersByTimeAsync(500);
+		await settle();
 		expect(root.session.sendUserMessage).toHaveBeenCalledOnce();
 		expect(old.subagentNoticeTimers.size).toBe(0);
 	});
@@ -114,6 +124,7 @@ describe("manual task runtime", () => {
 		if (state === "prompt in flight") a.promptInFlight = true;
 		settled(owner, a);
 		await vi.advanceTimersByTimeAsync(500);
+		await settle();
 		expect(root.session.sendUserMessage).not.toHaveBeenCalled();
 	});
 	it("idle manual with cross-owner child remains pending and occupies concurrency", () => {
@@ -128,6 +139,8 @@ describe("manual task runtime", () => {
 		expect(countActiveSubagents([a])).toBe(1);
 		owner.scheduleSubagentCompletionNotice(a);
 		expect(owner.subagentNoticeTimers.size).toBe(0);
+		// 模拟 agent_end：在飞标记与流状态一起归位（#983）。
+		b.promptInFlight = false;
 		b.session.isStreaming = false;
 		b.subagentDoneNotified = true;
 		expect(a.subagentTaskPending!()).toBe(false);
@@ -148,6 +161,7 @@ describe("manual task runtime", () => {
 		a.subagentTask!.completionRequested = false;
 		owner.scheduleSubagentCompletionNotice(a);
 		await vi.advanceTimersByTimeAsync(500);
+		await settle();
 		// 投递门统一走 submitText：空闲时不带 deliverAs 参数，只校验正文。
 		expect(root.session.sendUserMessage.mock.calls.at(-1)?.[0]).toContain("final output");
 	});
@@ -164,13 +178,17 @@ describe("manual task runtime", () => {
 		});
 		owner.scheduleSubagentCompletionNotice(b);
 		await vi.advanceTimersByTimeAsync(500);
+		await settle();
 		expect(a.session.sendUserMessage).toHaveBeenCalledOnce();
 		expect(a.subagentDoneNotified).toBe(false);
 		expect(a.subagentTask!.completionRequested).toBe(true);
 		expect(root.session.sendUserMessage).not.toHaveBeenCalled();
+		// 模拟 agent_end：在飞标记与流状态一起归位（#983）。
+		a.promptInFlight = false;
 		a.session.isStreaming = false;
 		owner.scheduleSubagentCompletionNotice(a);
 		await vi.advanceTimersByTimeAsync(500);
+		await settle();
 		expect(root.session.sendUserMessage).toHaveBeenCalledOnce();
 	});
 	it("rechecks dependencies before settling worktree and notifying", async () => {
@@ -181,6 +199,7 @@ describe("manual task runtime", () => {
 		owner.scheduleSubagentCompletionNotice(a);
 		owner.communicationPending = () => true;
 		await vi.advanceTimersByTimeAsync(500);
+		await settle();
 		expect(owner.finalizeSubagentWorktree).not.toHaveBeenCalled();
 	});
 	it.each(["error", "aborted"])("manual %s notifies once per generation and false stays silent", async (stop) => {
@@ -194,9 +213,13 @@ describe("manual task runtime", () => {
 		owner.communicationPending = () => true;
 		owner.scheduleSubagentCompletionNotice(a);
 		await vi.advanceTimersByTimeAsync(500);
+		await settle();
 		expect(root.session.sendUserMessage).toHaveBeenCalledOnce();
+		// 第一次唤醒的那一轮跑完了（agent_end）：在飞标记归位，下一次才会重新开一轮。
+		root.promptInFlight = false;
 		owner.scheduleSubagentCompletionNotice(a);
 		await vi.advanceTimersByTimeAsync(500);
+		await settle();
 		expect(root.session.sendUserMessage).toHaveBeenCalledOnce();
 		expect(owner.finalizeSubagentWorktree).toHaveBeenCalledOnce();
 
@@ -205,18 +228,23 @@ describe("manual task runtime", () => {
 		a.subagentTask.completionRequested = true;
 		await proto.steerSubagentRound.call(owner, a, "Retry the task");
 		await a.kickoff;
+		// 这一轮跑完（agent_end）：在飞标记必须先归位，否则下一轮完成通知会被判「任务仍 pending」。
+		a.promptInFlight = false;
 		await vi.advanceTimersByTimeAsync(500);
+		await settle();
 		expect(a.subagentRunGeneration).toBe(1);
 		expect(a.subagentTask).toMatchObject({ mode: "manual", generation: 1, completionRequested: false });
 		expect(root.session.sendUserMessage).toHaveBeenCalledTimes(2);
 		owner.scheduleSubagentCompletionNotice(a);
 		await vi.advanceTimersByTimeAsync(500);
+		await settle();
 		expect(root.session.sendUserMessage).toHaveBeenCalledTimes(2);
 
 		a.notifyOnDone = false;
 		a.subagentDoneNotified = false;
 		owner.scheduleSubagentCompletionNotice(a);
 		await vi.advanceTimersByTimeAsync(500);
+		await settle();
 		expect(root.session.sendUserMessage).toHaveBeenCalledTimes(2);
 	});
 	it("stale finalization cannot notify a newly steered task generation", async () => {
@@ -229,6 +257,7 @@ describe("manual task runtime", () => {
 		});
 		owner.scheduleSubagentCompletionNotice(a);
 		await vi.advanceTimersByTimeAsync(500);
+		await settle();
 		expect(root.session.sendUserMessage).not.toHaveBeenCalled();
 	});
 	it("failure cannot finalize a worktree still held by a streaming descendant", async () => {
@@ -262,6 +291,7 @@ describe("manual task runtime", () => {
 		await expect(proto.prompt.call(owner, "new prompt", undefined, false, a)).rejects.toThrow("being finalized");
 		owner.scheduleSubagentCompletionNotice(b);
 		await vi.advanceTimersByTimeAsync(500);
+		await settle();
 		expect(a.session.sendUserMessage).not.toHaveBeenCalled();
 		expect(owner.emit).toHaveBeenCalledWith(expect.objectContaining({ level: "warning" }));
 	});
@@ -273,6 +303,7 @@ describe("manual task runtime", () => {
 		a.subagentTaskStopped = true;
 		owner.scheduleSubagentCompletionNotice(b);
 		await vi.advanceTimersByTimeAsync(500);
+		await settle();
 		expect(a.session.sendUserMessage).not.toHaveBeenCalled();
 		expect(b.subagentDoneNotified).toBe(true);
 	});

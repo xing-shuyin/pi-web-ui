@@ -71,7 +71,8 @@ function crxFromZip(zip) {
 }
 
 const repo = fileURLToPath(new URL("..", import.meta.url));
-const tempRoot = process.platform === "win32" ? "E:/tmp" : tmpdir();
+// 临时目录属于环境：一律用 os.tmpdir()，不写死盘符（换机器就是 ENOENT）。
+const tempRoot = tmpdir();
 await mkdir(tempRoot, { recursive: true });
 const temporary = await mkdtemp(join(tempRoot, "pi-browser-smoke-"));
 const servers = [];

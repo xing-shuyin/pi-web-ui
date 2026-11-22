@@ -15,9 +15,8 @@
  * 写入是 debounce 的原子写（默认 300ms）—— 崩溃最多丢最近几百毫秒的记录，代价是可能重复投递一次，
  * 而「至少一次」本来就允许重复，所以这个取舍安全。
  */
-import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { writeJsonAtomicSync } from "./atomic-file.js";
+import { openVersionedDoc, type VersionedDoc } from "./versioned-doc.js";
 
 export type LedgerDirection = "in" | "out";
 export type LedgerState = "claimed" | "done" | "failed";
@@ -43,11 +42,6 @@ export interface LedgerRecord {
 	/** 通用排障字段。 */
 	error?: string;
 	meta?: Record<string, unknown>;
-}
-
-interface LedgerFile {
-	v: 1;
-	records: LedgerRecord[];
 }
 
 export interface PluginLedgerOptions {
@@ -92,8 +86,10 @@ export class PluginLedgerStore {
 	readonly now: () => number;
 	private readonly records = new Map<string, LedgerRecord>();
 	private readonly file: string;
+	private readonly doc: VersionedDoc<LedgerRecord[]>;
 	private readonly flushDelayMs: number;
 	private flushTimer: ReturnType<typeof setTimeout> | null = null;
+	private persistChain: Promise<unknown> = Promise.resolve();
 	private dirty = false;
 	private closed = false;
 
@@ -105,6 +101,15 @@ export class PluginLedgerStore {
 		this.flushDelayMs = Math.max(0, opts.flushDelayMs ?? DEFAULT_FLUSH_DELAY_MS);
 		this.now = opts.now ?? Date.now;
 		this.file = join(opts.dataDir, "plugin-inbox", `${opts.pluginId}.json`);
+		this.doc = openVersionedDoc<LedgerRecord[]>({
+			file: this.file,
+			label: `plugin-ledger(${this.pluginId})`,
+			versions: [1],
+			versionKey: "v",
+			parse: (document) => (Array.isArray(document.records) ? (document.records as LedgerRecord[]) : null),
+			serialize: (records) => ({ v: 1, records }),
+			empty: () => [],
+		});
 		this.load();
 	}
 
@@ -112,28 +117,27 @@ export class PluginLedgerStore {
 		return `${direction}:${key}`;
 	}
 
+	/**
+	 * 账本文件认不出（版本不认识 / 解析不了且无法留存）时 `read()` 给空账本、`write()` 抛错。
+	 * 空账本仍阻断插件启动之外的一切危害：本次进程内幂等照常（内存里照样记），但绝不把认不出的
+	 * 账本覆盖成空表（issues #982：清空幂等记录 → 历史消息重复投递并真实重跑 agent）。
+	 */
 	private load(): void {
-		if (!existsSync(this.file)) return;
-		try {
-			const parsed = JSON.parse(readFileSync(this.file, "utf8")) as LedgerFile;
-			if (!parsed || parsed.v !== 1 || !Array.isArray(parsed.records)) return;
-			for (const r of parsed.records) {
-				if (!r || typeof r.key !== "string" || typeof r.state !== "string") continue;
-				if (!["claimed", "done", "failed"].includes(r.state)) continue;
-				const direction: LedgerDirection = r.direction === "out" ? "out" : "in";
-				const key = typeof r.key === "string" ? r.key : "";
-				if (!key) continue;
-				this.records.set(this.mapKey(direction, key), {
-					...r,
-					direction,
-					id: typeof r.id === "string" ? r.id : `${this.pluginId}:${r.key}`,
-					attempts: Number.isFinite(r.attempts) ? Number(r.attempts) : 1,
-					createdAt: Number.isFinite(r.createdAt) ? Number(r.createdAt) : this.now(),
-					updatedAt: Number.isFinite(r.updatedAt) ? Number(r.updatedAt) : this.now(),
-				});
-			}
-		} catch {
-			// 坏文件不阻断插件启动：当作空账本，下次 flush 覆盖。
+		const loaded = this.doc.read();
+		for (const r of loaded) {
+			if (!r || typeof r.key !== "string" || typeof r.state !== "string") continue;
+			if (!["claimed", "done", "failed"].includes(r.state)) continue;
+			const direction: LedgerDirection = r.direction === "out" ? "out" : "in";
+			const key = typeof r.key === "string" ? r.key : "";
+			if (!key) continue;
+			this.records.set(this.mapKey(direction, key), {
+				...r,
+				direction,
+				id: typeof r.id === "string" ? r.id : `${this.pluginId}:${r.key}`,
+				attempts: Number.isFinite(r.attempts) ? Number(r.attempts) : 1,
+				createdAt: Number.isFinite(r.createdAt) ? Number(r.createdAt) : this.now(),
+				updatedAt: Number.isFinite(r.updatedAt) ? Number(r.updatedAt) : this.now(),
+			});
 		}
 	}
 
@@ -220,6 +224,10 @@ export class PluginLedgerStore {
 		}
 	}
 
+	/**
+	 * 触发一次落盘。本身是写后即忘的（原设计就是去抖 + 定时器），这里只负责把 I/O 挪出事件循环：
+	 * 同一账本的写入按登记顺序串行，失败把 `dirty` 复位成 true，下一次变更或 `drain()` 再试。
+	 */
 	flush(): void {
 		if (this.flushTimer) {
 			clearTimeout(this.flushTimer);
@@ -227,17 +235,29 @@ export class PluginLedgerStore {
 		}
 		if (!this.dirty) return;
 		this.dirty = false;
+		// 无论能否落盘都要先裁剪：否则「文件认不出 → 一直拒写」时内存会无界增长。
 		this.prune();
-		try {
-			writeJsonAtomicSync(this.file, { v: 1, records: this.all() });
-		} catch {
-			// 写盘失败：保持在内存里，下次变更再试；绝不因此丢消息。
-			this.dirty = true;
-		}
+		const snapshot = this.all();
+		this.persistChain = this.persistChain.then(async () => {
+			try {
+				await this.doc.write(snapshot);
+			} catch {
+				// 写盘失败 / 文件认不出（版本不认识、解析不了且无法留存）：保持内存不丢，下次变更再试。
+				// 认不出的原因已由 versioned-doc 登记到 /api/health，这里不再重复刷日志。
+				this.dirty = true;
+			}
+		});
 	}
 
-	dispose(): void {
+	/** 等到排队中的写入落定（关停 / 测试用）。 */
+	async drain(): Promise<void> {
 		this.flush();
+		await this.persistChain;
+	}
+
+	async dispose(): Promise<void> {
+		this.flush();
+		await this.persistChain;
 		this.closed = true;
 	}
 }

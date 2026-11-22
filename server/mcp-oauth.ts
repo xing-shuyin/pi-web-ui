@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { isDeepStrictEqual } from "node:util";
-import { writeAtomicSync } from "./atomic-file.js";
+import { writeAtomic } from "./atomic-file.js";
 
 export const MCP_REFRESH_SKEW_MS = 30_000;
 const REFRESH_LOCK_STALE_MS = 20_000;
@@ -103,8 +103,9 @@ export function readMcpAuthStore(options: McpAuthStoreOptions = {}): McpAuthStor
 	return {};
 }
 
-export function writeMcpAuthStore(store: McpAuthStore, options: McpAuthStoreOptions = {}): void {
-	writeAtomicSync(getMcpAuthStorePath(options), `${JSON.stringify(store, null, 2)}\n`, { mode: 0o600 });
+export async function writeMcpAuthStore(store: McpAuthStore, options: McpAuthStoreOptions = {}): Promise<void> {
+	// 凭据：落盘成功才返回，失败抛出（调用方在锁内等它完成后再对外声称已授权）。
+	await writeAtomic(getMcpAuthStorePath(options), `${JSON.stringify(store, null, 2)}\n`, { mode: 0o600 });
 }
 
 export function loadMcpAuthState(options: McpAuthStoreOptions & { name: string; serverUrl: string }): {
@@ -177,7 +178,11 @@ async function withRefreshLock<T>(
 	}
 }
 
-export async function withMcpAuthStoreLock<T>(storePath: string, fn: () => T, signal?: AbortSignal): Promise<T> {
+export async function withMcpAuthStoreLock<T>(
+	storePath: string,
+	fn: () => T | Promise<T>,
+	signal?: AbortSignal,
+): Promise<T> {
 	const lockPath = `${storePath}.lock`;
 	mkdirSync(dirname(storePath), { recursive: true, mode: 0o700 });
 	const deadline = Date.now() + STORE_LOCK_WAIT_MS;
@@ -202,7 +207,8 @@ export async function withMcpAuthStoreLock<T>(storePath: string, fn: () => T, si
 	}
 	try {
 		signal?.throwIfAborted();
-		return fn();
+		// 锁内的工作可能是异步落盘（`writeMcpAuthStore`）：必须等它落完再释放锁，否则下一个进程会读到旧凭据。
+		return await fn();
 	} finally {
 		rmSync(lockPath, { recursive: true, force: true });
 	}
@@ -338,7 +344,7 @@ export async function refreshMcpAccessToken(options: McpRefreshOptions): Promise
 			const expiresAt = typeof tokens.expires_in === "number" ? nowMs + tokens.expires_in * 1000 : undefined;
 			return withMcpAuthStoreLock(
 				storePath,
-				() => {
+				async () => {
 					signal?.throwIfAborted();
 					const fresh = readMcpAuthStore(options);
 					const currentKey = fresh[key] ? key : legacyKey;
@@ -355,7 +361,7 @@ export async function refreshMcpAccessToken(options: McpRefreshOptions): Promise
 					fresh[key] = next;
 					if (sourceKey === legacyKey && legacyKey !== key) delete fresh[legacyKey];
 					signal?.throwIfAborted();
-					writeMcpAuthStore(fresh, options);
+					await writeMcpAuthStore(fresh, options);
 					return tokens.access_token;
 				},
 				signal,

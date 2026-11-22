@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
 import { ClientSession } from "../../server/agent-service.js";
 import { withSubagentOwner, makeSubagentTools } from "../../server/subagents.js";
 import { conversationIdentity, bindConversationParent } from "../../server/conversation-identity.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
+import { settle } from "../helpers/settle.js";
 
 const questions = [{ id: "choice", question: "Proceed?" }];
 const answers = [{ id: "choice", selected: ["yes"] }];
@@ -40,9 +42,16 @@ function holder(id: string) {
 	owners.push(cs);
 	return cs;
 }
-/** 排空是异步的（drain 里 await SDK 投递）：把微任务链跑完再断言。 */
-async function settle(): Promise<void> {
-	for (let i = 0; i < 12; i++) await Promise.resolve();
+
+/**
+ * 这一轮实际收到的正文（两条通道都看）。
+ * #983 之后 `submitText` 会在提交点把轮次标成「在飞」，于是后续消息走 steer 而不是 sendUserMessage；
+ * 只数 sendUserMessage 会漏掉后者。
+ */
+function deliveredTexts(conv: any): string[] {
+	const fromSend = conv.session.sendUserMessage.mock.calls.map((c: any[]) => String(c[0]));
+	const fromSteer = conv.session.steer.mock.calls.map((c: any[]) => String(c[0]));
+	return [...fromSend, ...fromSteer];
 }
 
 function endpoint(owner: any, id: string, parentId?: string) {
@@ -109,7 +118,8 @@ describe("ClientSession communication runtime", () => {
 		await expect(c.communicate(grandchild.id, "send", { to: peer.id, message: "same project" })).resolves.toMatchObject(
 			{ status: "queued" },
 		);
-		expect(root.session.sendUserMessage).toHaveBeenCalledTimes(2);
+		// 两条消息都到了 root：第一条开启新一轮（sendUserMessage），第二条插进这一轮（steer，#983）。
+		expect(deliveredTexts(root)).toHaveLength(2);
 		expect(child.session.sendUserMessage).toHaveBeenCalledOnce();
 	});
 	it("does not authorize unrelated projects or orphaned descendants by checkout similarity", async () => {
@@ -262,9 +272,13 @@ describe("ClientSession communication runtime", () => {
 		await a.communicate(sender.id, "send", { to: target.id, message: "verify again" });
 		expect(target.subagentTask).toEqual({ mode: "manual", generation: 4, completionRequested: false });
 		expect(target.subagentDoneNotified).toBe(false);
+		// 刚投进去的这一轮结束了才轮得到它的完成通知（#983：提交点会把轮次标成在飞，
+		// 在飞期间该子代理自己的工作算 pending，通知必须等它收尾）。
+		target.promptInFlight = false;
+		target.session.isStreaming = false;
 		await vi.advanceTimersByTimeAsync(500);
-		// 投递门统一走 submitText（空闲时不带 deliverAs 参数），只关心正文。
-		expect(root.session.sendUserMessage.mock.calls.at(-1)?.[0]).toContain("new result");
+		await settle();
+		// 投递门统一走 submitText（空闲时不带 deliverAs 参数），只关心正文。		expect(deliveredTexts(root).at(-1)).toContain("new result");
 		vi.useRealTimers();
 	});
 	it("user settlement of an escalated request reschedules the idle manual receiver", async () => {
@@ -306,12 +320,12 @@ describe("ClientSession communication runtime", () => {
 		a.findConversationHome = (session: unknown) =>
 			session === moved.session ? { session: b, convId: moved.id } : undefined;
 		await a.communicateFromSession({ session: moved.session }, "send", { to: target.id, message: "current owner" });
-		expect(target.session.sendUserMessage).toHaveBeenCalledOnce();
+		expect(deliveredTexts(target)).toHaveLength(1);
 		expect(stale.session.sendUserMessage).not.toHaveBeenCalled();
 		bindConversationParent(moved, target);
 		const legacy = a.communicationBoundSubagentHost({ session: moved.session });
 		await legacy.handoffSubagent(stale.id, target.id, "legacy current owner");
-		expect(target.session.sendUserMessage).toHaveBeenCalledTimes(2);
+		expect(deliveredTexts(target)).toHaveLength(2);
 		moved.parentId = target.id;
 		moved.isSubagent = true;
 		const pending = legacy.consultParent(stale.id, questions);

@@ -1,4 +1,3 @@
-import { resolve } from "node:path";
 import {
 	createWriteToolDefinition,
 	createEditToolDefinition,
@@ -8,7 +7,8 @@ import { pick, type ServerLang } from "./i18n.js";
 import { planModeDenial } from "./plan-mode.js";
 import { goalReviewDenial } from "./goal-review-gate.js";
 import { delegationDenial } from "./delegate-mode.js";
-import { isPathInsideRoot, extractTargetPath, type ApprovalRule } from "./approval-rules.js";
+import { extractTargetPath, type ApprovalRule } from "./approval-rules.js";
+import { isInsideRoots, isInsideRootsLexical } from "./path-boundary.js";
 import { checkDangerousToolCall, pluginApprovalCategory, type ToolApprovalResolution } from "./tool-approval.js";
 import { parseHashlinePatch } from "./hashline-engine.js";
 import {
@@ -25,7 +25,6 @@ import {
 	createRemoteSdkOperations,
 	isRemoteWorkspaceUri,
 	parseRemoteWorkspaceUri,
-	resolveRemoteWorkspacePath,
 	restoreWorkspaceUriFromSessionDir,
 } from "./remote-ssh-service.js";
 
@@ -419,11 +418,13 @@ export function isInsideWorkspaceRoots(targetPath: string, cwd: string, roots: s
 	if (isRemoteWorkspaceUri(effCwd)) {
 		const parsed = parseRemoteWorkspaceUri(effCwd);
 		if (!parsed) return false;
-		return resolveRemoteWorkspacePath(parsed.remotePath, targetPath) !== null;
+		// 远程虚拟路径：路径属于远端主机，本地无从 realpath —— 走同一单源的词法版（禁止做本地 realpath）。
+		const cleaned = targetPath.replace(/\\/g, "/").trim();
+		const remoteTarget = isRemoteWorkspaceUri(cleaned) ? (parseRemoteWorkspaceUri(cleaned)?.remotePath ?? "") : cleaned;
+		return isInsideRootsLexical(remoteTarget, [parsed.remotePath], parsed.remotePath);
 	}
-	const abs = resolve(cwd, targetPath);
-	const allRoots = [resolve(cwd), ...roots.map((r) => resolve(r))];
-	return allRoots.some((r) => isPathInsideRoot(abs, r));
+	// target 传原始串：先 resolve 会把 `link/../x` 折叠成 `cwd/x`，丢掉 OS 的解析顺序。
+	return isInsideRoots(targetPath, [cwd, ...roots], cwd);
 }
 
 export function wrapWriteToolWithPermission(
@@ -444,6 +445,24 @@ export function wrapWriteToolWithPermission(
 		execute: async (toolCallId, params, signal, onUpdate, ctx) => {
 			checkCancellation(signal);
 			const perm = getPermission();
+			const outsidePathOf = (candidate: unknown): string | null => {
+				const p = extractTargetPath(candidate);
+				return isInsideWorkspaceRoots(p, cwd, getRoots()) ? null : p;
+			};
+			const outsideDenial = (p: string) =>
+				({
+					content: [
+						{
+							type: "text",
+							text: pick(
+								getLang(),
+								`【权限被拒绝】当前会话处于「工作区内修改」（workspace-write-never）模式，禁止修改工作区外部文件（"${p}"）。若需修改请切换至「完全权限」。`,
+								`[Permission Denied] The current session is in 'workspace-write-never' mode; writing files outside the workspace ("${p}") is forbidden. Switch to 'danger-full-access' if needed.`,
+							),
+						},
+					],
+					isError: true,
+				}) as never;
 			if (perm === "read-only") {
 				return {
 					content: [
@@ -460,22 +479,8 @@ export function wrapWriteToolWithPermission(
 				} as never;
 			}
 			if (perm === "workspace-write-never") {
-				const p = extractTargetPath(params);
-				if (!isInsideWorkspaceRoots(p, cwd, getRoots())) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: pick(
-									getLang(),
-									`【权限被拒绝】当前会话处于「工作区内修改」（workspace-write-never）模式，禁止修改工作区外部文件（"${p}"）。若需修改请切换至「完全权限」。`,
-									`[Permission Denied] The current session is in 'workspace-write-never' mode; writing files outside the workspace ("${p}") is forbidden. Switch to 'danger-full-access' if needed.`,
-								),
-							},
-						],
-						isError: true,
-					} as never;
-				}
+				const outside = outsidePathOf(params);
+				if (outside !== null) return outsideDenial(outside);
 			}
 
 			let effectiveParams = params;
@@ -529,6 +534,11 @@ export function wrapWriteToolWithPermission(
 					} else if (res.decision === "edit") {
 						effectiveParams = res.editedParams ?? params;
 						userEdited = true;
+						// 审批背书的是「原始参数」：参数被改过之后必须再跑一次硬门，否则改后的路径绕开 workspace-write-never。
+						if (perm === "workspace-write-never") {
+							const outside = outsidePathOf(effectiveParams);
+							if (outside !== null) return outsideDenial(outside);
+						}
 					}
 				}
 			}
@@ -577,6 +587,24 @@ export function wrapEditToolWithPermission(
 		execute: async (toolCallId, params, signal, onUpdate, ctx) => {
 			checkCancellation(signal);
 			const perm = getPermission();
+			const outsidePathOf = (candidate: unknown): string | null => {
+				const p = extractTargetPath(candidate);
+				return isInsideWorkspaceRoots(p, cwd, getRoots()) ? null : p;
+			};
+			const outsideDenial = (p: string) =>
+				({
+					content: [
+						{
+							type: "text",
+							text: pick(
+								getLang(),
+								`【权限被拒绝】当前会话处于「工作区内修改」（workspace-write-never）模式，禁止修改工作区外部文件（"${p}"）。若需修改请切换至「完全权限」。`,
+								`[Permission Denied] The current session is in 'workspace-write-never' mode; editing files outside the workspace ("${p}") is forbidden. Switch to 'danger-full-access' if needed.`,
+							),
+						},
+					],
+					isError: true,
+				}) as never;
 			if (perm === "read-only") {
 				return {
 					content: [
@@ -593,22 +621,8 @@ export function wrapEditToolWithPermission(
 				} as never;
 			}
 			if (perm === "workspace-write-never") {
-				const p = extractTargetPath(params);
-				if (!isInsideWorkspaceRoots(p, cwd, getRoots())) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: pick(
-									getLang(),
-									`【权限被拒绝】当前会话处于「工作区内修改」（workspace-write-never）模式，禁止修改工作区外部文件（"${p}"）。若需修改请切换至「完全权限」。`,
-									`[Permission Denied] The current session is in 'workspace-write-never' mode; editing files outside the workspace ("${p}") is forbidden. Switch to 'danger-full-access' if needed.`,
-								),
-							},
-						],
-						isError: true,
-					} as never;
-				}
+				const outside = outsidePathOf(params);
+				if (outside !== null) return outsideDenial(outside);
 			}
 
 			let effectiveParams = params;
@@ -662,6 +676,11 @@ export function wrapEditToolWithPermission(
 					} else if (res.decision === "edit") {
 						effectiveParams = res.editedParams ?? params;
 						userEdited = true;
+						// 审批背书的是「原始参数」：参数被改过之后必须再跑一次硬门，否则改后的路径绕开 workspace-write-never。
+						if (perm === "workspace-write-never") {
+							const outside = outsidePathOf(effectiveParams);
+							if (outside !== null) return outsideDenial(outside);
+						}
 					}
 				}
 			}
@@ -706,23 +725,41 @@ export function wrapPatchToolWithPermission(
 		...tool,
 		execute: async (toolCallId, params, signal, onUpdate, ctx) => {
 			checkCancellation(signal);
+			const targetsOf = (candidate: unknown): string[] => {
+				const text =
+					typeof (candidate as { patch?: unknown })?.patch === "string" ? (candidate as { patch: string }).patch : "";
+				const out: string[] = [];
+				try {
+					for (const sec of parseHashlinePatch(text)) {
+						out.push(sec.filePath);
+						for (const h of sec.hunks) {
+							if (h.kind === "move_file" && h.targetPath) out.push(h.targetPath);
+						}
+					}
+				} catch {
+					return [];
+				}
+				return [...new Set(out.filter((t) => t.trim()))];
+			};
 			const patchText =
 				typeof (params as { patch?: unknown })?.patch === "string" ? (params as { patch: string }).patch : "";
-			let targets: string[] = [];
-			try {
-				const sections = parseHashlinePatch(patchText);
-				for (const sec of sections) {
-					targets.push(sec.filePath);
-					for (const h of sec.hunks) {
-						if (h.kind === "move_file" && h.targetPath) targets.push(h.targetPath);
-					}
-				}
-				targets = [...new Set(targets.filter((t) => t.trim()))];
-			} catch {
-				targets = [];
-			}
+			const targets = targetsOf(params);
 
 			const perm = getPermission();
+			const outsideDenial = (outside: string[]) =>
+				({
+					content: [
+						{
+							type: "text",
+							text: pick(
+								getLang(),
+								`【权限被拒绝】当前会话处于「工作区内修改」（workspace-write-never）模式，禁止修改工作区外部文件（${outside.map((p) => `"${p}"`).join("、")}）。若需修改请切换至「完全权限」。`,
+								`[Permission Denied] The current session is in 'workspace-write-never' mode; patching files outside the workspace (${outside.map((p) => `"${p}"`).join(", ")}) is forbidden. Switch to 'danger-full-access' if needed.`,
+							),
+						},
+					],
+					isError: true,
+				}) as never;
 			if (perm === "read-only") {
 				return {
 					content: [
@@ -740,21 +777,7 @@ export function wrapPatchToolWithPermission(
 			}
 			if (perm === "workspace-write-never") {
 				const outside = targets.filter((p) => !isInsideWorkspaceRoots(p, cwd, getRoots()));
-				if (outside.length > 0) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: pick(
-									getLang(),
-									`【权限被拒绝】当前会话处于「工作区内修改」（workspace-write-never）模式，禁止修改工作区外部文件（${outside.map((p) => `"${p}"`).join("、")}）。若需修改请切换至「完全权限」。`,
-									`[Permission Denied] The current session is in 'workspace-write-never' mode; patching files outside the workspace (${outside.map((p) => `"${p}"`).join(", ")}) is forbidden. Switch to 'danger-full-access' if needed.`,
-								),
-							},
-						],
-						isError: true,
-					} as never;
-				}
+				if (outside.length > 0) return outsideDenial(outside);
 			}
 
 			let effectiveParams = params;
@@ -824,6 +847,11 @@ export function wrapPatchToolWithPermission(
 						if (typeof editedPatch === "string" && editedPatch !== patchText) {
 							effectiveParams = { ...(params as Record<string, unknown>), patch: editedPatch };
 							userEdited = true;
+						}
+						// 审批背书的是「原始补丁」：补丁被改过之后必须再跑一次硬门，否则改后的路径绕开 workspace-write-never。
+						if (perm === "workspace-write-never") {
+							const escaped = targetsOf(effectiveParams).filter((p) => !isInsideWorkspaceRoots(p, cwd, getRoots()));
+							if (escaped.length > 0) return outsideDenial(escaped);
 						}
 					}
 				}

@@ -9,15 +9,10 @@ import {
 	stat as fspStat,
 } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
-import { writeAtomicSync } from "./atomic-file.js";
+import { isInsideRoots } from "./path-boundary.js";
 import { runProcess } from "./run-process.js";
-import { SETTINGS_SECRETS_KEY } from "./plugin-secrets.js";
+import { commitJsonQueued, readQueuedView, SETTINGS_SECRETS_KEY } from "./plugin-secrets.js";
 import { createRequire } from "node:module";
-import { isInsideRoot, realPathOfNearest } from "./plugin-project.js";
-
-function atomicWrite(file: string, data: string): void {
-	writeAtomicSync(file, data);
-}
 
 const rmwChains = new Map<string, Promise<unknown>>();
 
@@ -62,17 +57,41 @@ export class PluginStorage {
 		return parsed as Record<string, unknown>;
 	}
 
+	/**
+	 * 读顺序：已登记未落盘的最新内容 → 盘上内容。排队写覆盖期间读自己的写，
+	 * 这样 `host.storage.set()` 不 await 的老插件（`set()` 紧跟 `get()`）也读得到。
+	 */
 	private load(): Record<string, unknown> {
+		const queued = readQueuedView<Record<string, unknown>>(this.file);
+		if (queued) {
+			if (!queued || typeof queued !== "object" || Array.isArray(queued)) throw new Error("Invalid plugin storage");
+			this.cache = queued;
+			return queued;
+		}
 		const committed = this.readFromDisk();
 		this.cache = committed;
 		return this.cache;
 	}
 
-	private commit(candidate: Record<string, unknown>): void {
+	/** 先落盘成功 → 再更新内存投影（失败时不改 cache，候选值不对外可见）。 */
+	private async commit(candidate: Record<string, unknown>): Promise<void> {
 		const serialized = JSON.stringify(candidate);
 		const committed = JSON.parse(serialized) as Record<string, unknown>;
-		atomicWrite(this.file, serialized);
+		await commitJsonQueued(this.file, committed);
 		this.cache = committed;
+	}
+
+	private async mutate(key: string, apply: (store: Record<string, unknown>) => boolean): Promise<void> {
+		const run = (async (): Promise<void> => {
+			await withFileRmwLock(this.file, async () => {
+				// 读顺序与 `load()` 一致：已登记未落盘的最新内容优先（否则会吞掉排队中的写）。
+				const store = readQueuedView<Record<string, unknown>>(this.file) ?? this.readFromDisk();
+				if (!apply(store)) return;
+				await this.commit(store);
+			});
+		})();
+		run.catch((err: unknown) => console.error(`[plugin-storage] ${key} 落盘失败：`, err));
+		await run;
 	}
 
 	get<T>(key: string, fallback?: T): T | undefined {
@@ -85,12 +104,13 @@ export class PluginStorage {
 		return Object.fromEntries(Object.entries(this.load()).filter(([key]) => key !== SETTINGS_SECRETS_KEY));
 	}
 
-	set(key: string, value: unknown): void {
+	/** 落盘成功后才 resolve（老插件不 await 也不会漏写；接口从 void 放宽成 Promise 仍源码兼容）。 */
+	set(key: string, value: unknown): Promise<void> {
 		if (!key) throw new Error("storage.set: key 不能为空");
 		if (key === SETTINGS_SECRETS_KEY) throw new Error("Reserved plugin storage key");
-		withFileRmwLockSync(this.file, () => {
-			const candidate = { ...this.readFromDisk(), [key]: value };
-			this.commit(candidate);
+		return this.mutate(`set(${key})`, (store) => {
+			store[key] = value;
+			return true;
 		});
 	}
 
@@ -102,23 +122,23 @@ export class PluginStorage {
 		return Object.keys(this.load()).filter((key) => key !== SETTINGS_SECRETS_KEY);
 	}
 
-	clear(preserveSettings = true): void {
-		withFileRmwLockSync(this.file, () => {
-			const store = this.readFromDisk();
+	clear(preserveSettings = true): Promise<void> {
+		return this.mutate("clear", (store) => {
 			const candidate: Record<string, unknown> = {};
 			if (SETTINGS_SECRETS_KEY in store) candidate[SETTINGS_SECRETS_KEY] = store[SETTINGS_SECRETS_KEY];
 			if (preserveSettings && "settings" in store) candidate.settings = store.settings;
-			this.commit(candidate);
+			for (const key of Object.keys(store)) delete store[key];
+			Object.assign(store, candidate);
+			return true;
 		});
 	}
 
-	delete(key: string): void {
+	delete(key: string): Promise<void> {
 		if (key === SETTINGS_SECRETS_KEY) throw new Error("Reserved plugin storage key");
-		withFileRmwLockSync(this.file, () => {
-			const candidate = this.readFromDisk();
-			if (!Object.hasOwn(candidate, key)) return;
-			delete candidate[key];
-			this.commit(candidate);
+		return this.mutate(`delete(${key})`, (store) => {
+			if (!Object.hasOwn(store, key)) return false;
+			delete store[key];
+			return true;
 		});
 	}
 }
@@ -181,10 +201,7 @@ export function ensurePluginDeps(
 	const run = async (): Promise<boolean> => {
 		if (!existsSync(join(pluginDir, "package.json"))) {
 			try {
-				atomicWrite(
-					join(pluginDir, "package.json"),
-					JSON.stringify({ name: "plugin-runtime-deps", private: true }, null, 2),
-				);
+				await commitJsonQueued(join(pluginDir, "package.json"), { name: "plugin-runtime-deps", private: true });
 			} catch {}
 		}
 		onProgress?.(`正在安装依赖：${missing.join(", ")}…（首次约需几分钟）`);
@@ -266,24 +283,15 @@ export function globToRegExp(pattern: string): RegExp {
 export class WorkspaceFS {
 	constructor(private readonly root: () => string) {}
 
+	/**
+	 * 工作区内的绝对路径。边界判定走单源 `server/path-boundary.ts`：
+	 * `rel` 传**原始串**（先 resolve 会把 `link/../x` 折叠掉），链接指到工作区外即越界（读写同一条线）。
+	 */
 	private abs(rel: unknown): string {
 		const rootDir = resolve(this.root());
-		const target = resolve(rootDir, typeof rel === "string" ? rel : "");
-		if (target !== rootDir && !target.startsWith(rootDir + sepOf())) {
-			throw new Error(`路径越界：${String(rel)}`);
-		}
-		return target;
-	}
-
-	private assertRealInsideRoot(rel: unknown): void {
-		const target = this.abs(rel);
-		const targetReal = realPathOfNearest(target);
-		if (!targetReal) throw new Error(`路径越界：无法解析真实路径 ${String(rel)}`);
-		const rootDir = resolve(this.root());
-		const rootReal = realPathOfNearest(rootDir) ?? rootDir;
-		if (!isInsideRoot(rootReal, targetReal)) {
-			throw new Error(`路径越界（符号链接指向工作区之外）：${String(rel)}`);
-		}
+		const raw = typeof rel === "string" ? rel : "";
+		if (!isInsideRoots(raw, [rootDir], rootDir)) throw new Error(`路径越界：${raw}`);
+		return resolve(rootDir, raw);
 	}
 
 	async list(relDir = ""): Promise<WsEntry[]> {
@@ -307,21 +315,18 @@ export class WorkspaceFS {
 	}
 
 	async write(relPath: string, data: string | Uint8Array): Promise<void> {
-		this.assertRealInsideRoot(relPath);
 		const target = this.abs(relPath);
 		await fspMkdir(dirname(target), { recursive: true });
 		await fspWriteFile(target, data);
 	}
 
 	async append(relPath: string, data: string | Uint8Array): Promise<void> {
-		this.assertRealInsideRoot(relPath);
 		const target = this.abs(relPath);
 		await fspMkdir(dirname(target), { recursive: true });
 		await fspAppendFile(target, data);
 	}
 
 	async mkdir(relDir: string): Promise<void> {
-		this.assertRealInsideRoot(relDir);
 		await fspMkdir(this.abs(relDir), { recursive: true });
 	}
 
@@ -364,6 +369,8 @@ export class WorkspaceFS {
 				const abs = join(dir, e.name);
 				const rel = relative(base, abs).replace(/\\/g, "/");
 				if (e.isDirectory()) {
+					// 目录链接指到工作区外：不进去（边界单源判定，读写同一条线）。
+					if (e.isSymbolicLink() && !isInsideRoots(abs, [resolve(this.root())])) continue;
 					if (re.test(rel) || re.test(`${rel}/`)) out.push(rel);
 					stack.push(abs);
 				} else if (re.test(rel)) {
@@ -375,11 +382,6 @@ export class WorkspaceFS {
 	}
 
 	async remove(relPath: string): Promise<void> {
-		this.assertRealInsideRoot(relPath);
 		await fspRm(this.abs(relPath), { recursive: true, force: false });
 	}
-}
-
-function sepOf(): string {
-	return process.platform === "win32" ? "\\" : "/";
 }

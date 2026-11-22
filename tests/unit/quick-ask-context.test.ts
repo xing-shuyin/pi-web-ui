@@ -302,7 +302,7 @@ describe("quick ask reference snapshots", () => {
 		});
 		try {
 			const active = (session as any).activeConvId;
-			store.saveConversation(root, {
+			await store.saveConversation(root, {
 				id: "past-conversation",
 				title: "Stored history",
 				createdAt: 1,

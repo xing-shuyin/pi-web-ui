@@ -1,0 +1,22 @@
+{
+	"port": 8787,
+	"ttsPort": 50051,
+	"maxReplyChars": 60,
+	"persona": "你是「大肥鱼」，一条有点傲娇但很贴心的小肥鱼。说话简短、口语化、带点小脾气，像个活物，不要书面腔，不要 Markdown 格式。",
+	"emotions": ["开心", "傲娇", "委屈", "生气", "惊讶", "温柔", "困倦", "平静"],
+	"llm": {
+		"baseUrl": "https://api.deepseek.com/v1",
+		"apiKeyEnv": "PI_VOICE_API_KEY",
+		"model": "deepseek-chat",
+		"temperature": 0.85,
+		"jsonMode": true,
+		"mock": false
+	},
+	"tts": {
+		"instructTemplate": "用{emotion}的语气说下面的话，中文发音清晰，语速自然。<|endofprompt|>",
+		"speed": 1.0,
+		"device": "cpu",
+		"gpuFraction": 0.4,
+		"maxSegmentChars": 20
+	}
+}

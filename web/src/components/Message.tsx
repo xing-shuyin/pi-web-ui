@@ -74,6 +74,17 @@ import { appSend, useAppField } from "../app-globals";
 import { isAbortedTurn } from "../aborted-turn";
 
 const INLINE_MARKER_TOKEN_RE = /\[\[\s*([A-Za-z][A-Za-z0-9_-]*)\s*:\s*([A-Za-z][A-Za-z0-9_-]*)\s*:(.*?)\s*\]\]/g;
+/**
+ * 模型错误分类 → 文案 key（issue #978）。分类判据只在 `server/model-error.ts`，
+ * 这里只负责挑词；认不出的 kind 一律走 unknown。
+ */
+const MODEL_ERROR_KIND_KEYS: Readonly<Record<string, Parameters<Translate>[0]>> = {
+	gateway: "modelError.gateway",
+	auth: "modelError.auth",
+	quota: "modelError.quota",
+	model: "modelError.model",
+	unknown: "modelError.unknown",
+};
 const BUILTIN_INLINE_MARKER_TOOLS: ReadonlySet<string> = new Set([
 	"todo",
 	"notify",
@@ -1287,7 +1298,50 @@ export const Message = memo(function Message({
 						) : (
 							message.errorMessage && (
 								<div className="msg-error">
-									<span className="msg-error-text">{message.errorMessage}</span>
+									{message.errorInfo ? (
+										<>
+											<span className="msg-error-text">
+												{t(MODEL_ERROR_KIND_KEYS[message.errorInfo.kind] ?? "modelError.unknown")}
+												{typeof message.errorInfo.status === "number" ? ` · HTTP ${message.errorInfo.status}` : ""}
+											</span>
+											{message.errorInfo.summary && (
+												<span className="msg-error-text" style={{ marginTop: 4 }}>
+													{message.errorInfo.summary}
+												</span>
+											)}
+											{message.errorInfo.retries && message.errorInfo.retries.attempt > 0 && (
+												<span className="msg-error-text" style={{ marginTop: 4 }}>
+													{t("modelError.retried", {
+														attempt: message.errorInfo.retries.attempt,
+														max: message.errorInfo.retries.maxAttempts || message.errorInfo.retries.attempt,
+													})}
+												</span>
+											)}
+											{message.errorMessage.trim() !== message.errorInfo.summary.trim() && (
+												<details style={{ marginTop: 6, minWidth: 0 }}>
+													<summary style={{ cursor: "pointer", minWidth: 0, overflowWrap: "anywhere" }}>
+														{t("modelError.rawResponse")}
+													</summary>
+													<pre
+														style={{
+															margin: "6px 0 0",
+															maxHeight: 260,
+															overflow: "auto",
+															whiteSpace: "pre-wrap",
+															overflowWrap: "anywhere",
+															wordBreak: "break-word",
+															font: "inherit",
+															minWidth: 0,
+														}}
+													>
+														{message.errorMessage}
+													</pre>
+												</details>
+											)}
+										</>
+									) : (
+										<span className="msg-error-text">{message.errorMessage}</span>
+									)}
 									{isLast && !streaming && onRetry && (
 										<button type="button" className="msg-retry-btn" title={t("retryLastTip")} onClick={onRetry}>
 											<FiRefreshCw /> {t("retryNow")}

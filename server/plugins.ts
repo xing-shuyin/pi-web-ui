@@ -12,9 +12,9 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { ttsService, type TtsClient, type TtsEngine } from "./tts-service.js";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { cpSync, existsSync, lstatSync, readFileSync, readdirSync, watch as fsWatch } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { writeJsonAtomicSync } from "./atomic-file.js";
+import { writeJsonAtomic } from "./atomic-file.js";
 import { normalizePluginChatAttachments } from "./plugin-chat-attachments.js";
 import {
 	type ServerMessage,
@@ -46,17 +46,25 @@ import {
 	WorkspaceFS,
 	withFileRmwLockSync,
 } from "./plugin-facilities.js";
+import { flushQueuedJson } from "./plugin-secrets.js";
 import {
 	parseCronSpec,
 	armDelay,
 	nextCronFire,
 	loadScheduleRecords,
 	saveScheduleRecords,
+	flushScheduleRecords,
 	type CronParts,
 } from "./plugin-schedule.js";
 import { PluginPermissionStore, type PermissionFamily } from "./plugin-permissions.js";
 import { getAppVersion } from "./pkg-info.js";
-import { readCatalog, addCustomEntry, removeCustomEntry, type CatalogAddInput } from "./plugin-catalog.js";
+import {
+	readCatalog,
+	addCustomEntry,
+	removeCustomEntry,
+	flushPluginCatalog,
+	type CatalogAddInput,
+} from "./plugin-catalog.js";
 import { PluginGrantsStore, normalizeGrantPath } from "./plugin-grants.js";
 import { normalizeIconSvg } from "./icon-svg.js";
 import { cleanupRemovedPlugins } from "./plugin-removal.js";
@@ -84,13 +92,8 @@ import {
 } from "./plugin-tool-guard.js";
 import { normalizeWorkspaceRoots } from "./client-state.js";
 import { compareVersions, ensureBackup } from "./plugin-updater.js";
-import {
-	createProject,
-	isInsideRoot,
-	realPathOfNearest,
-	type ProjectCreateSpec,
-	type ProjectCreateResult,
-} from "./plugin-project.js";
+import { createProject, type ProjectCreateSpec, type ProjectCreateResult } from "./plugin-project.js";
+import { assertInsideRoots, isInsideRoots } from "./path-boundary.js";
 import {
 	listAllMcpServers,
 	checkMcpServer,
@@ -390,11 +393,11 @@ export interface PluginHost {
 	};
 	storage: {
 		get<T>(key: string, fallback?: T): T | undefined;
-		set(key: string, value: unknown): void;
-		delete(key: string): void;
+		set(key: string, value: unknown): Promise<void>;
+		delete(key: string): Promise<void>;
 		has(key: string): boolean;
 		keys(): string[];
-		clear(preserveSettings?: boolean): void;
+		clear(preserveSettings?: boolean): Promise<void>;
 		all(): Record<string, unknown>;
 	};
 	services: {
@@ -408,10 +411,10 @@ export interface PluginHost {
 	get<T>(name: string): T | undefined;
 	onService<T>(name: string, handler: (service: T | undefined) => void): () => void;
 	secrets: {
-		set(name: string, value: string): void;
+		set(name: string, value: string): Promise<void>;
 		get(name: string): string | undefined;
 		has(name: string): boolean;
-		delete(name: string): void;
+		delete(name: string): Promise<void>;
 		list(): string[];
 		getAll(): Record<string, string>;
 	};
@@ -1338,7 +1341,7 @@ function saveSettingsValues(
 	values: Record<string, unknown> | undefined,
 	lang?: () => ServerLang,
 	secrets?: PluginSecrets,
-): { error?: string; clean: Record<string, unknown> } {
+): { error?: string; clean: Record<string, unknown>; commit?: Promise<void> } {
 	const l = lang?.() ?? "en";
 	const clean: Record<string, unknown> = {};
 	const secretUpdates: Record<string, string> = {};
@@ -1373,8 +1376,10 @@ function saveSettingsValues(
 		const persist: Record<string, unknown> = {};
 		for (const [k, v] of Object.entries(clean)) if (!secretKeys.has(k)) persist[k] = v;
 		const file = join(stateDir, "storage.json");
+		let commit: Promise<void> | undefined;
+		// 同步占用检查保留旧契约（并发保存立刻报 busy，不提前通知成功）；落盘本身排队不阻塞。
 		withFileRmwLockSync(file, () => {
-			if (secrets) secrets.commitSettings(persist, secretUpdates);
+			if (secrets) commit = secrets.commitSettings(persist, secretUpdates);
 			else {
 				let existing: Record<string, unknown> = {};
 				try {
@@ -1384,14 +1389,14 @@ function saveSettingsValues(
 				} catch (err) {
 					if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
 				}
-				writeJsonAtomicSync(file, { ...existing, settings: persist }, 0);
+				commit = writeJsonAtomic(file, { ...existing, settings: persist }, 0);
 			}
 		});
+		return { clean, commit: commit ?? Promise.resolve() };
 	} catch (err) {
 		console.error(`[plugins] settings persist failed (${stateDir}):`, err);
 		return { error: (err as Error).message, clean };
 	}
-	return { clean };
 }
 
 export class PluginManager {
@@ -1556,16 +1561,28 @@ export class PluginManager {
 		} catch (err) {
 			return { error: (err as Error).message };
 		}
-		const { error, clean } = result;
+		const { error, clean, commit } = result;
 		if (error) return { error };
-		for (const h of this.loaded.get(pluginId)?.settingsHandlers ?? []) {
-			try {
-				h(clean);
-			} catch (err) {
-				console.error(`[plugin:${pluginId}] onSettingsChanged handler failed:`, err);
-			}
-		}
-		void this.pushToAll().catch(() => {});
+		void (commit ?? Promise.resolve())
+			.then(() => {
+				// 落盘成功后才通知插件（失败不得伪装成成功）
+				for (const h of this.loaded.get(pluginId)?.settingsHandlers ?? []) {
+					try {
+						h(clean);
+					} catch (err) {
+						console.error(`[plugin:${pluginId}] onSettingsChanged handler failed:`, err);
+					}
+				}
+				void this.pushToAll().catch(() => {});
+			})
+			.catch((err: unknown) => {
+				console.error(`[plugins] settings persist failed (${stateDir}):`, err);
+				this.notifyAll(
+					"error",
+					`插件「${pluginId}」设置未能落盘：${(err as Error)?.message ?? err}`,
+					`Plugin "${pluginId}" settings could not be persisted: ${(err as Error)?.message ?? err}`,
+				);
+			});
 		return {};
 	}
 
@@ -1696,7 +1713,7 @@ export class PluginManager {
 				`Plugin "${info.nameEn || info.name}" activated (${prev ? "capability list changed" : "first install"}; declared: ${list}) — verify the source is trusted`,
 			);
 			// 状态目录可能还没建（新装/刚迁移），原子写自带 mkdir；直接 writeFileSync 会 ENOENT 且每次都重报
-			writeJsonAtomicSync(markerFile, { v: 1, key, perms });
+			await writeJsonAtomic(markerFile, { v: 1, key, perms });
 		} catch (err) {
 			console.error(`[plugin:${info.id}] consent notice failed:`, err);
 		}
@@ -1901,7 +1918,7 @@ export class PluginManager {
 		const id = String(pluginId ?? "").trim();
 		if (!ID_RE.test(id)) return { changed: false, error: "非法插件 id" };
 		if (!this.domWants.get(id)) return { changed: false, error: "该插件未声明 dom 能力，无需授权" };
-		const changed = this.domConsentStore.set(id, granted);
+		const changed = await this.domConsentStore.set(id, granted);
 		if (!changed) return { changed: false };
 		this.epochCounter += 1;
 		void this.pushToAll().catch(() => {});
@@ -1910,7 +1927,7 @@ export class PluginManager {
 
 	reload(lang?: () => ServerLang): Promise<UiPluginInfo[]> {
 		if (this.reloading) return this.reloading;
-		this.dispose();
+		void this.dispose();
 		this.epochCounter += 1;
 		const generation = this.lifecycleGeneration;
 		const pending = this.ensureLoaded(lang)
@@ -2453,11 +2470,8 @@ export class PluginManager {
 	}
 
 	isInsideWorkspace(abs: string): boolean {
-		for (const root of [this.cwdValue, ...this.workspaceRoots]) {
-			const rel = relative(root, abs);
-			if (rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))) return true;
-		}
-		return false;
+		// 边界判定单源（server/path-boundary.ts）：目标与根都过 realpath，链接指到区外 = 区外。
+		return isInsideRoots(abs, [this.cwdValue, ...this.workspaceRoots]);
 	}
 
 	uiOf(pluginId: string): UiPluginUi | undefined {
@@ -2746,11 +2760,11 @@ export class PluginManager {
 		console.log(`[plugin:${id}] removed`);
 	}
 
-	dispose(): void {
+	async dispose(): Promise<void> {
 		this.lifecycleGeneration += 1;
 		this.loadingByScope.clear();
 		this.reloading = undefined;
-		for (const entry of this.ledgers.values()) entry.delivery.dispose();
+		await Promise.all([...this.ledgers.values()].map((entry) => entry.delivery.dispose()));
 		this.ledgers.clear();
 		this.inboxes.clear();
 		this.attempted.clear();
@@ -2798,9 +2812,25 @@ export class PluginManager {
 		this.manifestDiags.clear();
 		this.runtimeDiags.clear();
 		this.pluginLogs.clear();
+		// 清理全部做完后再等落盘：dispose() 的同步部分必须保持「立即释放」，否则卸载期间的宿主调用会被拖住。
+		await this.flushPersistence();
 	}
 
-	private syncBuiltinPlugins(): void {
+	/**
+	 * 等所有排队中的持久化落地（关停与测试用）：授权/目录/定时任务/机密都是同步 API + 排队写，
+	 * 关停时必须等它们落定，否则刚授权的插件重启后会退回旧状态。
+	 */
+	async flushPersistence(): Promise<void> {
+		await Promise.all([
+			flushQueuedJson(),
+			flushPluginCatalog(),
+			flushScheduleRecords(),
+			this.grants.flush(),
+			this.permGrants.flush(),
+		]);
+	}
+
+	private async syncBuiltinPlugins(): Promise<void> {
 		if (!this.builtinCatalogPath || !existsSync(this.builtinCatalogPath)) return;
 		const builtinDir = dirname(this.builtinCatalogPath);
 		if (!existsSync(builtinDir)) return;
@@ -2814,7 +2844,7 @@ export class PluginManager {
 		}
 
 		try {
-			const outcomes = prepareBundledPlugins(
+			const outcomes = await prepareBundledPlugins(
 				this.dataDir,
 				this.builtinCatalogPath,
 				new Set(
@@ -2873,7 +2903,7 @@ export class PluginManager {
 				const tgtVer = readManifestVersion(targetManifest);
 				const upgrade = Boolean(srcVer && tgtVer && compareVersions(srcVer, tgtVer) > 0);
 
-				const outcome = materializePlugin({
+				const outcome = await materializePlugin({
 					id: name,
 					sourceDir,
 					targetDir,
@@ -2897,7 +2927,7 @@ export class PluginManager {
 
 	private async scan(lang?: () => ServerLang): Promise<UiPluginInfo[]> {
 		const generation = this.lifecycleGeneration;
-		this.syncBuiltinPlugins();
+		await this.syncBuiltinPlugins();
 		const l = lang?.() ?? "en";
 		let names: string[];
 		try {
@@ -3459,25 +3489,31 @@ export class PluginManager {
 			if (self.isInsideWorkspace(abs) || self.grants.has(info.id, abs)) return abs;
 			throw new Error(`目录未授权：先 await host.fs.requestAccess(dir)（${abs}）`);
 		};
+		const grantRoots = (): string[] => [
+			self.cwdValue,
+			...self.workspaceRoots,
+			...(self.grants.list().find((g) => g.pluginId === info.id)?.paths ?? []),
+		];
 		const assertRealInsideGrant = async (abs: string): Promise<void> => {
-			const targetReal = realPathOfNearest(abs);
-			if (!targetReal) throw new Error(`无法解析真实路径：${abs}`);
-			const granted = self.grants.list().find((g) => g.pluginId === info.id)?.paths ?? [];
-			for (const r of [self.cwdValue, ...self.workspaceRoots, ...granted]) {
-				const rootReal = realPathOfNearest(resolve(r)) ?? resolve(r);
-				if (isInsideRoot(rootReal, targetReal)) return;
-			}
-			throw new Error(`路径越界（符号链接指向授权范围之外）：${abs}`);
+			// 写/删/读/列 共用同一条线：授权根（cwd + workspaceRoots + 用户授权的目录）为根，目标过 realpath。
+			assertInsideRoots(abs, grantRoots(), "插件路径");
 		};
 		const crossDirFs = {
 			list: async (absDir: string) => {
 				const abs = allowAbs(absDir);
+				await assertRealInsideGrant(abs);
 				const ents = await readdir(abs, { withFileTypes: true });
 				return ents.slice(0, 2000).map((e) => ({ name: e.name, type: e.isDirectory() ? "dir" : "file" }) as const);
 			},
-			read: async (absPath: string) => readFile(allowAbs(absPath)),
+			read: async (absPath: string) => {
+				const abs = allowAbs(absPath);
+				await assertRealInsideGrant(abs);
+				return readFile(abs);
+			},
 			readText: async (absPath: string, maxBytes?: number) => {
-				const buf = await readFile(allowAbs(absPath));
+				const abs = allowAbs(absPath);
+				await assertRealInsideGrant(abs);
+				const buf = await readFile(abs);
 				const cap = Math.max(1024, Math.min(Number(maxBytes ?? 2 * 1024 * 1024), 8 * 1024 * 1024));
 				return buf.subarray(0, cap).toString("utf8");
 			},
@@ -3494,6 +3530,7 @@ export class PluginManager {
 			},
 			stat: async (absPath: string) => {
 				const abs = allowAbs(absPath);
+				await assertRealInsideGrant(abs);
 				const st = await stat(abs);
 				const base =
 					abs
@@ -3508,10 +3545,13 @@ export class PluginManager {
 				};
 			},
 			mkdir: async (absDir: string) => {
-				await mkdir(allowAbs(absDir), { recursive: true });
+				const abs = allowAbs(absDir);
+				await assertRealInsideGrant(abs);
+				await mkdir(abs, { recursive: true });
 			},
 			append: async (absPath: string, data: string | Uint8Array) => {
 				const abs = allowAbs(absPath);
+				await assertRealInsideGrant(abs);
 				await mkdir(dirname(abs), { recursive: true });
 				await writeFile(abs, data, { flag: "a" });
 			},
@@ -3523,6 +3563,8 @@ export class PluginManager {
 				if (!pat) throw new Error("globPath: pattern 为空");
 				const re = globToRegExp(pat);
 				const base = allowAbs(absDir);
+				await assertRealInsideGrant(base);
+				const roots = grantRoots();
 				const out: string[] = [];
 				const stack: string[] = [base];
 				let walked = 0;
@@ -3544,6 +3586,8 @@ export class PluginManager {
 							.filter((s) => s.length > 0)
 							.join("/");
 						if (e.isDirectory()) {
+							// 目录符号链接指到授权范围外：不进去（同一单源判定，读写同一条线）。
+							if (e.isSymbolicLink() && !isInsideRoots(abs, roots)) continue;
 							if (re.test(rel) || re.test(`${rel}/`)) out.push(abs);
 							stack.push(abs);
 						} else if (re.test(rel)) {
@@ -3771,7 +3815,7 @@ export class PluginManager {
 				}
 				if (!ans?.ok) return false;
 				try {
-					self.permGrants.grant(info.id, family, { hosts, models, reason, remember: ans.remember === true });
+					await self.permGrants.grant(info.id, family, { hosts, models, reason, remember: ans.remember === true });
 				} catch (err) {
 					console.error(`[plugin:${info.id}] permission grant failed:`, err);
 					return false;
@@ -4880,16 +4924,14 @@ export class PluginManager {
 export function resolvePluginClientFile(pluginsDir: string, id: string, rest: string): string | null {
 	if (!ID_RE.test(id)) return null;
 	const root = resolve(join(pluginsDir, id, "client"));
-	const abs = resolve(root, rest);
-	if (abs !== root && !abs.startsWith(root + sep)) return null;
-	return abs;
+	if (!isInsideRoots(rest, [root], root)) return null;
+	return resolve(root, rest);
 }
 
 export function resolvePluginSharedFile(sharedDir: string, rest: string): string | null {
 	const root = resolve(sharedDir);
-	const abs = resolve(root, rest);
-	if (abs !== root && !abs.startsWith(root + sep)) return null;
-	return abs;
+	if (!isInsideRoots(rest, [root], root)) return null;
+	return resolve(root, rest);
 }
 
 export const PROXY_RESERVED_PREFIXES = [

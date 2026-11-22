@@ -8,6 +8,12 @@ import { makeScheduleTool } from "../../server/schedule-agent-tool.js";
 import { SchedulerStore } from "../../server/scheduler-tasks.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
 
+/** 真实定时器（fake timers 不推进真实 I/O）：等异步落盘真正完成。 */
+const realSetTimeout = globalThis.setTimeout;
+async function flushDisk(check: () => boolean): Promise<void> {
+	for (let i = 0; i < 200 && !check(); i++) await new Promise((resolve) => realSetTimeout(resolve, 1));
+}
+
 const directories: string[] = [];
 afterEach(() => {
 	vi.useRealTimers();
@@ -130,6 +136,7 @@ describe("schedule provenance through real reask and scheduler persistence", () 
 		reopened.start();
 		try {
 			await vi.advanceTimersByTimeAsync(25 * 60_000);
+			await flushDisk(() => reopened.list().length === 0);
 			expect(f.executor).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: replacement }));
 			expect(persistedIds).toEqual([replacement]);
 			expect(f.executor.mock.calls.some(([task]: any[]) => task.id === old)).toBe(false);
@@ -143,7 +150,7 @@ describe("schedule provenance through real reask and scheduler persistence", () 
 		const f = fixture();
 		const id = await f.create("old-call");
 		const leaf = f.manager.getLeafId();
-		vi.spyOn(f.store as any, "save").mockImplementation(() => {
+		vi.spyOn(f.store as any, "persist").mockImplementation(async () => {
 			throw new Error("disk full");
 		});
 		await f.client.editMessage("question", "replacement");
@@ -199,11 +206,11 @@ describe("schedule provenance through real reask and scheduler persistence", () 
 	it("reports a failed compensation without pretending the reask succeeded", async () => {
 		const f = fixture();
 		await f.create("old-call");
-		const save = (f.store as any).save.bind(f.store);
+		const persist = (f.store as any).persist.bind(f.store);
 		let writes = 0;
-		vi.spyOn(f.store as any, "save").mockImplementation((next) => {
+		vi.spyOn(f.store as any, "persist").mockImplementation((snapshot) => {
 			if (++writes === 2) throw new Error("restore disk failure");
-			save(next);
+			return persist(snapshot);
 		});
 		vi.spyOn(f.manager, "appendCustomEntry").mockImplementationOnce(() => {
 			throw new Error("transcript failure");
@@ -225,8 +232,15 @@ describe("schedule provenance through real reask and scheduler persistence", () 
 		const removed = await f.create("abandoned-call", true);
 		const foreign = fixture();
 		const foreignId = await foreign.create("abandoned-call");
-		f.store.rebind(removed, { sessionFile: foreign.session.sessionFile, conversationId: "B" });
-		f.store.upsert({ id: "legacy", name: "legacy", cwd: f.dir, kind: "interval", spec: "60000", prompt: "legacy" });
+		await f.store.rebind(removed, { sessionFile: foreign.session.sessionFile, conversationId: "B" });
+		await f.store.upsert({
+			id: "legacy",
+			name: "legacy",
+			cwd: f.dir,
+			kind: "interval",
+			spec: "60000",
+			prompt: "legacy",
+		});
 		await f.client.editMessage("question", "replacement");
 		expect(
 			f.store
@@ -248,6 +262,8 @@ describe("schedule provenance through real reask and scheduler persistence", () 
 			return { ok: true };
 		});
 		const running = f.store.runNow(id);
+		// 起盘落盘是异步的：等 executor 真的被调用起来（finish 被赋值）再继续。
+		for (let i = 0; i < 200 && !finish; i++) await new Promise((resolve) => setTimeout(resolve, 1));
 		await f.client.editMessage("question", "replacement");
 		expect(f.store.list().find((t) => t.id === id)?.running).toBe(true);
 		finish();
@@ -255,7 +271,7 @@ describe("schedule provenance through real reask and scheduler persistence", () 
 		const restarted = new SchedulerStore(f.dir);
 		restarted.load();
 		expect(restarted.list()[0].startedAt).toBeTypeOf("number");
-		expect(restarted.cancelUnstartedFromCalls(f.session.sessionFile, new Set(["running-call"]))).toBe(0);
+		expect(await restarted.cancelUnstartedFromCalls(f.session.sessionFile, new Set(["running-call"]))).toBe(0);
 		expect(restarted.list()[0].history).toHaveLength(1);
 	});
 
@@ -264,11 +280,11 @@ describe("schedule provenance through real reask and scheduler persistence", () 
 		async (historyFailure) => {
 			const f = fixture();
 			const id = await f.create("attempted-call", true);
-			const save = (f.store as any).save.bind(f.store);
+			const persist = (f.store as any).persist.bind(f.store);
 			let writes = 0;
-			const spy = vi.spyOn(f.store as any, "save").mockImplementation((next) => {
+			const spy = vi.spyOn(f.store as any, "persist").mockImplementation((snapshot) => {
 				if (++writes === 2 && historyFailure) throw new Error("history disk failure");
-				save(next);
+				return persist(snapshot);
 			});
 			vi.spyOn(console, "error").mockImplementation(() => {});
 			f.executor.mockImplementationOnce(async () => {
@@ -279,7 +295,7 @@ describe("schedule provenance through real reask and scheduler persistence", () 
 			const restarted = new SchedulerStore(f.dir);
 			restarted.load();
 			expect(restarted.list()[0].startedAt).toBeTypeOf("number");
-			expect(restarted.cancelUnstartedFromCalls(f.session.sessionFile, new Set(["attempted-call"]))).toBe(0);
+			expect(await restarted.cancelUnstartedFromCalls(f.session.sessionFile, new Set(["attempted-call"]))).toBe(0);
 		},
 	);
 
@@ -290,20 +306,20 @@ describe("schedule provenance through real reask and scheduler persistence", () 
 		const fork = SessionManager.open(file);
 		expect(fork.getSessionFile()).not.toBe(f.session.sessionFile);
 		expect(f.store.list().map((t) => t.id)).toEqual([id]);
-		expect(f.store.cancelUnstartedFromCalls(file, new Set(["fork-call"]))).toBe(0);
+		expect(await f.store.cancelUnstartedFromCalls(file, new Set(["fork-call"]))).toBe(0);
 	});
 
 	it.skipIf(process.platform !== "win32")("matches equivalent Windows creation paths", async () => {
 		const f = fixture();
 		await f.create("windows-call");
 		const equivalent = f.session.sessionFile.replace(/\\\\/g, "/").toUpperCase();
-		expect(f.store.cancelUnstartedFromCalls(equivalent, new Set(["windows-call"]))).toBe(1);
+		expect(await f.store.cancelUnstartedFromCalls(equivalent, new Set(["windows-call"]))).toBe(1);
 	});
 
-	it("does not accept forged public origin and rejects invalid internal origin without truncating", () => {
+	it("does not accept forged public origin and rejects invalid internal origin without truncating", async () => {
 		const f = fixture();
 		const input = { name: "test", cwd: f.dir, kind: "interval" as const, spec: "60000", prompt: "test" };
-		f.store.upsert({
+		await f.store.upsert({
 			...input,
 			id: "forged",
 			origin: { sessionFile: f.session.sessionFile, toolCallId: "fake" },
@@ -314,7 +330,7 @@ describe("schedule provenance through real reask and scheduler persistence", () 
 			{ sessionFile: "a", toolCallId: "x".repeat(1025) },
 			{ sessionFile: 1, toolCallId: "a" },
 		]) {
-			expect(() => f.store.upsert(input, origin as any)).toThrow(/origin/);
+			await expect(f.store.upsert(input, origin as any)).rejects.toThrow(/origin/);
 		}
 		expect(f.store.list()).toHaveLength(1);
 	});

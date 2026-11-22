@@ -19,6 +19,8 @@ import { scanTranscriptForRepair } from "./transcript-scan.js";
 
 export interface PreparedTranscript {
 	repair: SessionFileRepair | null;
+	/** 修复判定/落盘失败的原因（走完整读取的保守路径才会出现）：调用方必须让用户看见。 */
+	repairError?: string;
 	healed: number;
 	/** 本次是否遍历了整份文件内容（流式扫描也算；只有指纹命中才算没读） */
 	read: boolean;
@@ -105,8 +107,12 @@ async function repairWholeFile(
 		return { repair: null, healed: 0, read: false };
 	}
 
-	const repair = repairHealthy ? healthyRepairResult(filePath) : repairSessionFileFromText(filePath, raw);
-	if (!repair) return { repair: null, healed: 0, read: true, path: "full" };
+	const outcome = repairHealthy ? null : await repairSessionFileFromText(filePath, raw);
+	if (outcome && !outcome.ok) {
+		// 与 `openManagerAndRuntime` 的链损坏路径同一策略：修不了就如实报，绝不假装健康后继续写。
+		return { repair: null, repairError: outcome.error, healed: 0, read: true, path: "full" };
+	}
+	const repair = outcome && outcome.ok ? outcome.repair : healthyRepairResult(filePath);
 	if (repair.changed) {
 		forgetHealthyDangling(filePath);
 		return { repair, healed: 0, read: true, path: "full" };

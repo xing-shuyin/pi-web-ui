@@ -5,6 +5,7 @@
 ## 目录
 
 - [压缩期的入站投递：一个门、一个队列、一个排空点（issues/929）](#压缩期的入站投递一个门一个队列一个排空点issues929)
+- [定时任务的寻址与唤醒：只认转录，不认“当下哪个对话活着”（#959）](#定时任务的寻址与唤醒只认转录不认当下哪个对话活着959)
 - [子代理完成证据、结算边沿与派发预算](#子代理完成证据结算边沿与派发预算)
 - [运行账本与重启续跑](#运行账本与重启续跑)
 - [问卷队列与父代理请示](#问卷队列与父代理请示)
@@ -40,7 +41,7 @@
 
 五条不变量（动这里之前先读）：**门关不提交**；**门开必排空**（失败与取消路径同样排空）；「已通知 / 轮次 +1 / 熔断额度 −1」只在投递被接受后写（`commitIntent`，提交点副作用）；`steer` 只投给活轮，其余入队（回执 `queued` 才是承诺）；门相位的写者唯一。
 
-排空点是一个闭集：`compaction_end`、`executeCompaction` 的 `finally`（`compact()` 抛错时兜底开闸）、`agent_settled`、等回话解除（`setConsultWaiting(parent,false)`）、以及 `emitConversations()` 的对账兜底。所以新增压缩来源（软上限自动压缩、SDK 回合内自动压缩、分支摘要）自动被覆盖；新增一种门只需往 `deliveryMode()` 加一个谓词，不必再碰投递点。
+排空点是一个闭集：`compaction_end`、`executeCompaction` 的 `finally`（`compact()` 抛错时兜底开闸）、`agent_settled`、等回话解除（`setConsultWaiting(parent,false)`）、`bindSession` 结束（会话退役窗口的重投点，#958）、以及 `emitConversations()` 的对账兜底。所以新增压缩来源（软上限自动压缩、SDK 回合内自动压缩、分支摘要）自动被覆盖；新增一种门只需往 `deliveryMode()` 加一个谓词，不必再碰投递点——会话退役（`GateInput.retired` → `gated`，#958）就是这么加的。
 
 交互式 `prompt()` 在压缩期间也不再让人重发：**纯文本进同一条意图队列**（`kind: "user-prompt"`，tag 用正文，重复发送只排一条），`compaction_end` 排空时按「idle → 开新一轮」真送出去。语义跟直接发送对齐：`conv.autonomousTurnsWithoutUser = 0`、`wakeReason = "user"` 这些状态挪到提交点 `commitIntent`，压缩期间不预支；排队意图被丢弃（对话被关掉等）时如实报一条 warning，绝不静默。**带附件 / 引用 / 图片的不排队**：`buildAttachmentMessages`、画布引用、`@` 扫描都依赖当次会话状态，没法在排空时安全重放，仍当场拒绝并写明「等压缩结束后再发」。斜杠命令（要当场执行）与派活、目标执行者的路由同理不排队。
 
@@ -48,6 +49,27 @@
 
 守卫：`tests/unit/delivery-gate-single-source.test.ts` 禁止别处直读 `isCompacting`、禁止手写 `deliverAs: "steer"`、禁止复活那三个旧字段，并给直连 `sendUserMessage` 的站点设上限；`tests/unit/delivery-gate-929.test.ts` 覆盖三个场景（父对话压缩期间子代理完成 → `compaction_end` 后补投一次；子代理压缩期间 `steer` → 门开后开新一轮；用户自己发的文本在压缩期间入队、门开后只发一次，带附件仍拒绝）；`tests/unit/optimistic-queue.test.ts` 覆盖「已入队回显不再按 TTL 消失」。
 
+## 定时任务的寻址与唤醒：只认转录，不认「当下哪个对话活着」（#959）
+
+定时任务记录的是「报告该落在哪条对话」，而一条对话能不能执行是两件不同的事：前者是**持久寻址**，后者是**瞬时可达性**。旧实现把它们搅在一个控制流里——找不到活着的对话就改投到「同项目最活跃的那个」，并把新对话写回任务绑定。于是任何一次「暂时不可达」都会变成永久后果：几秒的上下文压缩窗口、会话退役换绑（#958）、服务重启、标签页关掉，以及最容易撞上的——打开对话数超上限时的 LRU 收起（`makeRoomForConversation`）把老对话从内存里收走。周期任务从此汇报到别人的对话；回落也失败时绑定被清空，一次性变成永久无头。
+
+现在分三层，每层只有一个事实源：
+
+| 层            | 事实源                                                       | 约定的不变量                                                                 |
+| ------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| 寻址          | `SchedulerTask.sessionFile`（老任务兼容 `conversationId`）   | 只认持久身份；运行时 `c<N>` 是每客户端各自的序号，**不参与寻址、不写回绑定** |
+| 可达性 + 投递 | `ClientSession.deliverFromOutside`（`steerOwnConversation`） | 有持有者就投；门关着就是**排队**，不是失败                                   |
+| 策略          | `server/scheduler-delivery.ts`                               | 投不进就退后台执行 + 如实告知，**绑定一字不改**；改绑是用户命令              |
+
+唤醒顺序（`AgentService.wakeConversation`）：
+
+1. 有转录地址 → `findSessionOwner(转录)` 找这条转录**此刻**的持有者（跟「从历史打开对话」用的是同一个判定），找到就 `steerOwnConversation` 投进去。门关（压缩 / 退役窗口）时这一步返回「已受理 + 排队」，`compaction_end` 自己排空。
+2. 没有持有者 → 按转录**恢复**一个持有者再投：`scheduler:wake-<taskId>` 这个后台客户端 `switchSession(转录)`。它跟无人值守持有方同族：用户把这条对话当普通对话打开时，`releaseScheduledConversation` 会让它先放手，两个 writer 不会抢同一份转录；任务取消时 `releaseSchedulerClient` 连它一起收。
+3. 转录真的没了 → 后台执行（`chatFromScheduler`），绑定保持不变，下次触发仍然先找原对话。回执里带上真原因（`转录无法恢复…` / 宿主错误），不再笼统说「原对话不在」。
+
+「同项目最活跃对话」这条回落已删除（`wakeViewportInCwd` / `findViewportInCwd` / `resolveSchedulerTarget` / `trySteerScheduler` 一并删）：把报告投进用户恰好在聊的另一条对话不是回落，是换了一个实体。老任务（只存了运行时 id、没有转录文件）第一次成功投递后会补录 `sessionFile`，此后也走上面的顺序；若当前进程里存在多个同名 `c<N>` 候选则如实报「无法安全投递」，绝不猜一个。
+
+守卫：`tests/unit/delivery-gate-single-source.test.ts` 禁止在 delivery 模块外把 `gated` 当失败回给调用方、禁止复活那四个「换一个对话」的入口；`tests/unit/scheduler-wake-delivery.test.ts` 钉住策略边界（投回原对话 / 恢复后投回 / 不可达则后台 + 不改绑 / 异常不炸调度循环）；`tests/unit/schedule-agent-tool.test.ts` 钉住「既没有持有者、也恢复不了」时如实失败。
 
 ## 子代理完成证据、结算边沿与派发预算
 
@@ -60,7 +82,6 @@
 一次调用可以扇出：`spawn` 的 `tasks[]` 一次派多个，先整批校验（prompt、key 形状与唯一性、模板可用、思考档位、隔离模式）再启动，一个不合法就一个都不启动；单批上限 `SUBAGENT_FANOUT_MAX = 16`，启动并发窗口 4（不与并发上限抢名额）。每个 task 可带 `key`（字母数字与 `_.-`，≤40），工具把 `key → 运行身份` 记在**本对话工具实例**的有界表（256 项）里，`wait_all / get_result / steer / stop` 的 `runIds` 接受 key 或真实 id。`steer` 回执区分 `delivered`（送进当前回合）/ `queued`（门关着，已挂起，门一开必定开新一轮）/ `restarted`（本来空闲，同会话开新一轮）/ `missed`（没有可投递通道），父代理不必猜。
 
 并发与深度挡不住累计成本，所以加了第三道闸：`server/subagent-budget.ts` 按**运行树根**（沿 parent 走到最顶层会话的稳定执行身份）累计派发次数，默认 64（`PI_WEB_SUBAGENT_MAX_SPAWNS_PER_RUN`，`0` 关闭）。预留在启动路径同步完成，失败退还，运行树根移出时 `forget`。子代理用量（`getSessionStats().tokens`）进快照的 `usage`，在列表与等待结果里以 `输入↓输出↑` 呈现，配合上下文软上限一起看成本。
-
 
 ## 运行账本与重启续跑
 
@@ -81,7 +102,6 @@ events.jsonl    追加式生命周期流水（有字节上限，截断后只留�
 
 验证：`tests/unit/subagent-ledger.test.ts`（写入/重启读回/bootId 对账/事件截断/淘汰/关闭/续跑关系/提示词）、`tests/unit/subagent-ledger-tool.test.ts`（list 追加/get_result 回落/resume 成功与四类失败/无账本引擎降级）。
 
-
 ## 问卷队列与父代理请示
 
 共用 `QuestionDialog` 保留单选选中新选项后立即进入下一题；再次点选已选项则取消并留在当前题，鼠标与数字键一致。末题默认等待提交按钮或 Enter；问卷底部可开启「最后一题点选后自动提交」，偏好保存在当前浏览器，单题问卷同样适用。切换偏好和恢复草稿不触发提交；取消选择后允许只交补充说明，隐藏条件题不提交答案。
@@ -94,20 +114,17 @@ events.jsonl    追加式生命周期流水（有字节上限，截断后只留�
 
 `questionTimeoutSeconds` 对新建子代理问卷及请示默认 240 秒，0 为不限时；主对话保持原等待策略。服务端负责期限和取消，超时返回明确结果，不自动采用推荐选项。升级不重置期限，浏览器倒计时不触发取消。问卷结束不等于执行会话结束，也不会提前释放并发名额。
 
-
 ## 引擎与原生 CLI 的共用检测
 
 `server/engine-catalog.ts` 是引擎 ID、包名、安装命令和独立 CLI 能力的单源，供引擎管理、协议类型和 CLI 工作台使用。`server/engine-cli.ts` 统一解析 PATH、常见安装目录和全局包的 `package.json.bin`，并生成不经过 shell 的 `{file, args}`；版本探针、Claude/Codex 驱动与原生 PTY 都使用这份结果，不再各自维护路径查找逻辑。全局包位置继续复用 `global-loader.ts`，只安装库或残缺 bin 不代表存在可启动的 CLI。
 
 引擎的 SDK/运行时可用性与独立 CLI 能力分别判断：Pi/DSH/Durable 可通过 SDK 或运行树工作；Pi Durable 没有独立 CLI；DSH 的 `dsh` 需要 profile，不能假设其包含默认终端界面。CLI 工作台的能力与启动约束见 [终端架构](architecture-terminal.md#原生-cli-工作台)。单项和批量引擎探测使用同一登记表与 TTL 缓存。
 
-
 ## Codex CLI 引擎
 
 `codex` 通过 `server/universal/drivers/codex.ts` 接入通用底座，使用本机安装的 `@openai/codex` CLI。安装后先在终端运行 `codex login`；认证与服务商配置沿用 `~/.codex/`（或 `CODEX_HOME`），设置页的 Pi/Claude 服务商密钥不会注入 Codex。模型与推理强度按会话选择，默认模型跟随 CLI 配置。
 
 驱动将 `codex exec --json` 的线程、正文、思考、工具和用量事件转换为通用事件，线程 ID 随会话持久化以便续接。执行使用工作区写入沙盒，不绕过 Codex 的安全限制。Codex 不提供宿主工具审批、历史编辑或分叉；通用底座按能力声明隐藏这些入口。停止请求必须终止对应子进程并完成有界清理。
-
 
 ## Claude Code / Codex 原版接入约定
 
@@ -121,7 +138,6 @@ events.jsonl    追加式生命周期流水（有字节上限，截断后只留�
 - **斜杠命令**：Claude 的命令清单取自 CLI `system/init` 事件的 `slash_commands`，原样透传给 CLI（含 `/compact`、技能）；pi 自管 UI 状态的命令（`/new`、`/model`、`/name` 等）保留在 pi。通用底座不得伪造压缩（只裁剪界面消息而 CLI 上下文不变）；不支持原生压缩的引擎只提示。
 - **会话 ID**：`createSession()` 不得返回占位 ID；真实 ID 来自 CLI 事件并经 `onSessionStarted` 回写，否则后续 `--resume` 会被 CLI 拒绝。
 - **左栏归属与去重**（所有引擎）：左栏按 `ConversationSummary.sessionFile/sessionId` 与 `SessionSummary.path/sessionId` 认定「打开中的对话」与「历史会话」是同一条；按 `SessionSummary.cwd` 认定所属项目。通用底座的会话 `path` 是对话 ID（无项目 slug），因此对话摘要必须带 `sessionId`、历史行与 `sessions` 消息必须带 `cwd`，否则会重复显示且出现在每个项目下。`isSessionMatchingProject` 必须传会话对象（优先比 `cwd`），按路径判断时先看 `--slug--` 目录再看路径前缀——会话目录通常在家目录下，把 `~` 当项目时前缀规则会吞掉所有项目的会话。回归：`tests/unit/left-panel-engine-sessions.test.ts`、`universal-session-list.test.ts`、`list-sessions-dispatch.test.ts`。
-
 
 ## 其他桥接
 
@@ -256,7 +272,7 @@ pi-web-ui 覆盖了 SDK 内置 `bash` / `read` / `write` / `edit`。SDK 的注�
 
 ### 计划模式：只规划不实施（`server/plan-mode.ts`）
 
-目标条**展开行**里有个 **计划** 按钮（`host:goal-plan` 槽位，DSH 引擎不渲染 —— 它没有 customTools 注册面，闸门无处可挂）。它经历了两次调整：① 从输入框工具条的开关（`host:composer-plan`）搬进目标条 —— 语义是「拿你在这个框里写的输入去做规划」，与目标同属一条线，所以只挂编辑行、**不进折叠药丸**；② 从「开关」改成**一次性动作** —— 点一下 = `set_plan_mode{true}`（开闸门）紧跟一条 `prompt`（把目标输入当消息直接发出去），两条同 WS 按序到达 → 本轮就在闸门里跑；输入为空则只开闸门不发消息。按钮不再有 `active` / `aria-pressed` 常亮态，和同列的「提炼」「发送」一个口径：「点一下直接发」。目标模式被关掉（`goalModeEnabled=false`，整条目标区不渲染）时它也跟着一起隐藏。闸门本身仍是会话级、热生效：开启后**本对话只调研 + 出实施计划，不做任何改动**，产物是 `plan_update` 步骤看板（PlanBoard）+ 计划正文。**关闸门的唯一出口是计划看板里的「开始实施」**（PlanBoard.tsx：`set_plan_mode{false}` + 发一条实施请求）—— 删掉开关语义后必须补这个出口，否则进得去出不来。**与目标模式正交**：目标模式是「让执行者把目标做完」，计划模式是「先别动，把方案给我」。
+目标条**展开行**里有个 **计划** 按钮（`host:goal-plan` 槽位，DSH 引擎不渲染 —— 它没有 customTools 注册面，闸门无处可挂）。它经历了两次调整：① 从输入框工具条的开关（`host:composer-plan`）搬进目标条 —— 语义是「拿你在这个框里写的输入去做规划」，与目标同属一条线，所以只挂编辑行、**不进折叠药丸**；② 现行为**「下一次设目标时顺带开计划模式」的一次性修饰**：按钮的按下态可见（`aria-pressed` → `.goalbar-btn.action[aria-pressed="true"]`，见 `styles.css`），`set_goal` / `start_goal_wizard` 发出后立刻 `setGoalPlan(false)` 消费掉，避免出现「按钮亮着但闸门没开」的第二个真相源（历史上曾短暂改成「点一下直接发」的一次性动作，但目标撰写态里的草稿是**目标文本**、走 `set_goal`，没有独立的 `prompt` 出口，直接发会把目标当成普通消息，故未采用）。目标模式被关掉（`goalModeEnabled=false`，整条目标区不渲染）时它也跟着一起隐藏。闸门本身仍是会话级、热生效：开启后**本对话只调研 + 出实施计划，不做任何改动**，产物是 `plan_update` 步骤看板（PlanBoard）+ 计划正文。**关闸门的唯一出口是计划看板里的「开始实施」**（PlanBoard.tsx：`set_plan_mode{false}` + 发一条实施请求）—— 删掉开关语义后必须补这个出口，否则进得去出不来。**与目标模式正交**：目标模式是「让执行者把目标做完」，计划模式是「先别动，把方案给我」。
 
 两层防护，缺一不可：
 
@@ -350,4 +366,3 @@ Pi Durable（`@earendil-works/pi-durable`）把同一件事分成两份投影，
 Host startChat/openSession sends new_chat with an optional requestId and waits for new_chat_result carrying the same requestId and the exact conversationId captured by the engine on creation/reuse. Rejection, missing ACK or timeout cancels prompt delivery; observing an unrelated conversation switch is never sufficient. Older clients may omit requestId. Prompts may include targetConversationId (the UI conversationId, not the SDK sessionId); dispatch rejects a mismatch against activeConversationId before synchronously entering prompt. Engines capture the conversation before awaits and reject stale targets before entering streaming state.
 
 Device center setup keeps remote read-only guidance available when local pairing APIs are forbidden. Setup metadata restores installed URLs; unsuccessful status queries do not imply absence. Installed but unhealthy or unowned centers show CLI diagnostics rather than reinstalling. Installation continues on the server when the page is left; reopening and reloading metadata restores progress and pairing actions.
-

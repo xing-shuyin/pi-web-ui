@@ -1,10 +1,11 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { messageDeletionTargets } from "../../server/message-deletion.js";
 import { ClientSession } from "../../server/agent-service.js";
+import { projectSessionText } from "../../server/session-projection.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
 
 function fixture(manager = SessionManager.inMemory()) {
@@ -49,6 +50,23 @@ describe("message deletion", () => {
 			const reopened = SessionManager.open(manager.getSessionFile()!);
 			expect(reopened.buildSessionContext().messages.map((message) => message.role)).toEqual(["user", "user"]);
 			expect(() => messageDeletionTargets(reopened.buildContextEntries(), assistant)).toThrow();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("删除后从文件投影的历史转录里也读不到已删消息（同一份真值）", () => {
+		const dir = mkdtempSync(join(tmpdir(), "pi-delete-projection-"));
+		try {
+			const { manager, assistant } = fixture(SessionManager.create(dir, dir));
+			for (const id of messageDeletionTargets(manager.buildContextEntries(), assistant)) {
+				manager.appendContextEdit(id, null);
+			}
+			const file = manager.getSessionFile()!;
+			// 关闭会话后只能按路径读：投影必须和运行态一致，不能把已删消息又当历史交出去。
+			const text = manager.getSessionFile() ? readFileSync(file, "utf8") : "";
+			const roles = projectSessionText(text).messages.map((message) => message.role);
+			expect(roles).toEqual(["user", "user"]);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

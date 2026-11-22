@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { writeAtomicSync } from "../atomic-file.js";
+import { writeAtomic } from "../atomic-file.js";
 
 export function createDesktopSetup(options: { dataDir?: string; environmentEnabled: boolean }) {
 	const settingsFile = join(resolve(options.dataDir ?? join(homedir(), ".pi-web")), "desktop-settings.json");
@@ -15,9 +15,9 @@ export function createDesktopSetup(options: { dataDir?: string; environmentEnabl
 		get enabled() {
 			return environmentEnabled || storedEnabled;
 		},
-		setEnabled(enabled: boolean) {
+		async setEnabled(enabled: boolean): Promise<void> {
 			if (closed) throw new Error("Desktop setup closed");
-			writeAtomicSync(settingsFile, JSON.stringify({ enabled }) + "\n", { mode: 0o600 });
+			await writeAtomic(settingsFile, JSON.stringify({ enabled }) + "\n", { mode: 0o600 });
 			storedEnabled = enabled;
 		},
 		close() {

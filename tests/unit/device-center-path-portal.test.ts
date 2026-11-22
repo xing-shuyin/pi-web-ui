@@ -4,7 +4,7 @@ import { once } from "node:events";
 import { gzipSync } from "node:zlib";
 import { WebSocketServer } from "ws";
 import { chromium } from "playwright-core";
-import { BROWSER_TEST_TIMEOUT_MS } from "../lib/chrome.mjs";
+import { BROWSER_TEST_TIMEOUT_MS, CHROME_PATH } from "../lib/chrome.mjs";
 import { createDeviceRelay } from "../../server/device-center/relay.js";
 import { createDeviceConnector } from "../../server/device-center/connector.js";
 import {
@@ -151,6 +151,9 @@ async function fixture(deviceName?: string, deviceRemark?: string, secondDevice 
 	return { relay, origin, request, open, received, hubHits: () => hubHits };
 }
 
+// 真 Chrome 用例：本机/CI 没有可用浏览器时**跳过**，而不是运行时抛错把整轮判红。
+const itChrome = it.skipIf(!CHROME_PATH);
+
 describe("single-port device path portal", () => {
 	it("opens another owned desktop inside a remote page without forwarding privileged device-center requests", async () => {
 		const f = await fixture(undefined, undefined, true);
@@ -227,33 +230,33 @@ describe("single-port device path portal", () => {
 		expect((await f.request(ticketPath)).status).toBe(403);
 		expect((await f.request("/device/dev1/", { cookie: "hub=secret", origin: "null" })).status).toBe(401);
 	});
-	it.each(["/desktop", "/desktop-preview"])("embeds %s from another origin with both frames opaque", async (path) => {
-		const chromeHelper = "../lib/chrome.mjs";
-		const { CHROME_PATH } = await import(chromeHelper);
-		if (!CHROME_PATH) throw new Error("Chrome required: set PI_WEB_CHROME");
-		const f = await fixture();
-		const ticket = await f.request("/open", { cookie: "hub=secret", origin: f.origin }, "POST");
-		const url = new URL(JSON.parse(ticket.body).url);
-		url.searchParams.set("next", path);
-		const parent = http.createServer((_req, res) => {
-			res.setHeader("content-type", "text/html");
-			res.end(
-				`<iframe sandbox="allow-scripts allow-forms allow-pointer-lock" allowfullscreen src="${url.href}"></iframe>`,
-			);
-		});
-		const parentPort = await listen(parent);
-		const browser = await chromium.launch({ executablePath: CHROME_PATH!, headless: true, args: ["--no-sandbox"] });
-		cleanup.push(() => browser.close());
-		const page = await browser.newPage();
-		await page.goto(`http://127.0.0.1:${parentPort}`);
-		const frame = page.frameLocator("iframe").frameLocator("iframe");
-		await expect.poll(() => frame.locator("body").textContent(), { timeout: 15000 }).toContain('"ws":true');
-		const result = JSON.parse((await frame.locator("body").textContent())!);
-		expect(result).toMatchObject({ module: "loaded", opaque: true, fetch: true, ws: true, hubBlocked: true });
-		await expect.poll(() => page.frameLocator("iframe").locator("#loading").isHidden()).toBe(true);
-		expect(f.hubHits()).toBe(0);
-		expect((await f.request(url.pathname + url.search)).status).toBe(403);
-	});
+	itChrome.each(["/desktop", "/desktop-preview"])(
+		"embeds %s from another origin with both frames opaque",
+		async (path) => {
+			const f = await fixture();
+			const ticket = await f.request("/open", { cookie: "hub=secret", origin: f.origin }, "POST");
+			const url = new URL(JSON.parse(ticket.body).url);
+			url.searchParams.set("next", path);
+			const parent = http.createServer((_req, res) => {
+				res.setHeader("content-type", "text/html");
+				res.end(
+					`<iframe sandbox="allow-scripts allow-forms allow-pointer-lock" allowfullscreen src="${url.href}"></iframe>`,
+				);
+			});
+			const parentPort = await listen(parent);
+			const browser = await chromium.launch({ executablePath: CHROME_PATH!, headless: true, args: ["--no-sandbox"] });
+			cleanup.push(() => browser.close());
+			const page = await browser.newPage();
+			await page.goto(`http://127.0.0.1:${parentPort}`);
+			const frame = page.frameLocator("iframe").frameLocator("iframe");
+			await expect.poll(() => frame.locator("body").textContent(), { timeout: 15000 }).toContain('"ws":true');
+			const result = JSON.parse((await frame.locator("body").textContent())!);
+			expect(result).toMatchObject({ module: "loaded", opaque: true, fetch: true, ws: true, hubBlocked: true });
+			await expect.poll(() => page.frameLocator("iframe").locator("#loading").isHidden()).toBe(true);
+			expect(f.hubHits()).toBe(0);
+			expect((await f.request(url.pathname + url.search)).status).toBe(403);
+		},
+	);
 
 	it("serves minimal account binding for current and older remote device UIs", async () => {
 		const f = await fixture();
@@ -373,12 +376,9 @@ describe("single-port device path portal", () => {
 		);
 		expect(transformPortalHtml('<a href="/next">', base)).toContain(`href="${base}next"`);
 	});
-	it(
+	itChrome(
 		"runs opaque HTML modules, null-origin fetch and WebSocket in real Chrome",
 		async () => {
-			const chromeHelper = "../lib/chrome.mjs";
-			const { CHROME_PATH } = await import(chromeHelper);
-			if (!CHROME_PATH) throw new Error("Chrome required: set PI_WEB_CHROME");
 			const f = await fixture();
 			const { ticketPath } = await f.open();
 			const fresh = await f.request("/open", { cookie: "hub=secret", origin: f.origin }, "POST");

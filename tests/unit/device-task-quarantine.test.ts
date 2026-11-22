@@ -49,10 +49,10 @@ function artifact() {
 	return value;
 }
 
-describe("task outcome permanent rejection quarantine", () => {
-	it("requires exact ACK identity, status, fingerprint and artifact digest and preserves original evidence on restart", () => {
+describe("task outcome permanent rejection quarantine", async () => {
+	it("requires exact ACK identity, status, fingerprint and artifact digest and preserves original evidence on restart", async () => {
 		const { manager, options, path } = fixture();
-		const entry = manager.recordTaskFinish(task("code"), {
+		const entry = await manager.recordTaskFinish(task("code"), {
 			status: "completed",
 			report: "original",
 			artifact: artifact(),
@@ -69,10 +69,10 @@ describe("task outcome permanent rejection quarantine", () => {
 			["code", "attempt", entry.fingerprint, "terminal_conflict", "completed", undefined],
 			["code", "attempt", entry.fingerprint, "terminal_conflict", "completed", "wrong"],
 		] as const)
-			expect(manager.quarantineOutbox(args[0], args[1], args[2], args[3], args[4], args[5])).toBe(false);
+			expect(await manager.quarantineOutbox(args[0], args[1], args[2], args[3], args[4], args[5])).toBe(false);
 		expect(manager.getPendingOutboxEntry("code", "attempt")).toEqual(entry);
 		expect(
-			manager.quarantineOutbox(
+			await manager.quarantineOutbox(
 				"code",
 				"attempt",
 				entry.fingerprint,
@@ -88,7 +88,7 @@ describe("task outcome permanent rejection quarantine", () => {
 		const reloaded = new TaskRecoveryManager(options);
 		expect(reloaded.outboxLoadError).toBe(false);
 		expect(reloaded.getQuarantinedOutcomes()[0].outcome).toEqual(entry);
-		expect(() =>
+		await expect(
 			reloaded.recordTaskStart({
 				taskId: "code",
 				attemptId: "attempt",
@@ -98,9 +98,9 @@ describe("task outcome permanent rejection quarantine", () => {
 				leaseToken: "lease",
 				leaseGeneration: 1,
 			}),
-		).toThrow(/already finalized/);
+		).rejects.toThrow(/already finalized/);
 		expect(
-			reloaded.recordTaskFinish(task("code"), {
+			await reloaded.recordTaskFinish(task("code"), {
 				status: "completed",
 				report: "original",
 				artifact: entry.artifact,
@@ -112,10 +112,10 @@ describe("task outcome permanent rejection quarantine", () => {
 		expect(JSON.parse(readFileSync(path, "utf8")).version).toBe(2);
 	});
 
-	it("keeps pending evidence and active leases if the atomic quarantine write fails", () => {
+	it("keeps pending evidence and active leases if the atomic quarantine write fails", async () => {
 		const { manager, options, path } = fixture();
-		const entry = manager.recordTaskFinish(task("finished"), { status: "failed", report: "durable" });
-		manager.recordTaskStart({
+		const entry = await manager.recordTaskFinish(task("finished"), { status: "failed", report: "durable" });
+		await manager.recordTaskStart({
 			taskId: "active",
 			attemptId: "attempt",
 			botId: "bot",
@@ -125,12 +125,10 @@ describe("task outcome permanent rejection quarantine", () => {
 			leaseGeneration: 1,
 		});
 		const before = readFileSync(path, "utf8");
-		vi.spyOn(manager as any, "writeStateToDiskSync").mockImplementationOnce(() => {
-			throw new Error("disk unavailable");
-		});
-		expect(() =>
+		vi.spyOn(manager as any, "writeStateToDisk").mockRejectedValueOnce(new Error("disk unavailable"));
+		await expect(
 			manager.quarantineOutbox("finished", "attempt", entry.fingerprint, "attempt_expired", "failed"),
-		).toThrow(/disk unavailable/);
+		).rejects.toThrow(/disk unavailable/);
 		expect(manager.getQuarantinedOutcomes()).toEqual([]);
 		expect(manager.getPendingOutboxEntry("finished", "attempt")).toEqual(entry);
 		expect(readFileSync(path, "utf8")).toBe(before);
@@ -138,30 +136,45 @@ describe("task outcome permanent rejection quarantine", () => {
 		expect(new TaskRecoveryManager(options).getPendingOutboxEntry("finished", "attempt")).toEqual(entry);
 	});
 
-	it("bounds archive count without eviction and retains the rejected entry when full", () => {
+	it("bounds archive count without eviction and retains the rejected entry when full", async () => {
 		const manager = new TaskRecoveryManager({ deviceId: "device" });
 		for (let i = 0; i < TASK_QUARANTINE_LIMITS.maxEntries; i++) {
-			const entry = manager.recordTaskFinish(task(`task-${i}`), { status: "completed", report: "done" });
+			const entry = await manager.recordTaskFinish(task(`task-${i}`), { status: "completed", report: "done" });
 			expect(
-				manager.quarantineOutbox(entry.taskId, entry.attemptId, entry.fingerprint, "terminal_conflict", entry.status),
+				await manager.quarantineOutbox(
+					entry.taskId,
+					entry.attemptId,
+					entry.fingerprint,
+					"terminal_conflict",
+					entry.status,
+				),
 			).toBe(true);
 		}
-		const last = manager.recordTaskFinish(task("over-limit"), { status: "completed", report: "retained" });
+		const last = await manager.recordTaskFinish(task("over-limit"), { status: "completed", report: "retained" });
 		expect(
-			manager.quarantineOutbox(last.taskId, last.attemptId, last.fingerprint, "terminal_conflict", last.status),
+			await manager.quarantineOutbox(last.taskId, last.attemptId, last.fingerprint, "terminal_conflict", last.status),
 		).toBe(false);
 		expect(manager.getPendingOutboxEntry(last.taskId, last.attemptId)).toEqual(last);
 		expect(manager.getQuarantinedOutcomes()).toHaveLength(TASK_QUARANTINE_LIMITS.maxEntries);
 		expect(manager.getQuarantinedOutcomes()[0].outcome.taskId).toBe("task-0");
 	});
 
-	it("bounds archive bytes independently of count and never drops the existing archive", () => {
+	it("bounds archive bytes independently of count and never drops the existing archive", async () => {
 		const manager = new TaskRecoveryManager({ deviceId: "device" });
 		let blocked = false;
 		for (let i = 0; i < TASK_QUARANTINE_LIMITS.maxEntries; i++) {
-			const entry = manager.recordTaskFinish(task(`large-${i}`), { status: "completed", report: "x".repeat(30_000) });
+			const entry = await manager.recordTaskFinish(task(`large-${i}`), {
+				status: "completed",
+				report: "x".repeat(30_000),
+			});
 			if (
-				!manager.quarantineOutbox(entry.taskId, entry.attemptId, entry.fingerprint, "terminal_conflict", entry.status)
+				!(await manager.quarantineOutbox(
+					entry.taskId,
+					entry.attemptId,
+					entry.fingerprint,
+					"terminal_conflict",
+					entry.status,
+				))
 			) {
 				blocked = true;
 				expect(manager.getPendingOutboxEntry(entry.taskId, entry.attemptId)).toEqual(entry);
@@ -175,22 +188,23 @@ describe("task outcome permanent rejection quarantine", () => {
 		);
 	});
 
-	it("migrates v1 on the next durable write and fails closed on unknown archive versions", () => {
+	it("migrates v1 on the next durable write and fails closed on unknown archive versions", async () => {
 		const { manager, options, path } = fixture();
-		manager.recordTaskFinish(task("old"), { status: "failed", report: "legacy" });
+		await manager.recordTaskFinish(task("old"), { status: "failed", report: "legacy" });
 		const state = JSON.parse(readFileSync(path, "utf8"));
 		delete state.quarantine;
 		state.version = 1;
 		writeFileSync(path, JSON.stringify(state));
 		const migrated = new TaskRecoveryManager(options);
+		await migrated.flush();
 		expect(migrated.outboxLoadError).toBe(false);
-		migrated.markOutboxAttempt("old:attempt");
+		await migrated.markOutboxAttempt("old:attempt");
 		expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({ version: 2, quarantine: [] });
 		state.version = 3;
 		writeFileSync(path, JSON.stringify(state));
 		const blocked = new TaskRecoveryManager(options);
 		expect(blocked.outboxLoadError).toBe(true);
-		expect(() => blocked.recordTaskFinish(task("new"), { status: "failed" })).toThrow();
+		await expect(blocked.recordTaskFinish(task("new"), { status: "failed" })).rejects.toThrow();
 		expect(JSON.parse(readFileSync(path, "utf8")).version).toBe(3);
 	});
 });

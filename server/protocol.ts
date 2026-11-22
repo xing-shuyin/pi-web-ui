@@ -1,4 +1,5 @@
 import type { NativeCliInheritModel } from "./engine-catalog.js";
+import type { ModelErrorReport } from "./model-error.js";
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
@@ -855,6 +856,12 @@ export interface UiMessage {
 	usageCost?: number;
 	stopReason?: string;
 	errorMessage?: string;
+	/**
+	 * 模型错误的分类结果（判据只由 `server/model-error.ts` 的 `classifyModelError` 产出，
+	 * 见 issue #978）。`errorMessage` 保持原文不动，UI 优先显示 `errorInfo.summary`，
+	 * 原文放在「查看原始响应」里；`retries` 是本轮收尾时固定下来的自动重试次数。
+	 */
+	errorInfo?: ModelErrorReport;
 	toolCallId?: string;
 	toolName?: string;
 	isError?: boolean;
@@ -1102,6 +1109,14 @@ export interface TextQuote {
 	sessionId?: string;
 }
 
+/** 随消息上传的内联材料（base64）：**只在线上瞬态存在**，服务端落盘后规格里只留路径。 */
+export interface MaterialBlob {
+	name?: string;
+	mimeType?: string;
+	/** base64 */
+	data: string;
+}
+
 export interface PromptAttachment {
 	path: string;
 	mode?: "inline" | "reference" | "lines" | "page" | "conversation" | "quote" | "canvas" | "terminal";
@@ -1227,6 +1242,8 @@ export interface CanvasNode {
 	useWorktree: boolean;
 	systemPromptOverride?: string;
 	instruction?: string;
+	/** 节点材料指针（工作区相对路径）；渲染给执行者的清单由 server/material.ts 单源生成 */
+	materials?: string[];
 	config?: Record<string, string | number | boolean | undefined>;
 	status: CanvasNodeStatus;
 	activeConvId?: string;
@@ -1307,8 +1324,8 @@ export type ClientMessage =
 	| { type: "canvas_load"; id: string; requestId?: string }
 	| { type: "canvas_save"; graph: CanvasGraph; baseRev?: number; requestId?: string }
 	| { type: "canvas_delete"; id: string }
-	| { type: "canvas_run_all"; graphId: string; initialPrompt?: string; cwd?: string }
-	| { type: "canvas_run_node"; graphId: string; nodeId: string; prompt?: string }
+	| { type: "canvas_run_all"; graphId: string; initialPrompt?: string; cwd?: string; materials?: string[] }
+	| { type: "canvas_run_node"; graphId: string; nodeId: string; prompt?: string; materials?: string[] }
 	| { type: "canvas_stop_node"; graphId: string; nodeId: string }
 	| { type: "canvas_stop_all"; graphId: string }
 	| { type: "canvas_steer_node"; graphId: string; nodeId: string; message: string }
@@ -1595,9 +1612,21 @@ export type ClientMessage =
 			maxRounds: number;
 			locked: boolean;
 			execModel?: string;
+			/** 材料指针（工作区相对路径 / 绝对路径 / URI）；见 docs/proposals/material-spec-contract.md */
+			materials?: string[];
+			/** 粘贴图等无路径材料：服务端落盘后再并入 materials（契约 R1 的唯一出口） */
+			materialBlobs?: MaterialBlob[];
 	  }
 	| { type: "clear_goal" }
-	| { type: "start_goal_wizard"; text: string; wizardModel?: string; maxRounds?: number; locked?: boolean }
+	| {
+			type: "start_goal_wizard";
+			text: string;
+			wizardModel?: string;
+			maxRounds?: number;
+			locked?: boolean;
+			materials?: string[];
+			materialBlobs?: MaterialBlob[];
+	  }
 	| {
 			type: "set_goal_prefs";
 			reviewModel?: string;
@@ -2251,6 +2280,11 @@ export interface PlanState {
 	steps: PlanStep[];
 	activeStepId?: string | null;
 	updatedAt?: number;
+	/**
+	 * `plans.json` 这份缓存镜像自哪条转录事件（issue #979）。
+	 * 只作游标：真值仍是会话转录里的 `plan/update` 事件；游标不在当前分支时缓存判废。
+	 */
+	sourceEntryId?: string;
 }
 
 export interface BgServer {
@@ -2295,6 +2329,8 @@ export interface SchedulerTaskInput {
 	kind?: "cron" | "interval";
 	spec?: string | number;
 	prompt?: string;
+	/** 任务材料指针（工作区相对路径），每次执行时归一 + 清单化 */
+	materials?: string[];
 	enabled?: boolean;
 	model?: string;
 	thinkingLevel?: string;
@@ -2314,6 +2350,7 @@ export interface SchedulerTaskView {
 	kind: "cron" | "interval";
 	spec: string;
 	prompt: string;
+	materials?: string[];
 	enabled: boolean;
 	model: string;
 	thinkingLevel: string;
@@ -2814,6 +2851,8 @@ export interface ConversationSummary {
 	botId?: string;
 	botName?: string;
 	error?: string;
+	/** 左栏悬停提示用的错误分类摘要（原文仍在 `error`；判据见 `server/model-error.ts`）。 */
+	errorInfo?: ModelErrorReport;
 	canceled?: boolean;
 	/**
 	 * 子代理完成证据的裁决：服务端已经用子代理自己的转录核对过它自报的文件/命令。
@@ -3929,6 +3968,8 @@ export type ServerMessage =
 			ok: boolean;
 			connectionId?: string;
 			error?: string;
+			/** 连上了但 profile 没落盘（存储文件版本不认识 / 写失败）时的原因；不影响本次连接。 */
+			profileSaveError?: string;
 			hostTrust?: RemoteSshHostTrustOffer;
 			system?: RemoteSshSystemInfo;
 			tools?: RemoteSshToolsInfo;
@@ -3964,6 +4005,8 @@ export type ServerMessage =
 			type: "remote_ssh_profiles_result";
 			reqId?: string;
 			profiles: RemoteSshProfileSummary[];
+			/** 存储文件版本不认识 / 读不出时，列表是只读视图，这里说明原因。 */
+			error?: string;
 	  }
 	| {
 			type: "transition_progress";

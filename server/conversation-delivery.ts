@@ -42,6 +42,12 @@ export interface CompactionGate {
 export interface GateInput {
 	/** 对话已移出 / 服务已释放。 */
 	closed?: boolean;
+	/**
+	 * 会话已退役（`isRetiredSession()`，#958）：旧 `AgentSession` 已 dispose、新的还没绑上。
+	 * 这是**暂时**态（force reset / reload 的换会话窗口），所以算 `gated` 而不是 `closed` ——
+	 * 判 closed 会把排队消息全丢掉；窗口结束后由 `bindSession` 的排空点重投。
+	 */
+	retired?: boolean;
 	/** SDK 正在跑一轮（`session.isStreaming`）。 */
 	streaming: boolean;
 	/** 有提示词已提交、这一轮马上开始（`conv.promptInFlight`）。 */
@@ -62,6 +68,8 @@ export interface GateInput {
  */
 export function deliveryMode(input: GateInput): DeliveryMode {
 	if (input.closed) return "closed";
+	// 退役先于其它谓词：会话对象本身不可用了，`streaming` 之类的读数都是僵尸状态，不能信。
+	if (input.retired) return "gated";
 	if (input.blocked) return "gated";
 	if (input.compacting) return "gated";
 	if (input.gate) return "gated";

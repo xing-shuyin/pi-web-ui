@@ -11,6 +11,7 @@ import {
 	terminatePersistentRemoteNativeCli,
 } from "../../server/remote-cli-persistence.js";
 import { RemoteSshService } from "../../server/remote-ssh-service.js";
+import { makeTestTmpDir } from "../helpers/tmp.js";
 
 const uri = "ssh://fixture@example.test/work";
 const key = "d0c3ace0-80c5-4f54-bfba-2893bb557394";
@@ -24,7 +25,7 @@ const options = { key, cols: 100, rows: 40 };
 let root: string;
 const services: RemoteSshService[] = [];
 beforeEach(async () => {
-	root = await fs.mkdtemp(path.join(process.platform === "win32" ? "E:/tmp" : os.tmpdir(), "remote-cli-persistence-"));
+	root = await makeTestTmpDir("remote-cli-persistence");
 });
 afterEach(async () => {
 	for (const service of services.splice(0))

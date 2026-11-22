@@ -257,9 +257,9 @@ describe("Device Execution Settings", () => {
 	});
 
 	describe("File persistence and error recovery", () => {
-		it("saves settings atomically and reads them back with all defaults preserved", () => {
+		it("saves settings atomically and reads them back with all defaults preserved", async () => {
 			const custom = { maxActiveTasks: 6, maxWaitingTasks: 48 };
-			const saved = saveExecutionSettings(tempDir, custom);
+			const saved = await saveExecutionSettings(tempDir, custom);
 			expect(saved).toEqual({ ...DEFAULT_EXECUTION_SETTINGS, ...custom });
 
 			const loaded = loadExecutionSettings(tempDir);
@@ -278,11 +278,11 @@ describe("Device Execution Settings", () => {
 			expect(() => loadExecutionSettings(tempDir)).toThrow(DeviceExecutionSettingsError);
 		});
 
-		it("rejects saving invalid settings without corrupting existing file", () => {
+		it("rejects saving invalid settings without corrupting existing file", async () => {
 			const valid = { maxActiveTasks: 5, maxWaitingTasks: 25 };
-			saveExecutionSettings(tempDir, valid);
+			await saveExecutionSettings(tempDir, valid);
 
-			expect(() => saveExecutionSettings(tempDir, { maxActiveTasks: 999, maxWaitingTasks: 25 })).toThrow();
+			await expect(saveExecutionSettings(tempDir, { maxActiveTasks: 999, maxWaitingTasks: 25 })).rejects.toThrow();
 			const loaded = loadExecutionSettings(tempDir);
 			expect(loaded).toEqual({ ...DEFAULT_EXECUTION_SETTINGS, ...valid });
 		});

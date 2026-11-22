@@ -15,13 +15,16 @@ import type {
 import { existsSync as fsExistsSync, mkdirSync as fsMkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join as pathJoin } from "node:path";
 import {
+	applyCanvasRuntimeFields,
 	saveCanvasRuntimeState,
 	loadCanvasGraph,
 	saveCanvasGraph,
 	isSafeGraphId,
 	deleteCanvasGraph,
 	markInterruptedCanvasRuns,
+	mergeCanvasMaterials,
 } from "./canvas-store.js";
+import { describeMaterials, normalizeMaterials, planMaterialDelivery, stageMaterials } from "../material.js";
 import { prepareCanvasWorkspace, captureCanvasWorkspaceArtifact, type CanvasWorkspace } from "./canvas-workspace.js";
 import { sleep } from "../async-utils.js";
 import { runGitText } from "../git-run.js";
@@ -56,6 +59,8 @@ export class CanvasOrchestrator {
 	private logSeq = 0;
 	private readonly baseCwd: string;
 	private readonly runBaseByGraph = new Map<string, string>();
+	/** run 级材料（`canvas_run_node` / `canvas_run_all` 的 `materials`），与节点级材料合并时节点级优先。 */
+	private readonly runMaterialsByGraph = new Map<string, string[]>();
 	private readonly engineGetter?: EngineServiceGetter;
 	private broadcaster: CanvasEventBroadcaster | null = null;
 	private readonly activeExecutions = new Map<string, ActiveNodeExecution>();
@@ -67,11 +72,27 @@ export class CanvasOrchestrator {
 	private readonly feedbackArtifacts = new Map<string, NonNullable<CanvasNode["artifact"]>["workspace"]>();
 	private readonly runDeadlines = new Map<string, ReturnType<typeof setTimeout>>();
 
+	/** 运行时状态的排队写入：同步方法里不能让出事件循环，但写入必须有序、且可被 flush 等到。 */
+	private runtimeWrites: Promise<unknown> = Promise.resolve();
+
 	constructor(baseCwd: string, dataDir: string, engineGetter?: EngineServiceGetter) {
 		this.baseCwd = baseCwd;
 		this.dataDir = dataDir;
 		this.engineGetter = engineGetter;
-		markInterruptedCanvasRuns(dataDir);
+		void markInterruptedCanvasRuns(dataDir).catch(() => {});
+	}
+
+	/** 同步方法里的运行时状态落盘：排队、有序、不阻塞；失败只记日志（运行时状态是可重建投影）。 */
+	private queueRuntimeSave(graph: CanvasGraph): void {
+		this.runtimeWrites = this.runtimeWrites.then(() => saveCanvasRuntimeState(this.dataDir, graph));
+		this.runtimeWrites = this.runtimeWrites.catch((error: unknown) => {
+			console.error(`[canvas] 运行时状态写入失败（可从图重建）：${graph.id}`, error);
+		});
+	}
+
+	/** 等待排队中的运行时状态写入落定（测试 / 关停用）。 */
+	async flushRuntimeWrites(): Promise<void> {
+		await this.runtimeWrites;
 	}
 
 	setBroadcaster(broadcaster: CanvasEventBroadcaster): void {
@@ -84,10 +105,20 @@ export class CanvasOrchestrator {
 		} catch {}
 	}
 
+	/**
+	 * 广播「盘上拓扑 + 内存运行态」：结构（含执行期间的编辑）以盘上为准，状态以内存为准。
+	 * 落盘已异步（#966），直接读盘会读到上一笔，因此不能整份广播内存对象、也不能只看盘。
+	 */
 	private broadcastCanvasRuntime(graph: CanvasGraph): void {
 		try {
-			this.broadcast({ type: "canvas_graph_state", graph: loadCanvasGraph(this.dataDir, graph.id) });
-		} catch {}
+			const merged = loadCanvasGraph(this.dataDir, graph.id);
+			applyCanvasRuntimeFields(merged, graph);
+			this.broadcast({ type: "canvas_graph_state", graph: merged });
+		} catch {
+			try {
+				this.broadcast({ type: "canvas_graph_state", graph });
+			} catch {}
+		}
 	}
 
 	private logKey(graphId: string, nodeId: string): string {
@@ -215,6 +246,49 @@ export class CanvasOrchestrator {
 		return cwd;
 	}
 
+	/** run 级材料只在每次顶层启动时重置：不传 ≡ 空（R10）——绝不拿上一轮的材料。 */
+	private setRunMaterials(graphId: string, materials?: readonly string[]): void {
+		const values = (materials ?? []).filter((item) => typeof item === "string" && item.trim());
+		if (values.length > 0) this.runMaterialsByGraph.set(graphId, values);
+		else this.runMaterialsByGraph.delete(graphId);
+	}
+
+	/** 材料路径的基准：节点自己的工程 cwd（worktree 之前的原始目录）。 */
+	private materialsBaseCwd(graph: CanvasGraph, node: CanvasNode): string {
+		return resolve(this.pickRunBase(this.runBaseByGraph.get(graph.id)), (node.cwd ?? "").trim() || ".");
+	}
+
+	/**
+	 * 归 + 投一个节点的材料：
+	 * - 归：`normalizeMaterials`（可达性、去重、超限全部它判）；`dropped` 不静默；
+	 * - 跨环境：worktree / cwd 与材料基准不一致 → `stageMaterials`，`failed` 明示不可达；
+	 * - 投：形态只由 `planMaterialDelivery` 决定，文本只由 `describeMaterials` 产出。
+	 */
+	private async prepareNodeMaterials(
+		graph: CanvasGraph,
+		node: CanvasNode,
+		resolvedCwd: string,
+	): Promise<{ block: string; notice: string[] }> {
+		const merged = mergeCanvasMaterials(node.materials, this.runMaterialsByGraph.get(graph.id));
+		if (merged.length === 0) return { block: "", notice: [] };
+		const base = this.materialsBaseCwd(graph, node);
+		const { materials, dropped } = await normalizeMaterials(merged, { cwd: base });
+		const notice: string[] = [];
+		if (dropped.length > 0) notice.push(`材料已忽略：${dropped.map((d) => `${d.value}(${d.reason})`).join("、")}`);
+		let reachable = materials;
+		if (materials.length > 0 && (node.useWorktree === true || base !== resolvedCwd)) {
+			const { staged, failed } = await stageMaterials(materials, resolvedCwd);
+			reachable = staged;
+			if (failed.length > 0) notice.push(`材料不可达：${failed.map((f) => f.ref).join("、")}（请让用户重新提供）`);
+		}
+		// 画布执行者是带文件系统的编码智能体：全部给指针，由它自己 read（形态判定仍在 material 层）。
+		const plan = planMaterialDelivery(reachable, { vision: false, hasFs: true });
+		if (plan.degraded.length > 0)
+			notice.push(`材料无法内联：${plan.degraded.map((d) => `${d.ref}(${d.reason})`).join("、")}`);
+		const block = [describeMaterials(plan.pointers), ...notice].filter(Boolean).join("\n");
+		return { block, notice };
+	}
+
 	private armRunDeadline(graph: CanvasGraph): void {
 		const previous = this.runDeadlines.get(graph.id);
 		if (previous) clearTimeout(previous);
@@ -230,7 +304,7 @@ export class CanvasOrchestrator {
 				this.stopAll(graph.id);
 				graph.status = "error";
 				graph.run.error = "Canvas run exceeded 30 minute deadline";
-				saveCanvasRuntimeState(this.dataDir, graph);
+				this.queueRuntimeSave(graph);
 				this.broadcastCanvasRuntime(graph);
 			},
 			30 * 60 * 1000,
@@ -253,6 +327,7 @@ export class CanvasOrchestrator {
 			if (key.startsWith(`${graphId}:`)) this.feedbackArtifacts.delete(key);
 		this.runningGraphs.delete(graphId);
 		this.runBaseByGraph.delete(graphId);
+		this.runMaterialsByGraph.delete(graphId);
 		for (const key of this.nodeLogs.keys()) if (key.startsWith(`${graphId}:`)) this.nodeLogs.delete(key);
 		for (const key of this.nodeMessages.keys()) if (key.startsWith(`${graphId}:`)) this.nodeMessages.delete(key);
 		return deleteCanvasGraph(this.dataDir, graphId);
@@ -264,6 +339,7 @@ export class CanvasOrchestrator {
 		initialPrompt?: string,
 		runBase?: string,
 		scheduled = false,
+		runMaterials?: string[],
 	): Promise<void> {
 		if (!fsExistsSync(pathJoin(this.dataDir, "canvas", `${graph.id}.json`))) return;
 		const execKey = `${graph.id}:${nodeId}`;
@@ -278,6 +354,7 @@ export class CanvasOrchestrator {
 		const node = graph.nodes.find((n) => n.id === nodeId);
 		if (!node) return;
 		this.runningGraphs.set(graph.id, graph);
+		if (!scheduled) this.setRunMaterials(graph.id, runMaterials);
 		const generation = this.graphGenerations.get(graph.id) ?? 0;
 		const nodeGeneration = (this.nodeGenerations.get(execKey) ?? 0) + 1;
 		this.nodeGenerations.set(execKey, nodeGeneration);
@@ -334,7 +411,7 @@ export class CanvasOrchestrator {
 		node.errorMessage = undefined;
 		node.currentAction = `[${node.engine.toUpperCase()}] 正在分配独立环境与工作目录...`;
 		node.currentActionMessage = canvasRuntimeMessage("action.allocating", { engine: node.engine.toUpperCase() });
-		saveCanvasRuntimeState(this.dataDir, graph);
+		this.queueRuntimeSave(graph);
 		this.broadcastCanvasRuntime(graph);
 		this.appendLog(
 			graph.id,
@@ -557,6 +634,14 @@ export class CanvasOrchestrator {
 2. Avoid blocking the terminal: do not leave long-running services or verification commands in the foreground. Check and resolve occupied ports (such as 3000/3001), and stop and clean up all background child processes when verification finishes.
 3. Deliver clearly: provide a concise change summary, interface contracts, and the current status so downstream nodes or review gates can continue.`;
 			}
+			// 材料：只有节点材料非空时才动 prompt（R10）；形态与文案分别只由 material 层两函数产出。
+			const materialNotice: string[] = [];
+			if (!wantAiJudge && !isCanvasPassthroughRole(node.role) && node.role !== "transform") {
+				const prepared = await this.prepareNodeMaterials(graph, node, resolvedCwd);
+				if (prepared.block) prompt = `${prompt}\n\n${prepared.block}`;
+				materialNotice.push(...prepared.notice);
+			}
+			if (materialNotice.length > 0) this.appendLog(graph.id, nodeId, "system", materialNotice.join("；"));
 			this.appendLog(graph.id, nodeId, "prompt", prompt.slice(0, 2000));
 			if (node.role === "transform") {
 				const transformed = executeTransformNode(graph, node);
@@ -570,7 +655,7 @@ export class CanvasOrchestrator {
 				if (!isCurrent()) return;
 				releaseCapacity();
 				this.activeExecutions.delete(execKey);
-				saveCanvasRuntimeState(this.dataDir, graph);
+				this.queueRuntimeSave(graph);
 				this.broadcastCanvasRuntime(graph);
 				this.broadcast({
 					type: "canvas_node_event",
@@ -613,7 +698,7 @@ export class CanvasOrchestrator {
 					releaseCapacity();
 					this.activeExecutions.delete(execKey);
 					this.settleGraph(graph);
-					saveCanvasRuntimeState(this.dataDir, graph);
+					this.queueRuntimeSave(graph);
 					this.broadcastCanvasRuntime(graph);
 					this.broadcast({
 						type: "canvas_node_event",
@@ -636,7 +721,7 @@ export class CanvasOrchestrator {
 				if (!isCurrent()) return;
 				releaseCapacity();
 				this.activeExecutions.delete(execKey);
-				saveCanvasRuntimeState(this.dataDir, graph);
+				this.queueRuntimeSave(graph);
 				this.broadcastCanvasRuntime(graph);
 				this.broadcast({
 					type: "canvas_node_event",
@@ -718,7 +803,9 @@ export class CanvasOrchestrator {
 			node.status = "done";
 			node.currentAction = `已完成 (${node.engine.toUpperCase()})`;
 			node.currentActionMessage = canvasRuntimeMessage("action.completed", { engine: node.engine.toUpperCase() });
-			node.lastOutputSummary = outputSummary;
+			node.lastOutputSummary = materialNotice.length
+				? `${outputSummary}\n\n${materialNotice.join("\n")}`
+				: outputSummary;
 			if (wantAiJudge) {
 				const hits = [
 					...outputSummary.matchAll(/结论\s*[：:]\s*(通过|不通过|成立|不成立|是|否|真|假|true|false|yes|no)/gi),
@@ -748,7 +835,7 @@ export class CanvasOrchestrator {
 			if (!isCurrent()) return;
 			releaseCapacity();
 			this.activeExecutions.delete(execKey);
-			saveCanvasRuntimeState(this.dataDir, graph);
+			this.queueRuntimeSave(graph);
 			this.broadcastCanvasRuntime(graph);
 
 			this.broadcast({
@@ -775,7 +862,7 @@ export class CanvasOrchestrator {
 			releaseCapacity();
 			this.activeExecutions.delete(execKey);
 			this.settleGraph(graph);
-			saveCanvasRuntimeState(this.dataDir, graph);
+			this.queueRuntimeSave(graph);
 			this.broadcastCanvasRuntime(graph);
 
 			this.broadcast({
@@ -793,7 +880,7 @@ export class CanvasOrchestrator {
 		}
 	}
 
-	async runAll(graph: CanvasGraph, initialPrompt?: string, runBase?: string): Promise<void> {
+	async runAll(graph: CanvasGraph, initialPrompt?: string, runBase?: string, materials?: string[]): Promise<void> {
 		if (!fsExistsSync(pathJoin(this.dataDir, "canvas", `${graph.id}.json`))) return;
 		const current = this.runningGraphs.get(graph.id);
 		if (current && ["running", "waiting_approval"].includes(current.status))
@@ -829,14 +916,17 @@ export class CanvasOrchestrator {
 		this.runningGraphs.set(graph.id, graph);
 		this.armRunDeadline(graph);
 		if ((runBase ?? "").trim()) this.runBaseByGraph.set(graph.id, runBase!);
-		saveCanvasRuntimeState(this.dataDir, graph);
+		this.setRunMaterials(graph.id, materials);
+		this.queueRuntimeSave(graph);
 		this.broadcastCanvasRuntime(graph);
 		const roots = graph.nodes.filter((n) => !graph.edges.some((e) => e.targetNodeId === n.id && !isCanvasBackedge(e)));
 		const generation = this.graphGenerations.get(graph.id);
 		await Promise.all(roots.map((n) => this.runNode(graph, n.id, initialPrompt, runBase, true)));
 		if (this.graphGenerations.get(graph.id) !== generation || this.runningGraphs.get(graph.id) !== graph) return;
 		this.settleGraph(graph);
-		saveCanvasRuntimeState(this.dataDir, graph);
+		this.queueRuntimeSave(graph);
+		// 让排队的落盘完成，再广播「已落定的盘上拓扑」（执行期间的编辑要能被看到）。
+		await this.runtimeWrites;
 		this.broadcastCanvasRuntime(graph);
 	}
 
@@ -991,12 +1081,12 @@ export class CanvasOrchestrator {
 				scheduled.push(this.runNode(graph, node.id, undefined, this.runBaseByGraph.get(graph.id), true));
 		}
 		this.settleGraph(graph);
-		saveCanvasRuntimeState(this.dataDir, graph);
+		this.queueRuntimeSave(graph);
 		this.broadcastCanvasRuntime(graph);
 		await Promise.all(scheduled);
 		if (!isCurrent()) return;
 		this.settleGraph(graph);
-		saveCanvasRuntimeState(this.dataDir, graph);
+		await saveCanvasRuntimeState(this.dataDir, graph);
 		this.broadcastCanvasRuntime(graph);
 	}
 
@@ -1018,7 +1108,7 @@ export class CanvasOrchestrator {
 				node.currentActionMessage = canvasRuntimeMessage("action.stopped");
 				this.settleGraph(graph);
 				this.appendLog(graphId, nodeId, "system", "已手动中止当前任务", undefined, canvasRuntimeMessage("log.stopped"));
-				saveCanvasRuntimeState(this.dataDir, graph);
+				this.queueRuntimeSave(graph);
 				this.broadcastCanvasRuntime(graph);
 				this.broadcast({
 					type: "canvas_node_event",
@@ -1054,7 +1144,7 @@ export class CanvasOrchestrator {
 					node.currentActionMessage = canvasRuntimeMessage("action.stopped");
 				}
 			}
-			saveCanvasRuntimeState(this.dataDir, graph);
+			this.queueRuntimeSave(graph);
 			this.broadcastCanvasRuntime(graph);
 		}
 	}
@@ -1089,7 +1179,7 @@ export class CanvasOrchestrator {
 				: canvasRuntimeMessage("action.reviewRejected");
 		}
 		graph.updatedAt = Date.now();
-		saveCanvasRuntimeState(this.dataDir, graph);
+		this.queueRuntimeSave(graph);
 		this.broadcastCanvasRuntime(graph);
 		this.runningGraphs.set(graphId, graph);
 		this.appendLog(
@@ -1121,7 +1211,7 @@ export class CanvasOrchestrator {
 			node.error = String(error);
 			node.errorMessage = canvasErrorMessage(error);
 			this.settleGraph(graph);
-			saveCanvasRuntimeState(this.dataDir, graph);
+			this.queueRuntimeSave(graph);
 			this.broadcastCanvasRuntime(graph);
 		});
 		return graph;
@@ -1142,7 +1232,7 @@ export class CanvasOrchestrator {
 
 		node.currentAction = `[收到人工插话指导]: ${message.slice(0, 40)}`;
 		node.currentActionMessage = canvasRuntimeMessage("action.steered", { preview: message.slice(0, 40) });
-		saveCanvasRuntimeState(this.dataDir, graph);
+		await saveCanvasRuntimeState(this.dataDir, graph);
 		this.broadcastCanvasRuntime(graph);
 		this.appendLog(graphId, nodeId, "steer", message.slice(0, 2000));
 
@@ -1185,7 +1275,7 @@ export class CanvasOrchestrator {
 			const cleanMsg = message.trim();
 			if (cleanMsg) {
 				node.instruction = node.instruction ? `${node.instruction}\n\n[人工指导补充]: ${cleanMsg}` : cleanMsg;
-				saveCanvasGraph(this.dataDir, graph);
+				await saveCanvasGraph(this.dataDir, graph);
 				this.appendLog(graphId, nodeId, "system", "节点未在运行，指导意见已暂存为该节点下一次执行指令。");
 			}
 		}
@@ -1207,7 +1297,7 @@ export class CanvasOrchestrator {
 			edge.currentLoopCount = 0;
 			edge.lastHandoffSummary = undefined;
 		}
-		saveCanvasRuntimeState(this.dataDir, graph);
+		this.queueRuntimeSave(graph);
 		this.broadcastCanvasRuntime(graph);
 	}
 

@@ -10,6 +10,15 @@ import {
 	sameSessionFile,
 } from "../../server/scheduler-tasks.js";
 
+/**
+ * 真实的 setTimeout（fake timers 会替换全局实现）：落盘改成异步后，触发循环与跑完收尾都要多等几轮
+ * I/O 才能看到内存投影。断言前一律走它，别写死等固定轮数。
+ */
+const realSetTimeout = globalThis.setTimeout;
+async function flushDisk(check: () => boolean): Promise<void> {
+	for (let i = 0; i < 200 && !check(); i++) await new Promise((resolve) => realSetTimeout(resolve, 1));
+}
+
 const BASE = {
 	name: "每日巡检",
 	cwd: process.platform === "win32" ? "C:\\tmp" : "/tmp",
@@ -19,7 +28,7 @@ const BASE = {
 };
 
 describe("normalizeSchedulerInput", () => {
-	it("旧任务默认对话，画布允许空输入并剥离会话和模型覆盖", () => {
+	it("旧任务默认对话，画布允许空输入并剥离会话和模型覆盖", async () => {
 		expect(normalizeSchedulerInput(BASE).target).toBe("conversation");
 		expect(() => normalizeSchedulerInput({ ...BASE, prompt: "" })).toThrow();
 		const task = normalizeSchedulerInput({
@@ -43,57 +52,57 @@ describe("normalizeSchedulerInput", () => {
 		expect(normalizeSchedulerInput({ ...BASE, target: "conversation", graphId: "graph-1" }).graphId).toBeUndefined();
 	});
 
-	it("画布 graphId 必填并拒绝路径及非法目标", () => {
+	it("画布 graphId 必填并拒绝路径及非法目标", async () => {
 		for (const graphId of ["", "..", ".", "../escape", "a/b", "a\\b", "a".repeat(65)]) {
 			expect(() => normalizeSchedulerInput({ ...BASE, target: "canvas", graphId })).toThrow();
 		}
 		expect(() => normalizeSchedulerInput({ ...BASE, target: "invalid" as any })).toThrow();
 	});
-	it("cron 归一化（多余空白压缩）", () => {
+	it("cron 归一化（多余空白压缩）", async () => {
 		const t = normalizeSchedulerInput({ ...BASE, spec: "  0  9  *  *  * " });
 		expect(t.spec).toBe("0 9 * * *");
 		expect(t.enabled).toBe(true);
 		expect(t.catchUp).toBe("skip");
 	});
 
-	it("非法 cron 抛错", () => {
+	it("非法 cron 抛错", async () => {
 		expect(() => normalizeSchedulerInput({ ...BASE, spec: "not a cron" })).toThrow();
 		expect(() => normalizeSchedulerInput({ ...BASE, spec: "0 9 * *" })).toThrow();
 	});
 
-	it("interval 按毫秒归一化，过短拒绝", () => {
+	it("interval 按毫秒归一化，过短拒绝", async () => {
 		const t = normalizeSchedulerInput({ ...BASE, kind: "interval", spec: "3600000" });
 		expect(t.spec).toBe("3600000");
 		expect(() => normalizeSchedulerInput({ ...BASE, kind: "interval", spec: "1000" })).toThrow();
 		expect(() => normalizeSchedulerInput({ ...BASE, kind: "interval", spec: "abc" })).toThrow();
 	});
 
-	it("必填缺失抛错（名称/cwd/prompt）", () => {
+	it("必填缺失抛错（名称/cwd/prompt）", async () => {
 		expect(() => normalizeSchedulerInput({ ...BASE, name: "  " })).toThrow();
 		expect(() => normalizeSchedulerInput({ ...BASE, cwd: "" })).toThrow();
 		expect(() => normalizeSchedulerInput({ ...BASE, prompt: "" })).toThrow();
 	});
 
-	it("prompt 超长拒绝（与 host.chat 同口径 8000）", () => {
+	it("prompt 超长拒绝（与 host.chat 同口径 8000）", async () => {
 		expect(() => normalizeSchedulerInput({ ...BASE, prompt: "x".repeat(8001) })).toThrow();
 	});
 
-	it("模型格式校验（provider/id）", () => {
+	it("模型格式校验（provider/id）", async () => {
 		expect(normalizeSchedulerInput({ ...BASE, model: "openai/gpt-5" }).model).toBe("openai/gpt-5");
 		expect(() => normalizeSchedulerInput({ ...BASE, model: "gpt-5" })).toThrow();
 	});
 
-	it("缺 id 自动生成合法 id", () => {
+	it("缺 id 自动生成合法 id", async () => {
 		const t = normalizeSchedulerInput({ ...BASE });
 		expect(t.id).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
 	});
 
-	it("issue #231：sessionFile 归一化（去空白/封顶，缺省空串）", () => {
+	it("issue #231：sessionFile 归一化（去空白/封顶，缺省空串）", async () => {
 		expect(normalizeSchedulerInput({ ...BASE }).sessionFile).toBe("");
 		expect(normalizeSchedulerInput({ ...BASE, sessionFile: "  /s/a.jsonl  " }).sessionFile).toBe("/s/a.jsonl");
 	});
 
-	it("issue #231：sameSessionFile 分隔符/大小写归一", () => {
+	it("issue #231：sameSessionFile 分隔符/大小写归一", async () => {
 		expect(sameSessionFile("/a/b.jsonl", "/a/b.jsonl")).toBe(true);
 		expect(sameSessionFile("C:\\a\\b.jsonl", "C:/a/b.jsonl")).toBe(true);
 		expect(sameSessionFile("/a/b.jsonl", "/a/c.jsonl")).toBe(false);
@@ -102,7 +111,7 @@ describe("normalizeSchedulerInput", () => {
 });
 
 describe("computeNextFire", () => {
-	it("cron：每天 9 点从当天 8 点起算是今天 9 点", () => {
+	it("cron：每天 9 点从当天 8 点起算是今天 9 点", async () => {
 		const from = new Date(2026, 8, 17, 8, 0, 0).getTime();
 		const next = computeNextFire({ kind: "cron", spec: "0 9 * * *" }, from);
 		const d = new Date(next!);
@@ -111,18 +120,18 @@ describe("computeNextFire", () => {
 		expect(d.getDate()).toBe(17);
 	});
 
-	it("interval：fromMs + 毫秒", () => {
+	it("interval：fromMs + 毫秒", async () => {
 		expect(computeNextFire({ kind: "interval", spec: "3600000" }, 1000)).toBe(3601000);
 	});
 
-	it("非法回 null", () => {
+	it("非法回 null", async () => {
 		expect(computeNextFire({ kind: "cron", spec: "nope" }, Date.now())).toBeNull();
 		expect(computeNextFire({ kind: "interval", spec: "0" }, Date.now())).toBeNull();
 	});
 });
 
 describe("describeIntervalMs", () => {
-	it("秒/分/时/天", () => {
+	it("秒/分/时/天", async () => {
 		expect(describeIntervalMs(30_000)).toBe("每 30 秒");
 		expect(describeIntervalMs(3_600_000)).toBe("每 1 小时");
 		expect(describeIntervalMs(7_200_000)).toBe("每 2 小时");
@@ -141,9 +150,9 @@ describe("SchedulerStore", () => {
 		} catch {}
 	});
 
-	it("upsert → list → 持久化往返（新 Store 读盘）", () => {
+	it("upsert → list → 持久化往返（新 Store 读盘）", async () => {
 		const s = new SchedulerStore(dir, {});
-		const task = s.upsert({ ...BASE, id: "daily" });
+		const task = await s.upsert({ ...BASE, id: "daily" });
 		expect(task.id).toBe("daily");
 		const views = s.list();
 		expect(views).toHaveLength(1);
@@ -156,65 +165,65 @@ describe("SchedulerStore", () => {
 		expect(s2.list()[0]!.prompt).toBe("审计依赖并报告");
 	});
 
-	it("坏文件当空表（不抛错）", () => {
+	it("坏文件当空表（不抛错）", async () => {
 		const s = new SchedulerStore(dir, {});
-		s.upsert({ ...BASE, id: "a" });
+		await s.upsert({ ...BASE, id: "a" });
 		writeFileSync(join(dir, "scheduler-tasks.json"), "{broken");
 		const s2 = new SchedulerStore(dir, {});
 		s2.load();
 		expect(s2.list()).toHaveLength(0);
 	});
 
-	it("setEnabled 关 → nextFire 为 null；开 → 恢复", () => {
+	it("setEnabled 关 → nextFire 为 null；开 → 恢复", async () => {
 		const s = new SchedulerStore(dir, {});
-		s.upsert({ ...BASE, id: "a" });
-		s.setEnabled("a", false);
+		await s.upsert({ ...BASE, id: "a" });
+		await s.setEnabled("a", false);
 		expect(s.list()[0]!.enabled).toBe(false);
 		expect(s.list()[0]!.nextFire).toBeNull();
-		s.setEnabled("a", true);
+		await s.setEnabled("a", true);
 		expect(s.list()[0]!.nextFire).toBeGreaterThan(Date.now());
 	});
 
-	it("remove 删任务；未知 id 回 false", () => {
+	it("remove 删任务；未知 id 回 false", async () => {
 		const s = new SchedulerStore(dir, {});
-		s.upsert({ ...BASE, id: "a" });
-		expect(s.remove("nope")).toBe(false);
-		expect(s.remove("a")).toBe(true);
+		await s.upsert({ ...BASE, id: "a" });
+		expect(await s.remove("nope")).toBe(false);
+		expect(await s.remove("a")).toBe(true);
 		expect(s.list()).toHaveLength(0);
 	});
 
-	it("issue #231：面板编辑（不带绑定字段）保留旧绑定，显式给空才清", () => {
+	it("issue #231：面板编辑（不带绑定字段）保留旧绑定，显式给空才清", async () => {
 		const s = new SchedulerStore(dir, {});
-		s.upsert({ ...BASE, id: "a", conversationId: "c1", sessionFile: "/s/old.jsonl" });
-		s.upsert({ ...BASE, id: "a", name: "新名字" });
+		await s.upsert({ ...BASE, id: "a", conversationId: "c1", sessionFile: "/s/old.jsonl" });
+		await s.upsert({ ...BASE, id: "a", name: "新名字" });
 		expect(s.list()[0]!.name).toBe("新名字");
 		expect(s.list()[0]!.conversationId).toBe("c1");
 		expect(s.list()[0]!.sessionFile).toBe("/s/old.jsonl");
-		s.upsert({ ...BASE, id: "a", conversationId: "", sessionFile: "" });
+		await s.upsert({ ...BASE, id: "a", conversationId: "", sessionFile: "" });
 		expect(s.list()[0]!.conversationId).toBe("");
 		expect(s.list()[0]!.sessionFile).toBe("");
 	});
 
-	it("issue #231：rebind 只改绑定（不碰下次触发/历史），无变化免写盘", () => {
+	it("issue #231：rebind 只改绑定（不碰下次触发/历史），无变化免写盘", async () => {
 		const s = new SchedulerStore(dir, {});
-		s.upsert({ ...BASE, id: "a", conversationId: "c1", sessionFile: "/s/old.jsonl" });
+		await s.upsert({ ...BASE, id: "a", conversationId: "c1", sessionFile: "/s/old.jsonl" });
 		const before = s.list()[0]!;
 		const nextBefore = before.nextFire;
-		expect(s.rebind("a", { conversationId: "c1", sessionFile: "/s/old.jsonl" })).toBe(false);
-		expect(s.rebind("a", { conversationId: "c9" })).toBe(true);
+		expect(await s.rebind("a", { conversationId: "c1", sessionFile: "/s/old.jsonl" })).toBe(false);
+		expect(await s.rebind("a", { conversationId: "c9" })).toBe(true);
 		const after = s.list()[0]!;
 		expect(after.conversationId).toBe("c9");
 		expect(after.sessionFile).toBe("/s/old.jsonl");
 		expect(after.nextFire).toBe(nextBefore);
-		expect(s.rebind("nope", { conversationId: "c1" })).toBe(false);
+		expect(await s.rebind("nope", { conversationId: "c1" })).toBe(false);
 		const s2 = new SchedulerStore(dir, {});
 		s2.load();
 		expect(s2.list()[0]!.conversationId).toBe("c9");
 	});
 
-	it("issue #231：老文件无 sessionFile 照读（默认空串，不炸）", () => {
+	it("issue #231：老文件无 sessionFile 照读（默认空串，不炸）", async () => {
 		const s = new SchedulerStore(dir, {});
-		s.upsert({ ...BASE, id: "a", conversationId: "c1" });
+		await s.upsert({ ...BASE, id: "a", conversationId: "c1" });
 		const raw = JSON.parse(readFileSync(join(dir, "scheduler-tasks.json"), "utf8")) as {
 			tasks: Record<string, Record<string, unknown>>;
 		};
@@ -229,7 +238,7 @@ describe("SchedulerStore", () => {
 
 	it("runNow 无 executor 记失败（不抛错）", async () => {
 		const s = new SchedulerStore(dir, {});
-		s.upsert({ ...BASE, id: "a" });
+		await s.upsert({ ...BASE, id: "a" });
 		const r = await s.runNow("a");
 		expect(r.ok).toBe(false);
 		expect(s.list()[0]!.history).toHaveLength(1);
@@ -240,7 +249,7 @@ describe("SchedulerStore", () => {
 		const s = new SchedulerStore(dir, {
 			executor: async () => ({ ok: true, conversationId: "conv-1" }),
 		});
-		s.upsert({ ...BASE, id: "a" });
+		await s.upsert({ ...BASE, id: "a" });
 		const r = await s.runNow("a");
 		expect(r.ok).toBe(true);
 		const v = s.list()[0]!;
@@ -254,7 +263,7 @@ describe("SchedulerStore", () => {
 		const s = new SchedulerStore(dir, {
 			executor: async () => ({ ok: true, conversationId: "conv-1", sessionFile }),
 		});
-		s.upsert({ ...BASE, id: "a" });
+		await s.upsert({ ...BASE, id: "a" });
 		await s.runNow("a");
 		expect(s.list()[0]!.lastRun!.sessionFile).toBe(sessionFile);
 
@@ -267,7 +276,7 @@ describe("SchedulerStore", () => {
 		const s = new SchedulerStore(dir, {
 			executor: async () => ({ ok: false, runId: "run-1", graphId: "graph-1", error: "paused" }),
 		});
-		s.upsert({ ...BASE, id: "canvas", graphId: "graph-1", prompt: "" });
+		await s.upsert({ ...BASE, id: "canvas", graphId: "graph-1", prompt: "" });
 		await s.runNow("canvas");
 		const restored = new SchedulerStore(dir);
 		restored.load();
@@ -276,12 +285,12 @@ describe("SchedulerStore", () => {
 			graphId: "graph-1",
 			lastRun: { target: "canvas", graphId: "graph-1", runId: "run-1", ok: false, error: "paused" },
 		});
-		expect(restored.upsert({ ...BASE, id: "canvas", prompt: "" })).toMatchObject({
+		expect(await restored.upsert({ ...BASE, id: "canvas", prompt: "" })).toMatchObject({
 			target: "canvas",
 			graphId: "graph-1",
 		});
-		expect(restored.rebind("canvas", { conversationId: "c2", sessionFile: "/old" })).toBe(false);
-		expect(restored.upsert({ ...BASE, id: "canvas", target: "conversation" })).toMatchObject({
+		expect(await restored.rebind("canvas", { conversationId: "c2", sessionFile: "/old" })).toBe(false);
+		expect(await restored.upsert({ ...BASE, id: "canvas", target: "conversation" })).toMatchObject({
 			target: "conversation",
 			conversationId: "",
 			sessionFile: "",
@@ -289,15 +298,15 @@ describe("SchedulerStore", () => {
 		expect(restored.list()[0].graphId).toBeUndefined();
 	});
 
-	it("upsert 引用验证失败不保存或发布，load 不依赖工程可用性", () => {
+	it("upsert 引用验证失败不保存或发布，load 不依赖工程可用性", async () => {
 		const s = new SchedulerStore(dir, {
 			validateTask: (task) => {
 				if (task.graphId !== "exists") throw new Error("missing graph");
 			},
 		});
-		s.upsert({ ...BASE, id: "a", graphId: "exists" });
+		await s.upsert({ ...BASE, id: "a", graphId: "exists" });
 		const before = readFileSync(join(dir, "scheduler-tasks.json"), "utf8");
-		expect(() => s.upsert({ ...BASE, id: "a", graphId: "missing" })).toThrow("missing graph");
+		await expect(s.upsert({ ...BASE, id: "a", graphId: "missing" })).rejects.toThrow("missing graph");
 		expect(s.list()[0].graphId).toBe("exists");
 		expect(readFileSync(join(dir, "scheduler-tasks.json"), "utf8")).toBe(before);
 		const restored = new SchedulerStore(dir, {
@@ -317,8 +326,8 @@ describe("SchedulerStore", () => {
 				removed.push(id);
 			},
 		});
-		s.upsert({ ...BASE, id: "once", graphId: "graph-1", oneShot: true });
-		s.upsert({ ...BASE, id: "repeat", graphId: "graph-1" });
+		await s.upsert({ ...BASE, id: "once", graphId: "graph-1", oneShot: true });
+		await s.upsert({ ...BASE, id: "repeat", graphId: "graph-1" });
 		await s.runNow("once");
 		await s.runNow("repeat");
 		expect(s.list().map((t) => t.id)).toEqual(["repeat"]);
@@ -334,7 +343,7 @@ describe("SchedulerStore", () => {
 				return { ok: true };
 			},
 		});
-		s.upsert({ ...BASE, id: "a" });
+		await s.upsert({ ...BASE, id: "a" });
 		const first = s.runNow("a");
 		const second = await s.runNow("a");
 		expect(second.ok).toBe(false);
@@ -353,7 +362,7 @@ describe("SchedulerStore", () => {
 					return { ok: true };
 				},
 			});
-			s.upsert({ ...BASE, id: "t1", kind: "interval", spec: "300000" });
+			await s.upsert({ ...BASE, id: "t1", kind: "interval", spec: "300000" });
 			const next0 = s.list().find((t) => t.id === "t1")!.nextFire!;
 			expect(next0).toBeDefined();
 
@@ -365,6 +374,7 @@ describe("SchedulerStore", () => {
 
 			finishRun();
 			await vi.advanceTimersByTimeAsync(0);
+			await flushDisk(() => !s.list().find((t) => t.id === "t1")!.running);
 			const viewAfterRun = s.list().find((t) => t.id === "t1")!;
 			expect(viewAfterRun.running).toBe(false);
 			expect(viewAfterRun.nextFire).toBe(next0 + 300000);
@@ -384,7 +394,7 @@ describe("SchedulerStore", () => {
 					return { ok: true };
 				},
 			});
-			s.upsert({ ...BASE, id: "t1", kind: "interval", spec: "300000" });
+			await s.upsert({ ...BASE, id: "t1", kind: "interval", spec: "300000" });
 			const next0 = s.list()[0]!.nextFire!;
 
 			vi.setSystemTime(next0);
@@ -401,6 +411,7 @@ describe("SchedulerStore", () => {
 			vi.setSystemTime(next0 + 400000);
 			finishRun();
 			await vi.advanceTimersByTimeAsync(0);
+			await flushDisk(() => !s.list()[0]!.running);
 			expect(s.list()[0]!.running).toBe(false);
 			expect(s.list()[0]!.nextFire).toBe(next0 + 700000);
 
@@ -412,6 +423,7 @@ describe("SchedulerStore", () => {
 			vi.setSystemTime(next0 + 700000);
 			await s.tick(next0 + 700000);
 			await vi.advanceTimersByTimeAsync(0);
+			await flushDisk(() => secondRunStarted && !s.list()[0]!.running);
 			expect(secondRunStarted).toBe(true);
 		} finally {
 			vi.useRealTimers();
@@ -432,8 +444,8 @@ describe("SchedulerStore", () => {
 				return { ok: true };
 			},
 		});
-		s.upsert({ ...BASE, id: "task-a", kind: "interval", spec: "300000" });
-		s.upsert({ ...BASE, id: "task-b", kind: "interval", spec: "300000" });
+		await s.upsert({ ...BASE, id: "task-a", kind: "interval", spec: "300000" });
+		await s.upsert({ ...BASE, id: "task-b", kind: "interval", spec: "300000" });
 		const nextA = s.list().find((t) => t.id === "task-a")!.nextFire!;
 		const nextB = s.list().find((t) => t.id === "task-b")!.nextFire!;
 
@@ -457,7 +469,7 @@ describe("SchedulerStore", () => {
 				return { ok: true };
 			},
 		});
-		s.upsert({ ...BASE, id: "cron-1", kind: "cron", spec: "*/15 * * * *" });
+		await s.upsert({ ...BASE, id: "cron-1", kind: "cron", spec: "*/15 * * * *" });
 		const next0 = s.list()[0]!.nextFire!;
 		expect(next0).toBeDefined();
 

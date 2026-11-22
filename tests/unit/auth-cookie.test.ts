@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { buildPiWebTokenCookie, decodeCookieToken, isTlsRequest } from "../../server/auth-cookie.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+	TOKEN_COOKIE_MAX_AGE_SECONDS,
+	buildPiWebTokenCookie,
+	decodeCookieToken,
+	isTlsRequest,
+} from "../../server/auth-cookie.js";
+import { clearAuthToken, withToken } from "../../web/src/auth-token.js";
 
 describe("isTlsRequest", () => {
 	it("明文 HTTP 默认不加 Secure", () => {
@@ -40,6 +46,13 @@ describe("buildPiWebTokenCookie", () => {
 		);
 	});
 
+	it("有效期常量是单源（三个签发点共用）", () => {
+		expect(TOKEN_COOKIE_MAX_AGE_SECONDS).toBe(365 * 24 * 60 * 60);
+		expect(buildPiWebTokenCookie("abc", TOKEN_COOKIE_MAX_AGE_SECONDS, false)).toContain(
+			`Max-Age=${TOKEN_COOKIE_MAX_AGE_SECONDS}`,
+		);
+	});
+
 	it("TLS 写入带 Secure", () => {
 		const v = buildPiWebTokenCookie("abc", 31536000, true);
 		expect(v).toContain("; Secure");
@@ -76,5 +89,45 @@ describe("decodeCookieToken", () => {
 
 	it("空串保持空串", () => {
 		expect(decodeCookieToken("")).toBe("");
+	});
+});
+
+// 登出清理落在 `web/src/auth-token.ts`：它是「口令怎么持久化」的同一处事实源（读写同模块），
+// 所以与 cookie 生命周期放在一个文件里守（服务端 cookie + 客户端持久化副本是一对）。
+describe("clearAuthToken（登出清理，web/src/auth-token.ts）", () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	function stubBrowser(href: string, stored?: string) {
+		const store = new Map<string, string>(stored ? [["pi-web-ui:token", stored]] : []);
+		const removeItem = vi.fn((key: string) => store.delete(key));
+		const replaceState = vi.fn((_state: unknown, _title: string, url: string) => url);
+		vi.stubGlobal("localStorage", {
+			getItem: (key: string) => store.get(key) ?? null,
+			setItem: (key: string, value: string) => void store.set(key, value),
+			removeItem,
+		});
+		vi.stubGlobal("window", { location: { href }, history: { replaceState } });
+		return { store, removeItem, replaceState };
+	}
+
+	it("同时清 localStorage 与地址栏 ?token=（只清一个，withToken 下一跳就把会话建回来）", () => {
+		const { removeItem, replaceState } = stubBrowser("http://127.0.0.1:8787/?token=abc&lang=zh", "abc");
+		expect(withToken("/api/health")).toBe("/api/health?token=abc");
+		clearAuthToken();
+		expect(removeItem).toHaveBeenCalledWith("pi-web-ui:token");
+		expect(withToken("/api/health")).toBe("/api/health");
+		expect(replaceState).toHaveBeenCalledTimes(1);
+		const cleaned = new URL(String(replaceState.mock.calls[0]?.[2]));
+		expect(cleaned.searchParams.has("token")).toBe(false);
+		expect(cleaned.searchParams.get("lang")).toBe("zh");
+	});
+
+	it("地址栏本来没有 token 时不碰历史记录", () => {
+		const { replaceState } = stubBrowser("http://127.0.0.1:8787/", "abc");
+		clearAuthToken();
+		expect(replaceState).not.toHaveBeenCalled();
+		expect(withToken("/api/health")).toBe("/api/health");
 	});
 });

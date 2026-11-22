@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-import { writeJsonAtomicSync } from "../atomic-file.js";
+import { createSerializedJsonWriter, type SerializedJsonWriter } from "../serialized-json-writer.js";
 import type { DeviceArtifact, DeviceDeliveryArtifactRef, DeviceIntegrationVerificationPlan } from "../protocol.js";
 import { VerificationStopUnconfirmedError } from "./local-verification.js";
 import { canonicalPath, computeCanonicalRepositoryId, git, verifyRepoRoot } from "../workspace-handle.js";
@@ -28,7 +28,8 @@ import { reportUploadMetadata } from "./report-metadata.js";
 import { DeviceTaskError } from "./task-error.js";
 import { TaskRecoveryManager } from "./task-recovery.js";
 import { createTaskReportOutbox } from "./task-report-outbox.js";
-import { DeviceTaskScheduler, type TaskSchedulerSnapshot } from "./task-scheduler.js";
+import { DeviceTaskScheduler, type TaskSchedulerPersistedState, type TaskSchedulerSnapshot } from "./task-scheduler.js";
+import { openVersionedDoc } from "../versioned-doc.js";
 import {
 	cleanupTaskWorkspace,
 	captureTaskArtifact,
@@ -120,20 +121,35 @@ export function createDeviceRuntime(options: {
 	const schedulerFile = options.dataDir ? join(options.dataDir, "task-scheduler-state.json") : undefined;
 	let schedulerSaveTimer: ReturnType<typeof setTimeout> | undefined;
 	let schedulerStatePending = false;
-	function loadSchedulerState(): unknown {
-		if (!schedulerFile) return undefined;
-		try {
-			return JSON.parse(readFileSync(schedulerFile, "utf8"));
-		} catch {
-			return undefined;
-		}
+	// 公平调度仲裁键（每个房间的 lastDispatchedAt / count）认不出时不能静默归零：
+	// 归零后热房间不再降权、冷房间长期饿死（issues #982 第 4 条）。
+	const schedulerDoc = schedulerFile
+		? openVersionedDoc<TaskSchedulerPersistedState>({
+				file: schedulerFile,
+				label: "device-task-scheduler",
+				versions: [1],
+				parse: (document) =>
+					Array.isArray(document.rooms) ? ({ version: 1, rooms: document.rooms } as TaskSchedulerPersistedState) : null,
+				serialize: (value) => ({ version: 1, rooms: value.rooms }),
+				empty: () => ({ version: 1, rooms: [] }),
+			})
+		: null;
+	function loadSchedulerState(): TaskSchedulerPersistedState | undefined {
+		return schedulerDoc?.read();
 	}
-	function flushSchedulerState() {
-		if (!schedulerFile || !schedulerStatePending) return;
+	function flushSchedulerState(): Promise<void> {
+		if (!schedulerDoc || !schedulerStatePending) return Promise.resolve();
 		schedulerStatePending = false;
+		let write: Promise<void>;
 		try {
-			writeJsonAtomicSync(schedulerFile, scheduler.snapshotState());
-		} catch {}
+			write = schedulerDoc.write(scheduler.snapshotState());
+		} catch {
+			// 认不出 / 写失败：不覆盖原文件，原因已登记到 /api/health；下次派发再试。
+			return Promise.resolve();
+		}
+		return write.catch(() => {
+			// 同上：异步写失败也不向上抛，但绝不能变成未处理的 rejection（close 会 await 它）。
+		});
 	}
 	function scheduleSchedulerStateSave() {
 		if (!schedulerFile) return;
@@ -141,7 +157,7 @@ export function createDeviceRuntime(options: {
 		if (schedulerSaveTimer) return;
 		schedulerSaveTimer = setTimeout(() => {
 			schedulerSaveTimer = undefined;
-			flushSchedulerState();
+			void flushSchedulerState();
 		}, 250);
 		schedulerSaveTimer.unref?.();
 	}
@@ -156,6 +172,13 @@ export function createDeviceRuntime(options: {
 		scheduler.drain();
 	}
 	const transcriptFile = options.dataDir ? join(options.dataDir, "bot-execution-conversations.json") : undefined;
+	// 会话↔转录绑定是重启后要用的真值：写入进串行落盘器（同一文件有序、不阻塞事件循环），
+	// 发布结局前必须 `await` 它落盘（见 `awaitTranscriptBinding`）。
+	const transcriptWriter: SerializedJsonWriter | undefined = transcriptFile
+		? createSerializedJsonWriter(transcriptFile, { label: "bot-execution-conversations.json" })
+		: undefined;
+	let transcriptPersist: Promise<void> = Promise.resolve();
+	let transcriptPersistError: unknown;
 	let transcripts: Record<string, Transcript> = Object.create(null);
 	let transcriptLoadError: unknown;
 	if (transcriptFile) {
@@ -393,7 +416,7 @@ export function createDeviceRuntime(options: {
 			}),
 		);
 	}
-	function runTask(
+	async function runTask(
 		task: DeviceExecutorTask & { roomId: string; leaseToken?: string; leaseGeneration?: number },
 		root: string,
 		signal?: AbortSignal,
@@ -503,7 +526,21 @@ export function createDeviceRuntime(options: {
 		let activeItem: ReturnType<typeof scheduler.registerActive> | undefined;
 		try {
 			active.add(owner);
-			recovery.recordTaskStart({
+			// 调度槽必须先同步占住：`enqueue` 的"能不能立即开工"依赖 `active` 集合，如果先 await 落盘，
+			// 同一个 Bot 的两条任务会双双判断"可立即开始"，第二条在 registerActive 才报冲突。
+			activeItem = scheduler.registerActive(
+				{
+					id: task.id,
+					attemptId: task.attemptId,
+					roomId: task.roomId,
+					botId: task.botId,
+					botRevision: String(task.botRevision),
+					root,
+				},
+				owner.controller,
+			);
+
+			await recovery.recordTaskStart({
 				taskId: task.id,
 				attemptId: task.attemptId,
 				botId: task.botId,
@@ -517,21 +554,13 @@ export function createDeviceRuntime(options: {
 				executionMode: isCode ? "code" : "chat",
 			});
 			leaseRecorded = true;
-
-			activeItem = scheduler.registerActive(
-				{
-					id: task.id,
-					attemptId: task.attemptId,
-					roomId: task.roomId,
-					botId: task.botId,
-					botRevision: String(task.botRevision),
-					root,
-				},
-				owner.controller,
-			);
 		} catch (admissionError) {
 			if (leaseRecorded) {
-				recovery.removeActiveLease(task.id, task.attemptId);
+				await recovery.removeActiveLease(task.id, task.attemptId);
+			}
+			if (activeItem) {
+				scheduler.releaseActive(activeItem);
+				activeItem = undefined;
 			}
 			active.delete(owner);
 			return Promise.reject(admissionError);
@@ -555,6 +584,16 @@ export function createDeviceRuntime(options: {
 			let lease: Awaited<ReturnType<typeof acquire>> | undefined;
 			let workspaceHandle: TaskWorkspaceHandle | undefined;
 			let workspaceCapability: TaskWorkspaceCapability | undefined;
+			// 本轮写入的转录绑定：回调是同步契约（executor 的 WS 快照状态机），
+			// 所以只登记串行落盘，发布结局前用它确认“已落盘”（`settleTranscriptBinding`）。
+			let transcriptBinding: Promise<void> = Promise.resolve();
+			let transcriptBindingError: unknown;
+			const settleTranscriptBinding = async (): Promise<void> => {
+				await transcriptBinding;
+				if (transcriptBindingError) {
+					throw new DeviceTaskError("Conversation transcript persistence failed");
+				}
+			};
 			let workspaceBinding: TaskWorkspaceBinding | undefined;
 			let executionCwd = root;
 			let executionCompleted = false;
@@ -765,9 +804,18 @@ export function createDeviceRuntime(options: {
 								throw new DeviceTaskError("Conversation transcript ownership changed");
 							try {
 								if (resumePath && !statSync(path).isFile()) throw new Error();
+								const writer = transcriptWriter;
+								if (!writer) throw new Error("Transcript registry unavailable");
 								const next = { ...transcripts, [task.conversationId]: { binding, path } };
-								writeJsonAtomicSync(transcriptFile!, next);
-								transcripts = next;
+								// 落盘成功后才能用新绑定（内存投影不领先磁盘）；失败原因留给 settleTranscriptBinding 抛。
+								transcriptBinding = writer.writeNow(next).then(
+									() => {
+										transcripts = next;
+									},
+									(error: unknown) => {
+										transcriptBindingError = error;
+									},
+								);
 							} catch {
 								throw new DeviceTaskError("Conversation transcript persistence failed");
 							}
@@ -805,6 +853,7 @@ export function createDeviceRuntime(options: {
 					workspaceHandleId: workspaceHandle?.handleId,
 					executionCwd,
 				});
+				await settleTranscriptBinding();
 				await confirmStop();
 				taskSignal.throwIfAborted();
 				executionCompleted = true;
@@ -839,10 +888,10 @@ export function createDeviceRuntime(options: {
 					}
 				}
 				publishingOutcome = true;
-				recovery.recordTaskFinish(outcomeTask, {
+				await recovery.recordTaskFinish(outcomeTask, {
 					status: "completed",
 					report: result,
-					reportMetadata: reportUploadMetadata(reportOutbox.get(task) ?? reportOutbox.markMissing(task)),
+					reportMetadata: reportUploadMetadata(reportOutbox.get(task) ?? (await reportOutbox.markMissing(task))),
 					artifact: capturedArtifact,
 					executionCompleted,
 					artifactProduced,
@@ -860,10 +909,12 @@ export function createDeviceRuntime(options: {
 					throw failure;
 				}
 				const interrupted = taskSignal.aborted;
-				recovery.recordTaskFinish(outcomeTask, {
+				// 结局是公告：先把已登记的转录绑定写完（成功或失败），再记终态。
+				await transcriptBinding;
+				await recovery.recordTaskFinish(outcomeTask, {
 					status: interrupted ? "interrupted" : "failed",
 					error: failure,
-					reportMetadata: reportUploadMetadata(reportOutbox.get(task) ?? reportOutbox.markMissing(task)),
+					reportMetadata: reportUploadMetadata(reportOutbox.get(task) ?? (await reportOutbox.markMissing(task))),
 					artifact: capturedArtifact,
 					executionCompleted,
 					artifactProduced,
@@ -871,6 +922,8 @@ export function createDeviceRuntime(options: {
 				throw failure;
 			} finally {
 				taskSignal.removeEventListener("abort", stop);
+				// 转录绑定是重启后要还原的真值：一轮结束前必须落定，不允许有写到一半就跑的。
+				await transcriptBinding;
 				let stoppedCleanly = false;
 				try {
 					await confirmStop();
@@ -1295,9 +1348,9 @@ export function createDeviceRuntime(options: {
 		getSchedulerSnapshot(): TaskSchedulerSnapshot {
 			return scheduler.getSnapshot();
 		},
-		updateExecutionSettings(next: unknown): DeviceExecutionSettings {
+		async updateExecutionSettings(next: unknown): Promise<DeviceExecutionSettings> {
 			if (options.dataDir) {
-				const saved = saveExecutionSettings(options.dataDir, next);
+				const saved = await saveExecutionSettings(options.dataDir, next);
 				return scheduler.updateSettings(saved);
 			}
 			return scheduler.updateSettings(next);
@@ -1323,7 +1376,8 @@ export function createDeviceRuntime(options: {
 			closed = true;
 			if (schedulerSaveTimer) clearTimeout(schedulerSaveTimer);
 			schedulerSaveTimer = undefined;
-			flushSchedulerState();
+			// 关停前先等排队中的调度快照落盘：否则它会写到一半就跑，与目录清理 / 进程退出相撞。
+			await flushSchedulerState();
 			await onDisconnect({ abortTasks: true });
 			await Promise.allSettled([...files.values()].map((entry) => entry.files.close()));
 			files.clear();

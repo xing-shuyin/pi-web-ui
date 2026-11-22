@@ -29,7 +29,7 @@ afterEach(() => {
 
 describe("compaction sidecar", () => {
 	it("persists across module reload and consumes exactly once", async () => {
-		expect(mark(file, state)).toBe(true);
+		expect(await mark(file, state)).toBe(true);
 		expect(JSON.parse(readFileSync(sidecar, "utf8"))).toEqual({ version: 1, ...state });
 		vi.resetModules();
 		const reopened = await import("../../server/compaction-state.js");
@@ -38,61 +38,59 @@ describe("compaction sidecar", () => {
 		expect(existsSync(sidecar)).toBe(false);
 	});
 
-	it("finish is idempotent and prevents a false interruption", () => {
-		mark(file, state);
+	it("finish is idempotent and prevents a false interruption", async () => {
+		await mark(file, state);
 		expect(finish(file)).toBe(true);
 		expect(finish(file)).toBe(false);
 		expect(consumeInterrupted(file)).toBeUndefined();
 	});
 
-	it.each([undefined, null, ""])("skips nonpersistent/ephemeral session %s", (file) => {
-		expect(mark(file, state)).toBe(false);
+	it.each([undefined, null, ""])("skips nonpersistent/ephemeral session %s", async (file) => {
+		expect(await mark(file, state)).toBe(false);
 		expect(finish(file)).toBe(false);
 		expect(consumeInterrupted(file)).toBeUndefined();
 		expect(readdirSync(dir)).toEqual([]);
 	});
 
-	it("isolates sessions and replaces pending state atomically", () => {
+	it("isolates sessions and replaces pending state atomically", async () => {
 		const other = join(dir, "other.jsonl");
 		const next = { reason: "auto", startedAt: 54321 };
-		mark(file, state);
-		mark(other, state);
-		mark(file, next);
+		await mark(file, state);
+		await mark(other, state);
+		await mark(file, next);
 		expect(consumeInterrupted(file)).toEqual(next);
 		expect(consumeInterrupted(other)).toEqual(state);
 		expect(readdirSync(dir)).toEqual([]);
 	});
 
-	it("does not create a missing transcript or change an existing transcript", () => {
-		mark(file, state);
+	it("does not create a missing transcript or change an existing transcript", async () => {
+		await mark(file, state);
 		expect(existsSync(file)).toBe(false);
 		const transcript = '{"type":"session","id":"s1"}\n';
 		writeFileSync(file, transcript);
-		mark(file, state);
+		await mark(file, state);
 		consumeInterrupted(file);
-		mark(file, state);
+		await mark(file, state);
 		finish(file);
 		expect(readFileSync(file, "utf8")).toBe(transcript);
 	});
 
-	it("propagates write failure and preserves the last durable state", () => {
-		mark(file, state);
+	it("propagates write failure and preserves the last durable state", async () => {
+		await mark(file, state);
 		const failure = new Error("disk full");
-		vi.spyOn(atomic, "writeJsonAtomicSync").mockImplementationOnce(() => {
-			throw failure;
-		});
-		expect(() => mark(file, { reason: "auto", startedAt: 99999 })).toThrow(failure);
+		vi.spyOn(atomic, "writeJsonAtomic").mockRejectedValueOnce(failure);
+		await expect(mark(file, { reason: "auto", startedAt: 99999 })).rejects.toThrow(failure);
 		expect(consumeInterrupted(file)).toEqual(state);
 	});
 
-	it("propagates actual atomic rename failure and cleans temporary files", () => {
+	it("propagates actual atomic rename failure and cleans temporary files", async () => {
 		mkdirSync(sidecar);
-		expect(() => mark(file, state)).toThrow();
+		await expect(mark(file, state)).rejects.toThrow();
 		expect(readdirSync(dir)).toEqual(["session.jsonl.compaction-state.json"]);
 	});
 
-	it("propagates clear/consume failure without consuming the durable state", () => {
-		mark(file, state);
+	it("propagates clear/consume failure without consuming the durable state", async () => {
+		await mark(file, state);
 		const failure = Object.assign(new Error("access denied"), { code: "EACCES" });
 		vi.mocked(rmSync).mockImplementationOnce(() => {
 			throw failure;
@@ -115,13 +113,13 @@ describe("compaction sidecar", () => {
 		},
 	);
 
-	it("rejects invalid pending state before replacing durable data", () => {
-		mark(file, state);
-		expect(() => mark(file, { reason: "auto", startedAt: NaN })).toThrow("Invalid compaction state");
+	it("rejects invalid pending state before replacing durable data", async () => {
+		await mark(file, state);
+		await expect(mark(file, { reason: "auto", startedAt: NaN })).rejects.toThrow("Invalid compaction state");
 		expect(consumeInterrupted(file)).toEqual(state);
 	});
 
-	it("keeps legacy pending repair and SDK done entries compatible", () => {
+	it("keeps legacy pending repair and SDK done entries compatible", async () => {
 		const raw =
 			[
 				{ type: "session", version: 3, id: "s1", timestamp: "2026-01-01T00:00:00.000Z", cwd: "/x" },
@@ -136,7 +134,7 @@ describe("compaction sidecar", () => {
 			]
 				.map((entry) => JSON.stringify(entry))
 				.join("\n") + "\n";
-		mark(file, state);
+		await mark(file, state);
 		const repaired = repairSessionTranscript(raw);
 		expect(repaired.interrupted).toBe(true);
 		expect(repaired.removedPending).toBe(1);

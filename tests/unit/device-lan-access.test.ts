@@ -3,7 +3,7 @@ import { createServer, type Server } from "node:http";
 import type { Socket, AddressInfo } from "node:net";
 import { WebSocket, WebSocketServer } from "ws";
 import { chromium } from "playwright-core";
-import { BROWSER_TEST_TIMEOUT_MS } from "../lib/chrome.mjs";
+import { BROWSER_TEST_TIMEOUT_MS, CHROME_PATH } from "../lib/chrome.mjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeviceLanServer } from "../../server/device-center/device-lan.js";
 import { createDeviceLanAccess } from "../../server/device-center/device-lan-access.js";
@@ -135,6 +135,9 @@ async function fixture(basePath = "/", desktop = false, browserScript = "") {
 	};
 }
 
+// 真 Chrome 用例：本机/CI 没有可用浏览器时**跳过**，而不是运行时抛错把整轮判红。
+const itChrome = it.skipIf(!CHROME_PATH);
+
 describe("local capability portal over authenticated LAN", () => {
 	it("uses the access owner's projected device list and rejects stale or foreign access", async () => {
 		const f = await fixture();
@@ -203,12 +206,9 @@ describe("local capability portal over authenticated LAN", () => {
 		});
 		expect((await fallback.json()).url).toContain("next=%2Fdesktop-preview");
 	});
-	it(
+	itChrome(
 		"loads a prefixed LAN UI inside the real opaque desktop iframe and falls back after losing LAN",
 		async () => {
-			const chromeHelper = "../lib/chrome.mjs";
-			const { CHROME_PATH } = await import(chromeHelper);
-			if (!CHROME_PATH) throw new Error("Chrome required: set PI_WEB_CHROME");
 			const f = await fixture(
 				"/pi/",
 				true,
@@ -270,53 +270,63 @@ describe("local capability portal over authenticated LAN", () => {
 		},
 		BROWSER_TEST_TIMEOUT_MS,
 	);
-	it("opens the whole device UI with opaque sandboxing and rewritten assets without contacting a Hub", async () => {
-		const f = await fixture();
-		expect(f.wrapper.status).toBe(200);
-		expect(f.html).toContain('sandbox="allow-scripts allow-forms allow-downloads"');
-		expect(f.html).toContain("<title>办公室 · DESKTOP-TEST · pi-web-ui</title>");
-		expect(f.html).toContain(`href="${f.base}favicon.svg"`);
-		expect((await fetch(f.wrapperUrl)).status).toBe(403);
-		expect((await fetch(f.wrapper.url)).status).toBe(200);
-		const page = await fetch(f.sourceOrigin + f.base, { headers: { Origin: "null", Cookie: "source-private=secret" } });
-		expect(page.status).toBe(200);
-		expect(page.headers.get("content-security-policy")).toContain("sandbox allow-scripts");
-		expect(page.headers.get("access-control-allow-origin")).toBe("null");
-		expect(page.headers.get("set-cookie")).toBeNull();
-		const body = await page.text();
-		expect(body).toContain(`<base href="${f.base}">`);
-		expect(body).toContain(`src="${f.base}assets/app.js"`);
-		expect(f.received.find((r) => r.path === "/")).toMatchObject({
-			auth: "Bearer target-auth",
-			cookie: undefined,
-			origin: f.targetOrigin,
-		});
-		expect((await fetch(f.sourceOrigin + f.base + "assets/app.js", { headers: { Origin: "null" } })).status).toBe(200);
-	});
-	it.each([false, true])("carries chat and desktop WebSocket text/binary through LAN (desktop=%s)", async (desktop) => {
-		const f = await fixture("/", desktop);
-		const ws = new WebSocket(
-			f.sourceOrigin.replace("http:", "ws:") + f.base + (desktop ? "desktop-ws?viewOnly=0" : "ws"),
-			{ origin: "null" },
-		);
-		ws.on("error", () => {});
-		cleanups.push(() => ws.terminate());
-		await once(ws, "open");
-		let reply = once(ws, "message");
-		ws.send('{"type":"message","text":"hello"}');
-		let [data, binary] = await reply;
-		expect(data.toString()).toContain("hello");
-		expect(binary).toBe(false);
-		reply = once(ws, "message");
-		const frame = Buffer.from([0xff, 0xd8, 0x00, 0x01, 0xff, 0xd9]);
-		ws.send(frame);
-		[data, binary] = await reply;
-		expect(data).toEqual(frame);
-		expect(binary).toBe(true);
-		const closed = once(ws, "close");
-		f.access.reset();
-		await closed;
-	});
+	itChrome(
+		"opens the whole device UI with opaque sandboxing and rewritten assets without contacting a Hub",
+		async () => {
+			const f = await fixture();
+			expect(f.wrapper.status).toBe(200);
+			expect(f.html).toContain('sandbox="allow-scripts allow-forms allow-downloads"');
+			expect(f.html).toContain("<title>办公室 · DESKTOP-TEST · pi-web-ui</title>");
+			expect(f.html).toContain(`href="${f.base}favicon.svg"`);
+			expect((await fetch(f.wrapperUrl)).status).toBe(403);
+			expect((await fetch(f.wrapper.url)).status).toBe(200);
+			const page = await fetch(f.sourceOrigin + f.base, {
+				headers: { Origin: "null", Cookie: "source-private=secret" },
+			});
+			expect(page.status).toBe(200);
+			expect(page.headers.get("content-security-policy")).toContain("sandbox allow-scripts");
+			expect(page.headers.get("access-control-allow-origin")).toBe("null");
+			expect(page.headers.get("set-cookie")).toBeNull();
+			const body = await page.text();
+			expect(body).toContain(`<base href="${f.base}">`);
+			expect(body).toContain(`src="${f.base}assets/app.js"`);
+			expect(f.received.find((r) => r.path === "/")).toMatchObject({
+				auth: "Bearer target-auth",
+				cookie: undefined,
+				origin: f.targetOrigin,
+			});
+			expect((await fetch(f.sourceOrigin + f.base + "assets/app.js", { headers: { Origin: "null" } })).status).toBe(
+				200,
+			);
+		},
+	);
+	itChrome.each([false, true])(
+		"carries chat and desktop WebSocket text/binary through LAN (desktop=%s)",
+		async (desktop) => {
+			const f = await fixture("/", desktop);
+			const ws = new WebSocket(
+				f.sourceOrigin.replace("http:", "ws:") + f.base + (desktop ? "desktop-ws?viewOnly=0" : "ws"),
+				{ origin: "null" },
+			);
+			ws.on("error", () => {});
+			cleanups.push(() => ws.terminate());
+			await once(ws, "open");
+			let reply = once(ws, "message");
+			ws.send('{"type":"message","text":"hello"}');
+			let [data, binary] = await reply;
+			expect(data.toString()).toContain("hello");
+			expect(binary).toBe(false);
+			reply = once(ws, "message");
+			const frame = Buffer.from([0xff, 0xd8, 0x00, 0x01, 0xff, 0xd9]);
+			ws.send(frame);
+			[data, binary] = await reply;
+			expect(data).toEqual(frame);
+			expect(binary).toBe(true);
+			const closed = once(ws, "close");
+			f.access.reset();
+			await closed;
+		},
+	);
 	it("preserves uploads, account metadata and reverse proxy prefixes", async () => {
 		const f = await fixture("/pi/");
 		const response = await fetch(f.sourceOrigin + f.base + "api/echo", {

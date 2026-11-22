@@ -10,6 +10,34 @@
 
 ## [Unreleased]
 
+## [0.122.0] — 2026-11-23
+
+### Added
+
+- **内置「PR 评审」提示词模板**：模板库新增第 9 个内置模板（命令 `/pr-review`，参数跟编号或链接），先回到问题本质与系统结构判断根因、边界与依赖，把原方案当作假设，再以高内聚低耦合为结构判据给出结论：说明依据、关键假设和代价（`web/src/components/PromptTemplates.tsx`，12 个语言包已同步）。
+
+### Fixed
+
+- **服务端原子写不再把退避等待压在主线程上（#966 第一批）**：Windows 杀毒/索引器占用刚写完的临时文件时，`writeAtomicSync` 要 `Atomics.wait` 同步睡满 20/60/150/400ms（最坏 630ms），期间该进程所有 WS 推送与请求一起停摆。现在把「同步退避」限定在真正需要的地方（外部进程的自包含生成件 `bin/lib/atomic-file.mjs`、native CLI hook、启动期引导与插件宿主同步 API），并新增两条非阻塞原语：`server/serialized-json-writer.ts`（同一文件异步写排队、严格有序，`write()` 用于可重建投影、`writeNow()` 用于真值存储）与 `atomic-file.ts` 的 `commitAtomic()` / `writeJsonAtomic()` / `readFileBufferRetry()`。已迁移（37 个文件）：设备任务分片报告与 outbox · `versioned-doc` 写入侧 · 插件宿主全部（`storage`/`secrets`/`grants`/`dom`/`permissions`/`schedule`/`catalog`/`materialize`/`bundled`，`PluginManager.dispose()` 等账本落定）· 设备任务中心（房间锁 `acquire/release/renew/cleanup`、恢复状态 `recordTaskStart/Finish`、ack/quarantine）· 画布（图与运行态、卡片、定时任务，新增每文件串行锁）· 会话/受管 CLI 落盘 · 定时任务/子代理模板/审批规则/凭据（`mcp`、provider key）/语言包/沙箱/服务端配置 · `plans.json` · 输入框草稿 · 压缩恢复 sidecar · 提示词模板 · 设备执行设置与桌面安装开关。同步原子写从 36 文件 / 47 处降到 9 文件 / 11 处，其余由棘轮锁定只减不增。存量同步调用点由棘轮 `tests/unit/sync-atomic-write-ratchet.test.ts` 逐个登记、只允许变短——新增同步原子写会直接红（守卫：`atomic-file.test.ts`、`plan-state.test.ts`、`composer-drafts.test.ts`、`compaction-state.test.ts`、`sync-atomic-write-ratchet.test.ts`）。
+
+- **设备任务报告分片上传不再反复重读全部已收分片，阻塞主线程**：每收一片都要把目录里所有 chunk 完整读两遍（配额一次、字节数一次），4 MiB 报告按 16 KiB 分片累计约 1 GiB 同步读；收齐时再把整篇拼成字符串做哈希。现在 `server/device-center/task-report.ts` 的 `appendReportChunk()` 按 attempt 串行化，字节账本增量维护（重启从磁盘 stat 重建一次），收齐后按 index 顺序流式哈希并原子发布 `full-report.txt`，全程异步 I/O；重复片幂等、全量哈希/字节数硬校验与配额语义不变。`server/atomic-file.ts` 抽出共用的 `commitAtomic()` / `writeJsonAtomic()` / `readFileBufferRetry()`，阻塞退避的 `writeAtomicSync` / `readFileSyncRetry` 明确限定给同步宿主与冷路径，请求路径一律走异步版本（守卫：`tests/unit/device-task-report.test.ts`、`tests/unit/atomic-file.test.ts`，#966）。
+
+- **Windows 上「在资源管理器中显示 / 用默认应用打开」恢复可见**：0.121.3 把「打开文件管理器」塞进了常驻子进程单源，而 `windowsHide: true` 会给子进程带 `STARTF_USESHOWWINDOW + SW_HIDE`（libuv `src/win/process.c`）——`explorer.exe` 转发请求后新建的文件夹窗口沿用这个隐藏态，用户侧就是「点了没反应」且没有任何报错，窗口其实存在（`IsWindowVisible = false`）并越积越多。系统外壳委派现在是第三个出口 `server/shell-activate.ts`：`windowsHide: false` 写成语义而不是疏忽，且不复用监护策略（无 `stop()`、不建进程组、不注入 `NO_COLOR`），平台 argv 只在 `revealArgv` / `openArgv` 里写一次，失败回 `{ok,reason}` 而不是假装已打开（守卫：`tests/unit/spawn-single-source-guard.test.ts`、`tests/unit/shell-activate.test.ts`，#960）。
+
+- **版本化存储不再把「认不出」当「空库」写回**：新增 `server/versioned-doc.ts` 作为「读−校验−写」唯一出口，四态判据（不存在／认识／完好但版本或形状不认识／读不出）写死在同一个 handle 里 —— 完好但认不出的文件原地保留并拒写，写入被拒抛 `StorageBlockedError` 并回成失败回执，解析不了的文件改名 `.corrupt-<ts>` 留存一次后按空库继续；被挡住的存储统一进 `/api/health.storage`。已迁移 SSH 主机配置（`global-hosts.json`，此前版本不认识会清空全部主机与密封口令）、插件投递账本（此前清空幂等记录会导致历史消息重复投递并真实重跑 agent）、设备任务公平调度状态（此前归零会让热房间饿死冷房间）、Hub 分区日志（此前把认不出的行当坏行重写掉，导致已删记录复活）与会话转录（此前无人读 `header.version`，会往看不懂的转录里追加）（守卫：`tests/unit/versioned-doc-single-source.test.ts`、`tests/unit/versioned-doc.test.ts`，#982）。
+
+- **定时任务不再把报告投进「同项目最活跃的另一条对话」**：唤醒链路把「暂时投不进去」当成「目标没了」，于是改投同项目最活跃对话并**写回任务绑定**——触发条件可以是几秒的上下文压缩窗口、会话退役换绑、服务重启，或打开对话数超上限时的 LRU 收起（`makeRoomForConversation` 会把老对话从内存收走，转录还在盘上）；周期任务从此汇报到别人的对话，回落也失败时绑定被清空、永久转无头。现在寻址只认转录文件（`sessionFile`）：有持有者就投给它，没有就按转录**恢复**一份后台持有方再投，真不行才转后台执行且**绑定一字不改**；已删除「同项目最活跃」回落、`trySteerScheduler` 那道把「门关着」当失败的并行门，以及把运行时 `c<N>`（每客户端各自的序号，跨客户端会重号）当身份用的找法；失败原因不再被吞掉（原先只报笼统的「原对话不在」）。投递策略从 `server/index.ts` 的执行器闭包里搬到 `server/scheduler-delivery.ts`，可单测（守卫：`tests/unit/delivery-gate-single-source.test.ts`、`tests/unit/scheduler-wake-delivery.test.ts`、`tests/unit/scheduler-wake-addressing.test.ts`，#959）。
+
+- **远程工作区 `read` 不再把图片当文本回传，也不再为读几行把整个文件传回内存**：SDK 的 `ReadOperations` 里 `detectImageMimeType` / `createReadStream` 都是**可选项**，`createRemoteSdkOperations()` 只实现了 `readFile` / `access` —— `?` 天然绕过 TS 的赋值检查，SDK 于是退回默认行为：PNG/JPEG 被按 UTF-8 解码成 `\x89PNG` 乱码，文本 `read` 则把整份文件 SFTP 下载后 `Buffer.concat` 进服务端堆（远端 1 GB 日志能把进程打爆）。现在三件事一起收口：①**图片判据**先看扩展名（与 UI 的 `previewKind` 同口径，命名清楚的图片零额外往返），只有无扩展名的构建产物才读 `IMAGE_SNIFF_BYTES`（4100，与 SDK 本地探测对齐）字节头按魔数判，0 字节或读不出返回 `null` 而不是把异常扔给 SDK；②**补上 `createReadStream`** 复用 `sftpCreateReadStream`，分行/截断/`offset` 仍由 SDK 负责，`signal` abort 即刻销毁 SFTP 流；③**契约锚点**：每组 ops 加 `satisfies <SDK Ops 类型>`，并新增 `tests/unit/remote-ops-contract.test.ts`（`Record<keyof Required<XxxOperations>, true>` 字面量 + 运行时键比对）—— 上游任何成员变更（含可选项）都会编译失败，逼桥接层做显式决定而不是静默降级。顺带：`setGlobalRemoteSshService()` 接受 `null`（测试不必再 `as never`）、`sftpCreateReadStream()` 返回类型收窄到 `Readable`、图片 MIME 表与嗅探字节数单源到 `server/text-sniff.ts`（`imageMimeOfExt` / `IMAGE_SNIFF_BYTES`）。已知取舍：文件名撒谎（`foo.png` 里装文本）时远程按扩展名、本地按内容，两处行为不同（守卫：`tests/unit/remote-ops-contract.test.ts`、`tests/unit/remote-workspace.test.ts`、`tests/unit/text-sniff.test.ts`，文档 `docs/architecture-remote-workspace.md`）。
+
+<!-- auto-i18n:start -->
+### i18n
+
+- 前端新增 key（36）：`role.page`、`modelError.gateway`、`modelError.auth`、`modelError.quota`、`modelError.model`、`modelError.unknown`、`modelError.retried`、`modelError.rawResponse`、`tpl.sk.prreview`、`tpl.sk.prreview.desc`、`tpl.sk.prreview.prompt`、`goalMaterialUnaddressable`、`hideQuestionNav`、`hideQuestionNavDesc`、`quietMode`、`quietModeDesc`、`quietModeStyle`、`quietStyleFold`、`quietStyleZero`、`quietActivity`、`quietHidden`、`schedulerOpenConversation`、`schedulerOpenConversationTip`、`thinkingFormat.chatTemplate`、`thinkingPreset.gemma4ChatTemplate.name`、`thinkingPreset.gemma4ChatTemplate.desc`、`kernelStatusTitle`、`kernelStatusSupervised`、`kernelStatusStandalone`、`kernelStatusUnknown`、`kernelStatusHint`、`kernelUptimeUnderMinute`、`kernelUptimeMinutes`、`kernelUptimeHours`、`kernelUptimeDays`、`browserRefTruncated`
+- 服务端新增 key（7）：`modelError.kind.gateway`、`modelError.kind.auth`、`modelError.kind.quota`、`modelError.kind.model`、`modelError.kind.unknown`、`subagents.verdict.error.rerun`、`worktree.not.registered`
+- 服务端文案变更（4）：`goal.role.exec`、`goal.role.review`、`subagents.notify.status.failed`、`subagents.verdict.error.detail`
+<!-- auto-i18n:end -->
+
 ## [0.121.3] — 2026-11-20
 
 ### Added
@@ -2553,7 +2581,8 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 [0.90.1]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.90.1
 [0.90.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.90.0
 [0.89.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.89.0
-[Unreleased]: https://github.com/xing-shuyin/pi-web-ui/compare/v0.121.0...main
+[Unreleased]: https://github.com/xing-shuyin/pi-web-ui/compare/v0.122.0...main
+[0.122.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.122.0
 [0.121.3]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.121.3
 [0.121.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.121.0
 [0.120.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.120.0

@@ -1,6 +1,6 @@
 import { readFileSync, renameSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import { writeJsonAtomicSync } from "./atomic-file.js";
+import { writeJsonAtomic } from "./atomic-file.js";
 
 export const DRAFT_TEXT_MAX = 20_000;
 export const DRAFT_TTL_MS = 30 * 24 * 3600 * 1000;
@@ -52,7 +52,7 @@ export class ComposerDraftsStore {
 		this.state = state;
 	}
 
-	private load(): Record<string, ComposerDraft> {
+	private async load(): Promise<Record<string, ComposerDraft>> {
 		if (this.state.cache) return this.state.cache;
 		let raw: Record<string, unknown> = {};
 		try {
@@ -82,56 +82,68 @@ export class ComposerDraftsStore {
 			}
 			kept[k] = v;
 		}
-		if (pruned) this.persist(kept);
+		if (pruned) await this.persist(kept);
 		else this.state.cache = kept;
 		return kept;
 	}
 
-	private persist(next: Record<string, ComposerDraft>): void {
-		writeJsonAtomicSync(this.filePath, next);
+	private async persist(next: Record<string, ComposerDraft>): Promise<void> {
+		await writeJsonAtomic(this.filePath, next);
 		this.state.cache = next;
 	}
 
-	get(sessionId: string): { text: string; ts: number } | undefined {
+	/** 同步读内存镜像：快照构建等同步路径用（不触发磁盘读）。 */
+	peek(sessionId: string): { text: string; ts: number } | undefined {
 		if (!sessionId) return undefined;
-		const d = this.load()[sessionId];
+		const d = this.state.cache?.[sessionId];
 		return d ? { text: d.text, ts: d.ts } : undefined;
 	}
 
-	save(sessionId: string, text: string, ts: number): void {
+	/** 构造即预加载：`peek()` 在加载完成前返回空，避免首屏快照等待磁盘。 */
+	warm(): void {
+		void this.load().catch(() => {});
+	}
+
+	async get(sessionId: string): Promise<{ text: string; ts: number } | undefined> {
+		if (!sessionId) return undefined;
+		const d = (await this.load())[sessionId];
+		return d ? { text: d.text, ts: d.ts } : undefined;
+	}
+
+	async save(sessionId: string, text: string, ts: number): Promise<void> {
 		if (!sessionId || !Number.isFinite(ts)) return;
 		const cut = this.state.clearedAt.get(sessionId);
 		if (cut !== undefined && ts <= cut) return;
-		const map = { ...this.load() };
+		const map = { ...(await this.load()) };
 		const prev = map[sessionId];
 		if (prev && prev.ts > ts) return;
 		const norm = normalizeDraftText(text);
 		if (norm === undefined) {
 			if (map[sessionId] !== undefined) {
 				delete map[sessionId];
-				this.persist(map);
+				await this.persist(map);
 			}
 			this.state.clearedAt.set(sessionId, ts);
 			return;
 		}
 		if (prev && prev.ts === ts && prev.text === norm) return;
 		map[sessionId] = { text: norm, ts, updatedAt: Date.now() };
-		this.persist(map);
+		await this.persist(map);
 	}
 
-	clear(sessionId: string): void {
+	async clear(sessionId: string): Promise<void> {
 		if (!sessionId) return;
-		const map = { ...this.load() };
+		const map = { ...(await this.load()) };
 		const prevTs = map[sessionId]?.ts ?? 0;
 		if (map[sessionId] !== undefined) {
 			delete map[sessionId];
-			this.persist(map);
+			await this.persist(map);
 		}
 		this.state.clearedAt.set(sessionId, Math.max(this.state.clearedAt.get(sessionId) ?? 0, prevTs, Date.now()));
 	}
 
-	pruneSessionFile(sessionPath: string): void {
+	async pruneSessionFile(sessionPath: string): Promise<void> {
 		const id = sessionIdFromTranscriptPath(sessionPath);
-		if (id) this.clear(id);
+		if (id) await this.clear(id);
 	}
 }

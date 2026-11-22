@@ -54,31 +54,35 @@ describe("normalizeSchedulerInput 新字段", () => {
 
 describe("AgentService.wakeConversation（无持有方路径）", () => {
 	let dir: string;
+	let svc: AgentService;
 	beforeEach(() => {
 		dir = mkdtempSync(join(tmpdir(), "sched-wake-test-"));
 	});
-	afterEach(() => {
-		rmSync(dir, { recursive: true, force: true });
+	afterEach(async () => {
+		try {
+			await svc?.disposeAll();
+		} catch {}
+		// Windows：文件监视器释放得比 dispose 稍微晚一拍，重试几次即可。
+		rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 	});
 	it("找不到对话回 ok:false；空参回错；quiesce 直接拒绝", async () => {
-		const svc = new AgentService(dir, join(dir, "client-state.json"));
+		svc = new AgentService(dir, join(dir, "client-state.json"));
 		const miss = await svc.wakeConversation("c-nope", "hi");
 		expect(miss.ok).toBe(false);
 		expect(miss.error).toContain("不在运行中");
 		expect(await svc.wakeConversation("", "hi")).toMatchObject({ ok: false });
+		// 有转录地址但既没人持有、也恢复不了：如实失败，绝不换一个对话（#959）。
 		const miss2 = await svc.wakeConversation("c-nope", "hi", {
 			sessionFile: "/tmp/nope.jsonl",
 			cwd: dir,
 		});
 		expect(miss2.ok).toBe(false);
-		expect(miss2.busy).not.toBe(true);
-		const vp = await svc.wakeViewportInCwd(dir, "hi");
-		expect(vp.ok).toBe(false);
+		expect(miss2.conversationId).toBeUndefined();
+		expect(miss2.error).toContain("转录");
 		svc.quiesce();
 		const q = await svc.wakeConversation("c-nope", "hi");
 		expect(q.ok).toBe(false);
 		expect(q.error).toContain("quiesced");
-		expect(await svc.wakeViewportInCwd(dir, "hi")).toMatchObject({ ok: false });
 	});
 });
 

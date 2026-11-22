@@ -14,6 +14,7 @@ import type {
 	PluginRunEvent,
 } from "./plugins.js";
 import type { ToolPostRequest, ToolPreRequest } from "./plugin-tool-guard.js";
+import type { MaterialBlob } from "./protocol.js";
 import type {
 	AgentEngineCapabilities,
 	BgServer,
@@ -219,10 +220,21 @@ export interface DispatchSession {
 			maxRounds?: number;
 			locked?: boolean;
 			execModel?: string;
+			materials?: string[];
+			materialBlobs?: MaterialBlob[];
 		},
 	): Promise<void>;
 	clearGoal(): Promise<void>;
-	startGoalWizard(text: string, opts?: { wizardModel?: string; maxRounds?: number; locked?: boolean }): Promise<void>;
+	startGoalWizard(
+		text: string,
+		opts?: {
+			wizardModel?: string;
+			maxRounds?: number;
+			locked?: boolean;
+			materials?: string[];
+			materialBlobs?: MaterialBlob[];
+		},
+	): Promise<void>;
 	setGoalPrefs(opts?: {
 		reviewModel?: string;
 		maxRounds?: number;

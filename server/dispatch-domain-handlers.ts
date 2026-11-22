@@ -775,6 +775,8 @@ export function handlePlanAndGoalMessage(msg: ClientMessage, cs: DispatchSession
 				maxRounds: msg.maxRounds,
 				locked: msg.locked,
 				execModel: msg.execModel,
+				materials: msg.materials,
+				materialBlobs: msg.materialBlobs,
 			});
 			return true;
 		case "clear_goal":
@@ -785,6 +787,8 @@ export function handlePlanAndGoalMessage(msg: ClientMessage, cs: DispatchSession
 				wizardModel: msg.wizardModel,
 				maxRounds: msg.maxRounds,
 				locked: msg.locked,
+				materials: msg.materials,
+				materialBlobs: msg.materialBlobs,
 			});
 			return true;
 		case "set_goal_prefs":
@@ -840,9 +844,8 @@ export function handleScheduleMessage(
 			}
 			return true;
 		case "schedule_save":
-			try {
-				scheduler.upsert(msg.task);
-			} catch (err) {
+			// 落盘已异步（issue #966）：让出事件循环，失败仍按原协议回 notice。
+			void scheduler.upsert(msg.task).catch((err: unknown) => {
 				const isVal = err instanceof SchedulerValidationError;
 				send({
 					type: "notice",
@@ -850,31 +853,30 @@ export function handleScheduleMessage(
 					text: `保存定时任务失败：${isVal ? err.messageZh : (err as Error).message}`,
 					textEn: `Failed to save scheduled task: ${isVal ? err.messageEn : (err as Error).message}`,
 				});
-			}
+			});
 			return true;
 		case "schedule_delete":
 		case "schedule_toggle":
-			try {
-				const found =
-					msg.type === "schedule_delete"
-						? scheduler.remove(msg.id)
-						: scheduler.setEnabled(msg.id, msg.enabled === true);
-				if (!found) {
+			void (
+				msg.type === "schedule_delete" ? scheduler.remove(msg.id) : scheduler.setEnabled(msg.id, msg.enabled === true)
+			)
+				.then((found) => {
+					if (found) return;
 					send({
 						type: "notice",
 						level: "warning",
 						text: `定时任务不存在：${msg.id}`,
 						textEn: `No such scheduled task: ${msg.id}`,
 					});
-				}
-			} catch (err) {
-				send({
-					type: "notice",
-					level: "error",
-					text: `更新定时任务失败：${(err as Error).message}`,
-					textEn: `Failed to update scheduled task: ${(err as Error).message}`,
+				})
+				.catch((err: unknown) => {
+					send({
+						type: "notice",
+						level: "error",
+						text: `更新定时任务失败：${(err as Error).message}`,
+						textEn: `Failed to update scheduled task: ${(err as Error).message}`,
+					});
 				});
-			}
 			return true;
 		case "schedule_run":
 			void scheduler
@@ -1210,16 +1212,29 @@ export function handleRemoteSshMessage(
 		case "remote_ssh_list_profiles":
 			void (async () => {
 				const profiles = await remoteSshSvc.listProfiles();
+				const error = remoteSshSvc.profilesStorageIssue();
 				send({
 					type: "remote_ssh_profiles_result",
 					reqId: msg.reqId,
 					profiles,
+					...(error ? { error } : {}),
 				});
 			})();
 			return true;
 		case "remote_ssh_delete_profile":
 			void (async () => {
-				await remoteSshSvc.deleteProfile(msg.name);
+				try {
+					await remoteSshSvc.deleteProfile(msg.name);
+				} catch (error) {
+					// 删不掉（配置文件认不出 / 写失败）也要回执，不能静默；列表按磁盘实际情况回。
+					console.error("[remote-ssh] 删除 profile 未落盘:", error);
+					send({
+						type: "remote_ssh_profiles_result",
+						profiles: await remoteSshSvc.listProfiles(),
+						error: (error as Error).message || String(error),
+					});
+					return;
+				}
 				const profiles = await remoteSshSvc.listProfiles();
 				send({
 					type: "remote_ssh_profiles_result",

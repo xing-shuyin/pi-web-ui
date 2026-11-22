@@ -12,6 +12,7 @@ import {
 	setGlobalRemoteSshService,
 } from "../../server/remote-ssh-service.js";
 import { probePresentItem } from "../../server/present-files-tool.js";
+import { makeTestTmpDir } from "../helpers/tmp.js";
 
 describe("RemoteSshService", () => {
 	it("expandHome correctly expands home directory", () => {
@@ -477,7 +478,7 @@ apt-get
 
 describe("pooled probe/install exec leases", () => {
 	it("protects active exec from idle reclamation and releases after completion or synchronous failure", async () => {
-		const dir = await fs.mkdtemp(path.join(process.platform === "win32" ? "E:/tmp" : os.tmpdir(), "remote-ssh-lease-"));
+		const dir = await makeTestTmpDir("remote-ssh-lease");
 		vi.useFakeTimers();
 		const service = new RemoteSshService(dir);
 		const channel = Object.assign(new EventEmitter(), { stderr: new EventEmitter(), close: vi.fn() });
@@ -516,7 +517,7 @@ describe("pooled probe/install exec leases", () => {
 		}
 	});
 	it("times out only its exec channel and releases on connection errors", async () => {
-		const dir = await fs.mkdtemp(path.join(process.platform === "win32" ? "E:/tmp" : os.tmpdir(), "remote-ssh-lease-"));
+		const dir = await makeTestTmpDir("remote-ssh-lease");
 		vi.useFakeTimers();
 		const service = new RemoteSshService(dir);
 		const channel = Object.assign(new EventEmitter(), { stderr: new EventEmitter(), close: vi.fn() });

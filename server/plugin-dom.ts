@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { writeJsonAtomicSync } from "./atomic-file.js";
+import { writeJsonAtomic } from "./atomic-file.js";
 
 const FILE = "plugin-dom.json";
 
@@ -43,16 +43,18 @@ export class PluginDomConsent {
 		return [...this.granted].sort();
 	}
 
-	set(pluginId: string, granted: boolean): boolean {
+	set(pluginId: string, granted: boolean): Promise<boolean> {
 		const id = String(pluginId ?? "").trim();
-		if (!id) return false;
+		if (!id) return Promise.resolve(false);
 		const had = this.granted.has(id);
-		if (granted === had) return false;
+		if (granted === had) return Promise.resolve(false);
 		if (granted) this.granted.add(id);
 		else this.granted.delete(id);
-		try {
-			writeJsonAtomicSync(join(this.dataDir, FILE), { v: 1, granted: this.list() });
-		} catch {}
-		return true;
+		return (async (): Promise<boolean> => {
+			try {
+				await writeJsonAtomic(join(this.dataDir, FILE), { v: 1, granted: this.list() });
+			} catch {}
+			return true;
+		})();
 	}
 }

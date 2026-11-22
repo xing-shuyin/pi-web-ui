@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { extractServerStrings, registerServerStrings, unregisterServerStrings } from "./i18n.js";
-import { writeJsonAtomicSync } from "./atomic-file.js";
+import { writeJsonAtomic } from "./atomic-file.js";
 
 export interface LocalePackMeta {
 	code: string;
@@ -184,7 +184,8 @@ export async function installPack(
 			const v = validatePack(data, code);
 			if (!v.ok) throw new Error(`invalid pack ${code}: ${v.error}`);
 			const file = packPath(dataDir, code);
-			writeJsonAtomicSync(file, v.pack, 0);
+			// 语言包是用户显式安装的真值：先落盘成功再返回，失败由下面的 catch 报出（install 返回失败）。
+			await writeJsonAtomic(file, v.pack, 0);
 			return { code, nativeName: v.pack.nativeName, version: v.pack.version };
 		} catch (e) {
 			lastError = e instanceof Error ? e.message : String(e);

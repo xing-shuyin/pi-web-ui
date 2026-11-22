@@ -163,10 +163,10 @@ describe("Global Resource Locks", () => {
 	});
 
 	describe("HubLockManager unit tests", () => {
-		it("manages acquire, conflict, and release FIFO correctly", () => {
+		it("manages acquire, conflict, and release FIFO correctly", async () => {
 			const manager = new HubLockManager({ defaultTtlMs: 60000 });
 
-			const r1 = manager.acquireLocks({
+			const r1 = await manager.acquireLocks({
 				roomId: "room1",
 				taskId: "task1",
 				botId: "bot1",
@@ -174,7 +174,7 @@ describe("Global Resource Locks", () => {
 			});
 			expect(r1.success).toBe(true);
 
-			const r2 = manager.acquireLocks({
+			const r2 = await manager.acquireLocks({
 				roomId: "room1",
 				taskId: "task2",
 				botId: "bot2",
@@ -184,26 +184,26 @@ describe("Global Resource Locks", () => {
 			expect(r2.conflictingLocks).toEqual(["git:repo:main"]);
 			expect(r2.holderTaskIds).toEqual(["task1"]);
 
-			const info = manager.getRoomLockInfo("room1");
+			const info = await manager.getRoomLockInfo("room1");
 			expect(info.activeLocks).toHaveLength(1);
 			expect(info.activeLocks[0].taskId).toBe("task1");
 			expect(info.waitingQueue).toHaveLength(1);
 			expect(info.waitingQueue[0].taskId).toBe("task2");
 
-			const promoted = manager.releaseLocks("room1", "task1");
+			const promoted = await manager.releaseLocks("room1", "task1");
 			expect(promoted).toEqual(["task2"]);
 
-			const infoAfter = manager.getRoomLockInfo("room1");
+			const infoAfter = await manager.getRoomLockInfo("room1");
 			expect(infoAfter.activeLocks).toHaveLength(1);
 			expect(infoAfter.activeLocks[0].taskId).toBe("task2");
 			expect(infoAfter.waitingQueue).toHaveLength(0);
 		});
 
-		it("auto expires locks after TTL", () => {
+		it("auto expires locks after TTL", async () => {
 			const manager = new HubLockManager({ defaultTtlMs: 1000 });
 			const now = Date.now();
 
-			manager.acquireLocks({
+			await manager.acquireLocks({
 				roomId: "room1",
 				taskId: "task1",
 				botId: "bot1",
@@ -211,7 +211,7 @@ describe("Global Resource Locks", () => {
 				now,
 			});
 
-			manager.acquireLocks({
+			await manager.acquireLocks({
 				roomId: "room1",
 				taskId: "task2",
 				botId: "bot2",
@@ -219,33 +219,45 @@ describe("Global Resource Locks", () => {
 				now,
 			});
 
-			const promoted = manager.cleanupExpiredLocks("room1", now + 1500);
+			const promoted = await manager.cleanupExpiredLocks("room1", now + 1500);
 			expect(promoted).toEqual(["task2"]);
 
-			const info = manager.getRoomLockInfo("room1", now + 1500);
+			const info = await manager.getRoomLockInfo("room1", now + 1500);
 			expect(info.activeLocks).toHaveLength(1);
 			expect(info.activeLocks[0].taskId).toBe("task2");
 			expect(info.waitingQueue).toHaveLength(0);
 		});
 
-		it("renewLocks extends TTL for running task; expired lock with alive holder is renewed not promoted", () => {
+		it("renewLocks extends TTL for running task; expired lock with alive holder is renewed not promoted", async () => {
 			const manager = new HubLockManager({ defaultTtlMs: 1000 });
 			const now = Date.now();
-			manager.acquireLocks({ roomId: "room1", taskId: "task1", botId: "bot1", resourceLocks: ["repo:main"], now });
-			manager.acquireLocks({ roomId: "room1", taskId: "task2", botId: "bot2", resourceLocks: ["repo:main"], now });
+			await manager.acquireLocks({
+				roomId: "room1",
+				taskId: "task1",
+				botId: "bot1",
+				resourceLocks: ["repo:main"],
+				now,
+			});
+			await manager.acquireLocks({
+				roomId: "room1",
+				taskId: "task2",
+				botId: "bot2",
+				resourceLocks: ["repo:main"],
+				now,
+			});
 			// 心跳续期：task1 在 900ms 时续一次，锁到期点延到 1900ms
-			expect(manager.renewLocks("room1", "task1", now + 900)).toEqual(["repo:main"]);
+			expect(await manager.renewLocks("room1", "task1", now + 900)).toEqual(["repo:main"]);
 			// 1500ms 时 task1 的锁尚未到期（1900），task2 仍需等待，不晋升
-			expect(manager.cleanupExpiredLocks("room1", now + 1500)).toEqual([]);
-			expect(manager.getRoomLockInfo("room1", now + 1500).activeLocks[0]?.taskId).toBe("task1");
+			expect(await manager.cleanupExpiredLocks("room1", now + 1500)).toEqual([]);
+			expect((await manager.getRoomLockInfo("room1", now + 1500)).activeLocks[0]?.taskId).toBe("task1");
 			// 2000ms 时锁到期，但持锁任务仍存活 → 续期而非摘锁晋升
-			expect(manager.cleanupExpiredLocks("room1", now + 2000, (id) => id === "task1")).toEqual([]);
-			const info = manager.getRoomLockInfo("room1", now + 2000);
+			expect(await manager.cleanupExpiredLocks("room1", now + 2000, (id) => id === "task1")).toEqual([]);
+			const info = await manager.getRoomLockInfo("room1", now + 2000);
 			expect(info.activeLocks).toHaveLength(1);
 			expect(info.activeLocks[0]?.taskId).toBe("task1");
 			expect(info.waitingQueue).toHaveLength(1);
 			// 持锁任务已死 → 正常摘锁并晋升等待者
-			expect(manager.cleanupExpiredLocks("room1", now + 3500, () => false)).toEqual(["task2"]);
+			expect(await manager.cleanupExpiredLocks("room1", now + 3500, () => false)).toEqual(["task2"]);
 		});
 	});
 

@@ -15,6 +15,7 @@ import {
 	terminatePersistentRemoteNativeCli,
 } from "../../server/remote-cli-persistence.js";
 import { RemoteSshService, shellQuotePosix } from "../../server/remote-ssh-service.js";
+import { makeTestTmpDir } from "../helpers/tmp.js";
 
 const wslPrefix = process.env.PI_WEB_TEST_TMUX_WSL_PREFIX;
 const binary = process.env.PI_WEB_TEST_TMUX_BINARY;
@@ -27,9 +28,7 @@ const toRemote = (file: string) =>
 it.skipIf(!enabled)(
 	"keeps real tmux CLI alive across SSH/service loss without leaking credentials or stopping sibling channels",
 	async () => {
-		const root = await fs.mkdtemp(
-			path.join(process.platform === "win32" ? "E:/tmp" : os.tmpdir(), "ssh-tmux-integration-"),
-		);
+		const root = await makeTestTmpDir("ssh-tmux-integration");
 		const remoteRoot = toRemote(root);
 		const homeRoot = path.join(root, "long-home-".repeat(15));
 		const remoteHome = toRemote(homeRoot);

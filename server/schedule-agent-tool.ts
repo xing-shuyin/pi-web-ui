@@ -90,10 +90,10 @@ function taskLine(t: SchedulerTaskView, lang: ServerLang): string {
 			? lang === "zh"
 				? ` · 画布→${t.graphId}`
 				: ` · canvas→${t.graphId}`
-			: t.conversationId
+			: String(t.sessionFile ?? "").trim() || t.conversationId
 				? lang === "zh"
-					? ` · 汇报→对话${t.conversationId}`
-					: ` · reports→${t.conversationId}`
+					? " · 汇报→原对话"
+					: " · reports→its conversation"
 				: lang === "zh"
 					? " · 无头执行"
 					: " · headless";
@@ -153,6 +153,8 @@ export function makeScheduleTool(
 			),
 			graphId: Type.Optional(Type.String()),
 			prompt: Type.Optional(Type.String()),
+			/** 只收路径字符串（R3）：文件怎么读、以什么形式投递都不是 AI 决定的事。 */
+			materials: Type.Optional(Type.Array(Type.String())),
 			label: Type.Optional(Type.String()),
 			recurring: Type.Optional(Type.Boolean()),
 			id: Type.Optional(Type.String()),
@@ -247,7 +249,7 @@ export function makeScheduleTool(
 					let task;
 					try {
 						signal?.throwIfAborted();
-						task = store.upsert(
+						task = await store.upsert(
 							{
 								name,
 								target: isCanvas ? "canvas" : "conversation",
@@ -256,6 +258,7 @@ export function makeScheduleTool(
 								kind: parsed.kind,
 								spec: parsed.spec,
 								prompt,
+								...(Array.isArray(p.materials) && p.materials.length ? { materials: p.materials } : {}),
 								conversationId: convId,
 								sessionFile: bindSessionFile,
 								oneShot: !recurring,
@@ -286,8 +289,8 @@ export function makeScheduleTool(
 							: `Target: canvas ${graphId}; ${prompt ? "uses the supplied instruction" : "uses the graph's input"}, with models configured by canvas nodes.`
 						: convId
 							? L === "zh"
-								? `汇报：触发时自动唤醒本对话（${convId}）；压缩/重启后按会话文件自动重绑，原对话不在时先回落同项目活跃对话（明确提示），无存活对话才无头执行。`
-								: `Reports: wakes this conversation (${convId}) on fire; re-binds by session file after compaction/restart, falls back to the project's active conversation (with a visible note), headless only with no live conversation.`
+								? `汇报：触发时投回本对话（按转录寻址：对话没打开会先按记录恢复再投；确实找不回来才转后台执行，绑定不变）。`
+								: `Reports: delivered back into this conversation (addressed by transcript: it is reopened from disk if closed; headless only when the transcript is gone, and the binding never changes).`
 							: L === "zh"
 								? "汇报：无头执行，报告进调度面板历史（创建时没拿到对话 id）。"
 								: "Reports: headless run, report in panel history (no conversation id captured at creation).";
@@ -333,7 +336,7 @@ export function makeScheduleTool(
 							),
 						);
 					}
-					if (!store.remove(id)) {
+					if (!(await store.remove(id))) {
 						return text(
 							pick(
 								getLang(),

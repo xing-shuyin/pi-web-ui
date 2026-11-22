@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isLoopbackAddress } from "../../server/server-config.js";
-import { setupGate } from "../../server/index.js";
+import { setupGate } from "../../server/setup-gate.js";
 
 describe("isLoopbackAddress", () => {
 	it("IPv4 / IPv6 回环地址放行", () => {

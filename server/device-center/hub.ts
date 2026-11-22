@@ -1052,7 +1052,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 	app.get("/api/rooms/:id/events", (req, res) => {
 		groupEvents.connect(account(req).id, String(req.params.id), res, users.get(req)?.device.id);
 	});
-	app.get("/api/rooms/:id/locks", (req, res) => {
+	app.get("/api/rooms/:id/locks", async (req, res) => {
 		const state = store.snapshot();
 		const room = state.rooms.find((r) => r.id === req.params.id && r.accountId === account(req).id);
 		if (
@@ -1067,7 +1067,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				))
 		)
 			fail(404, "Room missing");
-		res.json(lockManager.getRoomLockInfo(room.id));
+		res.json(await lockManager.getRoomLockInfo(room.id));
 	});
 
 	app.get("/api/rooms/:id/blackboard", (req, res) => {
@@ -1931,7 +1931,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		const totalChunks = typeof body.totalChunks === "number" ? body.totalChunks : 1;
 
 		try {
-			const meta = taskReportStore.appendReportChunk(
+			const meta = await taskReportStore.appendReportChunk(
 				{
 					taskId: task.id,
 					attemptId: task.attemptId,
@@ -2058,7 +2058,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				return { room };
 			});
 			if (operation === "delete" || operation === "clear") {
-				lockManager.clearRoom(String(req.params.id));
+				await lockManager.clearRoom(String(req.params.id));
 			}
 			res.json(result);
 		});
@@ -3456,7 +3456,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 	const deliveredTasks = new Set<string>();
 
 	async function releaseLocksAndWake(roomId: string, taskId: string) {
-		const promoted = lockManager.releaseLocks(roomId, taskId);
+		const promoted = await lockManager.releaseLocks(roomId, taskId);
 		if (promoted.length > 0) {
 			await handlePromotedTasks(roomId, promoted);
 		}
@@ -3467,11 +3467,11 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			const state = store.snapshot();
 			const task = state.tasks.find((t) => t.id === taskId);
 			if (!task) {
-				lockManager.releaseLocks(roomId, taskId);
+				await lockManager.releaseLocks(roomId, taskId);
 				continue;
 			}
 			if (task.cancelRequested || state.conversations.find((c) => c.id === task.conversationId)?.closed) {
-				const nextPromoted = lockManager.releaseLocks(roomId, taskId);
+				const nextPromoted = await lockManager.releaseLocks(roomId, taskId);
 				if (nextPromoted.length > 0) {
 					await handlePromotedTasks(roomId, nextPromoted);
 				}
@@ -3644,7 +3644,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		if (busy) return botQueue.queueBehindBusyBot(task, busy);
 
 		if (task.resourceLocks && task.resourceLocks.length > 0) {
-			const acquired = lockManager.acquireLocks({
+			const acquired = await lockManager.acquireLocks({
 				roomId: task.roomId,
 				taskId: task.id,
 				botId: task.botId,
@@ -3929,7 +3929,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			try {
 				const settled = await store.transact((draft) => sweepExpiredRecoveryLeases(draft, now, settlementContext()));
 				await publishSettlementEffects(settled);
-				for (const taskId of lockManager.cleanupExpiredLocks()) {
+				for (const taskId of await lockManager.cleanupExpiredLocks()) {
 					const task = store.snapshot().tasks.find((entry) => entry.id === taskId);
 					if (task) await handlePromotedTasks(task.roomId, [taskId]);
 				}
@@ -4128,7 +4128,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		if (result.accepted && (result as { roomId?: string }).roomId) {
 			// 运行中任务续租即续锁：长任务（>10min TTL）不因锁到期被静默摘锁、互斥不中断。
 			try {
-				lockManager.renewLocks((result as { roomId: string }).roomId, renew.taskId);
+				await lockManager.renewLocks((result as { roomId: string }).roomId, renew.taskId);
 			} catch {}
 		}
 		// transact 返回含内部 roomId，协议只允许 taskId/attemptId/accepted/reason，剥离后再返回。

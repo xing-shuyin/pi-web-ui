@@ -36,8 +36,8 @@ describe("PluginDomConsent", () => {
 	const dir = mkdtempSync(join(tmpdir(), "pi-dom-"));
 	const store = new PluginDomConsent(dir);
 
-	it("授权落盘、新实例可重读", () => {
-		expect(store.set("evil", true)).toBe(true);
+	it("授权落盘、新实例可重读", async () => {
+		expect(await store.set("evil", true)).toBe(true);
 		expect(store.has("evil")).toBe(true);
 		expect(store.list()).toEqual(["evil"]);
 		const raw = JSON.parse(readFileSync(join(dir, "plugin-dom.json"), "utf8"));
@@ -45,16 +45,16 @@ describe("PluginDomConsent", () => {
 		expect(new PluginDomConsent(dir).has("evil")).toBe(true);
 	});
 
-	it("重复授权/撤销返回 false（不折腾磁盘与快照）", () => {
-		expect(store.set("evil", true)).toBe(false);
-		expect(store.set("evil", false)).toBe(true);
-		expect(store.set("evil", false)).toBe(false);
+	it("重复授权/撤销返回 false（不折腾磁盘与快照）", async () => {
+		expect(await store.set("evil", true)).toBe(false);
+		expect(await store.set("evil", false)).toBe(true);
+		expect(await store.set("evil", false)).toBe(false);
 		expect(store.has("evil")).toBe(false);
 	});
 
-	it("空 id 拒绝", () => {
-		expect(store.set("", true)).toBe(false);
-		expect(store.set("  ", true)).toBe(false);
+	it("空 id 拒绝", async () => {
+		expect(await store.set("", true)).toBe(false);
+		expect(await store.set("  ", true)).toBe(false);
 	});
 
 	it("坏 JSON 当空表（不崩、不回写清空）", () => {

@@ -1,7 +1,6 @@
 import type { Express } from "express";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { writeJsonAtomicSync } from "./atomic-file.js";
+import { readFileRetry, writeJsonAtomic } from "./atomic-file.js";
 
 export interface StoredPromptTemplate {
 	id: string;
@@ -37,9 +36,9 @@ export function parseStoredTemplate(value: unknown): StoredPromptTemplate {
 
 export function registerPromptTemplateRoutes(app: Express, dataDir: string): void {
 	const file = join(dataDir, "prompt-templates.json");
-	const load = (): StoredPromptTemplate[] => {
+	const load = async (): Promise<StoredPromptTemplate[]> => {
 		try {
-			const data: unknown = JSON.parse(readFileSync(file, "utf8"));
+			const data: unknown = JSON.parse(await readFileRetry(file));
 			if (!Array.isArray(data)) throw new Error("Invalid template file");
 			return data.map(parseStoredTemplate);
 		} catch (error) {
@@ -47,22 +46,22 @@ export function registerPromptTemplateRoutes(app: Express, dataDir: string): voi
 			throw error;
 		}
 	};
-	app.get("/api/prompt-templates", (_req, res) => {
+	app.get("/api/prompt-templates", async (_req, res) => {
 		try {
 			res.setHeader("Cache-Control", "no-store");
-			res.json({ templates: load() });
+			res.json({ templates: await load() });
 		} catch (error) {
 			res.status(500).json({ error: String(error) });
 		}
 	});
-	app.post("/api/prompt-templates", (req, res) => {
+	app.post("/api/prompt-templates", async (req, res) => {
 		if (!req.is("application/json") || req.headers["sec-fetch-site"] === "cross-site") {
 			res.status(403).json({ error: "Cross-site template write rejected" });
 			return;
 		}
 		try {
 			const body = req.body ?? {};
-			let templates = load();
+			let templates = await load();
 			switch (body.action) {
 				case "upsert": {
 					const tpl = parseStoredTemplate(body.template);
@@ -93,7 +92,7 @@ export function registerPromptTemplateRoutes(app: Express, dataDir: string): voi
 					throw new Error("Unknown template action");
 			}
 			if (templates.length > 500) throw new Error("Too many templates");
-			writeJsonAtomicSync(file, templates);
+			await writeJsonAtomic(file, templates);
 			res.json({ templates });
 		} catch (error) {
 			res.status(400).json({ error: String(error) });

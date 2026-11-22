@@ -10,6 +10,7 @@ import {
 	MAX_TIMEOUT_MS,
 	loadScheduleRecords,
 	saveScheduleRecords,
+	flushScheduleRecords,
 } from "../../server/plugin-schedule.js";
 import { PluginManager, type PluginHost } from "../../server/plugins.js";
 import { pluginStateDir } from "../../server/plugin-paths.js";
@@ -97,13 +98,18 @@ describe("远期 cron 的安全引爆（回归：setTimeout 24.8 天溢出 → �
 });
 
 describe("持久记录读写", () => {
-	it("往返 + 坏文件当空表", () => {
+	it("往返 + 坏文件当空表", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "sched-rec-"));
 		try {
 			expect(loadScheduleRecords(dir)).toEqual({});
 			saveScheduleRecords(dir, {
 				a: { spec: "0 9 * * *", catchUp: "once", label: "日报", lastRun: 123, createdAt: 100 },
 			});
+			// 队列未落盘时读的是「已登记」快照（`host.schedule` 是同步 API，关不掉这一步）。
+			expect(loadScheduleRecords(dir)).toEqual({
+				a: { spec: "0 9 * * *", catchUp: "once", label: "日报", lastRun: 123, createdAt: 100 },
+			});
+			await flushScheduleRecords(dir);
 			expect(loadScheduleRecords(dir)).toEqual({
 				a: { spec: "0 9 * * *", catchUp: "once", label: "日报", lastRun: 123, createdAt: 100 },
 			});
@@ -168,6 +174,7 @@ describe("host.schedule 持久版", () => {
 		makePlugin("s");
 		const h = await hostOf("s");
 		const off = h.schedule("0 9 * * *", () => {}, { persistent: true, id: "daily", label: "日报" });
+		await mgr.flushPersistence();
 		const raw = JSON.parse(readFileSync(join(pluginStateDir(dir, "s"), "schedules.json"), "utf8"));
 		expect(raw.schedules.daily.spec).toBe("0 9 * * *");
 		expect(raw.schedules.daily.catchUp).toBe("skip");
@@ -176,6 +183,7 @@ describe("host.schedule 持久版", () => {
 		expect(tasks[0]!.plugin).toBe("s");
 		expect(tasks[0]!.name).toContain("日报");
 		off();
+		await mgr.flushPersistence();
 		expect(JSON.parse(readFileSync(join(pluginStateDir(dir, "s"), "schedules.json"), "utf8")).schedules).toEqual({});
 		expect(mgr.bgTasks().filter((t) => t.taskId === "schedule:daily")).toHaveLength(0);
 	});
@@ -191,6 +199,7 @@ describe("host.schedule 持久版", () => {
 			}),
 		);
 		h.schedule("0 9 * * *", () => {}, { persistent: true, id: "daily", catchUp: "once" });
+		await mgr.flushPersistence();
 		const rec = JSON.parse(readFileSync(join(pluginStateDir(dir, "s"), "schedules.json"), "utf8")).schedules.daily;
 		expect(rec.spec).toBe("0 9 * * *");
 		expect(rec.catchUp).toBe("once");
@@ -210,6 +219,7 @@ describe("host.schedule 持久版", () => {
 		makePlugin("s");
 		const h = await hostOf("s");
 		const off = h.schedule(1000, () => {}, { persistent: true, id: "fast" });
+		await mgr.flushPersistence();
 		expect(JSON.parse(readFileSync(join(pluginStateDir(dir, "s"), "schedules.json"), "utf8")).schedules.fast.spec).toBe(
 			"60000",
 		);

@@ -17,7 +17,7 @@ describe("canvas references", () => {
 		vi.stubEnv("PI_WEB_DATA_DIR", dataDir);
 		const graph = createDefaultCanvasGraph("pipeline.png");
 		graph.name = 'Build "UI" <safe> & test';
-		saveCanvasGraph(dataDir, graph);
+		await saveCanvasGraph(dataDir, graph);
 		writeFileSync(join(cwd, graph.id), "WORKSPACE SECRET");
 		const notices: { level: string; text: string }[] = [];
 		const ctx = makeCtx({ dataDir, cwd, notices });

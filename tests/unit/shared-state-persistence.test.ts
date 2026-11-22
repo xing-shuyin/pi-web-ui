@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as fs from "node:fs";
@@ -59,7 +59,7 @@ beforeEach(async () => {
 const diskFull = Object.assign(new Error("disk full"), { code: "ENOSPC" });
 
 describe("atomic replacement failures", () => {
-	it("never truncates the old file when rename remains locked", () => {
+	it("never truncates the old file when rename remains locked", async () => {
 		const path = file();
 		writeAtomicSync(path, '{"old":true}');
 		const locked = Object.assign(new Error("locked"), { code: "EPERM" });
@@ -75,7 +75,7 @@ describe("atomic replacement failures", () => {
 		expect(fs.renameSync).toHaveBeenCalledTimes(ATOMIC_RETRY_DELAY_MS.length + 1);
 		expect(readdirSync(dirs[0])).toEqual(["state.json"]);
 	});
-	it("recovers from a transient rename failure", () => {
+	it("recovers from a transient rename failure", async () => {
 		const path = file();
 		vi.mocked(fs.renameSync).mockImplementationOnce(() => {
 			throw Object.assign(new Error("busy"), { code: "EBUSY" });
@@ -112,7 +112,7 @@ describe("authoritative shared settings", () => {
 		await b.svc.applyPreset("partial");
 		expect(a.svc.current).toMatchObject({ thinkingWrap: true, toolsWrap: false });
 	});
-	it("does not lend mutable settings references", () => {
+	it("does not lend mutable settings references", async () => {
 		const store = new ClientStateStore(file());
 		const input = { disabledSkills: ["one"] };
 		store.saveSettings("a", input);
@@ -143,7 +143,7 @@ describe("authoritative shared settings", () => {
 });
 
 describe("shared settings subscriptions", () => {
-	it("reuses frozen detached snapshots until a successful commit", () => {
+	it("reuses frozen detached snapshots until a successful commit", async () => {
 		const store = new ClientStateStore(file());
 		const { svc } = service(store, "a");
 		const first = svc.current;
@@ -259,44 +259,47 @@ describe("shared settings subscriptions", () => {
 });
 
 describe("shared drafts by file", () => {
-	it("preserves interleaved entries and never resurrects cleared drafts", () => {
+	it("preserves interleaved entries and never resurrects cleared drafts", async () => {
 		const path = file();
 		const a = new ComposerDraftsStore(path);
 		const b = new ComposerDraftsStore(path);
-		a.get("a");
-		b.get("b");
-		a.save("a", "one", 1);
-		b.save("b", "two", 2);
-		expect(a.get("b")?.text).toBe("two");
-		b.clear("a");
-		a.save("c", "three", 3);
+		await a.get("a");
+		await b.get("b");
+		await a.save("a", "one", 1);
+		await b.save("b", "two", 2);
+		expect((await a.get("b"))?.text).toBe("two");
+		await b.clear("a");
+		await a.save("c", "three", 3);
 		expect(Object.keys(JSON.parse(readFileSync(path, "utf8"))).sort()).toEqual(["b", "c"]);
 	});
-	it("isolates watermarks between files and rejects stale empty updates", () => {
+	it("isolates watermarks between files and rejects stale empty updates", async () => {
 		const a = new ComposerDraftsStore(file());
 		const b = new ComposerDraftsStore(file());
-		a.clear("same");
-		b.save("same", "keep", 200);
-		b.save("same", "", 100);
-		expect(b.get("same")?.text).toBe("keep");
-		b.save("same", "", 201);
-		b.save("same", "stale", 200);
-		expect(b.get("same")).toBeUndefined();
+		await a.clear("same");
+		await b.save("same", "keep", 200);
+		await b.save("same", "", 100);
+		expect((await b.get("same"))?.text).toBe("keep");
+		await b.save("same", "", 201);
+		await b.save("same", "stale", 200);
+		expect(await b.get("same")).toBeUndefined();
 	});
 	it("failed saves and clears retain data and do not advance clear watermarks", async () => {
 		const path = file();
 		const a = new ComposerDraftsStore(path);
 		const b = new ComposerDraftsStore(path);
-		a.save("s", "old", 100);
-		vi.mocked(fs.writeFileSync).mockImplementation(() => {
-			throw diskFull;
-		});
-		expect(() => b.save("s", "new", 101)).toThrow(diskFull);
-		expect(() => b.clear("s")).toThrow(diskFull);
-		expect(a.get("s")).toEqual({ text: "old", ts: 100 });
-		const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
-		vi.mocked(fs.writeFileSync).mockImplementation(actual.writeFileSync);
-		b.save("s", "retry", 101);
-		expect(a.get("s")).toEqual({ text: "retry", ts: 101 });
+		await a.save("s", "old", 100);
+		// 原子写改成异步后（open + write + rename）失败注入要打在发布那一步：
+		// 让目标路径被一个目录占住，rename 必然失败，save 必须把失败抛出来而不是假装成功。
+		rmSync(path, { force: true });
+		mkdirSync(path);
+		try {
+			await expect(b.save("s", "new", 101)).rejects.toThrow();
+			await expect(b.clear("s")).rejects.toThrow();
+			expect(await a.get("s")).toEqual({ text: "old", ts: 100 });
+		} finally {
+			rmSync(path, { recursive: true, force: true });
+		}
+		await b.save("s", "retry", 101);
+		expect(await a.get("s")).toEqual({ text: "retry", ts: 101 });
 	});
 });

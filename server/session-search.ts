@@ -3,6 +3,7 @@ import { basename, resolve, sep } from "node:path";
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import type { MessageAnchor } from "./protocol.js";
 import { sessionLines, mapSessionsConcurrent } from "./session-scan.js";
+import { isVisibleOnBranch, selectSessionBranch } from "./session-projection.js";
 export { mapSessionsConcurrent } from "./session-scan.js";
 
 export const MAX_TRANSCRIPT_SCAN_BYTES = 16 * 1024 * 1024;
@@ -34,6 +35,26 @@ export interface SessionSearchMatch {
 	anchors: MessageAnchor[];
 }
 
+/** 增量扫描时每条记录只需留这些字段：叶链判定（id/parentId/type/timestamp/customType）+ 命中。 */
+interface ScanEntry {
+	[key: string]: unknown;
+	id?: string;
+	parentId?: string | null;
+	type?: string;
+	customType?: string;
+	timestamp?: string;
+	/** context_edit 专用：被编辑的目标 + null 表示抹掉（不存替换后的正文）。 */
+	targetId?: string;
+	replacement?: unknown;
+	role?: "user" | "assistant";
+	messageTimestamp?: number;
+}
+
+/**
+ * 会话内检索：流式扫完整份文件（叶链要扫完才能判定），再按投影口径过滤。
+ * 只留轻量记录（不保留消息正文），所以不受整份文件字节数限制；
+ * 但也不能在命中满 cap 时提前 break——那会把后续条目从叶链判定里漏掉。
+ */
 export async function scanSessionForSearch(
 	filePath: string,
 	query: string,
@@ -45,32 +66,62 @@ export async function scanSessionForSearch(
 	const q = query.trim().toLowerCase();
 	if (!q) return result;
 	const limit = Number.isFinite(cap) ? Math.max(0, Math.floor(cap)) : 10;
+	const scanned: ScanEntry[] = [];
 	try {
 		for await (const line of sessionLines(filePath, signal)) {
-			let entry;
+			let entry: {
+				type?: unknown;
+				id?: unknown;
+				parentId?: unknown;
+				customType?: unknown;
+				timestamp?: unknown;
+				message?: { role?: unknown; content?: unknown; timestamp?: unknown };
+			};
 			try {
 				entry = JSON.parse(line);
 			} catch {
 				continue;
 			}
-			if (entry?.type !== "message") continue;
-			const message = entry.message;
-			if (message?.role !== "user" && message?.role !== "assistant") continue;
-			if (!messageSearchText(message).toLowerCase().includes(q)) continue;
-			result.matched = true;
-			if (
-				typeof message.timestamp === "number" &&
-				Number.isFinite(message.timestamp) &&
-				result.anchors.length < limit
-			) {
-				result.anchors.push({ role: message.role, timestamp: message.timestamp });
+			if (!entry || typeof entry !== "object") continue;
+			// 所有条目都要进叶链（压缩/标签条目也是消息的父节点），只不保留正文。
+			const record: ScanEntry = {};
+			if (typeof entry.id === "string") record.id = entry.id;
+			if (typeof entry.parentId === "string" || entry.parentId === null) record.parentId = entry.parentId;
+			if (typeof entry.type === "string") record.type = entry.type;
+			if (typeof entry.customType === "string") record.customType = entry.customType;
+			if (typeof entry.timestamp === "string") record.timestamp = entry.timestamp;
+			if (entry.type === "context_edit") {
+				const edit = entry as { targetId?: unknown; replacement?: unknown };
+				if (typeof edit.targetId === "string") record.targetId = edit.targetId;
+				record.replacement = edit.replacement === null ? null : {};
 			}
-			if (result.anchors.length >= limit) break;
+			if (entry.type === "message") {
+				const message = entry.message;
+				if (message?.role === "user" || message?.role === "assistant") {
+					if (messageSearchText(message).toLowerCase().includes(q)) {
+						record.role = message.role;
+						if (typeof message.timestamp === "number" && Number.isFinite(message.timestamp)) {
+							record.messageTimestamp = message.timestamp;
+						}
+					}
+				}
+			}
+			scanned.push(record);
 		}
 	} catch {
 		signal?.throwIfAborted();
 	}
 	signal?.throwIfAborted();
+	const branch = selectSessionBranch(scanned);
+	for (const record of scanned) {
+		if (!record.role) continue;
+		if (!isVisibleOnBranch(branch, record.id)) continue;
+		result.matched = true;
+		if (typeof record.messageTimestamp === "number" && result.anchors.length < limit) {
+			result.anchors.push({ role: record.role, timestamp: record.messageTimestamp });
+		}
+		if (result.anchors.length >= limit) break;
+	}
 	return result;
 }
 

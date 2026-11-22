@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isBuiltinModule } from "./builtin-modules.js";
-import { writeJsonAtomicSync } from "./atomic-file.js";
+import { createSerializedJsonWriter, type SerializedJsonWriter } from "./serialized-json-writer.js";
 import type { UiPluginCatalogEntry } from "./protocol.js";
 import { normalizeIconSvg } from "./icon-svg.js";
 import { pick, type ServerLang } from "./i18n.js";
@@ -29,7 +29,31 @@ export function deriveCatalogId(raw: string | undefined, source: string): string
 	return cleaned || "plugin";
 }
 
+/**
+ * 目录写入保留同步返回（`addCustomEntry` 返回条目、`removeCustomEntry` 返回 boolean、
+ * 同步调用点散在 dispatch 里），所以落盘走串行排队，并保留「已登记未落盘」视图：
+ * 写完立即 `catalog()` 读回也看得到新条目。关停与测试用 `flushPluginCatalog()` 等落定。
+ */
+const writers = new Map<string, SerializedJsonWriter>();
+const queuedValues = new Map<string, unknown>();
+
+function writerFor(path: string): SerializedJsonWriter {
+	let writer = writers.get(path);
+	if (!writer) {
+		writer = createSerializedJsonWriter(path, { label: "plugin-catalog.json" });
+		writers.set(path, writer);
+	}
+	return writer;
+}
+
+/** 等排队中的目录写落地（关停与测试用）。 */
+export async function flushPluginCatalog(): Promise<void> {
+	await Promise.all([...writers.values()].map((writer) => writer.flush()));
+}
+
 function readJsonSafe<T>(path: string, fallback: T): T {
+	const queued = queuedValues.get(path);
+	if (queued !== undefined) return JSON.parse(JSON.stringify(queued)) as T;
 	try {
 		return JSON.parse(readFileSync(path, "utf8")) as T;
 	} catch {
@@ -38,7 +62,16 @@ function readJsonSafe<T>(path: string, fallback: T): T {
 }
 
 function atomicWrite(path: string, data: unknown): void {
-	writeJsonAtomicSync(path, data);
+	const snapshot = JSON.parse(JSON.stringify(data)) as unknown;
+	queuedValues.set(path, snapshot);
+	const settled = writerFor(path).writeNow(snapshot);
+	const clear = (): void => {
+		if (queuedValues.get(path) === snapshot) queuedValues.delete(path);
+	};
+	settled.then(clear, (err: unknown) => {
+		clear();
+		console.error(`[plugin-catalog] persist failed (${path}):`, err);
+	});
 }
 
 function toEntry(

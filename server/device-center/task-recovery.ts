@@ -1,12 +1,12 @@
 import { readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { writeAtomicSync } from "../atomic-file.js";
 import type {
 	DeviceArtifact,
 	DeviceTaskClaim,
 	DeviceTaskLeaseRenew,
 	DeviceTaskResultRejectReasonCode,
 } from "../protocol.js";
+import { createSerializedJsonWriter, type SerializedJsonWriter } from "../serialized-json-writer.js";
 import { parseReportMetadata } from "./report-metadata.js";
 import { TASK_REPORT_BYTES } from "./task-report.js";
 import {
@@ -250,6 +250,10 @@ export class TaskRecoveryManager {
 	private haltedOrphans: ActiveTaskLease[] = [];
 	private loadError: boolean = false;
 	private quarantine: QuarantinedTaskOutcome[] = [];
+	private readonly writer?: SerializedJsonWriter;
+	/** 构造期的迁移 / 孤儿结算也是一次真实落盘，后来的写入必须排在它后面。 */
+	private bootstrap: Promise<void> = Promise.resolve();
+	private bootstrapError: unknown;
 
 	constructor(options: TaskRecoveryOptions) {
 		this.deviceId = options.deviceId;
@@ -261,9 +265,16 @@ export class TaskRecoveryManager {
 			this.statePath = join(options.dataDir, "task-recovery-state.json");
 			this.legacyOutboxPath = join(options.dataDir, "task-recovery-outbox.json");
 			this.legacyLeasesPath = join(options.dataDir, "task-active-leases.json");
+			// 恢复状态是重启后要用的真值：串行落盘（同一文件有序、不阻塞事件循环），每个写入点都 await。
+			this.writer = createSerializedJsonWriter(this.statePath, { label: "task-recovery-state.json" });
 		}
 
-		this.loadStateAndMigrate(options.onHaltOrphaned);
+		this.bootstrap = this.loadStateAndMigrate(options.onHaltOrphaned).catch((error: unknown) => {
+			// 读盘损坏是同步判定的 `loadError`；能走到这里的只有构造期落盘失败，记下真实原因等下一次写入抛出。
+			this.bootstrapError = error;
+			this.loadError = true;
+			console.error("[device-center] 任务恢复状态初始化落盘失败：", error);
+		});
 	}
 
 	get outboxLoadError(): boolean {
@@ -295,19 +306,36 @@ export class TaskRecoveryManager {
 		}
 	}
 
-	private writeStateToDiskSync(state: DeviceTaskRecoveryStateFile): void {
-		if (!this.statePath) return;
+	/**
+	 * 真正落盘：容量校验 + 串行队列写入（`writeNow` 等到落盘才返回，失败抛出）。
+	 * 构造期自己也要用，所以这里不等 `bootstrap`（否则自等自己死锁）。
+	 */
+	private async persistState(state: DeviceTaskRecoveryStateFile): Promise<void> {
+		if (!this.writer) return;
+		const document = { ...state, version: 2 as const, quarantine: state.quarantine ?? this.quarantine };
+		if (Buffer.byteLength(JSON.stringify(document, null, 2) + "\n") > TASK_RECOVERY_STATE_MAX_BYTES)
+			throw new Error("Recovery state capacity exceeded; evidence retained");
+		await this.writer.writeNow(document);
+	}
+
+	/** 运行期落盘入口：先等构造期那笔写落定，再按当前快照写；写成功才允许改内存。 */
+	private async writeStateToDisk(state: DeviceTaskRecoveryStateFile): Promise<void> {
+		if (!this.writer) return;
+		await this.bootstrap;
+		if (this.bootstrapError) throw this.bootstrapError;
 		if (this.loadError) {
 			throw new Error("Outbox persistence blocked: corrupted storage was preserved");
 		}
-		const text =
-			JSON.stringify({ ...state, version: 2, quarantine: state.quarantine ?? this.quarantine }, null, 2) + "\n";
-		if (Buffer.byteLength(text) > TASK_RECOVERY_STATE_MAX_BYTES)
-			throw new Error("Recovery state capacity exceeded; evidence retained");
-		writeAtomicSync(this.statePath, text, { mode: 0o600, fsync: true });
+		await this.persistState(state);
 	}
 
-	private loadStateAndMigrate(onHaltOrphaned?: (task: ActiveTaskLease) => void): void {
+	/** 等所有已登记的写入落定（测试 / 关停用）。 */
+	async flush(): Promise<void> {
+		await this.bootstrap;
+		await this.writer?.flush();
+	}
+
+	private async loadStateAndMigrate(onHaltOrphaned?: (task: ActiveTaskLease) => void): Promise<void> {
 		if (!this.statePath) return;
 
 		let loadedState: DeviceTaskRecoveryStateFile | null = null;
@@ -457,7 +485,7 @@ export class TaskRecoveryManager {
 
 			if (hasLegacy) {
 				try {
-					this.writeStateToDiskSync(loadedState);
+					await this.persistState(loadedState);
 					this.cleanupLegacyFiles();
 				} catch {
 					this.loadError = true;
@@ -529,7 +557,7 @@ export class TaskRecoveryManager {
 				outbox: allOutbox,
 				activeLeases: allLeases,
 			};
-			this.writeStateToDiskSync(nextState);
+			await this.persistState(nextState);
 
 			for (const entry of newOutboxEntries) {
 				this.outbox.set(entry.id, entry);
@@ -542,9 +570,9 @@ export class TaskRecoveryManager {
 		return structuredClone(this.haltedOrphans);
 	}
 
-	recordTaskStart(
+	async recordTaskStart(
 		lease: Omit<ActiveTaskLease, "startedAt" | "lastActivityAt" | "lastRenewedActivityAt"> & { startedAt?: number },
-	): ActiveTaskLease {
+	): Promise<ActiveTaskLease> {
 		if (
 			!lease ||
 			typeof lease !== "object" ||
@@ -616,7 +644,7 @@ export class TaskRecoveryManager {
 			outbox: allOutbox,
 			activeLeases: allLeases,
 		};
-		this.writeStateToDiskSync(state);
+		await this.writeStateToDisk(state);
 
 		this.activeLeases.set(key, record);
 		return structuredClone(record);
@@ -629,7 +657,7 @@ export class TaskRecoveryManager {
 		return true;
 	}
 
-	removeActiveLease(taskId: string, attemptId: string): void {
+	async removeActiveLease(taskId: string, attemptId: string): Promise<void> {
 		const key = this.leaseKey(taskId, attemptId);
 		if (this.activeLeases.has(key)) {
 			const nextLeases = Array.from(this.activeLeases.values()).filter(
@@ -644,7 +672,7 @@ export class TaskRecoveryManager {
 				outbox: allOutbox,
 				activeLeases: allLeases,
 			};
-			this.writeStateToDiskSync(state);
+			await this.writeStateToDisk(state);
 			this.activeLeases.delete(key);
 		}
 	}
@@ -743,7 +771,7 @@ export class TaskRecoveryManager {
 		return { available: true };
 	}
 
-	recordTaskFinish(
+	async recordTaskFinish(
 		task: {
 			id: string;
 			attemptId: string;
@@ -765,7 +793,7 @@ export class TaskRecoveryManager {
 			executionCompleted?: boolean;
 			artifactProduced?: boolean;
 		},
-	): TaskOutboxEntry {
+	): Promise<TaskOutboxEntry> {
 		if (
 			!task ||
 			typeof task !== "object" ||
@@ -820,7 +848,7 @@ export class TaskRecoveryManager {
 				proofMatches
 			) {
 				if (this.activeLeases.has(key)) {
-					this.removeActiveLease(task.id, task.attemptId);
+					await this.removeActiveLease(task.id, task.attemptId);
 				}
 				return structuredClone(existing);
 			}
@@ -886,7 +914,7 @@ export class TaskRecoveryManager {
 			outbox: allOutbox,
 			activeLeases: allLeases,
 		};
-		this.writeStateToDiskSync(state);
+		await this.writeStateToDisk(state);
 
 		this.outbox.set(entry.id, entry);
 		this.activeLeases.delete(key);
@@ -903,7 +931,7 @@ export class TaskRecoveryManager {
 		return entry ? structuredClone(entry) : undefined;
 	}
 
-	markOutboxAttempt(id: string): void {
+	async markOutboxAttempt(id: string): Promise<void> {
 		const entry = this.outbox.get(id);
 		if (entry) {
 			const updated = { ...entry, attempts: entry.attempts + 1, updatedAt: Date.now() };
@@ -917,7 +945,7 @@ export class TaskRecoveryManager {
 				outbox: allOutbox,
 				activeLeases: allLeases,
 			};
-			this.writeStateToDiskSync(state);
+			await this.writeStateToDisk(state);
 			this.outbox.set(id, updated);
 		}
 	}
@@ -926,14 +954,14 @@ export class TaskRecoveryManager {
 		return structuredClone(this.quarantine.filter((item) => this.matchesHub(item.outcome.hubUrl)));
 	}
 
-	quarantineOutbox(
+	async quarantineOutbox(
 		taskId: string,
 		attemptId: string,
 		fingerprint: unknown,
 		reasonCode: unknown,
 		status: unknown,
 		artifactDigest?: unknown,
-	): boolean {
+	): Promise<boolean> {
 		if (
 			this.loadError ||
 			typeof reasonCode !== "string" ||
@@ -963,7 +991,7 @@ export class TaskRecoveryManager {
 			Buffer.byteLength(JSON.stringify(next)) > TASK_QUARANTINE_LIMITS.maxTotalBytes
 		)
 			return false;
-		this.writeStateToDiskSync({
+		await this.writeStateToDisk({
 			version: 2,
 			deviceId: this.deviceId,
 			hubUrl: this.hubUrl,
@@ -976,7 +1004,7 @@ export class TaskRecoveryManager {
 		return true;
 	}
 
-	ackOutbox(
+	async ackOutbox(
 		taskId: string,
 		attemptId: string,
 		fingerprint?: string,
@@ -986,7 +1014,7 @@ export class TaskRecoveryManager {
 			contractDigest?: string;
 			manifestDigest?: string;
 		},
-	): boolean {
+	): Promise<boolean> {
 		const key = this.leaseKey(taskId, attemptId);
 		const entry = this.outbox.get(key);
 		if (!entry) return false;
@@ -1020,7 +1048,7 @@ export class TaskRecoveryManager {
 			outbox: allOutbox,
 			activeLeases: allLeases,
 		};
-		this.writeStateToDiskSync(state);
+		await this.writeStateToDisk(state);
 		this.outbox.delete(key);
 		return true;
 	}

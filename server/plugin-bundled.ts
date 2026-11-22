@@ -1,12 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { writeJsonAtomicSync } from "./atomic-file.js";
+import { writeJsonAtomic } from "./atomic-file.js";
 import { BUILTIN_MODULE_IDS, isBuiltinModule } from "./builtin-modules.js";
 import { isMaterialized, materializePlugin, type MaterializeOutcome } from "./plugin-materialize.js";
 
 const ID_RE = /^[A-Za-z0-9_-]+$/;
 
-function preparePayload(dataDir: string, catalogPath: string, id: string): MaterializeOutcome {
+async function preparePayload(dataDir: string, catalogPath: string, id: string): Promise<MaterializeOutcome> {
 	return materializePlugin({
 		id,
 		sourceDir: join(dirname(catalogPath), id),
@@ -20,13 +20,13 @@ function preparePayload(dataDir: string, catalogPath: string, id: string): Mater
  * 「目录存在」不再等于「已准备」：完整性由物化回执裁定，半残目录会被就地修复，
  * 而不是留下一个永远报 `manifest.json 缺失或解析失败` 的空壳（issue #856）。
  */
-export function prepareBundledPlugins(
+export async function prepareBundledPlugins(
 	dataDir: string,
 	catalogPath: string,
 	overriddenIds = new Set<string>(),
-): MaterializeOutcome[] {
+): Promise<MaterializeOutcome[]> {
 	const outcomes: MaterializeOutcome[] = [];
-	for (const id of BUILTIN_MODULE_IDS) outcomes.push(preparePayload(dataDir, catalogPath, id));
+	for (const id of BUILTIN_MODULE_IDS) outcomes.push(await preparePayload(dataDir, catalogPath, id));
 
 	const catalog: unknown = JSON.parse(readFileSync(catalogPath, "utf8"));
 	if (!Array.isArray(catalog)) return outcomes;
@@ -63,19 +63,19 @@ export function prepareBundledPlugins(
 		if (initialized.has(id)) {
 			// 预装过一次就不再复活：用户主动删掉目录就当卸载，但半残目录必须修
 			if (!existsSync(targetDir) || isMaterialized(targetDir, id)) continue;
-			const outcome = preparePayload(dataDir, catalogPath, id);
+			const outcome = await preparePayload(dataDir, catalogPath, id);
 			outcomes.push(outcome);
 			if (outcome.status === "failed" || outcome.status === "source-invalid") {
 				console.warn(`[plugins] 修复预装插件 ${id} 失败：${outcome.error ?? outcome.status}`);
 			}
 			continue;
 		}
-		const outcome = preparePayload(dataDir, catalogPath, id);
+		const outcome = await preparePayload(dataDir, catalogPath, id);
 		outcomes.push(outcome);
 		if (outcome.status === "source-invalid" || outcome.status === "failed") continue;
 		initialized.add(id);
 		changed = true;
 	}
-	if (changed) writeJsonAtomicSync(receiptPath, { version: 1, ids: [...initialized].sort() });
+	if (changed) await writeJsonAtomic(receiptPath, { version: 1, ids: [...initialized].sort() });
 	return outcomes;
 }

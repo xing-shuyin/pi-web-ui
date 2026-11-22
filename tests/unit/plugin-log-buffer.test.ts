@@ -145,7 +145,7 @@ describe("PluginManager plugin logs", () => {
 		makePlugin("temp", `export default { activate(host) { host.log("hi"); } };`);
 		await mgr.ensureLoaded();
 		expect(mgr.getPluginLogs("temp")).toHaveLength(1);
-		mgr.dispose();
+		await mgr.dispose();
 		expect(mgr.getPluginLogs("temp")).toEqual([]);
 	});
 });

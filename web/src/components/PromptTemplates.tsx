@@ -78,6 +78,14 @@ const BUILTIN_DEFS: BuiltinDef[] = [
 		promptKey: "tpl.sk.codeview.prompt",
 	},
 	{
+		id: "pr-review",
+		command: "pr-review",
+		icon: "🔍",
+		titleKey: "tpl.sk.prreview",
+		descKey: "tpl.sk.prreview.desc",
+		promptKey: "tpl.sk.prreview.prompt",
+	},
+	{
 		id: "diagnosing-bugs",
 		command: "debug",
 		icon: "🐛",

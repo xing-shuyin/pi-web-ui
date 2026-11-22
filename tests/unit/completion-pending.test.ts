@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+
 import { ConversationDelivery } from "../../server/conversation-delivery.js";
 import { conversationIdentity } from "../../server/conversation-identity.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
+import { settle } from "../helpers/settle.js";
 
 function host() {
 	const client: any = fakeClientSession();
@@ -83,7 +85,10 @@ describe("completion notification lifecycle", () => {
 			expect(client.completionPending(conv)).toBe(true);
 
 			finish();
-			for (let i = 0; i < 20; i++) await Promise.resolve();
+			await settle();
+			// 提交点已把这一轮标记为「在飞」（#983）：SDK 随后会发 agent_start，这里补同样的收尾，
+			// 让「通知是否还在等」只看通知队列本身。
+			conv.promptInFlight = false;
 			expect({
 				pending: client.completionPending(conv),
 				sent: conv.session.sendUserMessage.mock.calls.length,

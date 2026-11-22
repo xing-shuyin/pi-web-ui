@@ -707,7 +707,10 @@ async function transport(
 	await vi.waitFor(() => expect(relay.isOnline("device")).toBe(true));
 	return { relay, connector, events, url };
 }
-function expectWireOutcome(frame: DeviceTaskEventFrame, entry: ReturnType<TaskRecoveryManager["recordTaskFinish"]>) {
+function expectWireOutcome(
+	frame: DeviceTaskEventFrame,
+	entry: Awaited<ReturnType<TaskRecoveryManager["recordTaskFinish"]>>,
+) {
 	expect(frame).toMatchObject({
 		taskId: entry.taskId,
 		attemptId: entry.attemptId,
@@ -785,6 +788,7 @@ describe("connector durable terminal wire outcomes", () => {
 			await writeFile(join(dataDir, "task-active-leases.json"), "[]");
 			const options = { dataDir, deviceId: "device" };
 			const recovery = new TaskRecoveryManager(options);
+			await recovery.flush();
 			expect(recovery.outboxLoadError).toBe(false);
 			expect(recovery.getPendingOutboxEntry(t.id, t.attemptId)).toEqual(oldEntry);
 			expect(JSON.parse(await readFile(join(dataDir, "task-recovery-state.json"), "utf8"))).toMatchObject({
@@ -803,6 +807,7 @@ describe("connector durable terminal wire outcomes", () => {
 			expect(wire.events[0]).not.toHaveProperty("leaseToken");
 			expect(wire.events[0]).not.toHaveProperty("leaseGeneration");
 			expect(hub.store.snapshot()).toEqual(before);
+			await recovery.flush();
 			const reloaded = new TaskRecoveryManager(options);
 			expect(reloaded.outboxLoadError).toBe(false);
 			expect(reloaded.getPendingOutbox()).toEqual([]);
@@ -856,7 +861,7 @@ describe("connector durable terminal wire outcomes", () => {
 		const { t, artifact } = codeOutcomeTask("artifact-replay");
 		const { hub } = await persistedHub([t]);
 		const recovery = new TaskRecoveryManager({ deviceId: "device" });
-		const entry = recovery.recordTaskFinish(t, {
+		const entry = await recovery.recordTaskFinish(t, {
 			status: "completed",
 			report: "code report",
 			artifact,
@@ -911,7 +916,7 @@ describe("connector durable terminal wire outcomes", () => {
 			cleanup.push(() => rm(dataDir, { recursive: true, force: true }));
 			const options = { dataDir, deviceId: "device" };
 			const recovery = new TaskRecoveryManager(options);
-			const entry = recovery.recordTaskFinish(t, {
+			const entry = await recovery.recordTaskFinish(t, {
 				status: "completed",
 				report: "durable completed",
 				artifact,
@@ -923,6 +928,7 @@ describe("connector durable terminal wire outcomes", () => {
 			expect(wire.relay.isOnline("device")).toBe(true);
 			expect(wire.events).toHaveLength(1);
 			expect(recovery.getPendingOutbox()).toEqual([]);
+			await recovery.flush();
 			const archive = new TaskRecoveryManager(options).getQuarantinedOutcomes();
 			expect(archive[0]).toMatchObject({
 				reasonCode,
@@ -936,12 +942,12 @@ describe("connector durable terminal wire outcomes", () => {
 
 	it("sends the persisted failure verbatim instead of deriving a completed/failed payload", async () => {
 		const recovery = new TaskRecoveryManager({ deviceId: "device" });
-		let entry: ReturnType<TaskRecoveryManager["recordTaskFinish"]>;
+		let entry: Awaited<ReturnType<TaskRecoveryManager["recordTaskFinish"]>>;
 		const t = task("wire", { status: "queued", leaseToken: "lease", leaseGeneration: 3 });
 		const f = await transport({
 			recovery,
 			async onTask(received) {
-				entry = recovery.recordTaskFinish(received, {
+				entry = await recovery.recordTaskFinish(received, {
 					status: "failed",
 					report: "persisted report",
 					error: new Error("private detail"),
@@ -984,15 +990,15 @@ describe("connector durable terminal wire outcomes", () => {
 		async (mode) => {
 			const recovery = new TaskRecoveryManager({ deviceId: "device" });
 			const t = task("aborted", { status: "queued", leaseToken: "lease", leaseGeneration: 2 });
-			let entry: ReturnType<TaskRecoveryManager["recordTaskFinish"]>;
+			let entry: Awaited<ReturnType<TaskRecoveryManager["recordTaskFinish"]>>;
 			const f = await transport({
 				recovery,
 				onTask(received, signal) {
 					return new Promise<string | void>((resolve, reject) =>
 						signal!.addEventListener(
 							"abort",
-							() => {
-								entry = recovery.recordTaskFinish(received, {
+							async () => {
+								entry = await recovery.recordTaskFinish(received, {
 									status: "interrupted",
 									report: "durable interrupted",
 									reportMetadata: reportUploadMetadata(),
@@ -1018,7 +1024,7 @@ describe("connector durable terminal wire outcomes", () => {
 	it("replays the same lease and outcome fields on reconnect, retaining outbox after a wrong committed ACK", async () => {
 		const recovery = new TaskRecoveryManager({ deviceId: "device" });
 		const t = task("replay", { leaseToken: "lease", leaseGeneration: 5 });
-		const entry = recovery.recordTaskFinish(t, {
+		const entry = await recovery.recordTaskFinish(t, {
 			status: "failed",
 			report: "persisted",
 			error: new Error("private"),
@@ -1037,7 +1043,7 @@ describe("connector durable terminal wire outcomes", () => {
 	it("clears a durable outbox only after relay returns the committed fingerprint", async () => {
 		const recovery = new TaskRecoveryManager({ deviceId: "device" });
 		const t = task("ack", { leaseToken: "lease", leaseGeneration: 1 });
-		const entry = recovery.recordTaskFinish(t, { status: "completed", report: "persisted" });
+		const entry = await recovery.recordTaskFinish(t, { status: "completed", report: "persisted" });
 		await transport({ recovery }, () => ({ ...t, status: "completed", outcomeFingerprint: entry.fingerprint }));
 		await vi.waitFor(() => expect(recovery.getPendingOutboxEntry(t.id, t.attemptId)).toBeUndefined());
 	});

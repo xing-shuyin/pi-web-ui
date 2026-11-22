@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { nextCronFire, parseCronSpec } from "./plugin-schedule.js";
-import { writeJsonAtomicSync } from "./atomic-file.js";
+import { createSerializedJsonWriter, type SerializedJsonWriter } from "./serialized-json-writer.js";
+import { MATERIAL_LIMITS } from "./material.js";
 
 export type SchedulerKind = "cron" | "interval";
 export type SchedulerCatchUp = "skip" | "once";
@@ -9,6 +10,21 @@ export type SchedulerCatchUp = "skip" | "once";
 export interface SchedulerTaskOrigin {
 	sessionFile: string;
 	toolCallId: string;
+}
+
+/**
+ * 一次触发的 identity（issues #976）：
+ *
+ * `runId` 在**触发那一刻**分配，与 `startedAt` 同一次 `save` 落盘；终态记录后同一次 `save` 清掉。
+ * 所以重启后只要看到 `occurrence` 还在，就能确定地说「这次触发没有终态记录」，
+ * 而不是靠猜（旧实现只留一个 `startedAt`，既分不清「没跑」也分不清「跑完了没记」）。
+ *
+ * 不改变 `startedAt` 语义：它仍是「这个 task 曾经开始过」，`cancelUnstartedFromCalls` 依赖它。
+ */
+export interface SchedulerOccurrence {
+	runId: string;
+	/** 这次触发本来该跑的时刻（cron / interval 的槽位时间）；手动触发时为触发时间。 */
+	scheduledFor: number;
 }
 
 export interface SchedulerTaskInput {
@@ -21,6 +37,8 @@ export interface SchedulerTaskInput {
 	kind?: SchedulerKind;
 	spec?: string | number;
 	prompt?: string;
+	/** 材料指针（路径字符串，相对 `cwd` 解释）；见 docs/proposals/material-spec-contract.md */
+	materials?: string[];
 	enabled?: boolean;
 	model?: string;
 	thinkingLevel?: string;
@@ -33,6 +51,8 @@ export interface SchedulerTaskInput {
 export interface SchedulerTask {
 	origin?: SchedulerTaskOrigin;
 	startedAt?: number;
+	/** 非空 = 触发过但没有终态记录（重启后据此报「结果未知」）。 */
+	occurrence?: SchedulerOccurrence;
 	target?: "conversation" | "canvas";
 	graphId?: string;
 	id: string;
@@ -42,6 +62,11 @@ export interface SchedulerTask {
 	kind: SchedulerKind;
 	spec: string;
 	prompt: string;
+	/**
+	 * 材料指针：规格里只存**路径字符串**（契约 R1）。
+	 * 存在性 / 去重 / 清单 / 跨 cwd 搬迁全部由执行前的 `material.ts` 负责，这里只保存形状。
+	 */
+	materials?: string[];
 	enabled: boolean;
 	model: string;
 	thinkingLevel: string;
@@ -57,6 +82,8 @@ export interface SchedulerRunRecord {
 	target?: "conversation" | "canvas";
 	graphId?: string;
 	runId?: string;
+	/** 这次运行的槽位时间（occurrence 对账用） */
+	scheduledFor?: number;
 	at: number;
 	ok: boolean;
 	durationMs: number;
@@ -81,6 +108,12 @@ export interface SchedulerExecutorResult {
 	ok: boolean;
 	conversationId?: string;
 	sessionFile?: string;
+	/**
+	 * 只用于**补录持久地址**（老任务第一次真正投回原对话时）。
+	 * 只有「成功投回原对话」的回执才允许填，转后台执行的路径一律留空：
+	 * 否则失败→转后台会把它当成新地址写回任务绑定（#959 的错就是这样传开的）。
+	 */
+	backfill?: { conversationId?: string; sessionFile?: string };
 	error?: string;
 }
 
@@ -105,6 +138,10 @@ function randomTaskId(): string {
 	return `task-${s}`;
 }
 
+function randomOccurrenceId(): string {
+	return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export class SchedulerValidationError extends Error {
 	constructor(
 		public readonly code: string,
@@ -114,6 +151,23 @@ export class SchedulerValidationError extends Error {
 		super(messageZh);
 		this.name = "SchedulerValidationError";
 	}
+}
+
+/**
+ * 规格里的材料指针只做**形状**校验（契约 R1/R8）：字符串数组、去空、≤ `MATERIAL_LIMITS.maxItems`。
+ * 这里**不 stat、不解析、不拼清单文案**——存在性 / 去重 / 清单都在执行前的 `normalizeMaterials()`。
+ */
+function sanitizeMaterials(raw: unknown): string[] {
+	if (!Array.isArray(raw)) return [];
+	const out: string[] = [];
+	for (const item of raw) {
+		if (typeof item !== "string") continue;
+		const ref = item.trim();
+		if (!ref) continue;
+		out.push(ref);
+		if (out.length >= MATERIAL_LIMITS.maxItems) break;
+	}
+	return out;
 }
 
 export function normalizeSchedulerInput(input: SchedulerTaskInput, now = Date.now()): SchedulerTask {
@@ -220,6 +274,7 @@ export function normalizeSchedulerInput(input: SchedulerTaskInput, now = Date.no
 	const sessionFile = String(input.sessionFile ?? "")
 		.trim()
 		.slice(0, 1024);
+	const materials = sanitizeMaterials(input.materials);
 	return {
 		id,
 		target,
@@ -230,6 +285,7 @@ export function normalizeSchedulerInput(input: SchedulerTaskInput, now = Date.no
 		kind,
 		spec,
 		prompt,
+		...(materials.length ? { materials } : {}),
 		enabled: input.enabled !== false,
 		model,
 		thinkingLevel,
@@ -285,6 +341,18 @@ function validOrigin(value: unknown): value is SchedulerTaskOrigin {
 	);
 }
 
+function validOccurrence(value: unknown): value is SchedulerOccurrence {
+	if (!value || typeof value !== "object") return false;
+	const occ = value as SchedulerOccurrence;
+	return (
+		typeof occ.runId === "string" &&
+		occ.runId.length > 0 &&
+		occ.runId.length <= 128 &&
+		typeof occ.scheduledFor === "number" &&
+		Number.isFinite(occ.scheduledFor)
+	);
+}
+
 interface StoredTask extends SchedulerTask {
 	history?: SchedulerRunRecord[];
 }
@@ -307,6 +375,9 @@ function sanitizeHistory(v: unknown): SchedulerRunRecord[] {
 			...(rec.target === "canvas" || rec.target === "conversation" ? { target: rec.target } : {}),
 			...(typeof rec.graphId === "string" && rec.graphId ? { graphId: rec.graphId.slice(0, 64) } : {}),
 			...(typeof rec.runId === "string" && rec.runId ? { runId: rec.runId.slice(0, 128) } : {}),
+			...(typeof rec.scheduledFor === "number" && Number.isFinite(rec.scheduledFor)
+				? { scheduledFor: rec.scheduledFor }
+				: {}),
 			...(typeof rec.error === "string" && rec.error ? { error: rec.error.slice(0, 500) } : {}),
 			...(rec.manual === true ? { manual: true as const } : {}),
 		});
@@ -329,6 +400,15 @@ export class SchedulerStore {
 	private timer: ReturnType<typeof setInterval> | null = null;
 	private started = false;
 
+	/**
+	 * 落盘队列：调度任务是真相（重启后要照原样恢复），所以 mutator 必须等到落盘再返回——
+	 * 否则「新建一个 SchedulerStore 读同一个文件」会读到旧任务。同一个队列也让读侧的
+	 * 重启对账（在同步的 start() 里执行）不会逆序覆盖后面的写入。
+	 */
+	private writer: SerializedJsonWriter;
+	/** 变更与落盘的串行链（见 commit）。 */
+	private chain: Promise<unknown> = Promise.resolve();
+
 	constructor(
 		private readonly dataDir: string,
 		private readonly opts: {
@@ -338,7 +418,9 @@ export class SchedulerStore {
 			notify?: (level: "info" | "warning" | "error", text: string, textEn?: string) => void;
 			onTaskRemoved?: (taskId: string) => void;
 		} = {},
-	) {}
+	) {
+		this.writer = createSerializedJsonWriter(schedulerFile(this.dataDir), { label: "scheduler-tasks" });
+	}
 
 	setExecutor(executor: SchedulerExecutor): void {
 		this.opts.executor = executor;
@@ -348,6 +430,7 @@ export class SchedulerStore {
 		this.load();
 		if (this.started) return;
 		this.started = true;
+		this.reconcileInterruptedRuns();
 		const now = Date.now();
 		for (const task of this.tasks.values()) {
 			if (!task.enabled) continue;
@@ -406,6 +489,7 @@ export class SchedulerStore {
 						catchUp: r.catchUp as SchedulerCatchUp,
 						conversationId: r.conversationId as string,
 						sessionFile: (r as { sessionFile?: unknown }).sessionFile as string,
+						materials: (r as { materials?: unknown }).materials as string[],
 						oneShot: r.oneShot as boolean,
 					});
 					task.createdAt = typeof r.createdAt === "number" && Number.isFinite(r.createdAt) ? r.createdAt : Date.now();
@@ -415,6 +499,7 @@ export class SchedulerStore {
 						...task,
 						...(validOrigin(r.origin) ? { origin: { ...r.origin } } : {}),
 						...(typeof r.startedAt === "number" && Number.isFinite(r.startedAt) ? { startedAt: r.startedAt } : {}),
+						...(validOccurrence(r.occurrence) ? { occurrence: { ...r.occurrence } } : {}),
 						history: sanitizeHistory(r.history),
 					});
 				} catch {}
@@ -425,10 +510,48 @@ export class SchedulerStore {
 		}
 	}
 
-	private save(next: Map<string, StoredTask>): void {
+	private snapshot(next: Map<string, StoredTask>) {
 		const tasks: Record<string, StoredTask> = Object.fromEntries(next);
-		writeJsonAtomicSync(schedulerFile(this.dataDir), { v: 1, tasks });
-		this.tasks = next;
+		return { v: 1, tasks };
+	}
+
+	/**
+	 * 真值提交：把这次变更应用到**最新状态**上，串行落盘，写完才切换内存投影。
+	 *
+	 * 为什么不是「先算好整张表再写」：落盘是异步的，两个变更之间出现了 await 窗口；
+	 * 各自拿着旧快照去写就会互相覆盖（同步写时代这个窗口不存在，所以以前随便写都对）。
+	 * 传入变更函数、在队列里才读最新状态，才是把 old 语义完整带过来。
+	 * 落盘失败则不提交（内存保持原样，调用方各自兜底）。
+	 */
+	private commit(apply: (tasks: Map<string, StoredTask>) => void): Promise<void> {
+		const run = async () => {
+			const next = new Map(this.tasks);
+			apply(next);
+			await this.persist(this.snapshot(next));
+			this.tasks = next;
+		};
+		const chained = this.chain.then(run, run);
+		this.chain = chained.catch(() => {});
+		return chained;
+	}
+
+	/** 同步读侧（start() 的重启对账）触发的清理：排队提交，不阻塞启动。 */
+	private queueCommit(apply: (tasks: Map<string, StoredTask>) => void): void {
+		void this.commit(apply).catch((err) => this.reportFailure(err));
+	}
+
+	/**
+	 * 同一文件的写入共有一条队列（顺序不变量只住在这里）。
+	 * 队列的链一经拒绝就永久拒绝（见 `serialized-json-writer`），所以失败后换一条新链：
+	 * 否则一次磁盘抖动会让调度任务从此再也写不下去。
+	 */
+	private async persist(snapshot: ReturnType<SchedulerStore["snapshot"]>): Promise<void> {
+		try {
+			await this.writer.writeNow(snapshot);
+		} catch (error) {
+			this.writer = createSerializedJsonWriter(schedulerFile(this.dataDir), { label: "scheduler-tasks" });
+			throw error;
+		}
 	}
 
 	private reportFailure(err: unknown): void {
@@ -464,6 +587,7 @@ export class SchedulerStore {
 					kind: t.kind,
 					spec: t.spec,
 					prompt: t.prompt,
+					...(t.materials?.length ? { materials: [...t.materials] } : {}),
 					enabled: t.enabled,
 					model: t.model,
 					thinkingLevel: t.thinkingLevel,
@@ -484,7 +608,7 @@ export class SchedulerStore {
 			.sort((a, b) => a.name.localeCompare(b.name, "zh"));
 	}
 
-	upsert(input: SchedulerTaskInput, origin?: SchedulerTaskOrigin): SchedulerTask {
+	async upsert(input: SchedulerTaskInput, origin?: SchedulerTaskOrigin): Promise<SchedulerTask> {
 		if (origin !== undefined && !validOrigin(origin)) throw new Error("Invalid scheduled-task creation origin");
 		const prev = this.tasks.get(String(input.id ?? "").trim());
 		const task = normalizeSchedulerInput({
@@ -499,6 +623,8 @@ export class SchedulerStore {
 			task.startedAt = prev.startedAt;
 			task.createdAt = prev.createdAt;
 			task.updatedAt = Date.now();
+			// 面板编辑不会重发 materials（它是 AI 侧输入）：省略 = 保持原值；显式 [] = 清空。
+			if (input.materials === undefined && prev.materials?.length) task.materials = [...prev.materials];
 			if (
 				task.target !== "canvas" &&
 				prev.target !== "canvas" &&
@@ -511,16 +637,19 @@ export class SchedulerStore {
 		}
 		this.opts.validateTask?.(task);
 		const history = prev?.history ? sanitizeHistory(prev.history) : [];
-		this.save(new Map(this.tasks).set(task.id, { ...task, history }));
+		await this.commit((tasks) => tasks.set(task.id, { ...task, history }));
 		this.nextFire.set(task.id, computeNextFire(task, Date.now()) ?? Date.now() + TICK_MS);
 		this.changed();
 		return task;
 	}
 
-	cancelUnstartedFromCalls(sessionFile: string, toolCallIds: ReadonlySet<string>, commit?: () => void): number {
-		const next = new Map(this.tasks);
+	async cancelUnstartedFromCalls(
+		sessionFile: string,
+		toolCallIds: ReadonlySet<string>,
+		commit?: () => void,
+	): Promise<number> {
 		const removed: string[] = [];
-		for (const [id, task] of next) {
+		for (const [id, task] of this.tasks) {
 			if (
 				!task.origin ||
 				!(process.platform === "win32"
@@ -532,17 +661,24 @@ export class SchedulerStore {
 				task.history?.length
 			)
 				continue;
-			next.delete(id);
 			removed.push(id);
 		}
 		const previous = this.tasks;
-		if (removed.length) this.save(next);
+		if (removed.length)
+			await this.commit((tasks) => {
+				for (const id of removed) tasks.delete(id);
+			});
 		try {
 			commit?.();
 		} catch (err) {
 			if (removed.length) {
 				try {
-					this.save(previous);
+					await this.commit((tasks) => {
+						for (const id of removed) {
+							const before = previous.get(id);
+							if (before) tasks.set(id, before);
+						}
+					});
 				} catch (restoreError) {
 					throw new Error(
 						`Transcript update failed (${String(err)}); scheduled tasks could not be restored (${String(restoreError)}). Inspect the scheduler before retrying.`,
@@ -564,12 +700,10 @@ export class SchedulerStore {
 		return removed.length;
 	}
 
-	remove(id: string): boolean {
+	async remove(id: string): Promise<boolean> {
 		const ok = this.tasks.has(id);
 		if (ok) {
-			const next = new Map(this.tasks);
-			next.delete(id);
-			this.save(next);
+			await this.commit((tasks) => tasks.delete(id));
 			this.nextFire.delete(id);
 			this.changed();
 			try {
@@ -579,17 +713,17 @@ export class SchedulerStore {
 		return ok;
 	}
 
-	setEnabled(id: string, enabled: boolean): SchedulerTask | null {
+	async setEnabled(id: string, enabled: boolean): Promise<SchedulerTask | null> {
 		const prev = this.tasks.get(id);
 		if (!prev) return null;
 		const t = { ...prev, enabled, updatedAt: Date.now() };
-		this.save(new Map(this.tasks).set(id, t));
+		await this.commit((tasks) => tasks.set(id, t));
 		this.nextFire.set(id, computeNextFire(t, Date.now()) ?? Date.now() + TICK_MS);
 		this.changed();
 		return { ...t };
 	}
 
-	rebind(id: string, binding: { conversationId?: string; sessionFile?: string }): boolean {
+	async rebind(id: string, binding: { conversationId?: string; sessionFile?: string }): Promise<boolean> {
 		const prev = this.tasks.get(id);
 		if (!prev || prev.target === "canvas") return false;
 		const t = { ...prev };
@@ -614,7 +748,7 @@ export class SchedulerStore {
 		}
 		if (!dirty) return false;
 		t.updatedAt = Date.now();
-		this.save(new Map(this.tasks).set(id, t));
+		await this.commit((tasks) => tasks.set(id, t));
 		this.changed();
 		return true;
 	}
@@ -657,19 +791,43 @@ export class SchedulerStore {
 		const task = this.tasks.get(id);
 		if (!task) return { ok: false, error: "任务不存在" };
 		const executor = this.opts.executor;
-		if (task.origin && task.startedAt === undefined) {
-			try {
-				this.save(new Map(this.tasks).set(id, { ...task, startedAt: Date.now() }));
-			} catch (err) {
-				this.reportFailure(err);
-				return { ok: false, error: `Failed to persist scheduled-task start: ${String(err)}` };
-			}
-		}
-		this.running.add(id);
 		const startedAt = Date.now();
+		// occurrence 与 startedAt 必须同一次 save 落盘：分开写就会出现「记了开始、没记 identity」的窗口。
+		const occurrence: SchedulerOccurrence = {
+			runId: `run-${randomOccurrenceId()}`,
+			scheduledFor: triggerAt !== undefined ? Math.max(0, triggerAt) : startedAt,
+		};
 		const scheduleBase = triggerAt !== undefined ? Math.max(triggerAt, startedAt) : startedAt;
+		// 运行位与下次触发时间必须在第一个 await 之前落到内存：落盘是异步的，否则同一个 tick 里的
+		// 第二次触发会穿过重入检查，面板也会在那几毫秒里显示成「没在跑」。落盘失败时逐个回滚，
+		// 保持「写失败 = 没开始」这条旧语义。
+		const prevNextFire = this.nextFire.get(id);
+		this.running.add(id);
 		if (!task.oneShot && !manual) {
 			this.nextFire.set(id, computeNextFire(task, scheduleBase) ?? scheduleBase + TICK_MS);
+		}
+		try {
+			await this.commit((tasks) =>
+				tasks.set(id, {
+					...(tasks.get(id) ?? task),
+					occurrence,
+					...(task.origin && task.startedAt === undefined ? { startedAt } : {}),
+				}),
+			);
+		} catch (err) {
+			// 落盘失败 = 这次触发**没有留下运行记录**：不执行（否则会产生没有任何痕迹的副作用，
+			// 重启对账也无从判断结果），回滚「已开始」投影并如实告警，下一次槽位再试。
+			this.running.delete(id);
+			// 保留已推进的下次触发时间：失败一次不该在同一槽位反复重试。
+			if (prevNextFire === undefined) this.nextFire.delete(id);
+			this.reportFailure(err);
+			const persistError = `Failed to persist scheduled-task start: ${String(err)}`;
+			this.notify(
+				"warning",
+				`定时任务「${task.name}」${manual ? "手动" : "定时"}触发失败：${persistError}`,
+				`Scheduled task "${task.name}" ${manual ? "manual" : "automatic"} run failed: ${persistError}`,
+			);
+			return { ok: false, error: persistError };
 		}
 		this.changed();
 		let result: SchedulerExecutorResult;
@@ -682,19 +840,21 @@ export class SchedulerStore {
 		}
 		const durationMs = Date.now() - startedAt;
 		try {
-			this.recordRun(id, {
+			await this.recordRun(id, {
 				at: Date.now(),
 				ok: result.ok,
 				durationMs,
 				target: task.target ?? "conversation",
 				...(task.graphId ? { graphId: task.graphId } : {}),
-				...(result.runId ? { runId: result.runId } : {}),
+				// 执行器没给 runId 时用触发分配的 identity：历史与账本才对得上同一次运行。
+				runId: result.runId ?? occurrence.runId,
+				scheduledFor: occurrence.scheduledFor,
 				...(result.conversationId ? { conversationId: result.conversationId } : {}),
 				...(result.sessionFile ? { sessionFile: result.sessionFile } : {}),
 				...(result.error ? { error: result.error.slice(0, 500) } : {}),
 				...(manual ? { manual } : {}),
 			});
-			if (task.oneShot) this.remove(id);
+			if (task.oneShot) await this.remove(id);
 		} catch (err) {
 			result = {
 				ok: false,
@@ -736,10 +896,43 @@ export class SchedulerStore {
 		return result;
 	}
 
-	private recordRun(id: string, run: SchedulerRunRecord): void {
-		const t = this.tasks.get(id);
-		if (!t) return;
-		const next = { ...t, history: [run, ...sanitizeHistory(t.history)].slice(0, SCHEDULER_HISTORY_MAX) };
-		this.save(new Map(this.tasks).set(id, next));
+	private async recordRun(id: string, run: SchedulerRunRecord): Promise<void> {
+		if (!this.tasks.has(id)) return;
+		// 终态与「清 occurrence」必须同一次提交：中间崩溃会留下「有终态但仍有待对账记录」的假象。
+		// 在提交时才读当前行：执行器等着的这段时间里面板可能的编辑不能被这条运行记录盖掉。
+		await this.commit((tasks) => {
+			const t = tasks.get(id);
+			if (!t) return;
+			const { occurrence: _settled, ...rest } = t;
+			tasks.set(id, { ...rest, history: [run, ...sanitizeHistory(t.history)].slice(0, SCHEDULER_HISTORY_MAX) });
+		});
+	}
+
+	/**
+	 * 重启对账（issues #976）：上一次进程留下了 `occurrence` 却没有终态记录 = 这次触发的结果未知。
+	 * 不静默重投（会真的再跑一遍、可能重复推送/重复写数据），只如实告知并提示手动 `runNow`。
+	 */
+	private reconcileInterruptedRuns(): void {
+		const pending = [...this.tasks.values()].filter((task) => task.occurrence);
+		if (pending.length === 0) return;
+		for (const task of pending) {
+			const { occurrence: lost } = task;
+			const when = new Date(lost?.scheduledFor ?? Date.now()).toLocaleString();
+			this.notify(
+				"warning",
+				`定时任务「${task.name}」上次触发（${when}，runId=${lost?.runId ?? "?"}）没有留下结果记录：结果未知。本次不会自动重投，需要的话请手动「立即运行」。`,
+				`Scheduled task "${task.name}" was fired at ${when} (runId=${lost?.runId ?? "?"}) but never recorded a result: outcome unknown. It will not be re-fired automatically — use "Run now" if you need it.`,
+			);
+		}
+		// start() 是同步启动钩子：这里只排队提交（同一条队列，不会逆序覆盖后面的写入）。
+		this.queueCommit((tasks) => {
+			for (const task of pending) {
+				const cur = tasks.get(task.id);
+				if (!cur) continue;
+				const { occurrence: _lost, ...rest } = cur;
+				tasks.set(task.id, rest);
+			}
+		});
+		this.changed();
 	}
 }

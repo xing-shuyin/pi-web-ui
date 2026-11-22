@@ -52,6 +52,7 @@
 | [`i18n.md`](i18n.md)                                                       | 模块字典、全部语言翻译源、语言包同步与 Canvas 运行消息                                                               | 动界面文案、语言包或翻译工具                     |
 | [`architecture-canvas.md`](architecture-canvas.md)                         | 画布协同：`@画布` 引用、revision 保存、定时触发、每轮执行与返工、Git 隔离产物                                        | 动画布、图形工作流、产物回写                     |
 | [`architecture-sandbox.md`](architecture-sandbox.md)                       | 沙盒工作区：身份与准入、基线写回三方比较、生命周期冻结、验证重点                                                     | 动沙盒、写回、执行边界                           |
+| [`architecture-remote-workspace.md`](architecture-remote-workspace.md)     | 远程 SSH 工作区桥接：SDK ops 契约完备性与锚点、图片 MIME 判据、流式读取、已知边界                                    | 动远程工作区、SFTP 读写、文件类工具多态          |
 | [`root-cause-boundaries.md`](root-cause-boundaries.md)                     | 根因整改边界：稳定归属、取消代次、持久提交与安全清理、工作树清理、HTTP 传输                                          | 动异步/归属/清理/网络请求                        |
 | [`goal-conversation-design.md`](goal-conversation-design.md)               | 目标模式 2.0 设计：执行对话 + 审查者主对话、服务端轮次与熔断、证据注入                                               | 动目标模式、审查循环                             |
 | [`dsh-engine.md`](dsh-engine.md)                                           | DSH 双引擎：四预设 file: 克隆隔离、问卷与技能钩子挂 agent scope、底栏统计吃直播帧                                    | 动 DSH 预设 / 问卷 / 统计                        |
@@ -99,6 +100,7 @@
 | 动投递 / 子代理 / 审批       | `architecture-runtime.md` → `architecture-core.md`（异步归属）→ `agent-rules.md`（运行态铁律） |
 | 动目标模式 / 委派 / 计划模式 | `goal-conversation-design.md` → `agent-rules.md`（运行态铁律）                                |
 | 动沙盒                       | `architecture-sandbox.md` → `root-cause-boundaries.md`                                        |
+| 动远程工作区 / SFTP          | `architecture-remote-workspace.md` → `agent-rules.md`（运行态铁律）                           |
 | 不开网页也要跑 / 常驻执行者  | `unattended-operation.md` → `architecture-plugins.md`（生命周期与权限）                       |
 | 排查内存 / 上下文爆炸        | `tool-context-budget.md` → `loading-performance.md` → `streaming-stability.md`                |
 | 部署 / 排障环境变量          | `deployment.md` → `env-vars.md`（设备中心另见 `device-center-deployment.md`）                 |

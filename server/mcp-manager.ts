@@ -1,7 +1,7 @@
 import { readFileSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { writeAtomicSync } from "./atomic-file.js";
+import { writeAtomic } from "./atomic-file.js";
 import type { McpScope, UiMcpServer, UiMcpToolInfo } from "./protocol.js";
 import {
 	getGlobalMcpPath,
@@ -56,11 +56,11 @@ function readWritableConfig(filePath: string): Record<string, unknown> | null {
 	}
 }
 
-export function writeMcpConfigFile(
+export async function writeMcpConfigFile(
 	filePath: string,
 	servers: Record<string, McpServerSpec>,
 	preferLegacy = false,
-): void {
+): Promise<void> {
 	const raw = readWritableConfig(filePath) ?? {};
 
 	const legacy = raw.servers !== undefined && raw.mcpServers === undefined ? true : preferLegacy;
@@ -73,15 +73,16 @@ export function writeMcpConfigFile(
 		next.mcpServers = servers;
 	}
 
-	atomicWrite(filePath, next);
+	await atomicWrite(filePath, next);
 }
 
 function isRecord(value: unknown): value is Record<string, any> {
 	return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-function atomicWrite(filePath: string, value: unknown): void {
-	writeAtomicSync(filePath, JSON.stringify(value, null, 2) + "\n", { mode: 0o600, fsync: true });
+async function atomicWrite(filePath: string, value: unknown): Promise<void> {
+	// MCP 配置 / 迁移日志都是用户手改过的真值：落盘成功才返回，失败由调用方按原有契约报出。
+	await writeAtomic(filePath, JSON.stringify(value, null, 2) + "\n", { mode: 0o600, fsync: true });
 }
 
 function editableConfig(filePath: string) {
@@ -242,14 +243,14 @@ function getRuntimeStatus(
 	return bridge.getServerStatus(name);
 }
 
-export function saveMcpServer(opts: {
+export async function saveMcpServer(opts: {
 	agentDir?: string;
 	cwd?: string;
 	dataDir?: string;
 	server: UiMcpServer;
 	prevName?: string;
 	prevScope?: McpScope;
-}): { ok: boolean; error?: string } {
+}): Promise<{ ok: boolean; error?: string }> {
 	const name = opts.server.name.trim();
 	if (!isValidMcpServerName(name)) {
 		return { ok: false, error: "服务器名称仅允许包含英文字母、数字、下划线及中划线" };
@@ -291,26 +292,26 @@ export function saveMcpServer(opts: {
 		};
 
 		if (moving) {
-			if (!sameFile) return migrateMcpServer(oldPath, targetPath, prevName, name, spec);
+			if (!sameFile) return await migrateMcpServer(oldPath, targetPath, prevName, name, spec);
 			if (!Object.hasOwn(targetCfg.servers, prevName)) throw new Error(`源服务器 ${prevName} 不存在`);
 			if (Object.hasOwn(targetCfg.servers, name)) throw new Error(`目标服务器 ${name} 已存在`);
 			delete targetCfg.servers[prevName];
 		}
 		targetCfg.servers[name] = spec;
-		writeMcpConfigFile(targetPath, targetCfg.servers, targetCfg.legacy);
+		await writeMcpConfigFile(targetPath, targetCfg.servers, targetCfg.legacy);
 		return { ok: true };
 	} catch (error) {
 		return mutationError(error);
 	}
 }
 
-function migrateMcpServer(
+async function migrateMcpServer(
 	sourcePath: string,
 	targetPath: string,
 	sourceName: string,
 	targetName: string,
 	spec: McpServerSpec,
-): { ok: boolean; error?: string } {
+): Promise<{ ok: boolean; error?: string }> {
 	const journalPath = `${sourcePath}.migration.json`;
 	const source = editableConfig(sourcePath);
 	const target = editableConfig(targetPath);
@@ -331,7 +332,7 @@ function migrateMcpServer(
 			sourceSpec: source.servers[sourceName],
 			targetSpec: desired,
 		};
-		atomicWrite(journalPath, journal);
+		await atomicWrite(journalPath, journal);
 	}
 	if (
 		!isRecord(journal) ||
@@ -356,23 +357,23 @@ function migrateMcpServer(
 	if (!hasSource && !hasTarget) throw new Error(`MCP 迁移两端记录均不存在：${journalPath}`);
 	if (!hasTarget) {
 		target.servers[targetName] = desired;
-		writeMcpConfigFile(targetPath, target.servers, target.legacy);
+		await writeMcpConfigFile(targetPath, target.servers, target.legacy);
 	}
 	if (hasSource) {
 		delete source.servers[sourceName];
-		writeMcpConfigFile(sourcePath, source.servers, source.legacy);
+		await writeMcpConfigFile(sourcePath, source.servers, source.legacy);
 	}
 	unlinkSync(journalPath);
 	return { ok: true };
 }
 
-export function deleteMcpServer(opts: {
+export async function deleteMcpServer(opts: {
 	agentDir?: string;
 	cwd?: string;
 	dataDir?: string;
 	name: string;
 	scope: McpScope;
-}): { ok: boolean; error?: string } {
+}): Promise<{ ok: boolean; error?: string }> {
 	const name = opts.name.trim();
 	const globalPath = getGlobalMcpPath(opts.agentDir, opts.dataDir);
 	const projectPath = getProjectMcpPath(opts.cwd);
@@ -385,21 +386,21 @@ export function deleteMcpServer(opts: {
 		}
 
 		delete targetCfg.servers[name];
-		writeMcpConfigFile(targetPath, targetCfg.servers, targetCfg.legacy);
+		await writeMcpConfigFile(targetPath, targetCfg.servers, targetCfg.legacy);
 		return { ok: true };
 	} catch (error) {
 		return mutationError(error);
 	}
 }
 
-export function toggleMcpServer(opts: {
+export async function toggleMcpServer(opts: {
 	agentDir?: string;
 	cwd?: string;
 	dataDir?: string;
 	name: string;
 	scope: McpScope;
 	enabled: boolean;
-}): { ok: boolean; error?: string } {
+}): Promise<{ ok: boolean; error?: string }> {
 	const name = opts.name.trim();
 	const globalPath = getGlobalMcpPath(opts.agentDir, opts.dataDir);
 	const projectPath = getProjectMcpPath(opts.cwd);
@@ -409,7 +410,7 @@ export function toggleMcpServer(opts: {
 		const targetCfg = editableConfig(targetPath);
 		if (targetCfg.servers[name]) {
 			targetCfg.servers[name].enabled = opts.enabled;
-			writeMcpConfigFile(targetPath, targetCfg.servers, targetCfg.legacy);
+			await writeMcpConfigFile(targetPath, targetCfg.servers, targetCfg.legacy);
 			return { ok: true };
 		}
 
@@ -417,7 +418,7 @@ export function toggleMcpServer(opts: {
 			const globalCfg = editableConfig(globalPath);
 			if (globalCfg.servers[name]) {
 				targetCfg.servers[name] = { enabled: opts.enabled };
-				writeMcpConfigFile(targetPath, targetCfg.servers, targetCfg.legacy);
+				await writeMcpConfigFile(targetPath, targetCfg.servers, targetCfg.legacy);
 				return { ok: true };
 			}
 		}
@@ -618,7 +619,7 @@ export async function installMcpServer(opts: {
 		tools: [],
 	};
 
-	const saved = saveMcpServer({
+	const saved = await saveMcpServer({
 		agentDir: opts.agentDir,
 		cwd: opts.cwd,
 		dataDir: opts.dataDir,

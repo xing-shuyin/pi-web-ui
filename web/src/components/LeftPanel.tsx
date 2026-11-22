@@ -1454,7 +1454,9 @@ export const LeftPanel = memo(function LeftPanel({
 				isStreaming,
 				hasQuestion: question,
 				hasError: err,
-				error: c.error,
+				// 悬停提示优先给可读摘要（issue #978）：原文可能是 `<html>408 Request Time-out</html>`。
+				// 线上 `error` 原文不动，摘要由 `server/model-error.ts` 分类产出（单源）。
+				error: c.errorInfo?.summary ?? c.error,
 			};
 
 			index.add(c, info, sessionLookupKeys(c));
@@ -1554,12 +1556,16 @@ export const LeftPanel = memo(function LeftPanel({
 				false,
 			);
 
-			const actuallyRunningCount = openRowConvs.filter(
-				(c) =>
-					c.isStreaming ||
-					c.hasQuestion ||
-					c.completionPending ||
-					Boolean(c.nativeCli && nativeCliRowState(c.nativeCli, c.error) === "busy"),
+			// 计数必须与「看得见的行」同源（issue #964）：折叠父行后子代理行不渲染，
+			// 再用 openRowConvs 数就会“有计数、没行”。
+			const actuallyRunningCount = pRunningRows.filter(
+				(r) =>
+					r.c.isStreaming ||
+					r.hasStreaming ||
+					r.c.hasQuestion ||
+					r.hasQuestion ||
+					r.c.completionPending ||
+					Boolean(r.c.nativeCli && nativeCliRowState(r.c.nativeCli, r.c.error) === "busy"),
 			).length;
 			const unreadRunningCount = openRowConvs.filter(
 				(c) =>

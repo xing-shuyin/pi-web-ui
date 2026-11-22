@@ -1,5 +1,5 @@
 import { readFileSync, rmSync } from "node:fs";
-import { writeJsonAtomicSync } from "./atomic-file.js";
+import { writeJsonAtomic } from "./atomic-file.js";
 
 export interface CompactionState {
 	reason: string;
@@ -24,11 +24,11 @@ function isState(value: unknown): value is CompactionState {
 	);
 }
 
-export function mark(file: SessionFile, state: CompactionState): boolean {
+export async function mark(file: SessionFile, state: CompactionState): Promise<boolean> {
 	const path = sidecar(file);
 	if (!path) return false;
 	if (!isState(state)) throw new Error("Invalid compaction state");
-	writeJsonAtomicSync(path, {
+	await writeJsonAtomic(path, {
 		version: 1,
 		reason: state.reason,
 		startedAt: state.startedAt,

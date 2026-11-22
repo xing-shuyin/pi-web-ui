@@ -101,6 +101,11 @@ function sleepSync(ms: number): void {
 	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+/**
+ * 阻塞版原子写：退避等待发生在调用线程上（最坏 630ms 全线程停摆）。
+ * 仅供同步宿主 / 启动期等冷路径使用；服务端请求路径必须用 `writeAtomic`，
+ * 否则 Windows 杀毒占用触发的退避会停掉整个事件循环（issue #966）。
+ */
 export function writeAtomicSync(
 	file: string,
 	data: string | NodeJS.ArrayBufferView,
@@ -147,6 +152,23 @@ export function writeAtomicSync(
 	}
 }
 
+/**
+ * 把已经写好的临时文件原子发布到 `file`；rename 重试是非阻塞等待。
+ * 与 `writeAtomic` 共用这一处，流式落盘（如分片报告收齐）也走它，避免再写第二份重试逻辑。
+ */
+export async function commitAtomic(tmp: string, file: string): Promise<void> {
+	for (let attempt = 0; ; attempt++) {
+		try {
+			await rename(tmp, file);
+			return;
+		} catch (error) {
+			const attemptDelay = ATOMIC_RETRY_DELAY_MS[attempt];
+			if (attemptDelay === undefined || !isTransientFsCode((error as NodeJS.ErrnoException).code)) throw error;
+			await delay(attemptDelay);
+		}
+	}
+}
+
 /** Same contract as `writeAtomicSync`, for async callers (rename retries await, they do not block the loop). */
 export async function writeAtomic(
 	file: string,
@@ -163,16 +185,7 @@ export async function writeAtomic(
 		} finally {
 			await handle.close();
 		}
-		for (let attempt = 0; ; attempt++) {
-			try {
-				await rename(tmp, file);
-				break;
-			} catch (error) {
-				const attemptDelay = ATOMIC_RETRY_DELAY_MS[attempt];
-				if (attemptDelay === undefined || !isTransientFsCode((error as NodeJS.ErrnoException).code)) throw error;
-				await delay(attemptDelay);
-			}
-		}
+		await commitAtomic(tmp, file);
 	} finally {
 		await rm(tmp, { force: true }).catch(() => {});
 	}
@@ -180,6 +193,7 @@ export async function writeAtomic(
 
 /**
  * 读侧同样会被瞬时占用咬到（写方正在 rename，读方 handleExisting 失败）。ENOENT 是正常结果，交回调用方。
+ * 与 `writeAtomicSync` 一样是阻塞退避，服务端请求路径请用 `readFileRetry`。
  */
 export function readFileSyncRetry(file: string, encoding: BufferEncoding = "utf8"): string {
 	for (let attempt = 0; ; attempt++) {
@@ -194,10 +208,10 @@ export function readFileSyncRetry(file: string, encoding: BufferEncoding = "utf8
 	}
 }
 
-export async function readFileRetry(file: string, encoding: BufferEncoding = "utf8"): Promise<string> {
+async function readWithRetry(file: string, encoding?: BufferEncoding): Promise<string | Buffer> {
 	for (let attempt = 0; ; attempt++) {
 		try {
-			return await readFile(file, encoding);
+			return await readFile(file, encoding ?? null);
 		} catch (error) {
 			const code = (error as NodeJS.ErrnoException).code;
 			const attemptDelay = ATOMIC_RETRY_DELAY_MS[attempt];
@@ -205,6 +219,15 @@ export async function readFileRetry(file: string, encoding: BufferEncoding = "ut
 			await delay(attemptDelay);
 		}
 	}
+}
+
+export async function readFileRetry(file: string, encoding: BufferEncoding = "utf8"): Promise<string> {
+	return (await readWithRetry(file, encoding)) as string;
+}
+
+/** 与 `readFileRetry` 同一退避的 Buffer 版，供按字节流式校验使用。 */
+export async function readFileBufferRetry(file: string): Promise<Buffer> {
+	return (await readWithRetry(file)) as Buffer;
 }
 
 /**
@@ -295,4 +318,9 @@ export function portableAtomicReadSyncSource(): string {
 export function writeJsonAtomicSync(file: string, data: unknown, indent: number | string = 2): void {
 	const text = JSON.stringify(data, null, indent) + "\n";
 	writeAtomicSync(file, text);
+}
+
+/** 与 `writeJsonAtomicSync` 同一契约的非阻塞版，供请求路径使用。 */
+export async function writeJsonAtomic(file: string, data: unknown, indent: number | string = 2): Promise<void> {
+	await writeAtomic(file, JSON.stringify(data, null, indent) + "\n");
 }

@@ -49,7 +49,7 @@ afterEach(() => {
 });
 
 describe("host.storage", () => {
-	it.each([false, true])("异步 prev + queued 完成后释放同步锁（reject=%s）", async (rejectQueued) => {
+	it.each([false, true])("异步 prev 未完成时 set 排队（不丢写，reject=%s）", async (rejectQueued) => {
 		const file = join(dir, "queued.json");
 		const store = new PluginStorage(file);
 		let release!: () => void;
@@ -64,69 +64,71 @@ describe("host.storage", () => {
 			if (rejectQueued) throw new Error("queued failure");
 			return "done";
 		});
-		expect(() => store.set("early", true)).toThrow("busy");
+		const early = store.set("early", true);
 		const checked = rejectQueued
 			? expect(queued).rejects.toThrow("queued failure")
 			: expect(queued).resolves.toBe("done");
 		release();
 		await first;
 		await checked;
-		expect(() => store.set("after", true)).not.toThrow();
+		await early;
+		expect(store.get("early")).toBe(true);
+		await store.set("after", true);
 		expect(store.get("after")).toBe(true);
 	});
 	it("get/set/all/delete 往返 + 落盘 <pluginDir>/storage.json", async () => {
 		const h = await activate("a");
-		h.storage.set("layout", { split: 0.3 });
+		await h.storage.set("layout", { split: 0.3 });
 		expect(h.storage.get("layout")).toEqual({ split: 0.3 });
 		expect(h.storage.get("missing", "fallback")).toBe("fallback");
 		expect(Object.keys(h.storage.all())).toContain("layout");
 		expect(existsSync(join(pluginStateDir(dir, "a"), "storage.json"))).toBe(true);
 
-		h.storage.set("k", 1);
+		await h.storage.set("k", 1);
 		expect(h.storage.has("k")).toBe(true);
 		expect(h.storage.has("nonexistent")).toBe(false);
 		expect(h.storage.keys()).toContain("k");
 		expect(h.storage.keys()).toContain("layout");
 
-		h.storage.delete("k");
+		await h.storage.delete("k");
 		expect(h.storage.get("k")).toBeUndefined();
 		expect(h.storage.has("k")).toBe(false);
 
-		h.storage.clear();
+		await h.storage.clear();
 		expect(h.storage.keys()).toEqual([]);
 	});
 
-	it("宿主直写 storage.json 后，插件 set() 不抹掉外部写入的键（回归：设置重启即丢）", () => {
+	it("宿主直写 storage.json 后，插件 set() 不抹掉外部写入的键（回归：设置重启即丢）", async () => {
 		const file = join(dir, "external.json");
 		writeFileSync(file, JSON.stringify({ cursor: "a" }));
 		const store = new PluginStorage(file);
 		expect(store.get("cursor")).toBe("a");
 		writeFileSync(file, JSON.stringify({ cursor: "a", settings: { model: "x/y" } }));
-		store.set("cursor", "b");
+		await store.set("cursor", "b");
 		const after = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
 		expect(after.settings).toEqual({ model: "x/y" });
 		expect(after.cursor).toBe("b");
 	});
 
-	it.each(["set", "delete", "clear"] as const)("%s 写失败同步抛错且候选不进入缓存", (operation) => {
+	it.each(["set", "delete", "clear"] as const)("%s 写失败 reject 且候选不进入缓存", async (operation) => {
 		const file = join(dir, "storage.json");
 		const secrets = new PluginSecrets(dir, dir);
-		secrets.commitSettings({ model: "old" }, { "setting:key": "old-secret" });
+		await secrets.commitSettings({ model: "old" }, { "setting:key": "old-secret" });
 		const store = new PluginStorage(file);
-		store.set("cursor", "old");
+		await store.set("cursor", "old");
 		const original = readFileSync(file, "utf8");
 		const committed = store.all();
-		const fail = vi.spyOn(atomicFile, "writeAtomicSync").mockImplementation(() => {
+		const fail = vi.spyOn(atomicFile, "writeAtomic").mockImplementation(() => {
 			throw new Error("injected write failure");
 		});
 		try {
-			expect(() =>
+			await expect(
 				operation === "set"
 					? store.set("cursor", "new")
 					: operation === "delete"
 						? store.delete("cursor")
 						: store.clear(false),
-			).toThrow("injected write failure");
+			).rejects.toThrow("injected write failure");
 			expect((store as any).cache).toEqual(JSON.parse(original));
 			expect(store.all()).toEqual(committed);
 			expect(new PluginStorage(file).all()).toEqual(committed);
@@ -137,35 +139,35 @@ describe("host.storage", () => {
 		}
 	});
 
-	it.each(["{broken", "null", "[]", "1"])("损坏 storage %s 不得被任何写路径覆盖", (broken) => {
+	it.each(["{broken", "null", "[]", "1"])("损坏 storage %s 不得被任何写路径覆盖", async (broken) => {
 		const file = join(dir, "storage.json");
 		const store = new PluginStorage(file);
-		store.set("cursor", "old");
+		await store.set("cursor", "old");
 		store.get("cursor");
 		writeFileSync(file, broken);
 		for (const mutate of [() => store.set("cursor", "new"), () => store.delete("cursor"), () => store.clear(false)]) {
-			expect(mutate).toThrow();
+			await expect(mutate()).rejects.toThrow();
 			expect(readFileSync(file, "utf8")).toBe(broken);
 		}
 		expect(() => store.all()).toThrow();
 	});
 
-	it("不可读文件不会作为空表覆盖；缺失文件可以创建", () => {
+	it("不可读文件不会作为空表覆盖；缺失文件可以创建", async () => {
 		const file = join(dir, "storage.json");
 		mkdirSync(file);
 		const store = new PluginStorage(file);
-		expect(() => store.set("a", 1)).toThrow();
-		expect(() => store.delete("a")).toThrow();
-		expect(() => store.clear()).toThrow();
+		await expect(store.set("a", 1)).rejects.toThrow();
+		await expect(store.delete("a")).rejects.toThrow();
+		await expect(store.clear()).rejects.toThrow();
 		rmSync(file, { recursive: true });
-		store.set("a", 1);
+		await store.set("a", 1);
 		expect(store.get("a")).toBe(1);
 	});
 
-	it("同步 storage API 遇异步写锁占用立即抛错，不排队发布候选", async () => {
+	it("异步写锁被占用时 set 排队（不丢写、不报 busy）", async () => {
 		const file = join(dir, "storage.json");
 		const store = new PluginStorage(file);
-		store.set("cursor", "old");
+		await store.set("cursor", "old");
 		let release!: () => void;
 		const held = withFileRmwLock(
 			file,
@@ -174,22 +176,18 @@ describe("host.storage", () => {
 					release = resolve;
 				}),
 		);
-		try {
-			expect(() => store.set("cursor", "new")).toThrow("busy");
-			expect(() => store.delete("cursor")).toThrow("busy");
-			expect(() => store.clear()).toThrow("busy");
-		} finally {
-			release();
-			await held;
-		}
-		expect(store.get("cursor")).toBe("old");
+		const pending = [store.set("cursor", "new"), store.delete("other"), store.clear(false)];
+		release();
+		await held;
+		await Promise.all(pending);
+		expect(store.get("cursor")).toBeUndefined(); // clear(false) 最后一个生效
 	});
 
-	it("同实例内连续 set/get 保留已提交数据", () => {
+	it("同实例内连续 set/get 保留已提交数据", async () => {
 		const file = join(dir, "self.json");
 		const store = new PluginStorage(file);
-		store.set("a", 1);
-		store.set("b", 2);
+		await store.set("a", 1);
+		await store.set("b", 2);
 		expect(store.get("a")).toBe(1);
 		expect(store.get("b")).toBe(2);
 		expect(store.all()).toEqual({ a: 1, b: 2 });
@@ -200,7 +198,7 @@ describe("host.secrets", () => {
 	it("set/get 往返；明文绝不写进文件；has/list/delete 正常", async () => {
 		const h = await activate("b");
 		const secret = "hunter2-super-secret-密码";
-		h.secrets.set("mail_pass", secret);
+		await h.secrets.set("mail_pass", secret);
 		expect(h.secrets.get("mail_pass")).toBe(secret);
 		expect(h.secrets.has("mail_pass")).toBe(true);
 		expect(h.secrets.list()).toEqual(["mail_pass"]);
@@ -209,30 +207,30 @@ describe("host.secrets", () => {
 		expect(raw).not.toContain(secret);
 		expect(raw.length).toBeGreaterThan(50);
 
-		h.secrets.delete("mail_pass");
+		await h.secrets.delete("mail_pass");
 		expect(h.secrets.get("mail_pass")).toBeUndefined();
 		expect(h.secrets.has("mail_pass")).toBe(false);
 	});
 
-	it("重启后从文件加载的 key 仍可用（回归：hex 二次编码致 Invalid key length）", () => {
+	it("重启后从文件加载的 key 仍可用（回归：hex 二次编码致 Invalid key length）", async () => {
 		const keyHex = randomBytes(32).toString("hex");
 		writeFileSync(join(dir, "secrets.key"), `${keyHex}\n`);
 		const h = new PluginSecrets(dir, join(dir, "plugins", "x"));
-		h.set("k", "v");
+		await h.set("k", "v");
 		expect(h.get("k")).toBe("v");
 	});
 
-	it("损坏的 key 文件 → 重新生成可用 key（旧机密 fail closed）", () => {
+	it("损坏的 key 文件 → 重新生成可用 key（旧机密 fail closed）", async () => {
 		writeFileSync(join(dir, "secrets.key"), "not-hex-at-all!!!");
 		const h = new PluginSecrets(dir, join(dir, "plugins", "y"));
-		h.set("k", "v");
+		await h.set("k", "v");
 		expect(h.get("k")).toBe("v");
 		expect(readFileSync(join(dir, "secrets.key"), "utf8").trim().length).toBe(64);
 	});
 
 	it("换了宿主密钥（拷到别的机器）解不开 → fail closed 返回 undefined", async () => {
 		const h = await activate("c");
-		h.secrets.set("token", "t0psecret");
+		await h.secrets.set("token", "t0psecret");
 		const otherDataDir = mkdtempSync(join(tmpdir(), "other-data-"));
 		try {
 			const stolen = new PluginSecrets(otherDataDir, join(dir, "plugins", "c"));
@@ -336,7 +334,7 @@ describe("host.registerCommand", () => {
 		off2();
 		expect(mgr.listCommands()).toHaveLength(1);
 
-		mgr.dispose();
+		await mgr.dispose();
 		expect(mgr.listCommands()).toHaveLength(0);
 	});
 

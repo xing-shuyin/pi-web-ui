@@ -14,6 +14,7 @@ import {
 } from "./subagent-evidence.js";
 import type { SettleWakeReason } from "./subagent-settle.js";
 import type { LedgerEvent, LedgerRunRecord, LedgerRunState } from "./subagent-ledger.js";
+import { classifyModelError, formatModelErrorBrief } from "./model-error.js";
 import { CONVERSATION_TOOL_NAME } from "./tool-manager.js";
 import { richQuestionsSchema } from "./question-params.js";
 import { questionsFromMessage } from "./conversation-communication.js";
@@ -2064,10 +2065,21 @@ function subagentVerdict(r: SubagentSnapshot, lang: ServerLang = "en"): string {
 }
 
 function verdictText(r: SubagentSnapshot, lang: ServerLang = "en"): string {
-	if (r.error)
-		return pick(lang, `错误：${r.error}`, `Error: ${r.error}`, "subagents.verdict.error.detail", {
-			"r.error": r.error,
+	if (r.error) {
+		// 错误文案与气泡同一口径（`server/model-error.ts` 单源），并附上片级重跑入口（issue #978）。
+		const brief = formatModelErrorBrief(classifyModelError(r.error), lang);
+		const head = pick(lang, `错误：${brief}`, `Error: ${brief}`, "subagents.verdict.error.detail", {
+			"r.error": brief,
 		});
+		const rerun = pick(
+			lang,
+			`只需重跑这一片：conversation(action="steer", runId="${r.convId}")。`,
+			`To rerun just this shard: conversation(action="steer", runId="${r.convId}").`,
+			"subagents.verdict.error.rerun",
+			{ runId: r.convId },
+		);
+		return `${head}\n${rerun}`;
+	}
 	if (r.canceled)
 		return pick(lang, "（被中止，未产出结论）", "(Aborted, no conclusion produced.)", "subagents.verdict.aborted");
 	return "";
@@ -2106,7 +2118,10 @@ function formatLedgerRunResult(
 	if (record.title) lines.push(zh ? `目标：${record.title}` : `Goal: ${record.title}`);
 	if (record.evidence)
 		lines.push(zh ? `证据：${formatLedgerEvidence(record, lang)}` : `Evidence: ${formatLedgerEvidence(record, lang)}`);
-	if (record.error) lines.push(zh ? `错误：${record.error}` : `Error: ${record.error}`);
+	if (record.error) {
+		const brief = formatModelErrorBrief(classifyModelError(record.error), lang);
+		lines.push(zh ? `错误：${brief}` : `Error: ${brief}`);
+	}
 	if (record.worktree) {
 		const wt = record.worktree;
 		lines.push(

@@ -60,18 +60,19 @@ afterEach(async () => {
 });
 
 describe("prompt templates & user custom templates safety", () => {
-	it("renders exactly 8 curated engineering workflows with commands by default", async () => {
+	it("renders exactly 9 curated engineering workflows with commands by default", async () => {
 		await mountWithData([]);
-		expect(capturedTemplates).toHaveLength(8);
+		expect(capturedTemplates).toHaveLength(9);
 
 		const commands = capturedTemplates.map((t) => t.command);
-		expect(commands).toEqual(["clarify", "plan", "tdd", "review", "debug", "merge", "spike", "research"]);
+		expect(commands).toEqual(["clarify", "plan", "tdd", "review", "pr-review", "debug", "merge", "spike", "research"]);
 
 		const ids = capturedTemplates.map((t) => t.id);
 		expect(ids).toContain("clarify");
 		expect(ids).toContain("to-plan");
 		expect(ids).toContain("implement");
 		expect(ids).toContain("code-review");
+		expect(ids).toContain("pr-review");
 		expect(ids).toContain("diagnosing-bugs");
 		expect(ids).toContain("resolving-merge-conflicts");
 		expect(ids).toContain("prototype");
@@ -82,6 +83,7 @@ describe("prompt templates & user custom templates safety", () => {
 		expect(titles).toContain("规划与拆工单");
 		expect(titles).toContain("测试驱动实现");
 		expect(titles).toContain("代码审查");
+		expect(titles).toContain("PR 评审");
 		expect(titles).toContain("系统化排错");
 		expect(titles).toContain("解决合并冲突");
 		expect(titles).toContain("快速原型");
@@ -100,7 +102,7 @@ describe("prompt templates & user custom templates safety", () => {
 
 		await mountWithData([customTpl]);
 
-		expect(capturedTemplates).toHaveLength(9);
+		expect(capturedTemplates).toHaveLength(10);
 
 		const found = capturedTemplates.find((t) => t.id === "my-custom-flow-123");
 		expect(found).toBeDefined();
@@ -124,7 +126,7 @@ describe("prompt templates & user custom templates safety", () => {
 
 		await mountWithData([legacyModified]);
 
-		expect(capturedTemplates).toHaveLength(9);
+		expect(capturedTemplates).toHaveLength(10);
 
 		const found = capturedTemplates.find((t) => t.id === "grill-me");
 		expect(found).toBeDefined();
@@ -144,7 +146,7 @@ describe("prompt templates & user custom templates safety", () => {
 
 		await mountWithData([override]);
 
-		expect(capturedTemplates).toHaveLength(8);
+		expect(capturedTemplates).toHaveLength(9);
 		const found = capturedTemplates.find((t) => t.id === "diagnosing-bugs");
 		expect(found).toBeDefined();
 		expect(found?.title).toBe("根因排查大师");

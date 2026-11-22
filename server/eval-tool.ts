@@ -32,6 +32,11 @@ export function killProcessTree(spawned: Pick<SpawnedChild, "stop">): Promise<vo
 	return spawned.stop().then(() => undefined);
 }
 
+/** 探针：本机有没有能用的 Python（Windows 上 `python` 常是 Store 的空壳）。 */
+export async function hasUsablePython(): Promise<boolean> {
+	return (await resolvePythonCmd()) !== null;
+}
+
 async function resolvePythonCmd(): Promise<string | null> {
 	for (const cmd of ["python", "python3", "py"]) {
 		const probe = await runProcess({ cmd, args: ["--version"], timeoutMs: 10_000 });

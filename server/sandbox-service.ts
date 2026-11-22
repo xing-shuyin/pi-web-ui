@@ -1,11 +1,12 @@
-import { existsSync, realpathSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import * as sandboxJailFs from "node:fs";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { normalizePathKey } from "./client-state.js";
 import { isConversationTool } from "./conversation-tool-names.js";
 import { pick, type ServerLang } from "./i18n.js";
+import { realPathOrNearest } from "./path-boundary.js";
 import type { SandboxInfo } from "./protocol.js";
 
 export const SANDBOX_IGNORED_DIRS = new Set([
@@ -63,25 +64,8 @@ export function isStrictlyInsideSandbox(targetPath: string, cwd: string, sandbox
 		return false;
 	}
 
-	let cur = resolvedTarget;
-	while (true) {
-		if (existsSync(cur)) {
-			try {
-				const realCur = realpathSync(cur);
-				if (!isSameOrSubpath(realCur, realSandbox)) {
-					return false;
-				}
-			} catch {
-				return false;
-			}
-			break;
-		}
-		const parent = dirname(cur);
-		if (parent === cur) break;
-		cur = parent;
-	}
-
-	return true;
+	// 目标侧复用边界单源的「逐段跟随链接 + 最近存在祖先」解析；本函数只是更严（根本身是链接直接拒）。
+	return isSameOrSubpath(realPathOrNearest(resolvedTarget), realSandbox);
 }
 
 export function extractPatchTargetPaths(patchText: string): string[] {

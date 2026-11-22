@@ -186,7 +186,7 @@ describe("DeliveryQueue（出站投递：快路径 + 退避 + 死信）", () => 
 	});
 
 	it("与入站共用同一个账本：两个方向的记录互不干扰", async () => {
-		const { queue, inbox } = make();
+		const { queue, inbox, ledger } = make();
 		queue.registerSender("qq", async () => {});
 		expect(inbox.claim("msg:1")).toMatchObject({ status: "new" });
 		await queue.sendNow({ channel: "qq", target: {}, payload: {}, key: "out:1" });
@@ -194,7 +194,8 @@ describe("DeliveryQueue（出站投递：快路径 + 退避 + 死信）", () => 
 		inbox.complete("msg:1");
 		expect(inbox.snapshot()).toHaveLength(1);
 		expect(queue.stats()).toMatchObject({ done: 1 });
-		// 跨重启：同一个文件里两个方向都能读回
+		// 跨重启：同一个文件里两个方向都能读回（落盘异步，读新实例前先等这一笔落定）
+		await ledger.drain();
 		const reopened = new PluginLedgerStore({ dataDir: dir, pluginId: "qq", flushDelayMs: 0, now: () => now });
 		expect(reopened.byDirection("in")).toHaveLength(1);
 		expect(reopened.byDirection("out")).toHaveLength(1);
@@ -215,7 +216,7 @@ describe("DeliveryQueue（出站投递：快路径 + 退避 + 死信）", () => 
 		expect(ledger.get("shared:1", "out")?.state).toBe("done");
 		expect(ledger.all()).toHaveLength(2);
 		// 跨重启：同一文件里同 key 的两个方向都能读回
-		ledger.flush();
+		await ledger.drain();
 		const reopened = new PluginLedgerStore({ dataDir: dir, pluginId: "qq", flushDelayMs: 0, now: () => now });
 		expect(reopened.get("shared:1", "in")?.state).toBe("done");
 		expect(reopened.get("shared:1", "out")?.state).toBe("done");

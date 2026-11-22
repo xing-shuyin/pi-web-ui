@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { writeJsonAtomicSync } from "../atomic-file.js";
+import { writeJsonAtomic } from "../atomic-file.js";
 import { createTaskReportStore, MAX_TASK_FULL_REPORT_BYTES, type TaskReportMeta } from "./task-report.js";
 import { checkedUrl } from "./relay.js";
 
@@ -116,7 +116,7 @@ export function createTaskReportOutbox(
 			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 		}
 	}
-	function update(entry: TaskReportUploadEntry) {
+	async function update(entry: TaskReportUploadEntry): Promise<TaskReportUploadEntry> {
 		if (!validEntry(entry)) throw new Error("Invalid report outbox entry");
 		const next = entries.filter((e) => key(e) !== key(entry)).concat(entry);
 		const removable = next.filter((e) => !e.uploadPending && !e.missing && !e.rejected && key(e) !== key(entry));
@@ -137,12 +137,12 @@ export function createTaskReportOutbox(
 			store?.removeReport(old.id, old.attemptId, deviceId, old.roomId);
 			memory.delete(key(old));
 		}
-		if (file) writeJsonAtomicSync(file, { version: 1, ...scope, entries: next });
+		if (file) await writeJsonAtomic(file, { version: 1, ...scope, entries: next });
 		entries = next;
 		return { ...entry };
 	}
 	return {
-		capture(taskInput: ReportTaskBinding, text: string): TaskReportUploadEntry {
+		async capture(taskInput: ReportTaskBinding, text: string): Promise<TaskReportUploadEntry> {
 			const task = binding(taskInput);
 			let meta: TaskReportMeta | undefined;
 			const totalBytes = Buffer.byteLength(text);
@@ -158,7 +158,7 @@ export function createTaskReportOutbox(
 				throw new Error("Report attempt content or binding conflict");
 			if (previous && previous.sha256 === sha256 && !previous.missing) return { ...previous };
 			if (totalBytes > MAX_TASK_FULL_REPORT_BYTES)
-				return update({
+				return await update({
 					...task,
 					sha256,
 					totalBytes,
@@ -167,7 +167,7 @@ export function createTaskReportOutbox(
 					rejected: true,
 					lastError: "Report exceeds 4 MiB quota",
 				});
-			update({
+			await update({
 				...task,
 				reportRef: store
 					? createHash("sha256").update(`${task.id}:${task.attemptId}`).digest("hex").slice(0, 32)
@@ -178,9 +178,9 @@ export function createTaskReportOutbox(
 				missing: true,
 				rejected: false,
 			});
-			meta = store?.saveFullReport(task.id, task.attemptId, task.roomId, deviceId, text);
+			meta = await store?.saveFullReport(task.id, task.attemptId, task.roomId, deviceId, text);
 			if (!store) memory.set(key(task), text);
-			return update({
+			return await update({
 				...task,
 				reportRef: meta?.storageLocation.reportRef ?? sha256,
 				sha256,
@@ -194,12 +194,12 @@ export function createTaskReportOutbox(
 			const entry = entries.find((e) => key(e) === key(task));
 			return entry ? { ...entry } : undefined;
 		},
-		markMissing(taskInput: ReportTaskBinding) {
+		async markMissing(taskInput: ReportTaskBinding): Promise<TaskReportUploadEntry> {
 			const task = binding(taskInput);
 			const previous = entries.find((e) => key(e) === key(task));
 			return previous
 				? { ...previous }
-				: update({
+				: await update({
 						...task,
 						totalBytes: 0,
 						uploadPending: false,
@@ -234,11 +234,11 @@ export function createTaskReportOutbox(
 				throw new Error("Local full report is missing or failed integrity verification");
 			return text;
 		},
-		accepted(entry: TaskReportUploadEntry) {
-			return update({ ...entry, uploadPending: false, missing: false, lastError: undefined });
+		async accepted(entry: TaskReportUploadEntry): Promise<TaskReportUploadEntry> {
+			return await update({ ...entry, uploadPending: false, missing: false, lastError: undefined });
 		},
-		failed(entry: TaskReportUploadEntry, _error: unknown) {
-			return update({ ...entry, uploadPending: true, lastError: "Report upload pending" });
+		async failed(entry: TaskReportUploadEntry, _error: unknown): Promise<TaskReportUploadEntry> {
+			return await update({ ...entry, uploadPending: true, lastError: "Report upload pending" });
 		},
 	};
 }

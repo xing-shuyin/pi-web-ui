@@ -1,4 +1,5 @@
 import type { TextQuote, UiContentBlock, UiMessage } from "../protocol.js";
+import { classifyModelError, modelErrorReport } from "../model-error.js";
 import { parseTextQuote } from "../text-quote.js";
 import { ARGS_CAP, TEXT_CAP, TOOL_OUTPUT_CAP, truncate } from "../serialize.js";
 import { stripMarkers } from "../markers/index.js";
@@ -143,6 +144,10 @@ export function assistantMessageEventToUiMessage(data: {
 		provider: m.provider,
 		stopReason: m.finishReason,
 		errorMessage: m.errorMessage,
+		// 与 `server/serialize.ts` 同口径（issue #978）：DSH 也不得把网关 HTML 原样顶到气泡上。
+		...(typeof m.errorMessage === "string" && m.errorMessage.trim()
+			? { errorInfo: modelErrorReport(classifyModelError(m.errorMessage)) }
+			: {}),
 	};
 }
 

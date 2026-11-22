@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
 import { SubagentSettleRegistry } from "../../server/subagent-settle.js";
-import { ConversationDelivery, runningCompaction } from "../../server/conversation-delivery.js";
+import { ConversationDelivery, deliveryMode, runningCompaction } from "../../server/conversation-delivery.js";
+import { retireSession } from "../../server/session-turns.js";
 
 /**
  * issues/929 的回归：压缩期间完成通知与 steer 都不能丢。
@@ -437,6 +438,63 @@ describe("issues/929 · 压缩期间用户自己发的文本改成排队（不�
 				type: "notice",
 				level: "warning",
 				text: expect.stringContaining("排队中的消息未能送出"),
+			}),
+		);
+	});
+});
+
+describe("issues/958 · 退役窗口（旧 session 已 dispose、新的还没绑上）", () => {
+	it("退役算「门关」而不是「活轮」：僵尸 session 的 isStreaming 不再被相信", () => {
+		for (const streaming of [false, true]) {
+			expect(deliveryMode({ streaming, compacting: false, retired: true })).toBe("gated");
+		}
+		const { conv } = parentConv();
+		conv.session.isStreaming = true; // 上一轮残留的读数：旧门下会判 live 而直接 steer 进一轮死轮
+		const cs = fakeSession({ convs: { [conv.id]: conv } });
+		expect(cs.deliveryModeOf(conv)).toBe("live");
+		retireSession(conv.session);
+		expect(cs.deliveryModeOf(conv)).toBe("gated");
+	});
+
+	it("外部投递在退役窗口里留队，rebind 之后只补投一次、绝不投给死会话", async () => {
+		const { conv: parent } = parentConv();
+		const dead = parent.session;
+		retireSession(dead);
+		const cs = fakeSession({ convs: { [parent.id]: parent } });
+		parent.delivery = new ConversationDelivery();
+
+		expect(await cs.deliverFromOutside(parent, "角色消息一条")).toBe("queued");
+		expect(dead.sendUserMessage).not.toHaveBeenCalled();
+		expect(parent.delivery.size).toBe(1);
+
+		// bindSession 末尾的排空点：新 session 接上，门开
+		const live = parentConv().conv.session;
+		parent.session = live;
+		await parent.delivery.drain(cs.deliveryHost(parent));
+		await settle();
+
+		expect(live.sendUserMessage).toHaveBeenCalledTimes(1);
+		expect(dead.sendUserMessage).not.toHaveBeenCalled();
+		expect(parent.delivery.size).toBe(0);
+	});
+
+	it("用户自己发的文本不再撞英文 SessionRetiredError：如实提示稍后重发，也不排假队", async () => {
+		const { conv: parent } = parentConv();
+		retireSession(parent.session);
+		const cs = fakeSession({ convs: { [parent.id]: parent } });
+		cs.conv = parent;
+
+		await cs.prompt("重置完接着构建");
+
+		expect(parent.session.sendUserMessage).not.toHaveBeenCalled();
+		// 退役窗口可能以 reset 失败告终（没有排空点）：不排队，也不给 prompt_queued 回执。
+		expect(parent.delivery).toBeUndefined();
+		expect(cs.emit).not.toHaveBeenCalledWith(expect.objectContaining({ type: "prompt_queued" }));
+		expect(cs.emit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "notice",
+				level: "warning",
+				text: expect.stringContaining("正在重置"),
 			}),
 		);
 	});

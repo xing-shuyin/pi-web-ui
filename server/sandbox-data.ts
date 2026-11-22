@@ -4,7 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { dirname, join, resolve, basename, parse } from "node:path";
 import { homedir } from "node:os";
 import type { SandboxInfo } from "./protocol.js";
-import { writeAtomicSync } from "./atomic-file.js";
+import { writeAtomic } from "./atomic-file.js";
 import { SANDBOX_IGNORED_DIRS, isSameOrSubpath } from "./sandbox-service.js";
 
 type Tree = Record<string, string>;
@@ -14,6 +14,8 @@ type Repository = {
 	queues: Map<string, Promise<unknown>>;
 	busy: Set<string>;
 	leases: Map<string, number>;
+	/** 注册表提交串行化：落盘改成异步后，读-改-写之间会出现 await 窗口，必须由一个链守住。 */
+	commits: Promise<unknown>;
 };
 const repositories = new Map<string, Repository>();
 const wire = (p: string) => resolve(p).replace(/\\/g, "/");
@@ -23,11 +25,12 @@ const ignored = (n: string) =>
 	SANDBOX_IGNORED_DIRS.has(n) ||
 	[".DS_Store", "Thumbs.db", "desktop.ini"].includes(n) ||
 	n.startsWith(".pi-tmp");
-function atomic(path: string, value: unknown) {
+async function atomic(path: string, value: unknown) {
 	mkdirSync(dirname(path), { recursive: true });
 	safeRoot(dirname(path));
 	if (existsSync(path) && lstatSync(path).isSymbolicLink()) throw new Error(`Linked metadata refused: ${path}`);
-	writeAtomicSync(path, JSON.stringify(value), { fsync: true });
+	// 沙盒元数据是真相（注册表 / 基线 / 恢复日志）：落盘用异步原语，但要 await 到它真写完再改内存投影。
+	await writeAtomic(path, JSON.stringify(value), { fsync: true });
 }
 function safeRoot(path: string) {
 	const abs = resolve(path);
@@ -146,7 +149,7 @@ export class SandboxManager {
 		const key = process.platform === "win32" ? this.sandboxesRoot.toLowerCase() : this.sandboxesRoot;
 		let repo = repositories.get(key);
 		if (!repo) {
-			repo = { items: new Map(), queues: new Map(), busy: new Set(), leases: new Map() };
+			repo = { items: new Map(), queues: new Map(), busy: new Set(), leases: new Map(), commits: Promise.resolve() };
 			if (existsSync(this.registryPath)) {
 				const raw = JSON.parse(readFileSync(this.registryPath, "utf8"));
 				if (raw.version !== 1 || !Array.isArray(raw.sandboxes)) throw new Error("Invalid sandbox registry");
@@ -166,9 +169,22 @@ export class SandboxManager {
 		}
 		this.repo = repo;
 	}
-	private commit(items: Map<string, SandboxInfo>) {
-		atomic(this.registryPath, { version: 1, sandboxes: [...items.values()] });
-		this.repo.items = items;
+	/**
+	 * 注册表提交：变更在**最新一次提交的状态**上应用，且同一仓库的提交严格串行。
+	 * 异步落盘把「读-改-写」摊开了，如果每个调用方各自拿着旧快照去写，并发创建/删除就会互相覆盖。
+	 * 写成功才切换内存投影（失败不留痕，与同步版一致）。
+	 */
+	private commit(mutate: (items: Map<string, SandboxInfo>) => void): Promise<void> {
+		const run = async () => {
+			const items = new Map(this.repo.items);
+			mutate(items);
+			await atomic(this.registryPath, { version: 1, sandboxes: [...items.values()] });
+			this.repo.items = items;
+		};
+		// 前一笔失败不影响后一笔（队列自身不进入 rejected 状态），失败只回到本次调用方。
+		const next = this.repo.commits.then(run, run);
+		this.repo.commits = next.catch(() => {});
+		return next;
 	}
 	private baselinePath(info: SandboxInfo) {
 		return join(this.sandboxesRoot, ".baselines", `${info.id}.json`);
@@ -334,23 +350,23 @@ export class SandboxManager {
 		await mkdir(path);
 		try {
 			const stats = sourcePath ? await copy(sourcePath, path) : { copiedFiles: 0, skippedFiles: 0 };
-			atomic(this.baselinePath(info), { version: 1, files: await tree(path) });
-			const items = new Map(this.repo.items);
-			items.set(id, Object.freeze(info));
-			this.commit(items);
+			await atomic(this.baselinePath(info), { version: 1, files: await tree(path) });
+			await this.commit((items) => {
+				items.set(id, Object.freeze(info));
+			});
 			return { sandbox: { ...info }, ...stats };
 		} catch (error) {
 			await rm(path, { recursive: true });
 			throw error;
 		}
 	}
-	persist(target: string) {
+	async persist(target: string) {
 		const info = this.require(target);
 		if (this.repo.busy.has(info.id)) throw new Error("Sandbox lifecycle operation in progress");
 		const updated = { ...info, ephemeral: false };
-		const items = new Map(this.repo.items);
-		items.set(info.id, Object.freeze(updated));
-		this.commit(items);
+		await this.commit((items) => {
+			items.set(info.id, Object.freeze(updated));
+		});
 		return updated;
 	}
 	reset(target: string) {
@@ -373,11 +389,11 @@ export class SandboxManager {
 			try {
 				await rename(staging, info.path);
 				swapped = true;
-				atomic(baseline, { version: 1, files });
+				await atomic(baseline, { version: 1, files });
 			} catch (error) {
 				if (swapped) await rename(info.path, staging);
 				await rename(backup, info.path);
-				if (oldBaseline) atomic(baseline, JSON.parse(oldBaseline.toString("utf8")));
+				if (oldBaseline) await atomic(baseline, JSON.parse(oldBaseline.toString("utf8")));
 				throw error;
 			}
 			await rm(backup, { recursive: true });
@@ -486,7 +502,7 @@ export class SandboxManager {
 			}
 			if (revision !== hash(JSON.stringify([base, await tree(info.path), await tree(source)])))
 				throw new Error("Source or sandbox changed while staging");
-			atomic(join(stage, "recovery.json"), {
+			await atomic(join(stage, "recovery.json"), {
 				version: 1,
 				source,
 				sandboxId: info.id,
@@ -596,9 +612,9 @@ export class SandboxManager {
 		const tombstone = join(this.sandboxesRoot, `.pi-tmp-destroy-${info.id}-${randomUUID()}`);
 		await rename(info.path, tombstone);
 		try {
-			const items = new Map(this.repo.items);
-			items.delete(info.id);
-			this.commit(items);
+			await this.commit((items) => {
+				items.delete(info.id);
+			});
 		} catch (error) {
 			try {
 				await rename(tombstone, info.path);

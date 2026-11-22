@@ -81,6 +81,8 @@ describe("Codex engine wiring", () => {
 		const resume = vi.spyOn(driver, "resumeSession");
 		await session.prompt("first");
 		sink.onSessionStarted?.("real-thread");
+		// sink 回调是同步的：落盘已排队，读盘前等它落完。
+		await store.flush();
 		const id = (session as any).activeConvId;
 		expect(store.loadConversation(root, id)?.driverSessionId).toBe("real-thread");
 		if (ending === "error") sink.onError("interrupted");

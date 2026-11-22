@@ -2,28 +2,24 @@ import { describe, expect, it } from "vitest";
 import { buildMainUrl, formatStartupBannerLines } from "../../server/startup-banner.js";
 
 describe("startup-banner: 主入口 URL 与横幅格式化", () => {
-	it("无 token 时生成标准 localhost URL", () => {
+	it("回环/通配绑定统一展示 localhost URL", () => {
 		expect(buildMainUrl(8787, "127.0.0.1")).toBe("http://localhost:8787");
 		expect(buildMainUrl(8787, "0.0.0.0")).toBe("http://localhost:8787");
 		expect(buildMainUrl(8787, "localhost")).toBe("http://localhost:8787");
 	});
 
-	it("配置 token 时主链接自动携带 ?token= 查询参数", () => {
-		expect(buildMainUrl(8787, "127.0.0.1", "s3cret")).toBe("http://localhost:8787/?token=s3cret");
-		expect(buildMainUrl(8787, "0.0.0.0", "token123")).toBe("http://localhost:8787/?token=token123");
-	});
-
-	it("特殊字符 token 会被正确转义（issue #261 对齐）", () => {
-		const specialToken = "base64token=+/==";
-		const expectedUrl = `http://localhost:8787/?token=${encodeURIComponent(specialToken)}`;
-		expect(buildMainUrl(8787, "127.0.0.1", specialToken)).toBe(expectedUrl);
+	// issue #969：横幅与主链接不得携带口令本体（stdout 会进日志/CI/截图）。
+	it("主链接永不携带 ?token=（任何绑定地址）", () => {
+		expect(buildMainUrl(8787, "127.0.0.1")).not.toContain("token=");
+		expect(buildMainUrl(9000, "192.168.1.50")).toBe("http://192.168.1.50:9000");
+		expect(buildMainUrl(8787, "0.0.0.0")).not.toContain("token=");
 	});
 
 	it("非回环绑定地址展示指定 host", () => {
-		expect(buildMainUrl(9000, "192.168.1.50", "abc")).toBe("http://192.168.1.50:9000/?token=abc");
+		expect(buildMainUrl(9000, "192.168.1.50")).toBe("http://192.168.1.50:9000");
 	});
 
-	it("formatStartupBannerLines：无 token 时不输出 token 行", () => {
+	it("formatStartupBannerLines：无口令时不输出 token 行", () => {
 		const lines = formatStartupBannerLines({
 			port: 8787,
 			host: "127.0.0.1",
@@ -37,18 +33,20 @@ describe("startup-banner: 主入口 URL 与横幅格式化", () => {
 		expect(lines.some((l) => l.includes("token       :"))).toBe(false);
 	});
 
-	it("formatStartupBannerLines：有 token 时输出带 token 链接与 token 详情行", () => {
+	it("formatStartupBannerLines：只输出口令来源描述，不输出口令本体", () => {
 		const lines = formatStartupBannerLines({
 			port: 8787,
 			host: "127.0.0.1",
-			token: "my-auth-secret",
+			tokenSource: "file /home/user/.pi-web/server-config.json",
 			cwd: "/work/my-project",
 			sessionDir: "/home/user/.pi/agent/sessions",
 			version: "1.5.0",
 		});
-		expect(lines).toContain("    http://localhost:8787/?token=my-auth-secret");
-		expect(lines).toContain("    token       : my-auth-secret");
-		expect(lines).toContain("    setup       : http://127.0.0.1:8787/setup （仅本机：配 token/监听/白名单）");
+		const text = lines.join("\n");
+		expect(text).toContain("    token       : file /home/user/.pi-web/server-config.json");
+		expect(text).toContain("    http://localhost:8787");
+		expect(text).not.toContain("token=");
+		expect(text).toContain("    setup       : http://127.0.0.1:8787/setup （仅本机：配 token/监听/白名单）");
 	});
 
 	it("formatStartupBannerLines：sdkNote 存在时打印提示", () => {

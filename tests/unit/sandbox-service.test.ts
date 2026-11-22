@@ -49,7 +49,7 @@ describe("SandboxManager & Hard Jail Isolation", () => {
 		expect(mgr.getByCwd(sandbox.path)?.id).toBe(sandbox.id);
 		expect(mgr.getByCwd(join(sandbox.path, "nested", "dir"))?.id).toBe(sandbox.id);
 
-		const persisted = mgr.persist(sandbox.id);
+		const persisted = await mgr.persist(sandbox.id);
 		expect(persisted.ephemeral).toBe(false);
 
 		const mgr2 = new SandboxManager(dataDir);

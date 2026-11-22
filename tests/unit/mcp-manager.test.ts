@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { open as fspOpen, rename as fspRename } from "node:fs/promises";
+
 import {
 	existsSync,
 	fsyncSync,
@@ -10,6 +12,26 @@ import {
 	unlinkSync,
 	writeFileSync,
 } from "node:fs";
+
+// 落盘走 writeAtomic（node:fs/promises）：故障注入与 rename 计数都必须在同一层。
+const fspReal = vi.hoisted(() => ({ open: undefined as unknown as typeof import("node:fs/promises").open }));
+vi.mock("node:fs/promises", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:fs/promises")>();
+	fspReal.open = actual.open;
+	return { ...actual, open: vi.fn(actual.open), rename: vi.fn(actual.rename) };
+});
+
+/** 让下一次原子写挂在「写数据」或「fsync」上（rename 由 fspRename 的 mock 负责）。 */
+function faultHandle(phase: "write" | "sync"): void {
+	vi.mocked(fspOpen).mockImplementationOnce((async (...args: Parameters<typeof fspOpen>) => {
+		const handle = await fspReal.open(...args);
+		const failing = async () => {
+			throw new Error(`${phase} fault`);
+		};
+		Object.defineProperty(handle, phase === "write" ? "writeFile" : "sync", { configurable: true, value: failing });
+		return handle;
+	}) as typeof fspOpen);
+}
 
 vi.mock("node:fs", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("node:fs")>();
@@ -44,28 +66,31 @@ function makeTempDir(prefix: string): string {
 }
 
 describe("mcp-manager effective runtime status", () => {
-	it.each([true, false])("does not assign the project instance to an overridden global row (enabled=%s)", (enabled) => {
-		const dir = makeTempDir("mcp-overridden-");
-		try {
-			const agentDir = join(dir, "agent");
-			const cwd = join(dir, "project");
-			writeMcpConfigFile(getGlobalMcpPath(agentDir), { same: { command: "global" } });
-			writeMcpConfigFile(getProjectMcpPath(cwd), { same: { command: "project", enabled } });
-			const getServerStatus = vi.fn(() => ({ status: "running", tools: [{ name: "project-tool" }] }));
-			const { servers } = listAllMcpServers({ agentDir, cwd, bridge: { getServerStatus } as unknown as McpBridge });
-			expect(servers[0]).toMatchObject({ scope: "global", status: "stopped", overriddenBy: "project", tools: [] });
-			expect(servers[1]).toMatchObject({ scope: "project", status: enabled ? "running" : "stopped" });
-			expect(getServerStatus).toHaveBeenCalledTimes(enabled ? 1 : 0);
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
+	it.each([true, false])(
+		"does not assign the project instance to an overridden global row (enabled=%s)",
+		async (enabled) => {
+			const dir = makeTempDir("mcp-overridden-");
+			try {
+				const agentDir = join(dir, "agent");
+				const cwd = join(dir, "project");
+				await writeMcpConfigFile(getGlobalMcpPath(agentDir), { same: { command: "global" } });
+				await writeMcpConfigFile(getProjectMcpPath(cwd), { same: { command: "project", enabled } });
+				const getServerStatus = vi.fn(() => ({ status: "running", tools: [{ name: "project-tool" }] }));
+				const { servers } = listAllMcpServers({ agentDir, cwd, bridge: { getServerStatus } as unknown as McpBridge });
+				expect(servers[0]).toMatchObject({ scope: "global", status: "stopped", overriddenBy: "project", tools: [] });
+				expect(servers[1]).toMatchObject({ scope: "project", status: enabled ? "running" : "stopped" });
+				expect(getServerStatus).toHaveBeenCalledTimes(enabled ? 1 : 0);
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		},
+	);
 
-	it("preserves a failed configuration warning while the old instance still runs", () => {
+	it("preserves a failed configuration warning while the old instance still runs", async () => {
 		const dir = makeTempDir("mcp-previous-");
 		try {
 			const agentDir = join(dir, "agent");
-			writeMcpConfigFile(getGlobalMcpPath(agentDir), { same: { command: "new-command" } });
+			await writeMcpConfigFile(getGlobalMcpPath(agentDir), { same: { command: "new-command" } });
 			const bridge = {
 				getServerStatus: () => ({ status: "running", usingPreviousConfig: true, error: "spawn failed", tools: [] }),
 			} as unknown as McpBridge;
@@ -81,14 +106,14 @@ describe("mcp-manager effective runtime status", () => {
 });
 
 describe("mcp-manager transactions", () => {
-	function fixture() {
+	async function fixture() {
 		const dir = makeTempDir("mcp-transaction-");
 		const agentDir = join(dir, "agent");
 		const cwd = join(dir, "project");
 		const source = join(agentDir, "mcp.json");
 		const target = join(cwd, ".pi", "mcp.json");
-		writeMcpConfigFile(source, { old: { command: "node", args: ["old.js"], enabled: true } });
-		writeMcpConfigFile(target, {});
+		await writeMcpConfigFile(source, { old: { command: "node", args: ["old.js"], enabled: true } });
+		await writeMcpConfigFile(target, {});
 		const move = {
 			agentDir,
 			cwd,
@@ -101,29 +126,22 @@ describe("mcp-manager transactions", () => {
 
 	it.each(["write", "sync", "rename"])(
 		"same-file rename is one atomic commit; %s failure preserves original bytes",
-		(phase) => {
-			const f = fixture();
+		async (phase) => {
+			const f = await fixture();
 			try {
 				const before = readFileSync(f.source, "utf8");
-				if (phase === "write")
-					vi.mocked(writeFileSync).mockImplementationOnce(() => {
-						throw new Error("write fault");
-					});
-				if (phase === "sync")
-					vi.mocked(fsyncSync).mockImplementationOnce(() => {
-						throw new Error("sync fault");
-					});
+				if (phase === "write" || phase === "sync") faultHandle(phase);
 				if (phase === "rename")
-					vi.mocked(renameSync).mockImplementationOnce(() => {
+					vi.mocked(fspRename).mockImplementationOnce(async () => {
 						throw new Error("rename fault");
 					});
 				const opts = { ...f.move, server: { ...f.move.server, scope: "global" as const } };
-				expect(saveMcpServer(opts).ok).toBe(false);
+				expect((await saveMcpServer(opts)).ok).toBe(false);
 				expect(readFileSync(f.source, "utf8")).toBe(before);
 				expect(readdirSync(join(f.dir, "agent"))).toEqual(["mcp.json"]);
-				vi.mocked(renameSync).mockClear();
-				expect(saveMcpServer(opts).ok).toBe(true);
-				expect(vi.mocked(renameSync)).toHaveBeenCalledTimes(1);
+				vi.mocked(fspRename).mockClear();
+				expect((await saveMcpServer(opts)).ok).toBe(true);
+				expect(vi.mocked(fspRename)).toHaveBeenCalledTimes(1);
 				expect(readMcpConfigFile(f.source).servers.old).toBeUndefined();
 				expect(readMcpConfigFile(f.source).servers.new.command).toBe("node");
 			} finally {
@@ -135,11 +153,11 @@ describe("mcp-manager transactions", () => {
 	it.each(["journal", "target", "source", "cleanup"])(
 		"migration resumes safely after %s commit failure and module reload",
 		async (phase) => {
-			const f = fixture();
+			const f = await fixture();
 			try {
-				const rename = vi.mocked(renameSync).getMockImplementation()!;
+				const rename = vi.mocked(fspRename).getMockImplementation()!;
 				const unlink = vi.mocked(unlinkSync).getMockImplementation()!;
-				vi.mocked(renameSync).mockImplementation((from, to) => {
+				vi.mocked(fspRename).mockImplementation(async (from, to) => {
 					if (
 						String(to) ===
 						(phase === "journal"
@@ -157,17 +175,17 @@ describe("mcp-manager transactions", () => {
 					if (phase === "cleanup" && String(path) === `${f.source}.migration.json`) throw new Error("cleanup fault");
 					return unlink(path);
 				});
-				expect(saveMcpServer(f.move).ok).toBe(false);
+				expect((await saveMcpServer(f.move)).ok).toBe(false);
 				const src = readMcpConfigFile(f.source).servers.old;
 				const dst = readMcpConfigFile(f.target).servers.new;
 				expect(!!src || !!dst).toBe(true);
 				expect(!!dst).toBe(phase === "source" || phase === "cleanup");
 				expect(!!src).toBe(phase !== "cleanup");
-				vi.mocked(renameSync).mockImplementation(rename);
+				vi.mocked(fspRename).mockImplementation(rename);
 				vi.mocked(unlinkSync).mockImplementation(unlink);
 				vi.resetModules();
 				const reloaded = await import("../../server/mcp-manager.js");
-				expect(reloaded.saveMcpServer(f.move)).toEqual({ ok: true });
+				expect(await reloaded.saveMcpServer(f.move)).toEqual({ ok: true });
 				expect(readMcpConfigFile(f.source).servers.old).toBeUndefined();
 				expect(readMcpConfigFile(f.target).servers.new.args).toEqual(["new.js"]);
 				expect(existsSync(`${f.source}.migration.json`)).toBe(false);
@@ -177,42 +195,45 @@ describe("mcp-manager transactions", () => {
 		},
 	);
 
-	it.each(["source", "target"])("retry refuses an intervening %s edit", (side) => {
-		const f = fixture();
+	it.each(["source", "target"])("retry refuses an intervening %s edit", async (side) => {
+		const f = await fixture();
 		try {
-			const rename = vi.mocked(renameSync).getMockImplementation()!;
-			vi.mocked(renameSync).mockImplementation((from, to) => {
+			const rename = vi.mocked(fspRename).getMockImplementation()!;
+			vi.mocked(fspRename).mockImplementation(async (from, to) => {
 				if (String(to) === f.source) throw new Error("source fault");
 				return rename(from, to);
 			});
-			expect(saveMcpServer(f.move).ok).toBe(false);
-			vi.mocked(renameSync).mockImplementation(rename);
-			writeMcpConfigFile(side === "source" ? f.source : f.target, {
+			expect((await saveMcpServer(f.move)).ok).toBe(false);
+			vi.mocked(fspRename).mockImplementation(rename);
+			await writeMcpConfigFile(side === "source" ? f.source : f.target, {
 				[side === "source" ? "old" : "new"]: { command: "edited" },
 			});
 			const before = [readFileSync(f.source, "utf8"), readFileSync(f.target, "utf8")];
-			expect(saveMcpServer(f.move).ok).toBe(false);
+			expect((await saveMcpServer(f.move)).ok).toBe(false);
 			expect([readFileSync(f.source, "utf8"), readFileSync(f.target, "utf8")]).toEqual(before);
 		} finally {
 			rmSync(f.dir, { recursive: true, force: true });
 		}
 	});
 
-	it.each(["global", "project"] as const)("refuses existing target names in %s scope even if identical", (scope) => {
-		const f = fixture();
-		try {
-			const path = scope === "global" ? f.source : f.target;
-			writeMcpConfigFile(path, {
-				...readMcpConfigFile(path).servers,
-				new: { command: "node", args: ["new.js"], enabled: true },
-			});
-			const before = [readFileSync(f.source, "utf8"), readFileSync(f.target, "utf8")];
-			expect(saveMcpServer({ ...f.move, server: { ...f.move.server, scope } }).ok).toBe(false);
-			expect([readFileSync(f.source, "utf8"), readFileSync(f.target, "utf8")]).toEqual(before);
-		} finally {
-			rmSync(f.dir, { recursive: true, force: true });
-		}
-	});
+	it.each(["global", "project"] as const)(
+		"refuses existing target names in %s scope even if identical",
+		async (scope) => {
+			const f = await fixture();
+			try {
+				const path = scope === "global" ? f.source : f.target;
+				await writeMcpConfigFile(path, {
+					...readMcpConfigFile(path).servers,
+					new: { command: "node", args: ["new.js"], enabled: true },
+				});
+				const before = [readFileSync(f.source, "utf8"), readFileSync(f.target, "utf8")];
+				expect((await saveMcpServer({ ...f.move, server: { ...f.move.server, scope } })).ok).toBe(false);
+				expect([readFileSync(f.source, "utf8"), readFileSync(f.target, "utf8")]).toEqual(before);
+			} finally {
+				rmSync(f.dir, { recursive: true, force: true });
+			}
+		},
+	);
 
 	it.each([
 		"{broken",
@@ -221,26 +242,26 @@ describe("mcp-manager transactions", () => {
 		'{"mcpServers":[]}',
 		'{"mcpServers":{"x":null}}',
 		'{"servers":{},"mcpServers":{}}',
-	])("never overwrites damaged config: %s", (text) => {
-		const f = fixture();
+	])("never overwrites damaged config: %s", async (text) => {
+		const f = await fixture();
 		try {
 			writeFileSync(f.source, text);
 			expect(readMcpConfigFile(f.source).error).toBeTruthy();
 			expect(listAllMcpServers(f.move).servers).toContainEqual(
 				expect.objectContaining({ name: f.source, scope: "global", status: "error", error: expect.any(String) }),
 			);
-			expect(() => writeMcpConfigFile(f.source, {})).toThrow();
-			expect(saveMcpServer({ ...f.move, server: { ...f.move.server, scope: "global" } }).ok).toBe(false);
-			expect(deleteMcpServer({ ...f.move, name: "old", scope: "global" }).ok).toBe(false);
-			expect(toggleMcpServer({ ...f.move, name: "old", scope: "global", enabled: false }).ok).toBe(false);
+			await expect(writeMcpConfigFile(f.source, {})).rejects.toThrow();
+			expect((await saveMcpServer({ ...f.move, server: { ...f.move.server, scope: "global" } })).ok).toBe(false);
+			expect((await deleteMcpServer({ ...f.move, name: "old", scope: "global" })).ok).toBe(false);
+			expect((await toggleMcpServer({ ...f.move, name: "old", scope: "global", enabled: false })).ok).toBe(false);
 			expect(readFileSync(f.source, "utf8")).toBe(text);
 		} finally {
 			rmSync(f.dir, { recursive: true, force: true });
 		}
 	});
 
-	it.each(["source", "target"])("unreadable %s stops migration before touching source", (side) => {
-		const f = fixture();
+	it.each(["source", "target"])("unreadable %s stops migration before touching source", async (side) => {
+		const f = await fixture();
 		try {
 			const read = vi.mocked(readFileSync).getMockImplementation()!;
 			const before = readFileSync(f.source, "utf8");
@@ -249,8 +270,8 @@ describe("mcp-manager transactions", () => {
 					throw Object.assign(new Error("denied"), { code: "EACCES" });
 				return (read as any)(path, ...args);
 			}) as typeof readFileSync);
-			expect(saveMcpServer(f.move).ok).toBe(false);
-			expect(() => writeMcpConfigFile(side === "source" ? f.source : f.target, {})).toThrow("denied");
+			expect((await saveMcpServer(f.move)).ok).toBe(false);
+			await expect(writeMcpConfigFile(side === "source" ? f.source : f.target, {})).rejects.toThrow("denied");
 			expect(listAllMcpServers(f.move).servers).toContainEqual(
 				expect.objectContaining({ status: "error", error: expect.stringContaining("denied") }),
 			);
@@ -261,12 +282,12 @@ describe("mcp-manager transactions", () => {
 		}
 	});
 
-	it.each(["{broken", "null", '{"version":2}'])("refuses damaged or unknown recovery intent: %s", (journal) => {
-		const f = fixture();
+	it.each(["{broken", "null", '{"version":2}'])("refuses damaged or unknown recovery intent: %s", async (journal) => {
+		const f = await fixture();
 		try {
 			writeFileSync(`${f.source}.migration.json`, journal);
 			const before = [readFileSync(f.source, "utf8"), readFileSync(f.target, "utf8")];
-			expect(saveMcpServer(f.move).ok).toBe(false);
+			expect((await saveMcpServer(f.move)).ok).toBe(false);
 			expect([readFileSync(f.source, "utf8"), readFileSync(f.target, "utf8")]).toEqual(before);
 			expect(readFileSync(`${f.source}.migration.json`, "utf8")).toBe(journal);
 		} finally {
@@ -274,17 +295,17 @@ describe("mcp-manager transactions", () => {
 		}
 	});
 
-	it("damaged destination and missing source never remove or create records", () => {
-		const f = fixture();
+	it("damaged destination and missing source never remove or create records", async () => {
+		const f = await fixture();
 		try {
 			const before = readFileSync(f.source, "utf8");
 			writeFileSync(f.target, "{broken");
-			expect(saveMcpServer(f.move).ok).toBe(false);
+			expect((await saveMcpServer(f.move)).ok).toBe(false);
 			expect(readFileSync(f.source, "utf8")).toBe(before);
 			expect(readFileSync(f.target, "utf8")).toBe("{broken");
 			writeFileSync(f.target, "{}");
-			writeMcpConfigFile(f.source, {});
-			expect(saveMcpServer(f.move).ok).toBe(false);
+			await writeMcpConfigFile(f.source, {});
+			expect((await saveMcpServer(f.move)).ok).toBe(false);
 			expect(readFileSync(f.target, "utf8")).toBe("{}");
 			expect(existsSync(`${f.source}.migration.json`)).toBe(false);
 		} finally {
@@ -292,8 +313,8 @@ describe("mcp-manager transactions", () => {
 		}
 	});
 
-	it("preserves legacy format, metadata and unrecognized server fields", () => {
-		const f = fixture();
+	it("preserves legacy format, metadata and unrecognized server fields", async () => {
+		const f = await fixture();
 		try {
 			writeFileSync(
 				f.source,
@@ -302,7 +323,7 @@ describe("mcp-manager transactions", () => {
 					servers: { old: { command: "node" }, extra: { custom: "keep", command: "python" } },
 				}),
 			);
-			expect(saveMcpServer({ ...f.move, server: { ...f.move.server, scope: "global" } }).ok).toBe(true);
+			expect((await saveMcpServer({ ...f.move, server: { ...f.move.server, scope: "global" } })).ok).toBe(true);
 			expect(JSON.parse(readFileSync(f.source, "utf8"))).toMatchObject({
 				metadata: { custom: true },
 				servers: { extra: { custom: "keep" }, new: { command: "node" } },
@@ -314,7 +335,7 @@ describe("mcp-manager transactions", () => {
 });
 
 describe("mcp-manager", () => {
-	it("isValidMcpServerName 校验服务器名", () => {
+	it("isValidMcpServerName 校验服务器名", async () => {
 		expect(isValidMcpServerName("filesystem")).toBe(true);
 		expect(isValidMcpServerName("my-server_1")).toBe(true);
 		expect(isValidMcpServerName("invalid server")).toBe(false);
@@ -322,11 +343,11 @@ describe("mcp-manager", () => {
 		expect(isValidMcpServerName("")).toBe(false);
 	});
 
-	it("readMcpConfigFile / writeMcpConfigFile 读写与保持格式", () => {
+	it("readMcpConfigFile / writeMcpConfigFile 读写与保持格式", async () => {
 		const dir = makeTempDir("mcp-test-");
 		try {
 			const file = join(dir, "mcp.json");
-			writeMcpConfigFile(file, {
+			await writeMcpConfigFile(file, {
 				git: { command: "node", args: ["git.js"] },
 			});
 			const read1 = readMcpConfigFile(file);
@@ -334,7 +355,7 @@ describe("mcp-manager", () => {
 			expect(read1.legacy).toBe(false);
 			expect(read1.servers.git.command).toBe("node");
 
-			writeMcpConfigFile(
+			await writeMcpConfigFile(
 				file,
 				{
 					git: { command: "node", args: ["git.js"] },
@@ -349,14 +370,14 @@ describe("mcp-manager", () => {
 		}
 	});
 
-	it("listAllMcpServers 能分别汇总全局和项目级服务器", () => {
+	it("listAllMcpServers 能分别汇总全局和项目级服务器", async () => {
 		const agentDir = makeTempDir("mcp-agent-");
 		const cwd = makeTempDir("mcp-proj-");
 		try {
-			writeMcpConfigFile(join(agentDir, "mcp.json"), {
+			await writeMcpConfigFile(join(agentDir, "mcp.json"), {
 				globalSrv: { command: "node", args: ["g.js"], description: "Global Server" },
 			});
-			writeMcpConfigFile(join(cwd, ".pi", "mcp.json"), {
+			await writeMcpConfigFile(join(cwd, ".pi", "mcp.json"), {
 				projSrv: { command: "python", args: ["p.py"], description: "Project Server" },
 			});
 
@@ -378,7 +399,7 @@ describe("mcp-manager", () => {
 		}
 	});
 
-	it("saveMcpServer 支持新增、修改、重命名跨作用域移动", () => {
+	it("saveMcpServer 支持新增、修改、重命名跨作用域移动", async () => {
 		const agentDir = makeTempDir("mcp-agent-");
 		const cwd = makeTempDir("mcp-proj-");
 		try {
@@ -389,7 +410,7 @@ describe("mcp-manager", () => {
 				args: ["-y", "mcp-pkg"],
 				enabled: true,
 			};
-			const res1 = saveMcpServer({ agentDir, cwd, server: srv1 });
+			const res1 = await saveMcpServer({ agentDir, cwd, server: srv1 });
 			expect(res1.ok).toBe(true);
 
 			const list1 = listAllMcpServers({ agentDir, cwd });
@@ -402,7 +423,7 @@ describe("mcp-manager", () => {
 				args: ["-y", "mcp-pkg-v2"],
 				enabled: true,
 			};
-			const res2 = saveMcpServer({
+			const res2 = await saveMcpServer({
 				agentDir,
 				cwd,
 				server: srv2,
@@ -423,26 +444,26 @@ describe("mcp-manager", () => {
 		}
 	});
 
-	it("toggleMcpServer 与 deleteMcpServer", () => {
+	it("toggleMcpServer 与 deleteMcpServer", async () => {
 		const agentDir = makeTempDir("mcp-agent-");
 		const cwd = makeTempDir("mcp-proj-");
 		try {
-			writeMcpConfigFile(join(agentDir, "mcp.json"), {
+			await writeMcpConfigFile(join(agentDir, "mcp.json"), {
 				srv: { command: "node", args: ["s.js"], enabled: true },
 			});
 
-			const togRes = toggleMcpServer({ agentDir, cwd, name: "srv", scope: "global", enabled: false });
+			const togRes = await toggleMcpServer({ agentDir, cwd, name: "srv", scope: "global", enabled: false });
 			expect(togRes.ok).toBe(true);
 
 			const afterTog = listAllMcpServers({ agentDir, cwd });
 			expect(afterTog.servers.find((s) => s.name === "srv")?.enabled).toBe(false);
 
-			const projTog = toggleMcpServer({ agentDir, cwd, name: "srv", scope: "project", enabled: false });
+			const projTog = await toggleMcpServer({ agentDir, cwd, name: "srv", scope: "project", enabled: false });
 			expect(projTog.ok).toBe(true);
 			const projCfg = readMcpConfigFile(join(cwd, ".pi", "mcp.json"));
 			expect(projCfg.servers.srv?.enabled).toBe(false);
 
-			const delRes = deleteMcpServer({ agentDir, cwd, name: "srv", scope: "global" });
+			const delRes = await deleteMcpServer({ agentDir, cwd, name: "srv", scope: "global" });
 			expect(delRes.ok).toBe(true);
 			const afterDel = listAllMcpServers({ agentDir, cwd });
 			expect(afterDel.servers.find((s) => s.scope === "global" && s.name === "srv")).toBeUndefined();
@@ -452,7 +473,7 @@ describe("mcp-manager", () => {
 		}
 	});
 
-	it("exposure / toolExposure 经 listAllMcpServers → saveMcpServer 原样保留", () => {
+	it("exposure / toolExposure 经 listAllMcpServers → saveMcpServer 原样保留", async () => {
 		const agentDir = makeTempDir("mcp-agent-");
 		const cwd = makeTempDir("mcp-proj-");
 		const file = join(agentDir, "mcp.json");
@@ -476,34 +497,38 @@ describe("mcp-manager", () => {
 
 			// 请求里不带 exposure：文件里的原值一个字都不动。
 			const { exposure: _exposure, toolExposure: _toolExposure, ...withoutExposure } = listed!;
-			expect(saveMcpServer({ agentDir, cwd, server: withoutExposure }).ok).toBe(true);
+			expect((await saveMcpServer({ agentDir, cwd, server: withoutExposure })).ok).toBe(true);
 			const kept = JSON.parse(readFileSync(file, "utf8")).mcpServers.srv;
 			expect(kept.exposure).toBe("direct");
 			expect(kept.toolExposure).toEqual({ click: "hidden", "list_*": "deferred" });
 
 			// 显式传值只改 exposure，toolExposure 继续保留。
-			expect(saveMcpServer({ agentDir, cwd, server: { ...withoutExposure, exposure: "hidden" } }).ok).toBe(true);
+			expect((await saveMcpServer({ agentDir, cwd, server: { ...withoutExposure, exposure: "hidden" } })).ok).toBe(
+				true,
+			);
 			const updated = JSON.parse(readFileSync(file, "utf8")).mcpServers.srv;
 			expect(updated.exposure).toBe("hidden");
 			expect(updated.toolExposure).toEqual({ click: "hidden", "list_*": "deferred" });
 
 			// null = 回到缺省，字段删掉；toolExposure 仍不动。
-			expect(saveMcpServer({ agentDir, cwd, server: { ...withoutExposure, exposure: null } }).ok).toBe(true);
+			expect((await saveMcpServer({ agentDir, cwd, server: { ...withoutExposure, exposure: null } })).ok).toBe(true);
 			const cleared = JSON.parse(readFileSync(file, "utf8")).mcpServers.srv;
 			expect(cleared.exposure).toBeUndefined();
 			expect(cleared.toolExposure).toEqual({ click: "hidden", "list_*": "deferred" });
 
 			// 重命名搬作用域也不丢：exposure 跟着条目走。
 			const withExposure = { ...withoutExposure, exposure: "deferred" as const };
-			expect(saveMcpServer({ agentDir, cwd, server: withExposure }).ok).toBe(true);
+			expect((await saveMcpServer({ agentDir, cwd, server: withExposure })).ok).toBe(true);
 			expect(
-				saveMcpServer({
-					agentDir,
-					cwd,
-					server: { ...withExposure, name: "moved", scope: "project" },
-					prevName: "srv",
-					prevScope: "global",
-				}).ok,
+				(
+					await saveMcpServer({
+						agentDir,
+						cwd,
+						server: { ...withExposure, name: "moved", scope: "project" },
+						prevName: "srv",
+						prevScope: "global",
+					})
+				).ok,
 			).toBe(true);
 			const movedFile = readMcpConfigFile(join(cwd, ".pi", "mcp.json"));
 			expect(movedFile.servers.moved.exposure).toBe("deferred");

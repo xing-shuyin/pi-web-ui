@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, statSync } from "node:fs";
+import { writeAtomic } from "./atomic-file.js";
 import { reorderEntriesForMainBranch } from "./session-branch.js";
 
 export const COMPACTION_PENDING_TYPE = "pi-web-ui/compaction-pending";
@@ -36,6 +37,8 @@ export interface TranscriptRepairResult {
 	rewiredParents: number;
 	cyclesBroken: number;
 	interrupted: boolean;
+	/** 完整行里读不懂（不是合法 JSON）的条数：这些行原样保留，修不了也绝不删，只如实上报。 */
+	unparsableLines: number;
 	reorderedBranches?: boolean;
 	reorderedReason?: string;
 }
@@ -133,6 +136,7 @@ export function repairSessionTranscript(raw: string): TranscriptRepairResult {
 		rewiredParents: 0,
 		cyclesBroken: 0,
 		interrupted: false,
+		unparsableLines: 0,
 	};
 	const lines = raw.split("\n");
 	const slots: Slot[] = lines.map((line) => {
@@ -160,7 +164,10 @@ export function repairSessionTranscript(raw: string): TranscriptRepairResult {
 					finalId: typeof id === "string" ? id : null,
 				};
 			}
-		} catch {}
+		} catch {
+			// 读不懂的完整行：原样保留（绝不删），只计数上报。
+			result.unparsableLines += 1;
+		}
 		return { raw: line, entry: null, removed: false, dirty: false, finalId: null };
 	});
 
@@ -370,19 +377,27 @@ export function rememberHealthyTranscriptSig(filePath: string, sig: string): voi
 	}
 }
 
-export function repairSessionFile(filePath: string): SessionFileRepair | null {
+/**
+ * 修复结果：**成败两种结果显式可辨**（issues #976）。
+ *
+ * 旧版回 `null`，调用方一律当成「没事」「文件不存在」「修不了」的混合体：写盘失败与无需修复无法区分，
+ * 于是「没有报错」被当成「已经修好」，下一次打开继续撞同一条坏链。现在失败必带原因。
+ */
+export type TranscriptRepairOutcome = { ok: true; repair: SessionFileRepair } | { ok: false; error: string };
+
+export async function repairSessionFile(filePath: string): Promise<TranscriptRepairOutcome> {
 	try {
 		const st = statSync(filePath);
 		const sig = `${st.mtimeMs}:${st.size}`;
-		if (isTranscriptHealthyCached(filePath, sig)) return healthyRepairResult(filePath);
-	} catch {
-		return null;
+		if (isTranscriptHealthyCached(filePath, sig)) return { ok: true, repair: healthyRepairResult(filePath) };
+	} catch (error) {
+		return { ok: false, error: `无法读取转录状态：${String((error as Error)?.message ?? error)}` };
 	}
 	let raw: string;
 	try {
 		raw = readFileSync(filePath, "utf8");
-	} catch {
-		return null;
+	} catch (error) {
+		return { ok: false, error: `无法读取转录：${String((error as Error)?.message ?? error)}` };
 	}
 	return repairSessionFileFromText(filePath, raw);
 }
@@ -403,26 +418,44 @@ export function healthyRepairResult(filePath: string): SessionFileRepair {
 		rewiredParents: 0,
 		cyclesBroken: 0,
 		interrupted: false,
+		unparsableLines: 0,
 		file: filePath,
 		backup: null,
 	};
 }
 
-export function repairSessionFileFromText(filePath: string, raw: string): SessionFileRepair | null {
+/**
+ * 把修复结果落盘：`.bak` 只在第一次用**原字节**留一份（`copyFileSync`，不重新序列化），
+ * 主文件走 `writeAtomic`（临时文件 + 原子发布，重试等待是异步的）——半写的转录比坏转录更难救（issues #967）。
+ * 落盘是**必须 await 的一步**：调用方拿到的 `ok` 只在这笔写入成功后成立，写失败一律回 `ok:false`。
+ */
+export async function repairSessionFileFromText(filePath: string, raw: string): Promise<TranscriptRepairOutcome> {
 	const r = repairSessionTranscript(raw);
 	if (!r.changed) {
 		rememberHealthyTranscript(filePath);
-		return { ...r, file: filePath, backup: null };
+		return { ok: true, repair: { ...r, file: filePath, backup: null } };
+	}
+	const bak = `${filePath}.bak`;
+	try {
+		// 已有 `.bak` 才叫「有备份」：同名目录 / 其它类型都不算，本次 copy 会如实失败。
+		let hasBackup = false;
+		try {
+			hasBackup = statSync(bak).isFile();
+		} catch {
+			hasBackup = false;
+		}
+		if (!hasBackup) copyFileSync(filePath, bak);
+	} catch (error) {
+		// 备份不了就不动主文件：没有备份资格的「修复」等于拿用户数据赌一次。
+		return { ok: false, error: `无法备份原转录（${bak}）：${String((error as Error)?.message ?? error)}` };
 	}
 	try {
-		const bak = `${filePath}.bak`;
-		if (!existsSync(bak)) writeFileSync(bak, raw, "utf8");
-		writeFileSync(filePath, r.text, "utf8");
-		rememberHealthyTranscript(filePath);
-		return { ...r, file: filePath, backup: bak };
-	} catch {
-		return null;
+		await writeAtomic(filePath, r.text);
+	} catch (error) {
+		return { ok: false, error: `修复结果写回失败：${String((error as Error)?.message ?? error)}` };
 	}
+	rememberHealthyTranscript(filePath);
+	return { ok: true, repair: { ...r, file: filePath, backup: bak } };
 }
 
 export function looksLikeChainCorruption(err: unknown): boolean {

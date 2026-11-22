@@ -224,7 +224,7 @@ export default {
 
 			expect(stripMarkers("hello [[plug_tag:set:123]] world")).toBe("hello  world");
 
-			mgr.dispose();
+			await mgr.dispose();
 			expect(getMarker("plug_tag")).toBeUndefined();
 			expect(isKnownMarkerTool("plug_tag")).toBe(false);
 		} finally {

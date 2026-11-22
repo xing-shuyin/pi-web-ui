@@ -11,7 +11,13 @@ import { Type } from "typebox";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { pick, type ServerLang } from "../i18n.js";
 import { CANVAS_TOOL_NAME } from "../tool-manager.js";
-import { deleteCanvasGraph, listCanvasGraphs, loadCanvasGraph, saveCanvasGraph } from "./canvas-store.js";
+import {
+	deleteCanvasGraph,
+	listCanvasGraphs,
+	loadCanvasGraph,
+	saveCanvasGraph,
+	sanitizeNodeMaterials,
+} from "./canvas-store.js";
 import { addCustomCard, deleteCustomCard, listCustomCards, updateCustomCard } from "./canvas-cards.js";
 import type { CanvasEdge, CanvasGraph, CanvasNode, CanvasNodeRole, ServerMessage } from "../protocol.js";
 import { assertCanvasGraph } from "./canvas-validation.js";
@@ -33,8 +39,15 @@ function defaultNodeCwd(host: CanvasToolHost, p: Record<string, unknown>): strin
 }
 
 interface CanvasRuntime {
-	runAll(graph: CanvasGraph, initialPrompt?: string, runBase?: string): Promise<void>;
-	runNode(graph: CanvasGraph, nodeId: string, prompt?: string, runBase?: string): Promise<void>;
+	runAll(graph: CanvasGraph, initialPrompt?: string, runBase?: string, materials?: string[]): Promise<void>;
+	runNode(
+		graph: CanvasGraph,
+		nodeId: string,
+		prompt?: string,
+		runBase?: string,
+		scheduled?: boolean,
+		materials?: string[],
+	): Promise<void>;
 	stopNode(graphId: string, nodeId: string): void;
 	stopAll(graphId: string): void;
 	deleteGraph(graphId: string): boolean;
@@ -63,9 +76,9 @@ function pushCards(dataDir: string): void {
 	} catch {}
 }
 
-function saveAndPush(dataDir: string, graph: CanvasGraph): void {
+async function saveAndPush(dataDir: string, graph: CanvasGraph): Promise<void> {
 	assertCanvasGraph(graph);
-	const result = saveCanvasGraph(dataDir, graph, { expectedRev: graph.rev ?? 0 });
+	const result = await saveCanvasGraph(dataDir, graph, { expectedRev: graph.rev ?? 0 });
 	if (result.conflict) throw new Error("Canvas changed; get the latest graph before editing again");
 	try {
 		canvasBroadcaster?.({ type: "canvas_graph_state", graph });
@@ -135,9 +148,9 @@ type CanvasAction = (typeof CANVAS_ACTIONS)[number];
 
 /** 每 action 要哪些参数，只在 `action` 字段里交代一次；字段本身不再写说明。 */
 export const CANVAS_ACTION_SIGNATURE =
-	"list | get(graphId) | create_graph(title?,instruction?) | delete_graph/layout_graph/run_all/stop_all/reset_status(graphId) | " +
-	"run_node/stop_node/get_log(graphId,nodeId) | steer_node(graphId,nodeId,message) | " +
-	"review_node(graphId,nodeId,decision,comment?) | add_node(graphId,title,role,instruction?) | " +
+	"list | get(graphId) | create_graph(title?,instruction?) | delete_graph/layout_graph/run_all(graphId,materials?)/stop_all/reset_status(graphId) | " +
+	"run_node(graphId,nodeId,materials?)/stop_node/get_log(graphId,nodeId) | steer_node(graphId,nodeId,message) | " +
+	"review_node(graphId,nodeId,decision,comment?) | add_node(graphId,title,role,instruction?,materials?) | " +
 	"update_node(graphId,nodeId,patch) | delete_node(graphId,nodeId) | " +
 	"add_edge(graphId,sourceNodeId,targetNodeId) | delete_edge(graphId,edgeId) | apply_dag(graphId,nodes,edges) | " +
 	"card_list | card_add(title,role,instruction?) | card_update(cardId,title?,role?,instruction?,patch?) | " +
@@ -153,6 +166,7 @@ const canvasSchema = Type.Object({
 	title: Type.Optional(Type.String()),
 	role: Type.Optional(Type.String()),
 	instruction: Type.Optional(Type.String()),
+	materials: Type.Optional(Type.Array(Type.String())),
 	nodeId: Type.Optional(Type.String()),
 	cardId: Type.Optional(Type.String()),
 	cwd: Type.Optional(Type.String({ description: "Working directory for a new node (absolute path pins a project)" })),
@@ -262,7 +276,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 					);
 				}
 				if (action === "card_add") {
-					const card = addCustomCard(dataDir, cardInput, isCardRole);
+					const card = await addCustomCard(dataDir, cardInput, isCardRole);
 					pushCards(dataDir);
 					return text(
 						pick(
@@ -287,7 +301,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 							),
 							{ ok: false },
 						);
-					const card = updateCustomCard(dataDir, cardId, cardInput, isCardRole);
+					const card = await updateCustomCard(dataDir, cardId, cardInput, isCardRole);
 					pushCards(dataDir);
 					return text(
 						pick(getLang(), `已更新卡片 ${card.title}。`, `Updated card ${card.title}.`, "canvas.card.updated", {
@@ -308,7 +322,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 							),
 							{ ok: false },
 						);
-					const ok = deleteCustomCard(dataDir, cardId);
+					const ok = await deleteCustomCard(dataDir, cardId);
 					if (ok) pushCards(dataDir);
 					return text(
 						pick(
@@ -372,7 +386,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 							},
 						],
 					};
-					saveAndPush(dataDir, graph);
+					await saveAndPush(dataDir, graph);
 					return text(
 						pick(
 							getLang(),
@@ -484,7 +498,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 							type: "handoff",
 						});
 					}
-					saveAndPush(dataDir, graph);
+					await saveAndPush(dataDir, graph);
 					return text(
 						pick(
 							getLang(),
@@ -511,9 +525,10 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 						useWorktree: false,
 						status: "idle",
 						...(typeof p.instruction === "string" && p.instruction ? { instruction: p.instruction } : {}),
+						...(sanitizeNodeMaterials(p.materials).length > 0 ? { materials: sanitizeNodeMaterials(p.materials) } : {}),
 					};
 					graph.nodes.push(node);
-					saveAndPush(dataDir, graph);
+					await saveAndPush(dataDir, graph);
 					return text(
 						pick(
 							getLang(),
@@ -533,7 +548,8 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 							pick(getLang(), `节点不存在：${nodeId}`, `Node not found: ${nodeId}`, "canvas.node.missing", { nodeId }),
 							{ ok: false },
 						);
-					const patch = (p.patch ?? {}) as Record<string, unknown>;
+					const patch = { ...((p.patch ?? {}) as Record<string, unknown>) };
+					if (p.materials !== undefined) patch.materials = p.materials;
 					for (const [k, v] of Object.entries(patch)) {
 						if (
 							![
@@ -550,14 +566,21 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 								"useWorktree",
 								"systemPromptOverride",
 								"instruction",
+								"materials",
 								"config",
 							].includes(k)
 						)
 							continue;
 						if (k === "role" && typeof v === "string" && !VALID_ROLES.has(v)) continue;
+						if (k === "materials") {
+							const next = sanitizeNodeMaterials(v);
+							if (next.length > 0) n.materials = next;
+							else delete n.materials;
+							continue;
+						}
 						(n as unknown as Record<string, unknown>)[k] = v;
 					}
-					saveAndPush(dataDir, graph);
+					await saveAndPush(dataDir, graph);
 					return text(
 						pick(getLang(), `已更新节点 ${n.title}。`, `Updated node ${n.title}.`, "canvas.node.updated", {
 							"n.title": n.title,
@@ -569,7 +592,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 					const nodeId = p.nodeId as string;
 					graph.nodes = graph.nodes.filter((x) => x.id !== nodeId);
 					graph.edges = graph.edges.filter((e) => e.sourceNodeId !== nodeId && e.targetNodeId !== nodeId);
-					saveAndPush(dataDir, graph);
+					await saveAndPush(dataDir, graph);
 					return text(
 						pick(
 							getLang(),
@@ -627,7 +650,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 						type: "handoff",
 					};
 					graph.edges.push(edge);
-					saveAndPush(dataDir, graph);
+					await saveAndPush(dataDir, graph);
 					return text(
 						pick(getLang(), `已连边 ${s} → ${t}。`, `Connected ${s} -> ${t}.`, "canvas.edge.added", { s, t }),
 						{
@@ -638,7 +661,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 				if (action === "delete_edge") {
 					const edgeId = p.edgeId as string;
 					graph.edges = graph.edges.filter((e) => e.id !== edgeId);
-					saveAndPush(dataDir, graph);
+					await saveAndPush(dataDir, graph);
 					return text(
 						pick(getLang(), `已删边 ${edgeId}。`, `Deleted edge ${edgeId}.`, "canvas.edge.deleted", { edgeId }),
 						{
@@ -698,6 +721,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 						useWorktree: false,
 						status: "idle",
 						...(typeof n.instruction === "string" && n.instruction ? { instruction: n.instruction } : {}),
+						...(sanitizeNodeMaterials(n.materials).length > 0 ? { materials: sanitizeNodeMaterials(n.materials) } : {}),
 						...(n.config && typeof n.config === "object" ? { config: n.config as CanvasNode["config"] } : {}),
 					}));
 					const edges: CanvasEdge[] = normEdges.map((e, i) => ({
@@ -710,7 +734,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 						...(typeof e.label === "string" ? { label: e.label } : {}),
 					}));
 					const next: CanvasGraph = { ...graph, nodes, edges, updatedAt: now };
-					saveAndPush(dataDir, next);
+					await saveAndPush(dataDir, next);
 					return text(
 						pick(
 							getLang(),
@@ -748,7 +772,12 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 					const nodeId = typeof p.nodeId === "string" ? p.nodeId : "";
 					if (action === "run_all") {
 						void canvasRuntime
-							.runAll(graph, typeof p.prompt === "string" ? p.prompt : undefined, host.getCwd?.())
+							.runAll(
+								graph,
+								typeof p.prompt === "string" ? p.prompt : undefined,
+								host.getCwd?.(),
+								sanitizeNodeMaterials(p.materials),
+							)
 							.catch((error) => {
 								canvasBroadcaster?.({
 									type: "canvas_error",
@@ -775,7 +804,14 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 								ok: false,
 							});
 						void canvasRuntime
-							.runNode(graph, nodeId, typeof p.prompt === "string" ? p.prompt : undefined, host.getCwd?.())
+							.runNode(
+								graph,
+								nodeId,
+								typeof p.prompt === "string" ? p.prompt : undefined,
+								host.getCwd?.(),
+								false,
+								sanitizeNodeMaterials(p.materials),
+							)
 							.catch((error) => {
 								canvasBroadcaster?.({
 									type: "canvas_error",
@@ -920,7 +956,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 								n.y = 80 + i * 260;
 							});
 						}
-						saveAndPush(dataDir, graph);
+						await saveAndPush(dataDir, graph);
 						return text(
 							pick(
 								getLang(),

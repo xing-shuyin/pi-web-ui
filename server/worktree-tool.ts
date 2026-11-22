@@ -2,7 +2,13 @@ import { Type, type Static } from "typebox";
 import { resolve } from "node:path";
 import type { AgentToolResult, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { pick, type ServerLang } from "./i18n.js";
-import { createWorktree, listWorktrees, normalizeWirePath, removeWorktree } from "./worktree-service.js";
+import {
+	assertRegisteredWorktree,
+	createWorktree,
+	listWorktrees,
+	normalizeWirePath,
+	removeWorktree,
+} from "./worktree-service.js";
 
 export const WORKTREE_TOOL_NAME = "worktree";
 
@@ -151,6 +157,8 @@ export function makeWorktreeTool(
 						);
 
 						if (params.switchTo) {
+							// #973：切 cwd = 换写入边界，先确认目标是已注册 worktree（不在 git worktree list 里就拒绝）。
+							await assertRegisteredWorktree(cwd, res.path, () => lang);
 							await host.setCwd(res.path);
 						}
 						await host.onWorktreeChanged?.();
@@ -196,6 +204,7 @@ export function makeWorktreeTool(
 						}
 
 						const target = normalizeWirePath(resolve(cwd, params.path));
+						await assertRegisteredWorktree(cwd, target, () => lang);
 						await host.setCwd(target);
 						await host.onWorktreeChanged?.();
 

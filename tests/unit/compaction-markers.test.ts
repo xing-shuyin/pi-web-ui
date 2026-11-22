@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -296,31 +296,35 @@ describe("looksLikeChainCorruption", () => {
 });
 
 describe("repairSessionFile", () => {
-	it("健康文件只读不写（无 .bak）", () => {
+	it("健康文件只读不写（无 .bak）", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "session-repair-"));
 		const file = join(dir, "s.jsonl");
 		const raw = [HEADER, msg("a", null)].join("\n") + "\n";
 		writeFileSync(file, raw, "utf8");
-		const r = repairSessionFile(file);
-		expect(r?.changed).toBe(false);
-		expect(r?.backup).toBeNull();
+		const outcome = await repairSessionFile(file);
+		expect(outcome.ok).toBe(true);
+		if (!outcome.ok) return;
+		expect(outcome.repair.changed).toBe(false);
+		expect(outcome.repair.backup).toBeNull();
 		expect(existsSync(`${file}.bak`)).toBe(false);
 	});
 
-	it("坏文件写回＋留 .bak（已有 .bak 不覆盖，保最早现场）", () => {
+	it("坏文件写回＋留 .bak（已有 .bak 不覆盖，保最早现场）", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "session-repair-"));
 		const file = join(dir, "s.jsonl");
 		const corrupt = [HEADER, msg("a", null), pendingMarker("p1", "a"), msg("b", "p1")].join("\n") + "\n";
 		writeFileSync(file, corrupt, "utf8");
 		writeFileSync(`${file}.bak`, "ORIGINAL", "utf8");
-		const r = repairSessionFile(file);
-		expect(r?.changed).toBe(true);
-		expect(r?.backup).toBe(`${file}.bak`);
+		const outcome = await repairSessionFile(file);
+		expect(outcome.ok).toBe(true);
+		if (!outcome.ok) return;
+		expect(outcome.repair.changed).toBe(true);
+		expect(outcome.repair.backup).toBe(`${file}.bak`);
 		expect(readFileSync(`${file}.bak`, "utf8")).toBe("ORIGINAL");
 		expect(readFileSync(file, "utf8").includes("compaction-pending")).toBe(false);
 	});
 
-	it("修剪被陈旧元数据侧枝劫持的转录拓扑（issue #567）", () => {
+	it("修剪被陈旧元数据侧枝劫持的转录拓扑（issue #567）", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "session-repair-567-"));
 		const file = join(dir, "s567.jsonl");
 		const custom1 = JSON.stringify({
@@ -352,10 +356,12 @@ describe("repairSessionFile", () => {
 		expect(beforeSm.getLeafId()).toBe("plan-2");
 		expect(beforeSm.getBranch().filter((e) => e.type === "message")).toHaveLength(2);
 
-		const r = repairSessionFile(file);
-		expect(r?.changed).toBe(true);
-		expect(r?.reorderedBranches).toBe(true);
-		expect(r?.backup).toBe(`${file}.bak`);
+		const outcome = await repairSessionFile(file);
+		expect(outcome.ok).toBe(true);
+		if (!outcome.ok) return;
+		expect(outcome.repair.changed).toBe(true);
+		expect(outcome.repair.reorderedBranches).toBe(true);
+		expect(outcome.repair.backup).toBe(`${file}.bak`);
 
 		const afterSm = SessionManager.open(file);
 		expect(afterSm.getLeafId()).toBe("c9560bdb");
@@ -375,7 +381,7 @@ describe("repairSessionFile：fork 后继续聊天的会话打开即被重写（
 			message: { role: "user", content: id },
 		});
 
-	it("文件尾是最新那支时，打开不重写、不留 .bak", () => {
+	it("文件尾是最新那支时，打开不重写、不留 .bak", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "session-repair-"));
 		const file = join(dir, "s.jsonl");
 		const rows = [HEADER, line("root", null, "2026-11-19T07:00:00.000Z")];
@@ -396,9 +402,36 @@ describe("repairSessionFile：fork 后继续聊天的会话打开即被重写（
 		const raw = rows.join("\n") + "\n";
 		writeFileSync(file, raw, "utf8");
 
-		const r = repairSessionFile(file);
-		expect(r?.changed).toBe(false);
+		const outcome = await repairSessionFile(file);
+		expect(outcome.ok).toBe(true);
+		if (!outcome.ok) return;
+		expect(outcome.repair.changed).toBe(false);
 		expect(existsSync(`${file}.bak`)).toBe(false);
 		expect(readFileSync(file, "utf8")).toBe(raw);
+	});
+});
+
+describe("repairSessionFile：失败可辨（issues #967 / #976）", () => {
+	it("备份不了就报失败，且主文件字节一个都不变", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "session-repair-fail-"));
+		const file = join(dir, "s.jsonl");
+		const corrupt = [HEADER, msg("a", null), pendingMarker("p1", "a"), msg("b", "p1")].join("\n") + "\n";
+		writeFileSync(file, corrupt, "utf8");
+		// `.bak` 位置被目录占住：clone/copy 必失败，模拟「没有备份资格」。
+		mkdirSync(`${file}.bak`);
+
+		const outcome = await repairSessionFile(file);
+		expect(outcome.ok).toBe(false);
+		if (outcome.ok) return;
+		expect(outcome.error).toContain("备份");
+		// 关键断言：修不了就不许动主文件。
+		expect(readFileSync(file, "utf8")).toBe(corrupt);
+	});
+
+	it("完整但读不懂的行计数上报，且原样保留", () => {
+		const raw = [HEADER, msg("a", null), "{not json}", msg("b", "a")].join("\n") + "\n";
+		const r = repairSessionTranscript(raw);
+		expect(r.unparsableLines).toBe(1);
+		expect(r.text).toBe(raw);
 	});
 });

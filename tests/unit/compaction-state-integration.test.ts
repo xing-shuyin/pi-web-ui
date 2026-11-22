@@ -55,10 +55,10 @@ function expectPersistenceWarning(session: ReturnType<typeof fixture>["session"]
 }
 
 describe("ClientSession compaction recovery integration", () => {
-	it("creates and clears the sidecar while recording the outcome only through the SDK", () => {
+	it("creates and clears the sidecar while recording the outcome only through the SDK", async () => {
 		const { session, conv, manager } = fixture();
 		const sidecar = `${file}.compaction-state.json`;
-		session.markCompactionPending(conv);
+		await session.markCompactionPending(conv);
 		expect(JSON.parse(readFileSync(sidecar, "utf8"))).toEqual({ version: 1, reason: "manual", startedAt: 1234 });
 		expect(manager.appendCustomEntry).not.toHaveBeenCalled();
 		expect(readFileSync(file)).toEqual(original);
@@ -72,7 +72,7 @@ describe("ClientSession compaction recovery integration", () => {
 
 	it.each(["completed", "failed", "cancelled"])(
 		"lets the SDK append a %s entry before removing pending recovery state",
-		(status) => {
+		async (status) => {
 			const { session, conv, manager } = fixture();
 			const sidecar = `${file}.compaction-state.json`;
 			let sdkEntry = "";
@@ -82,7 +82,7 @@ describe("ClientSession compaction recovery integration", () => {
 				sdkEntry = `${JSON.stringify({ type: "custom", customType, data })}\n`;
 				appendFileSync(file, sdkEntry);
 			});
-			session.markCompactionPending(conv);
+			await session.markCompactionPending(conv);
 			const outcome = { status, error: status === "failed" ? "model unavailable" : undefined };
 			session.clearCompactionPending(conv, outcome);
 			expect(manager.appendCustomEntry).toHaveBeenCalledExactlyOnceWith(doneType, { reason: "manual", ...outcome });
@@ -93,9 +93,9 @@ describe("ClientSession compaction recovery integration", () => {
 		},
 	);
 
-	it("can clear pending recovery without an outcome and without appending a transcript entry", () => {
+	it("can clear pending recovery without an outcome and without appending a transcript entry", async () => {
 		const { session, conv, manager } = fixture();
-		session.markCompactionPending(conv);
+		await session.markCompactionPending(conv);
 		session.clearCompactionPending(conv);
 		expect(existsSync(`${file}.compaction-state.json`)).toBe(false);
 		expect(manager.appendCustomEntry).not.toHaveBeenCalled();
@@ -104,9 +104,9 @@ describe("ClientSession compaction recovery integration", () => {
 
 	it.each([false, true])(
 		"consumes interrupted state once and routes the notice without changing the transcript (has sink: %s)",
-		(hasSink) => {
+		async (hasSink) => {
 			const { session, conv, manager } = fixture();
-			session.markCompactionPending(conv);
+			await session.markCompactionPending(conv);
 			const restored = fixture();
 			if (hasSink) restored.session.sinks.add(vi.fn());
 			const notice = expect.objectContaining({
@@ -133,33 +133,36 @@ describe("ClientSession compaction recovery integration", () => {
 		},
 	);
 
-	it.each([false, true])("does not create sidecars without a durable session (missing file: %s)", (missingFile) => {
-		const { session, conv, manager } = fixture(missingFile);
-		if (missingFile) conv.session.sessionFile = undefined;
-		session.markCompactionPending(conv);
-		session.noticeInterruptedCompaction(conv);
-		session.clearCompactionPending(conv, { status: "cancelled" });
-		expect(manager.appendCustomEntry).toHaveBeenCalledExactlyOnceWith(doneType, {
-			reason: "manual",
-			status: "cancelled",
-		});
-		expect(existsSync(`${file}.compaction-state.json`)).toBe(false);
-		expect(readFileSync(file)).toEqual(original);
-		expect(session.emit).not.toHaveBeenCalled();
-	});
+	it.each([false, true])(
+		"does not create sidecars without a durable session (missing file: %s)",
+		async (missingFile) => {
+			const { session, conv, manager } = fixture(missingFile);
+			if (missingFile) conv.session.sessionFile = undefined;
+			await session.markCompactionPending(conv);
+			session.noticeInterruptedCompaction(conv);
+			session.clearCompactionPending(conv, { status: "cancelled" });
+			expect(manager.appendCustomEntry).toHaveBeenCalledExactlyOnceWith(doneType, {
+				reason: "manual",
+				status: "cancelled",
+			});
+			expect(existsSync(`${file}.compaction-state.json`)).toBe(false);
+			expect(readFileSync(file)).toEqual(original);
+			expect(session.emit).not.toHaveBeenCalled();
+		},
+	);
 
-	it("reports sidecar creation I/O failure as a visible warning", () => {
+	it("reports sidecar creation I/O failure as a visible warning", async () => {
 		vi.spyOn(console, "error").mockImplementation(() => {});
 		const { session, conv } = fixture(true, join(file, "nested.jsonl"));
-		expect(() => session.markCompactionPending(conv)).not.toThrow();
+		await expect(session.markCompactionPending(conv)).resolves.toBeUndefined();
 		expectPersistenceWarning(session);
 		expect(readFileSync(file)).toEqual(original);
 	});
 
-	it("retains pending state and reports failure when the SDK cannot append", () => {
+	it("retains pending state and reports failure when the SDK cannot append", async () => {
 		vi.spyOn(console, "error").mockImplementation(() => {});
 		const { session, conv, manager } = fixture();
-		session.markCompactionPending(conv);
+		await session.markCompactionPending(conv);
 		const pending = readFileSync(`${file}.compaction-state.json`);
 		manager.appendCustomEntry.mockImplementation(() => {
 			throw new Error("SDK disk full");
@@ -173,7 +176,7 @@ describe("ClientSession compaction recovery integration", () => {
 
 	it.each(["clearCompactionPending", "noticeInterruptedCompaction"])(
 		"reports sidecar I/O failure from %s",
-		(method) => {
+		async (method) => {
 			vi.spyOn(console, "error").mockImplementation(() => {});
 			const { session, conv } = fixture();
 			mkdirSync(`${file}.compaction-state.json`);

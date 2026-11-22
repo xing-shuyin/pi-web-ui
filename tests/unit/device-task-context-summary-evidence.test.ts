@@ -260,7 +260,7 @@ describe("deterministic report evidence pagination, boundary alignment & version
 		expect(chunkA.digest).not.toBe(chunkC.digest);
 	});
 
-	it("differentiates full_report from report_excerpt and detects excerpt truncation markers", () => {
+	it("differentiates full_report from report_excerpt and detects excerpt truncation markers", async () => {
 		const excerptText = "Start\n[Report excerpt: 50000 original UTF-8 bytes; middle omitted]\nEnd";
 		const evidence = queryTaskReportChunk("task-1", excerptText, 0, 1024, {
 			source: "report_excerpt",
@@ -296,7 +296,7 @@ describe("collab tool task_state & task_evidence endpoints and real report store
 		dirs.push(tempDir);
 		const store = createTaskReportStore(tempDir, "hub");
 		const fullText = "Full detailed report:\n" + "Trace event: 123\n".repeat(300);
-		const meta = store.saveFullReport("task-store-1", "attempt-1", "room-1", "account-1", fullText);
+		const meta = await store.saveFullReport("task-store-1", "attempt-1", "room-1", "account-1", fullText);
 		expect(meta.complete).toBe(true);
 
 		const fetched = store.getReport("task-store-1", "attempt-1", "account-1", "room-1");
@@ -558,7 +558,7 @@ describe("hub HTTP endpoints integration: task-state & evidence", () => {
 			const fullBytes = Buffer.byteLength(realFullText, "utf8");
 			expect(fullBytes).toBeGreaterThan(65536);
 
-			reportStore.saveFullReport("task-1", "att-1", "room-1", "acc-1", realFullText);
+			await reportStore.saveFullReport("task-1", "att-1", "room-1", "acc-1", realFullText);
 
 			const firstChunkRes = await req(
 				"/api/agent/rooms/room-1/conversations/conv-1/evidence?sourceBotId=bot-1&offset=0&limit=32768",

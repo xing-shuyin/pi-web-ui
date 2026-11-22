@@ -95,8 +95,12 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 			stopUnconfirmed: boolean;
 		}
 	>();
-	function sendOutboxEntry(ws: WebSocket, item: TaskOutboxEntry) {
-		options.recovery?.markOutboxAttempt(item.id);
+	async function pushPendingOutbox(ws: WebSocket): Promise<void> {
+		for (const item of options.recovery?.getPendingOutbox() ?? []) await sendOutboxEntry(ws, item);
+	}
+	/** 重发待投递结果：先把 attempts 落盘，再发帧（公告必须在落盘之后）。 */
+	async function sendOutboxEntry(ws: WebSocket, item: TaskOutboxEntry) {
+		await options.recovery?.markOutboxAttempt(item.id);
 		sendFrame(ws, {
 			type: "task_event",
 			taskId: item.taskId,
@@ -289,7 +293,7 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 				});
 			}
 			if (options.recovery) {
-				for (const item of options.recovery.getPendingOutbox()) sendOutboxEntry(ws, item);
+				void pushPendingOutbox(ws).catch(() => ws.close(1011, "Outbox sync failed"));
 			}
 
 			void Promise.resolve()
@@ -357,14 +361,20 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 						typeof frame.taskId === "string" &&
 						typeof frame.attemptId === "string"
 					) {
-						options.recovery?.quarantineOutbox(
-							frame.taskId,
-							frame.attemptId,
-							frame.fingerprint,
-							frame.reasonCode,
-							frame.status,
-							frame.artifactDigest,
-						);
+						// Hub 已拒绝这条结果：本地归档是一次真值落盘，丢失的代价只是重发一次（fingerprint 幂等）。
+						// 中继的 message 回调是同步状态机，不能在这里 await，所以失败只记日志、绝不当成成功。
+						void Promise.resolve(
+							options.recovery?.quarantineOutbox(
+								frame.taskId,
+								frame.attemptId,
+								frame.fingerprint,
+								frame.reasonCode,
+								frame.status,
+								frame.artifactDigest,
+							),
+						).catch((error: unknown) => {
+							console.warn("[Connector] 结果归档落盘失败；保留重发：", error);
+						});
 					}
 					if (
 						frame.accepted === true &&
@@ -373,11 +383,15 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 						typeof frame.status === "string"
 					) {
 						const fp = typeof frame.fingerprint === "string" ? frame.fingerprint : undefined;
-						options.recovery?.ackOutbox(frame.taskId, frame.attemptId, fp, {
-							status: frame.status,
-							artifactDigest: typeof frame.artifactDigest === "string" ? frame.artifactDigest : undefined,
-							contractDigest: typeof frame.contractDigest === "string" ? frame.contractDigest : undefined,
-							manifestDigest: typeof frame.manifestDigest === "string" ? frame.manifestDigest : undefined,
+						void Promise.resolve(
+							options.recovery?.ackOutbox(frame.taskId, frame.attemptId, fp, {
+								status: frame.status,
+								artifactDigest: typeof frame.artifactDigest === "string" ? frame.artifactDigest : undefined,
+								contractDigest: typeof frame.contractDigest === "string" ? frame.contractDigest : undefined,
+								manifestDigest: typeof frame.manifestDigest === "string" ? frame.manifestDigest : undefined,
+							}),
+						).catch((error: unknown) => {
+							console.warn("[Connector] 回执落盘失败；保留重发：", error);
 						});
 					}
 					return;
@@ -525,7 +539,7 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 							...activity,
 						});
 					};
-					const emit = (status: string, report?: string) => {
+					const emit = (status: string, report?: string): Promise<void> | void => {
 						const activeWs = execution.ws;
 						if (
 							!activeWs ||
@@ -536,7 +550,7 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 							return;
 						if (status !== "running" && options.recovery) {
 							const item = options.recovery.getPendingOutboxEntry(task.id, task.attemptId);
-							if (item) sendOutboxEntry(activeWs, item);
+							if (item) return sendOutboxEntry(activeWs, item);
 							return;
 						}
 						if (controller.signal.aborted) return;
@@ -650,18 +664,18 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 						.then(
 							async (result) => {
 								if (options.recovery) {
-									emit("completed");
+									await emit("completed");
 									retryReports();
 									return;
 								}
 								const safeReport = typeof result === "string" ? result : undefined;
-								const reportEntry = options.reportOutbox?.get(task) ?? options.reportOutbox?.markMissing(task);
+								const reportEntry = options.reportOutbox?.get(task) ?? (await options.reportOutbox?.markMissing(task));
 								if (reportEntry) await uploadReport(reportEntry);
-								emit("completed", safeReport);
+								await emit("completed", safeReport);
 							},
-							(error) => {
+							async (error) => {
 								execution.stopUnconfirmed = !!error && typeof error === "object" && error.stopUnconfirmed === true;
-								emit("failed", deviceTaskFailure(error));
+								await emit("failed", deviceTaskFailure(error));
 							},
 						)
 						.finally(() => {

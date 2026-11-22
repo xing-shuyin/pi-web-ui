@@ -1162,7 +1162,11 @@ export default {
 		let nextSshConn = 1;
 
 		async function ensureSshCfgs() {
-			if (sshCfgs) return sshCfgs;
+			if (sshCfgs) {
+				// 早返回也要保证形状：一个半初始化/被外部改坏的 store 不该让 sshconfig_list 整体 500。
+				if (!Array.isArray(sshCfgs.hosts)) sshCfgs.hosts = [];
+				return sshCfgs;
+			}
 			try {
 				sshCfgs = JSON.parse(await fs.readFile(SSH_STORE, "utf8"));
 			} catch {

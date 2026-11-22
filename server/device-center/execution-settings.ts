@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
-import { writeJsonAtomicSync } from "../atomic-file.js";
+import { writeJsonAtomic } from "../atomic-file.js";
 import type { DeviceExecutionSettings } from "../protocol.js";
 
 export type { DeviceExecutionSettings };
@@ -222,12 +222,12 @@ export function loadExecutionSettings(dataDir?: string): DeviceExecutionSettings
 	return validated.value;
 }
 
-export function saveExecutionSettings(dataDir: string, settings: unknown): DeviceExecutionSettings {
+export async function saveExecutionSettings(dataDir: string, settings: unknown): Promise<DeviceExecutionSettings> {
 	const validated = validateExecutionSettings(settings);
 	if (!validated.valid) {
 		throw new DeviceExecutionSettingsError(validated.error);
 	}
 	const file = executionSettingsFilePath(dataDir);
-	writeJsonAtomicSync(file, validated.value);
+	await writeJsonAtomic(file, validated.value);
 	return validated.value;
 }

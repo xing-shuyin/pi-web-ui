@@ -103,9 +103,11 @@ describe("optionsFrom（select 候选值由宿主动态提供）", () => {
 	it("动态字段不做候选值校验（清单在浏览器侧现算），落盘后回读一致", async () => {
 		const h = await makePlugin("dyn", DYNAMIC_PLUGIN);
 		expect(mgr.savePluginSettings("dyn", { model: "xai/grok-4", thinking: "high" }).error).toBeUndefined();
+		await mgr.flushPersistence();
 		expect(h.getSettings().model).toBe("xai/grok-4");
 		expect(h.getSettings().thinking).toBe("high");
 		expect(mgr.savePluginSettings("dyn", { model: "gone/model" }).error).toBeUndefined();
+		await mgr.flushPersistence();
 		expect(h.getSettings().model).toBe("gone/model");
 		expect(JSON.parse(readFileSync(join(pluginStateDir(dir, "dyn"), "storage.json"), "utf8")).settings).toEqual({
 			model: "gone/model",
@@ -119,7 +121,7 @@ describe("optionsFrom（select 候选值由宿主动态提供）", () => {
 describe("savePluginSettings", () => {
 	it("校验 + 原子落盘 + 保留 storage.json 其它键", async () => {
 		const h = await makePlugin("cfg", SCHEMA_PLUGIN);
-		h.storage.set("custom", 42);
+		await h.storage.set("custom", 42);
 		const r = mgr.savePluginSettings("cfg", {
 			pollSec: 120,
 			notify: false,
@@ -128,6 +130,7 @@ describe("savePluginSettings", () => {
 			pass: "s3cret",
 		});
 		expect(r.error).toBeUndefined();
+		await mgr.flushPersistence();
 		const raw = JSON.parse(readFileSync(join(pluginStateDir(dir, "cfg"), "storage.json"), "utf8"));
 		expect(raw.settings).toEqual({ pollSec: 120, notify: false, theme: "light", name: "prod", pass: "s3cret" });
 		expect(raw.custom).toBe(42);
@@ -166,6 +169,7 @@ describe("savePluginSettings", () => {
 			],
 		});
 		expect(mgr.savePluginSettings("objopts", { model: "haru" }, () => "zh").error).toBeUndefined();
+		await mgr.flushPersistence();
 		const list = await mgr.list();
 		expect(list.find((x) => x.id === "objopts")?.settingsValues).toEqual({ model: "haru" });
 		expect(mgr.savePluginSettings("objopts", { model: "invalid" }, () => "zh").error).toContain("值非法");
@@ -184,10 +188,12 @@ describe("host.getSettings + onSettingsChanged", () => {
 		const received: unknown[] = [];
 		const off = h.onSettingsChanged((v) => received.push(v));
 		mgr.savePluginSettings("cfg", { pollSec: 90 });
+		await mgr.flushPersistence();
 		expect(received).toEqual([{ pollSec: 90, notify: true, theme: "dark", name: "demo", pass: "" }]);
 		expect(h.getSettings().pollSec).toBe(90);
 		off();
 		mgr.savePluginSettings("cfg", { pollSec: 100 });
+		await mgr.flushPersistence();
 		expect(received).toHaveLength(1);
 	});
 });
@@ -202,6 +208,7 @@ describe("secret 类型（P0-4 加密存、浏览器只见有无）", () => {
 	it("异步 storage 写锁未释放时拒绝同步保存，不提前通知成功", async () => {
 		const h = await makePlugin("sec", SECRET_PLUGIN);
 		mgr.savePluginSettings("sec", { apiKey: "old", name: "before" });
+		await mgr.flushPersistence();
 		const received: unknown[] = [];
 		h.onSettingsChanged((v) => received.push(v));
 		let release!: () => void;
@@ -221,6 +228,7 @@ describe("secret 类型（P0-4 加密存、浏览器只见有无）", () => {
 	it.each(["{broken", "[]", "null"])("读取旧 secret 遇损坏 storage 返回 error 且不覆盖：%s", async (broken) => {
 		const h = await makePlugin("sec", SECRET_PLUGIN);
 		mgr.savePluginSettings("sec", { apiKey: "old", name: "before" });
+		await mgr.flushPersistence();
 		const received: unknown[] = [];
 		h.onSettingsChanged((value) => received.push(value));
 		const file = join(pluginStateDir(dir, "sec"), "storage.json");
@@ -241,29 +249,35 @@ describe("secret 类型（P0-4 加密存、浏览器只见有无）", () => {
 			],
 		});
 		expect(mgr.savePluginSettings("sec", { apiKey: "old", count: 2 }).error).toBeUndefined();
+		await mgr.flushPersistence();
 		expect(mgr.savePluginSettings("sec", { apiKey: "new", count: 20 }).error).toBeTruthy();
 		expect(h.getSettings()).toEqual({ apiKey: "old", count: 2 });
 	});
 	it("原子提交失败保留旧 secret 和配置，不通知成功", async () => {
 		const h = await makePlugin("sec", SECRET_PLUGIN);
 		expect(mgr.savePluginSettings("sec", { apiKey: "old", name: "before" }).error).toBeUndefined();
+		await mgr.flushPersistence();
 		const received: unknown[] = [];
 		h.onSettingsChanged((value) => received.push(value));
+		const notices: unknown[][] = [];
+		const notify = vi.spyOn(mgr, "notifyAll").mockImplementation((...args: unknown[]) => {
+			notices.push(args);
+		});
 		const file = join(pluginStateDir(dir, "sec"), "storage.json");
 		const original = readFileSync(file, "utf8");
-		const write = atomicFile.writeJsonAtomicSync;
-		const fail = vi.spyOn(atomicFile, "writeJsonAtomicSync").mockImplementation((target, data, indent) => {
-			if (target === file) throw new Error("injected atomic replace failure");
-			return write(target, data, indent);
+		const fail = vi.spyOn(atomicFile, "writeAtomic").mockImplementation(() => {
+			throw new Error("injected atomic replace failure");
 		});
 		try {
-			expect(mgr.savePluginSettings("sec", { apiKey: "new", name: "after" }).error).toContain(
-				"injected atomic replace failure",
-			);
+			// 落盘改异步后，写失败不再从返回值同步上报（校验错误仍然同步）——它走 error notice。
+			expect(mgr.savePluginSettings("sec", { apiKey: "new", name: "after" }).error).toBeUndefined();
+			await mgr.flushPersistence();
 			expect(received).toEqual([]);
+			expect(String(notices[0]?.[1] ?? "")).toContain("injected atomic replace failure");
 			expect(readFileSync(file, "utf8")).toBe(original);
 		} finally {
 			fail.mockRestore();
+			notify.mockRestore();
 		}
 		expect(h.getSettings()).toEqual({ apiKey: "old", name: "before" });
 	});
@@ -275,6 +289,7 @@ describe("secret 类型（P0-4 加密存、浏览器只见有无）", () => {
 	it("保存 secret → getSettings 给真值；磁盘无明文；空串不改", async () => {
 		const h = await makePlugin("sec", SECRET_PLUGIN);
 		expect(mgr.savePluginSettings("sec", { apiKey: "sk-live-123" }).error).toBeUndefined();
+		await mgr.flushPersistence();
 		expect(h.getSettings().apiKey).toBe("sk-live-123");
 		const list = await mgr.list();
 		expect(list.find((x) => x.id === "sec")!.settingsValues?.apiKey).toBe(true);
@@ -282,8 +297,10 @@ describe("secret 类型（P0-4 加密存、浏览器只见有无）", () => {
 		expect(raw).not.toContain("sk-live-123");
 		expect(JSON.parse(raw).settings).toEqual({ name: "demo" });
 		expect(mgr.savePluginSettings("sec", { apiKey: "" }).error).toBeUndefined();
+		await mgr.flushPersistence();
 		expect(h.getSettings().apiKey).toBe("sk-live-123");
 		expect(mgr.savePluginSettings("sec", { apiKey: "sk-new" }).error).toBeUndefined();
+		await mgr.flushPersistence();
 		expect(h.getSettings().apiKey).toBe("sk-new");
 		expect(mgr.savePluginSettings("sec", { apiKey: "x".repeat(5000) }, () => "zh").error).toContain("过长");
 		expect(h.getSettings().apiKey).toBe("sk-new");
@@ -293,6 +310,7 @@ describe("secret 类型（P0-4 加密存、浏览器只见有无）", () => {
 		const received: unknown[] = [];
 		h.onSettingsChanged((v) => received.push(v));
 		mgr.savePluginSettings("sec", { apiKey: "sk-abc" });
+		await mgr.flushPersistence();
 		expect(received).toEqual([{ apiKey: "sk-abc", name: "demo" }]);
 	});
 });

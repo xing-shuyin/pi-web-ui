@@ -29,7 +29,7 @@ describe("universal engine session list identity", () => {
 			mkdirSync(archive);
 			const store = new UniversalSessionStore(join(dir, "data"), engine);
 			for (let i = 0; i < 25; i++)
-				store.saveConversation(archive, {
+				await store.saveConversation(archive, {
 					id: `archived-${i}`,
 					title: `Archived ${i}`,
 					createdAt: i,

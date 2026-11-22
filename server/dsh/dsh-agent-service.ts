@@ -82,7 +82,7 @@ import {
 } from "../model-resolver.js";
 import { loadDshMarketData } from "./dsh-market-service.js";
 import { formatTextQuote, readTextQuote, messageTextWithQuotes } from "../text-quote.js";
-import { writeAtomicSync } from "../atomic-file.js";
+import { writeAtomic } from "../atomic-file.js";
 import { zstdCompressSync } from "node:zlib";
 import { MarkerService } from "../marker-service.js";
 import {
@@ -3096,7 +3096,7 @@ export class DshClientSession {
 	async persistSandbox(path?: string): Promise<void> {
 		const target = path?.trim() || this.cwd;
 		try {
-			const sandbox = this.sandboxes.persist(target);
+			const sandbox = await this.sandboxes.persist(target);
 			await this.pushProjects();
 			this.flushSnapshot();
 			this.emit({
@@ -5261,7 +5261,7 @@ export class DshClientSession {
 				[{ ...log.header, type: "session" }, ...log.events.slice(0, eventIndex)]
 					.map((e) => JSON.stringify(e))
 					.join("\n") + "\n";
-			writeAtomicSync(file, file.endsWith(".zstd") ? zstdCompressSync(Buffer.from(saved)) : saved, { fsync: true });
+			await writeAtomic(file, file.endsWith(".zstd") ? zstdCompressSync(Buffer.from(saved)) : saved, { fsync: true });
 			let cutIdx = idx;
 			while (
 				cutIdx > 0 &&

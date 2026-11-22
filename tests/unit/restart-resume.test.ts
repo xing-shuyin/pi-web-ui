@@ -9,6 +9,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { serializeMessage } from "../../server/serialize.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
+import { INTERRUPTED_RESUME_TTL_MS } from "../../server/client-state.js";
 
 // `conv.session` 是 `runtime.session` 的只读投影（唯一事实源在 runtime）：
 // getter 让假体与原模型同构——替换会话只能写 `runtime.session`。
@@ -52,8 +53,8 @@ function clientFor(conversations: { id: string; session: { sessionFile?: string 
 	return client;
 }
 
-function interrupted(conv: ReturnType<typeof conversation>) {
-	return { title: conv.id, cwd: process.cwd(), at: 1, sessionFile: conv.session.sessionFile };
+function interrupted(conv: ReturnType<typeof conversation>, ageMs = 0) {
+	return { title: conv.id, cwd: process.cwd(), at: Date.now() - ageMs, sessionFile: conv.session.sessionFile };
 }
 
 describe("restart continuation", () => {
@@ -170,6 +171,37 @@ describe("restart continuation", () => {
 			expect.objectContaining({ level: "error", textEn: "Error: resume failed" }),
 		);
 		expect(second.session.sendCustomMessage).toHaveBeenCalledOnce();
+	});
+
+	it("过期中断不自动重跑，只提示手动恢复（issue #964）", async () => {
+		const old = conversation("old");
+		const client = clientFor([old]);
+
+		await client.resumeInterrupted([interrupted(old, INTERRUPTED_RESUME_TTL_MS + 60_000)]);
+
+		expect(old.session.sendCustomMessage).not.toHaveBeenCalled();
+		expect(client.switchSession).not.toHaveBeenCalled();
+		expect(client.emit).toHaveBeenCalledWith(
+			expect.objectContaining({ level: "info", textEn: expect.stringContaining("were not resumed automatically") }),
+		);
+	});
+
+	it("only acked after a successful reopen: a failed reopen keeps the record", async () => {
+		const target = conversation("target");
+		const client = clientFor([target]);
+		const dropped: string[][] = [];
+		client.stateStore = {
+			listInterrupted: () => [interrupted(target)],
+			dropInterrupted: (_id: string, files: string[]) => {
+				dropped.push(files);
+				return 0;
+			},
+		};
+		client.switchSession.mockRejectedValue(new Error("open failed"));
+
+		await client.resumeInterrupted(undefined);
+
+		expect(dropped).toEqual([]);
 	});
 
 	it("does not emit stale completion or failure updates after the session was replaced", async () => {

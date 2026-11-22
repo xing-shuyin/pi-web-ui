@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { writeJsonAtomicSync } from "../atomic-file.js";
+import { writeJsonAtomic } from "../atomic-file.js";
 import type { CanvasCustomCard, CanvasEngineId, CanvasNodeRole } from "../protocol.js";
 import { isSafeGraphId } from "./canvas-store.js";
 
@@ -26,8 +26,9 @@ export function listCustomCards(dataDir: string): CanvasCustomCard[] {
 	}
 }
 
-function persist(dataDir: string, cards: CanvasCustomCard[]): void {
-	writeJsonAtomicSync(cardsPath(dataDir), { cards });
+/** 卡片列表是真值：`await` 返回时文件已落盘，随后 `listCustomCards` 必能读到。 */
+async function persist(dataDir: string, cards: CanvasCustomCard[]): Promise<void> {
+	await writeJsonAtomic(cardsPath(dataDir), { cards });
 }
 
 export interface CardInput {
@@ -83,11 +84,11 @@ export function sanitizeCardInput(
 	return out;
 }
 
-export function addCustomCard(
+export async function addCustomCard(
 	dataDir: string,
 	input: CardInput,
 	isValidRole: (r: string) => boolean,
-): CanvasCustomCard {
+): Promise<CanvasCustomCard> {
 	const clean = sanitizeCardInput(input, isValidRole);
 	const cards = listCustomCards(dataDir);
 	const card: CanvasCustomCard = {
@@ -96,16 +97,16 @@ export function addCustomCard(
 		updatedAt: Date.now(),
 	};
 	cards.push(card);
-	persist(dataDir, cards);
+	await persist(dataDir, cards);
 	return card;
 }
 
-export function updateCustomCard(
+export async function updateCustomCard(
 	dataDir: string,
 	id: string,
 	patch: CardInput,
 	isValidRole: (r: string) => boolean,
-): CanvasCustomCard {
+): Promise<CanvasCustomCard> {
 	if (!isSafeCardId(id)) throw new Error(`Invalid card id: ${JSON.stringify(id)}`);
 	const cards = listCustomCards(dataDir);
 	const card = cards.find((c) => c.id === id);
@@ -126,15 +127,15 @@ export function updateCustomCard(
 	if (!clean.model) delete card.model;
 	if (!clean.engine) delete card.engine;
 	if (!clean.config) delete card.config;
-	persist(dataDir, cards);
+	await persist(dataDir, cards);
 	return card;
 }
 
-export function deleteCustomCard(dataDir: string, id: string): boolean {
+export async function deleteCustomCard(dataDir: string, id: string): Promise<boolean> {
 	if (!isSafeCardId(id)) throw new Error(`Invalid card id: ${JSON.stringify(id)}`);
 	const cards = listCustomCards(dataDir);
 	const next = cards.filter((c) => c.id !== id);
 	if (next.length === cards.length) return false;
-	persist(dataDir, next);
+	await persist(dataDir, next);
 	return true;
 }

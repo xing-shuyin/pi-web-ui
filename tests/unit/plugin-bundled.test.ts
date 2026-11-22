@@ -35,11 +35,11 @@ describe("bundled module provisioning", () => {
 		const receipt = join(data, "bundled-plugin-installs.json");
 		writeFileSync(receipt, JSON.stringify({ version: 1, ids: ["superagent"] }));
 		const sourceCatalog = join(project, "plugins", "catalog.json");
-		prepareBundledPlugins(data, sourceCatalog, new Set(["superagent"]));
+		await prepareBundledPlugins(data, sourceCatalog, new Set(["superagent"]));
 		expect(existsSync(join(data, "plugins", "superagent", "manifest.json"))).toBe(true);
 		rmSync(join(data, "plugins", "superagent"), { recursive: true });
 		writeFileSync(receipt, "broken legacy optional receipt");
-		expect(() => prepareBundledPlugins(data, sourceCatalog)).not.toThrow();
+		await expect(prepareBundledPlugins(data, sourceCatalog)).resolves.toBeTruthy();
 		expect(existsSync(join(data, "plugins", "superagent", "manifest.json"))).toBe(true);
 		expect(readFileSync(receipt, "utf8")).toBe("broken legacy optional receipt");
 	});
@@ -86,11 +86,11 @@ describe("bundled module provisioning", () => {
 		expect((await manager.reload()).map((item) => item.id)).not.toContain("sample");
 		expect(existsSync(join(data, "plugins", "sample"))).toBe(false);
 	});
-	it("preserves existing code and settings during first provisioning", () => {
+	it("preserves existing code and settings during first provisioning", async () => {
 		mkdirSync(join(data, "plugins", "sample"), { recursive: true });
 		writeFileSync(join(data, "plugins", "sample", "index.mjs"), "user version");
 		writeFileSync(join(data, "settings.json"), '{"disabledPlugins":["sample"]}');
-		prepareBundledPlugins(data, catalog);
+		await prepareBundledPlugins(data, catalog);
 		expect(readFileSync(join(data, "plugins", "sample", "index.mjs"), "utf8")).toBe("user version");
 		expect(readFileSync(join(data, "settings.json"), "utf8")).toBe('{"disabledPlugins":["sample"]}');
 	});
@@ -106,29 +106,29 @@ describe("bundled module provisioning", () => {
 			expect(existsSync(join(data, "plugins", "sample"))).toBe(false);
 		});
 	});
-	it("does not install other catalog entries or traversal paths", () => {
+	it("does not install other catalog entries or traversal paths", async () => {
 		writeFileSync(catalog, JSON.stringify([{ id: "sample" }, { id: "../escape", preinstall: true }]));
-		prepareBundledPlugins(data, catalog);
+		await prepareBundledPlugins(data, catalog);
 		expect(existsSync(join(data, "plugins", "sample"))).toBe(false);
 		expect(existsSync(join(data, "escape"))).toBe(false);
 	});
-	it("retries a missing bundled payload when it becomes available", () => {
+	it("retries a missing bundled payload when it becomes available", async () => {
 		const sourceManifest = join(root, "package", "plugins", "sample", "manifest.json");
 		rmSync(sourceManifest);
-		prepareBundledPlugins(data, catalog);
+		await prepareBundledPlugins(data, catalog);
 		expect(existsSync(join(data, "bundled-plugin-installs.json"))).toBe(false);
 		writeFileSync(sourceManifest, JSON.stringify({ id: "sample" }));
-		prepareBundledPlugins(data, catalog);
+		await prepareBundledPlugins(data, catalog);
 		expect(existsSync(join(data, "plugins", "sample", "manifest.json"))).toBe(true);
 	});
-	it("preserves a corrupt receipt instead of silently reversing an uninstall", () => {
+	it("preserves a corrupt receipt instead of silently reversing an uninstall", async () => {
 		mkdirSync(data, { recursive: true });
 		writeFileSync(join(data, "bundled-plugin-installs.json"), "broken");
-		expect(() => prepareBundledPlugins(data, catalog)).toThrow();
+		await expect(prepareBundledPlugins(data, catalog)).rejects.toThrow();
 		expect(existsSync(join(data, "plugins", "sample"))).toBe(false);
 		expect(readFileSync(join(data, "bundled-plugin-installs.json"), "utf8")).toBe("broken");
 	});
-	it("materialises a payload whose package path itself contains node_modules (npm -g layout)", () => {
+	it("materialises a payload whose package path itself contains node_modules (npm -g layout)", async () => {
 		// 回归 issue #856：全局安装时包就在 .../node_modules/pi-web-ui 下，
 		// 拿绝对路径去匹配 node_modules 会把整棵树过滤光，只剩一个空目录。
 		const pkgPlugins = join(root, "node_modules", "pi-web-ui", "plugins");
@@ -136,21 +136,21 @@ describe("bundled module provisioning", () => {
 		writeFileSync(join(pkgPlugins, "catalog.json"), JSON.stringify([{ id: "sample", preinstall: true }]));
 		writeFileSync(join(pkgPlugins, "sample", "manifest.json"), JSON.stringify({ id: "sample", version: "1.0.0" }));
 		writeFileSync(join(pkgPlugins, "sample", "index.mjs"), "export default {};");
-		const outcomes = prepareBundledPlugins(data, join(pkgPlugins, "catalog.json"));
+		const outcomes = await prepareBundledPlugins(data, join(pkgPlugins, "catalog.json"));
 		expect(outcomes.find((o) => o.id === "sample")?.status).toBe("created");
 		expect(existsSync(join(data, "plugins", "sample", "manifest.json"))).toBe(true);
 		expect(existsSync(join(data, "plugins", "sample", "index.mjs"))).toBe(true);
 	});
-	it("repairs an empty plugin directory left behind by a failed copy instead of treating it as installed", () => {
+	it("repairs an empty plugin directory left behind by a failed copy instead of treating it as installed", async () => {
 		mkdirSync(join(data, "plugins", "sample"), { recursive: true });
-		prepareBundledPlugins(data, catalog);
+		await prepareBundledPlugins(data, catalog);
 		expect(existsSync(join(data, "plugins", "sample", "manifest.json"))).toBe(true);
 		expect(existsSync(join(data, "plugins", "sample", "index.mjs"))).toBe(true);
 	});
-	it("keeps a half-materialised directory repairable across restarts", () => {
-		prepareBundledPlugins(data, catalog);
+	it("keeps a half-materialised directory repairable across restarts", async () => {
+		await prepareBundledPlugins(data, catalog);
 		rmSync(join(data, "plugins", "sample", "index.mjs"));
-		prepareBundledPlugins(data, catalog);
+		await prepareBundledPlugins(data, catalog);
 		expect(existsSync(join(data, "plugins", "sample", "index.mjs"))).toBe(true);
 	});
 });

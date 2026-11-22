@@ -395,7 +395,7 @@ export class UniversalSession implements DispatchSession {
 				if (!origin || this.disposed) return;
 				origin.conv.title = title;
 				origin.conv.updatedAt = Date.now();
-				if (!origin.conv.isEphemeral) this.store.saveConversation(origin.cwd, origin.conv);
+				if (!origin.conv.isEphemeral) this.store.queueWrite(origin.cwd, origin.conv);
 				if (this.cwd === origin.cwd) this.flushSnapshot();
 			},
 			refreshMarkers: () => this.flushSnapshot(),
@@ -485,7 +485,8 @@ export class UniversalSession implements DispatchSession {
 			const initialConv = this.createEmptyConversation("新对话");
 			this.activeConvId = initialConv.id;
 			this.conversations.set(initialConv.id, initialConv);
-			this.store.saveConversation(this.cwd, initialConv);
+			// 构造器不能 await：排队写入的顺序由 store 的写链保证，失败记日志。
+			this.store.queueWrite(this.cwd, initialConv);
 		}
 
 		if (typeof this.stateStore?.remember === "function" && this.cwd) {
@@ -812,7 +813,7 @@ export class UniversalSession implements DispatchSession {
 						});
 						dispatchConv.updatedAt = dispatchNow;
 						if (!dispatchConv.isEphemeral) {
-							this.store.saveConversation(this.cwd, dispatchConv);
+							await this.store.saveConversation(this.cwd, dispatchConv);
 						}
 						this.flushSnapshot();
 					}
@@ -884,7 +885,7 @@ export class UniversalSession implements DispatchSession {
 					this.stateStore.saveSessionTitle(this.cwd, conv.id, cleanTitle);
 				}
 				if (!conv.isEphemeral) {
-					this.store.saveConversation(this.cwd, conv);
+					await this.store.saveConversation(this.cwd, conv);
 				}
 				void this.refreshSessions();
 			}
@@ -906,7 +907,7 @@ export class UniversalSession implements DispatchSession {
 
 			conv.updatedAt = now;
 			if (!conv.isEphemeral) {
-				this.store.saveConversation(this.cwd, conv);
+				await this.store.saveConversation(this.cwd, conv);
 			}
 
 			this.sessionDrafts.delete(conv.id);
@@ -919,7 +920,7 @@ export class UniversalSession implements DispatchSession {
 				if (!isCurrent()) return;
 				conv.driverSessionId = sid;
 				if (!conv.isEphemeral) {
-					this.store.saveConversation(turn.cwd, conv);
+					await this.store.saveConversation(turn.cwd, conv);
 				}
 			}
 
@@ -939,7 +940,7 @@ export class UniversalSession implements DispatchSession {
 			const sink: AgentEventSink = {
 				onSessionStarted: (sessionId) => {
 					conv.driverSessionId = sessionId;
-					if (!conv.isEphemeral) this.store.saveConversation(turn.cwd, conv);
+					if (!conv.isEphemeral) this.store.queueWrite(turn.cwd, conv);
 				},
 				onThinkingDelta: (delta: string) => {
 					this.streamingThinking += delta;
@@ -1129,7 +1130,8 @@ export class UniversalSession implements DispatchSession {
 		this.streamingText = "";
 		conv.updatedAt = Date.now();
 		if (!conv.isEphemeral) {
-			this.store.saveConversation(turn.cwd, conv);
+			// 收尾是同步契约（sink 的 onTurnComplete 不 await）：排队落盘，顺序由 store 写链保证。
+			this.store.queueWrite(turn.cwd, conv);
 		}
 		if (finalText && finalText.includes("[[")) {
 			this.markerOrigins.set(conv.id, turn);
@@ -1339,7 +1341,7 @@ export class UniversalSession implements DispatchSession {
 		this.conversations.set(newConv.id, newConv);
 		this.activeConvId = newConv.id;
 		if (!newConv.isEphemeral) {
-			this.store.saveConversation(this.cwd, newConv);
+			await this.store.saveConversation(this.cwd, newConv);
 		}
 		this.flushSnapshot(true);
 		void this.refreshSessions();
@@ -1412,7 +1414,7 @@ export class UniversalSession implements DispatchSession {
 			conv.title = trimmed;
 			conv.updatedAt = Date.now();
 			if (!conv.isEphemeral) {
-				this.store.saveConversation(this.cwd, conv);
+				await this.store.saveConversation(this.cwd, conv);
 			}
 			if (this.stateStore) {
 				this.stateStore.saveSessionTitle(this.cwd, id, trimmed);
@@ -1431,7 +1433,7 @@ export class UniversalSession implements DispatchSession {
 			conv.title = trimmed;
 			conv.updatedAt = Date.now();
 			if (!conv.isEphemeral) {
-				this.store.saveConversation(this.cwd, conv);
+				await this.store.saveConversation(this.cwd, conv);
 			}
 			this.flushSnapshot();
 			void this.refreshSessions();
@@ -1440,7 +1442,7 @@ export class UniversalSession implements DispatchSession {
 
 	async deleteSession(path: string): Promise<void> {
 		const targetId = path.trim() || this.activeConvId;
-		this.store.deleteConversation(this.cwd, targetId);
+		await this.store.deleteConversation(this.cwd, targetId);
 		if (this.conversations.has(targetId)) {
 			await this.dismissConversation(targetId, true, true);
 		} else {
@@ -1506,7 +1508,7 @@ export class UniversalSession implements DispatchSession {
 		if (conv) {
 			conv.pinned = pinned;
 			if (!conv.isEphemeral) {
-				this.store.pinConversation(this.cwd, id, pinned);
+				await this.store.pinConversation(this.cwd, id, pinned);
 			}
 			if (this.stateStore) {
 				this.stateStore.setSessionPinned(this.cwd, id, pinned);
@@ -1547,7 +1549,7 @@ export class UniversalSession implements DispatchSession {
 		targetConv.messages = targetConv.messages.slice(0, idx);
 		targetConv.updatedAt = Date.now();
 		if (!targetConv.isEphemeral) {
-			this.store.saveConversation(this.cwd, targetConv);
+			await this.store.saveConversation(this.cwd, targetConv);
 		}
 		this.flushSnapshot(true);
 		void this.refreshSessions();
@@ -1570,7 +1572,7 @@ export class UniversalSession implements DispatchSession {
 		}
 		conv.isEphemeral = false;
 		conv.updatedAt = Date.now();
-		this.store.saveConversation(this.cwd, conv);
+		await this.store.saveConversation(this.cwd, conv);
 		this.flushSnapshot(true);
 		void this.refreshSessions();
 		this.emitNotice(
@@ -1614,7 +1616,7 @@ export class UniversalSession implements DispatchSession {
 
 		this.conversations.set(forkedConv.id, forkedConv);
 		if (!forkedConv.isEphemeral) {
-			this.store.saveConversation(this.cwd, forkedConv);
+			await this.store.saveConversation(this.cwd, forkedConv);
 		}
 		this.activeConvId = forkedConv.id;
 		this.flushSnapshot(true);
@@ -1662,7 +1664,7 @@ export class UniversalSession implements DispatchSession {
 		conv.updatedAt = Date.now();
 		this.followUpQueue.length = 0;
 		if (!conv.isEphemeral) {
-			this.store.saveConversation(this.cwd, conv);
+			await this.store.saveConversation(this.cwd, conv);
 		}
 		this.flushSnapshot(true);
 		void this.refreshSessions();
@@ -2095,7 +2097,7 @@ export class UniversalSession implements DispatchSession {
 				const initialConv = this.createEmptyConversation("新对话");
 				this.activeConvId = initialConv.id;
 				this.conversations.set(initialConv.id, initialConv);
-				this.store.saveConversation(this.cwd, initialConv);
+				await this.store.saveConversation(this.cwd, initialConv);
 			}
 
 			await this.refreshSessions();
@@ -2278,7 +2280,7 @@ export class UniversalSession implements DispatchSession {
 	async persistSandbox(path?: string): Promise<void> {
 		const target = path?.trim() || this.cwd;
 		try {
-			const sandbox = this.sandboxes.persist(target);
+			const sandbox = await this.sandboxes.persist(target);
 			this.flushSnapshot();
 			this.emitNotice(
 				"info",
@@ -3134,7 +3136,7 @@ export class UniversalSession implements DispatchSession {
 
 		this.conversations.set(convId, subConv);
 		if (persist) {
-			this.store.saveConversation(targetCwd, subConv);
+			await this.store.saveConversation(targetCwd, subConv);
 		}
 
 		this.flushSnapshot();
@@ -3209,7 +3211,7 @@ export class UniversalSession implements DispatchSession {
 			},
 			onSessionStarted: (sessionId) => {
 				conv.driverSessionId = sessionId;
-				if (!conv.isEphemeral) this.store.saveConversation(cwd, conv);
+				if (!conv.isEphemeral) this.store.queueWrite(cwd, conv);
 			},
 			onThinkingDelta: (delta: string) => {
 				const lastBlock = assistantMsg.content.at(-1);
@@ -3275,7 +3277,7 @@ export class UniversalSession implements DispatchSession {
 					}
 				}
 				if (!conv.isEphemeral) {
-					this.store.saveConversation(cwd, conv);
+					this.store.queueWrite(cwd, conv);
 				}
 				this.subagentDrivers.delete(convId);
 				try {
@@ -3292,7 +3294,7 @@ export class UniversalSession implements DispatchSession {
 				conv.subagentState = "done";
 				conv.updatedAt = Date.now();
 				if (!conv.isEphemeral) {
-					this.store.saveConversation(cwd, conv);
+					this.store.queueWrite(cwd, conv);
 				}
 				this.subagentDrivers.delete(convId);
 				try {

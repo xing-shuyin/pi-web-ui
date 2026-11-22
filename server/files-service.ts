@@ -15,6 +15,7 @@ import {
 	parseRemoteWorkspaceUri,
 	resolveRemoteWorkspacePath,
 } from "./remote-ssh-service.js";
+import { launchShell, openArgv, revealArgv, type ShellName } from "./shell-activate.js";
 
 export const IS_WIN32 = process.platform === "win32";
 
@@ -91,11 +92,20 @@ const IGNORED_ENTRIES = new Set([
 	"__pycache__",
 	"coverage",
 	".pi-web",
+	".pi-materials",
 	".DS_Store",
 	"Thumbs.db",
 ]);
 
-const IGNORED_ENTRIES_WIN = new Set(["node_modules", ".git", ".pi-web", ".DS_Store", "Thumbs.db", "desktop.ini"]);
+const IGNORED_ENTRIES_WIN = new Set([
+	"node_modules",
+	".git",
+	".pi-web",
+	".pi-materials",
+	".DS_Store",
+	"Thumbs.db",
+	"desktop.ini",
+]);
 
 function ignoredEntries(): Set<string> {
 	return IS_WIN32 ? IGNORED_ENTRIES_WIN : IGNORED_ENTRIES;
@@ -179,6 +189,13 @@ export interface FilesHost {
 	getLang?: () => ServerLang;
 	getUploadMaxBytes?: () => number;
 }
+
+/** 委派给哪个外壳就怎么说（`xdg-open` 只能打开目录，没有「选中文件」的语义）。 */
+const REVEAL_NOTICE: Record<ShellName, [string, string]> = {
+	explorer: ["已在资源管理器中显示：", "Revealed in File Explorer: "],
+	finder: ["已在访达中显示：", "Revealed in Finder: "],
+	"xdg-open": ["已打开所在目录：", "Opened containing folder: "],
+};
 
 export class FilesService {
 	private fsWatcher: ReturnType<typeof watch> | null = null;
@@ -1253,38 +1270,20 @@ export class FilesService {
 				text: "无法打开系统文件管理：" + detail + "（远端/无桌面主机不支持）",
 				textEn: "Cannot open system file manager: " + detail + " (unsupported on remote/headless hosts)",
 			});
-		try {
-			const { spawnChild } = await import("./spawn-child.js");
-			// 打开文件管理器必须活过本进程：两平台都 detached（原实现就是 detached: true）。
-			const child = spawnChild({ cmd, args, stdio: "ignore", detached: true }).child;
-			if (typeof child.unref === "function") child.unref();
-			const launched = await new Promise<boolean>((resolve) => {
-				let done = false;
-				const settle = (v: boolean) => {
-					if (!done) {
-						done = true;
-						resolve(v);
-					}
-				};
-				child.on("spawn", () => settle(true));
-				child.on("error", () => settle(false));
-				setTimeout(() => settle(true), 3000);
-			});
-			if (!launched) {
-				fail(cmd);
-				return;
-			}
-			this.host.emit({ type: "notice", level: "info", text: okText, textEn: okTextEn });
-		} catch (e) {
-			fail((e as Error).message);
+		// 委派给系统外壳：不走 spawnChild（那是受监护子进程，`windowsHide: true` 会把 explorer 建的
+		// 文件夹窗口一起藏掉，见 server/shell-activate.ts 的说明）。
+		const result = await launchShell(cmd, args);
+		if (!result.ok) {
+			fail(result.reason ?? cmd);
+			return;
 		}
+		this.host.emit({ type: "notice", level: "info", text: okText, textEn: okTextEn });
 	}
 
 	async revealEntry(path: string): Promise<void> {
 		const err = (text: string, textEn?: string) => this.host.emit({ type: "notice", level: "warning", text, textEn });
 		try {
 			const fsp = await import("node:fs/promises");
-			const { dirname } = await import("node:path");
 			const trimmed = path.trim();
 			const t = !trimmed ? { abs: resolve(this.host.getCwd()) } : this.resolveOpTarget(trimmed);
 			if (!t) {
@@ -1300,28 +1299,9 @@ export class FilesService {
 			const isDir = st.isDirectory();
 			const segs = trimmed.split("/");
 			const base = !trimmed ? t.abs.split(/[\\/]/).pop() || t.abs : (segs[segs.length - 1] ?? trimmed);
-			if (process.platform === "win32") {
-				await this.spawnDetached(
-					"explorer.exe",
-					isDir ? ["/n,", abs] : ["/select,", abs],
-					"已在资源管理器中显示：" + base,
-					"Revealed in File Explorer: " + base,
-				);
-			} else if (process.platform === "darwin") {
-				await this.spawnDetached(
-					"open",
-					isDir ? [abs] : ["-R", abs],
-					"已在访达中显示：" + base,
-					"Revealed in Finder: " + base,
-				);
-			} else {
-				await this.spawnDetached(
-					"xdg-open",
-					[isDir ? abs : dirname(abs)],
-					"已打开所在目录：" + base,
-					"Opened containing folder: " + base,
-				);
-			}
+			const launch = revealArgv(abs, isDir);
+			const notice = REVEAL_NOTICE[launch.shell];
+			await this.spawnDetached(launch.cmd, launch.args, notice[0] + base, notice[1] + base);
 		} catch (e) {
 			err("定位失败：" + (e as Error).message, "Reveal failed: " + (e as Error).message);
 		}
@@ -1347,8 +1327,13 @@ export class FilesService {
 			}
 			const segs = path.split("/");
 			const base = segs[segs.length - 1] ?? path;
-			const cmd = process.platform === "win32" ? "explorer.exe" : process.platform === "darwin" ? "open" : "xdg-open";
-			await this.spawnDetached(cmd, [t.abs], "已用默认应用打开：" + base, "Opened with default app: " + base);
+			const launch = openArgv(t.abs);
+			await this.spawnDetached(
+				launch.cmd,
+				launch.args,
+				"已用默认应用打开：" + base,
+				"Opened with default app: " + base,
+			);
 		} catch (e) {
 			err("打开失败：" + (e as Error).message, "Open failed: " + (e as Error).message);
 		}

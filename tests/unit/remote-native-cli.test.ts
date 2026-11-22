@@ -7,6 +7,7 @@ import { discoverRemoteNativeClis, resolveRemoteNativeCliLaunch } from "../../se
 import { RemoteSshService, shellQuotePosix } from "../../server/remote-ssh-service.js";
 import { EventEmitter } from "node:events";
 import * as nodePty from "node-pty";
+import { makeTestTmpDir } from "../helpers/tmp.js";
 
 const uri = "ssh://tester@example.test/work";
 let root: string;
@@ -14,10 +15,13 @@ const posix = (file: string) =>
 	file.replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_, drive: string) => `/${drive.toLowerCase()}`);
 const shell =
 	process.platform === "win32"
-		? path.join(process.env.ProgramFiles ?? "C:/Program Files", "Git/bin/bash.exe")
+		? path.join(
+				process.env.ProgramFiles ?? path.join(process.env.SystemDrive ?? "C:", "Program Files"),
+				"Git/bin/bash.exe",
+			)
 		: "/bin/sh";
 beforeEach(async () => {
-	root = await fs.mkdtemp(path.join(process.platform === "win32" ? "E:/tmp" : os.tmpdir(), "remote-native-cli-"));
+	root = await makeTestTmpDir("remote-native-cli");
 });
 afterEach(async () => {
 	vi.restoreAllMocks();

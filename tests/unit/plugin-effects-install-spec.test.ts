@@ -148,7 +148,7 @@ export default {
 		await mgr.ensureLoaded();
 		const p = mgr["loaded"].get("eff2")!;
 		expect(p.effects!.size).toBe(1);
-		mgr.dispose();
+		await mgr.dispose();
 		expect(p.effects!.size).toBe(0);
 		expect(mgr.listCommands()).toEqual([]);
 	});

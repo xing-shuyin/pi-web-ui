@@ -142,7 +142,7 @@ describe("Universal multi-step stream / snapshot consistency (#801)", () => {
 		expect(JSON.stringify(ui.messages)).not.toContain("late child");
 	});
 
-	it("publishes success/error tool results before turn completion, then persists each exactly once", () => {
+	it("publishes success/error tool results before turn completion, then persists each exactly once", async () => {
 		sink.onToolStart("ok", "bash", {});
 		sink.onToolEnd("ok", { output: "done" });
 		sink.onToolStart("bad", "read", {});
@@ -156,6 +156,8 @@ describe("Universal multi-step stream / snapshot consistency (#801)", () => {
 		sink.onTurnComplete();
 		expect(ui.isStreaming).toBe(false);
 		expect(ui.messages.filter((m) => m.role === "toolResult")).toHaveLength(2);
+		// 收尾落盘已排队（onTurnComplete 是同步 sink）：读盘前等它落完。
+		await store.flush();
 		const saved = store.loadConversation(dir, session.activeConversationId())!;
 		expect(saved.messages.filter((m) => m.role === "toolResult")).toHaveLength(2);
 	});
@@ -191,6 +193,7 @@ describe("Universal multi-step stream / snapshot consistency (#801)", () => {
 			sink.onToolEnd("late", { output: "late output" });
 			sink.onThinkingDelta("late thinking");
 			expect(ui.messages.some((m) => m.role === "assistant" || m.role === "toolResult")).toBe(false);
+			await store.flush();
 			const saved = store.loadConversation(dir, owner)!;
 			expect(saved.messages.filter((m) => m.role === "toolResult").map((m) => m.toolCallId)).toEqual(["owned"]);
 			await session.switchConversation(owner);

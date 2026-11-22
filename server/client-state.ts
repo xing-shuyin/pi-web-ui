@@ -1023,6 +1023,12 @@ function isStateRecord(value: unknown): value is Record<string, ClientState> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * 中断续跑的时效上限：超过这个时长的中断记录不再自动续跑，只提示手动恢复
+ * （避免重启后把很久以前的中断重放成新回合）。
+ */
+export const INTERRUPTED_RESUME_TTL_MS = 12 * 60 * 60 * 1000;
+
 export class ClientStateStore {
 	private cache: Record<string, ClientState> | null = null;
 	/** 原文件读不出来时置位：读不到 ≠ 没有内容，本次运行一律不写盘，避免把读不到的原文件覆盖成空壳。 */
@@ -1435,6 +1441,29 @@ export class ClientStateStore {
 		const state = (all[clientId] ??= { projects: [] });
 		this.touchClient(all, clientId);
 		state.interrupted = list.slice(0, 8);
+		this.save();
+	}
+
+	/**
+	 * 只读中断列表：续跑链路以「成功才 ack」为准，所以取用与删除必须分开
+	 * （`takeInterrupted` 是旧的「取完即清」语义，不再用于续跑）。
+	 */
+	listInterrupted(clientId: string): NonNullable<ClientState["interrupted"]> {
+		const list = this.load()[clientId]?.interrupted;
+		return list?.length ? structuredClone(list) : [];
+	}
+
+	/** 按 `sessionFile` 精确剔除已成功续跑的记录（`""` 代表没有 sessionFile 的那类）。 */
+	dropInterrupted(clientId: string, sessionFiles: string[]): void {
+		const all = this.load();
+		const state = all[clientId];
+		if (!state?.interrupted?.length || sessionFiles.length === 0) return;
+		const drop = new Set(sessionFiles);
+		const kept = state.interrupted.filter((entry) => !drop.has(entry.sessionFile ?? ""));
+		if (kept.length === state.interrupted.length) return;
+		this.touchClient(all, clientId);
+		if (kept.length > 0) state.interrupted = kept;
+		else delete state.interrupted;
 		this.save();
 	}
 

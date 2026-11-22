@@ -40,6 +40,26 @@ function authToken(): string {
 	}
 }
 
+/**
+ * 登出：清掉持久化口令，同时把地址栏里的 `?token=` 抹掉。
+ *
+ * 两个位置必须一起清：只要 localStorage 里还留着口令（或地址栏里还挂着），下一次 `withToken()`
+ * 就会把它重新贴到请求上——「退出登录」当场失效。服务端那颗 HttpOnly cookie 客户端删不掉，
+ * 那要靠服务端的会话吊销（#969 第二层）；移动端的口令在壳里（`mobile.token`），本函数不碰。
+ */
+export function clearAuthToken(): void {
+	try {
+		localStorage.removeItem(KEY);
+	} catch {}
+	try {
+		const url = new URL(window.location.href);
+		if (!url.searchParams.has("token")) return;
+		url.searchParams.delete("token");
+		url.searchParams.delete("__tried_cached_token");
+		window.history.replaceState(null, "", url.toString());
+	} catch {}
+}
+
 /** 给相对路径 URL 追加 token 查询参数（已带 query 的用 & 连接）。 */
 export function withToken(url: string): string {
 	const mobile = getMobileRuntime();

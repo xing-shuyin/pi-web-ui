@@ -95,7 +95,7 @@ export function makeClaimFilesTool(host: ClaimFilesHost, lang?: () => ServerLang
 			if (action === "claim" || action === "release") {
 				const rawPaths = Array.isArray(p.paths) ? p.paths : [];
 				if (action === "release" && rawPaths.length === 0) {
-					const n = store.release(cwd, self.convId);
+					const n = await store.release(cwd, self.convId);
 					return text(
 						pick(
 							getLang(),
@@ -135,7 +135,7 @@ export function makeClaimFilesTool(host: ClaimFilesHost, lang?: () => ServerLang
 						typeof p.ttlMinutes === "number" && Number.isFinite(p.ttlMinutes)
 							? Math.floor(p.ttlMinutes * 60000)
 							: CLAIM_TTL_MS;
-					const { claimed, conflicts } = store.claim(
+					const { claimed, conflicts } = await store.claim(
 						cwd,
 						{ convId: self.convId, title: self.title },
 						rawPaths.map((s) => ({
@@ -182,7 +182,7 @@ export function makeClaimFilesTool(host: ClaimFilesHost, lang?: () => ServerLang
 						},
 					);
 				}
-				const n = store.release(cwd, self.convId, rawPaths);
+				const n = await store.release(cwd, self.convId, rawPaths);
 				return text(
 					pick(
 						getLang(),

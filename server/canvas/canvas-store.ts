@@ -7,7 +7,8 @@
 import { CanvasRuntimeError, canvasRuntimeMessage } from "./canvas-runtime-messages.js";
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { writeJsonAtomicSync } from "../atomic-file.js";
+import { writeJsonAtomic } from "../atomic-file.js";
+import { MATERIAL_LIMITS } from "../material.js";
 import type { CanvasGraph, CanvasGraphSummary } from "../protocol.js";
 
 export function createDefaultCanvasGraph(id = "default"): CanvasGraph {
@@ -111,6 +112,55 @@ export function createDefaultCanvasGraph(id = "default"): CanvasGraph {
 	};
 }
 
+/**
+ * 节点材料的规格校验：只收路径字符串、按 `MATERIAL_LIMITS.maxItems` 截断、去重。
+ * 不做可达性判定（不 stat）——那是 `server/material.ts#normalizeMaterials` 的事。
+ */
+export function sanitizeNodeMaterials(raw: unknown): string[] {
+	const items: unknown[] = Array.isArray(raw) ? raw : [];
+	const out: string[] = [];
+	const seen = new Set<string>();
+	for (const item of items) {
+		if (typeof item !== "string") continue;
+		const value = item.trim();
+		if (!value || seen.has(value)) continue;
+		if (out.length >= MATERIAL_LIMITS.maxItems) break;
+		seen.add(value);
+		out.push(value);
+	}
+	return out;
+}
+
+/**
+ * 合并 run 级与节点级材料：**节点级优先**（先出现者胜），按路径去重。
+ * 上限不在这里截断：超限交给 `normalizeMaterials` 记 `over-cap`，避免静默丢项。
+ */
+export function mergeCanvasMaterials(
+	nodeMaterials: readonly string[] = [],
+	runMaterials: readonly string[] = [],
+): string[] {
+	const out: string[] = [];
+	const seen = new Set<string>();
+	for (const item of [...nodeMaterials, ...runMaterials]) {
+		if (typeof item !== "string") continue;
+		const value = item.trim();
+		if (!value || seen.has(value)) continue;
+		seen.add(value);
+		out.push(value);
+	}
+	return out;
+}
+
+/** 规格落盘/读取时的材料归一：合法值就地写回，空值删字段（老规格无 materials 保持逐字节不变）。 */
+function reconcileGraphMaterials(graph: CanvasGraph): CanvasGraph {
+	for (const node of graph.nodes ?? []) {
+		const materials = sanitizeNodeMaterials(node.materials);
+		if (materials.length > 0) node.materials = materials;
+		else delete node.materials;
+	}
+	return graph;
+}
+
 const SAFE_ID_RE = /^[A-Za-z0-9._-]{1,64}$/;
 
 export function isSafeGraphId(id: unknown): id is string {
@@ -136,8 +186,9 @@ export function listCanvasGraphs(dataDir: string): CanvasGraphSummary[] {
 	const dir = ensureCanvasDir(dataDir);
 	const files = readdirSync(dir).filter((f) => f.endsWith(".json"));
 	if (files.length === 0) {
+		// 内置模板只在内存里给出去：读路径不能 await 落盘，而漂浮的种子写入可能后落地、把用户后来保存的版本盖回去。
+		// 真正的落盘发生在第一次 `saveCanvasGraph`（已 await）。
 		const def = createDefaultCanvasGraph();
-		saveCanvasGraph(dataDir, def);
 		return [
 			{
 				id: def.id,
@@ -174,20 +225,33 @@ export function loadCanvasGraph(dataDir: string, id: string): CanvasGraph {
 	const path = join(dir, `${id}.json`);
 	if (!existsSync(path)) {
 		if (id === "default") {
-			const def = createDefaultCanvasGraph(id);
-			saveCanvasGraph(dataDir, def);
-			return def;
+			// 同上：读路径只给内存模板，持久化留给 `saveCanvasGraph`。
+			return createDefaultCanvasGraph(id);
 		}
 		throw new CanvasRuntimeError(`Canvas graph not found: ${id}`, "error.graphNotFound", { id });
 	}
-	return JSON.parse(readFileSync(path, "utf8")) as CanvasGraph;
+	return reconcileGraphMaterials(JSON.parse(readFileSync(path, "utf8")) as CanvasGraph);
 }
 
-export function saveCanvasGraph(
+/**
+ * 保存画布工程（真值存储）：`await` 返回时文件已落盘，下一次 `loadCanvasGraph` / `new` 实例必能读到本笔内容。
+ * 读-合并-写回只在调用方按序 `await` 时成立：并发写入会互相覆盖，所以每个调用点都必须 `await`。
+ */
+export async function saveCanvasGraph(
 	dataDir: string,
 	graph: CanvasGraph,
 	opts?: { expectedRev?: number },
-): { conflict: boolean; graph: CanvasGraph } {
+): Promise<{ conflict: boolean; graph: CanvasGraph }> {
+	return withGraphLock(join(ensureCanvasDir(dataDir), `${graph.id}.json`), () =>
+		saveCanvasGraphLocked(dataDir, graph, opts),
+	);
+}
+
+async function saveCanvasGraphLocked(
+	dataDir: string,
+	graph: CanvasGraph,
+	opts?: { expectedRev?: number },
+): Promise<{ conflict: boolean; graph: CanvasGraph }> {
 	assertSafeGraphId(graph.id);
 	const dir = ensureCanvasDir(dataDir);
 	const path = join(dir, `${graph.id}.json`);
@@ -221,10 +285,32 @@ export function saveCanvasGraph(
 				(edge as unknown as Record<string, unknown>)[field] = prior[field];
 		}
 	}
+	reconcileGraphMaterials(graph);
 	graph.rev = diskRev + 1;
 	graph.updatedAt = Date.now();
-	writeJsonAtomicSync(path, graph);
+	await writeJsonAtomic(path, graph);
 	return { conflict: false, graph };
+}
+
+/**
+ * 同一份画布文件的「读-合并-写回」必须互斥：结构写（saveCanvasGraph）与运行态写
+ * （saveCanvasRuntimeState/标记中断）都在读盘后改一部分字段再写回，交错就会互相覆盖
+ * （异步化之后窗口变宽，issue #966）。锁只按文件、只在本进程内。
+ */
+const graphLocks = new Map<string, Promise<unknown>>();
+
+function withGraphLock<T>(file: string, run: () => Promise<T>): Promise<T> {
+	const previous = graphLocks.get(file) ?? Promise.resolve();
+	const result = previous.then(run, run);
+	const settled = result.then(
+		() => undefined,
+		() => undefined,
+	);
+	graphLocks.set(file, settled);
+	void settled.then(() => {
+		if (graphLocks.get(file) === settled) graphLocks.delete(file);
+	});
+	return result;
 }
 
 const RUNTIME_FIELDS = [
@@ -242,7 +328,36 @@ const RUNTIME_FIELDS = [
 	"actualModel",
 ] as const;
 
-export function saveCanvasRuntimeState(dataDir: string, runtime: CanvasGraph): void {
+/**
+ * 把「运行态」字段从 `source` 覆盖到 `target`（拓扑/名称等结构字段保持 `target` 的）。
+ * 单源：落盘合并与广播投影都用它，避免两处各写一份字段清单。
+ */
+export function applyCanvasRuntimeFields(target: CanvasGraph, source: CanvasGraph): void {
+	const rt = new Map(source.nodes.map((n) => [n.id, n]));
+	for (const node of target.nodes) {
+		const live = rt.get(node.id);
+		if (!live) continue;
+		for (const field of RUNTIME_FIELDS)
+			(node as unknown as Record<string, unknown>)[field] = (live as unknown as Record<string, unknown>)[field];
+	}
+	const rtEdges = new Map(source.edges.map((e) => [e.id, e]));
+	for (const edge of target.edges) {
+		const live = rtEdges.get(edge.id);
+		if (!live) continue;
+		for (const key of ["lastHandoffSummary", "currentLoopCount", "runId", "active"] as const)
+			(edge as unknown as Record<string, unknown>)[key] = (live as unknown as Record<string, unknown>)[key];
+	}
+	target.status = source.status;
+	target.run = source.run;
+}
+
+export async function saveCanvasRuntimeState(dataDir: string, runtime: CanvasGraph): Promise<void> {
+	await withGraphLock(join(ensureCanvasDir(dataDir), `${runtime.id}.json`), () =>
+		saveCanvasRuntimeStateLocked(dataDir, runtime),
+	);
+}
+
+async function saveCanvasRuntimeStateLocked(dataDir: string, runtime: CanvasGraph): Promise<void> {
 	assertSafeGraphId(runtime.id);
 	const dir = ensureCanvasDir(dataDir);
 	const path = join(dir, `${runtime.id}.json`);
@@ -253,29 +368,13 @@ export function saveCanvasRuntimeState(dataDir: string, runtime: CanvasGraph): v
 	} catch {
 		return;
 	}
-	const rt = new Map(runtime.nodes.map((n) => [n.id, n]));
-	for (const n of disk.nodes) {
-		const r = rt.get(n.id);
-		if (!r) continue;
-		for (const f of RUNTIME_FIELDS)
-			(n as unknown as Record<string, unknown>)[f] = (r as unknown as Record<string, unknown>)[f];
-	}
-	const runtimeEdges = new Map(runtime.edges.map((e) => [e.id, e]));
-	for (const edge of disk.edges) {
-		const source = runtimeEdges.get(edge.id);
-		if (!source) continue;
-		for (const key of ["lastHandoffSummary", "currentLoopCount", "runId", "active"] as const) {
-			(edge as unknown as Record<string, unknown>)[key] = source[key];
-		}
-	}
-	disk.status = runtime.status;
-	disk.run = runtime.run;
+	applyCanvasRuntimeFields(disk, runtime);
 	disk.updatedAt = Date.now();
-	writeJsonAtomicSync(path, disk);
+	await writeJsonAtomic(path, disk);
 	runtime.rev = disk.rev;
 }
 
-export function markInterruptedCanvasRuns(dataDir: string): void {
+export async function markInterruptedCanvasRuns(dataDir: string): Promise<void> {
 	const dir = ensureCanvasDir(dataDir);
 	for (const file of readdirSync(dir).filter((name) => name.endsWith(".json"))) {
 		const path = join(dir, file);
@@ -296,7 +395,7 @@ export function markInterruptedCanvasRuns(dataDir: string): void {
 					node.currentAction = "Server restarted; run interrupted";
 					node.currentActionMessage = canvasRuntimeMessage("action.interrupted");
 				}
-			writeJsonAtomicSync(path, graph);
+			await writeJsonAtomic(path, graph);
 		} catch (error) {
 			console.error(`[canvas] Could not recover ${file}:`, error);
 		}

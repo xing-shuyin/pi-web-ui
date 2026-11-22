@@ -27,7 +27,8 @@ export async function executeScheduledCanvas(
 	let runId: string | undefined;
 	try {
 		const graph = loadScheduledCanvas(dataDir, graphId);
-		await orchestrator.runAll(graph, task.prompt || undefined, task.cwd);
+		// 定时任务的 run 级材料与节点级材料在 orchestrator 里合并（材料规格契约 §3）
+		await orchestrator.runAll(graph, task.prompt || undefined, task.cwd, task.materials);
 		runId = graph.run?.id;
 		if (!runId) throw new Error("Canvas run did not start");
 		const current = loadScheduledCanvas(dataDir, graphId);

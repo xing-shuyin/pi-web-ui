@@ -46,8 +46,8 @@ describe("Canvas runtime message metadata", () => {
 		edges: [],
 		executionMode: "real",
 	});
-	const admit = (g: CanvasGraph) => {
-		saveCanvasGraph(dir, g);
+	const admit = async (g: CanvasGraph) => {
+		await saveCanvasGraph(dir, g);
 		return g;
 	};
 	beforeEach(() => {
@@ -92,7 +92,7 @@ describe("Canvas runtime message metadata", () => {
 			const g = graph(role);
 			g.nodes[0].title = "English worker";
 			g.nodes[0].config = { focus: "Architecture" };
-			admit(g);
+			await admit(g);
 			const execute = vi.spyOn(runtime as any, "executeRealEngineNode").mockResolvedValue("Completed");
 			await runtime.runNode(g, "n");
 			expect(execute).toHaveBeenCalledOnce();
@@ -105,7 +105,7 @@ describe("Canvas runtime message metadata", () => {
 	);
 
 	it("broadcasts and persists translated system actions and logs alongside their legacy text", async () => {
-		const g = admit(graph("human"));
+		const g = await admit(graph("human"));
 		g.nodes[0].config = { approvalHint: "请保留这条用户提示" };
 		await runtime.runNode(g, "n");
 		const started = events.find((event) => event.type === "canvas_node_event" && event.event === "started");
@@ -120,6 +120,7 @@ describe("Canvas runtime message metadata", () => {
 				vars: { hint: "请保留这条用户提示" },
 			},
 		});
+		await runtime.flushRuntimeWrites();
 		expect(loadCanvasGraph(dir, g.id).nodes[0].currentActionMessage).toEqual(g.nodes[0].currentActionMessage);
 		expect(runtime.getNodeLog(g.id, "n")).toContainEqual(
 			expect.objectContaining({
@@ -137,7 +138,7 @@ describe("Canvas runtime message metadata", () => {
 	});
 
 	it("attaches known runtime failures to the error, action, and persisted error log", async () => {
-		const g = admit(graph());
+		const g = await admit(graph());
 		await runtime.runNode(g, "n");
 		const message = { key: "canvas.runtime.error.engineProviderMissing" };
 		expect(g.nodes[0]).toMatchObject({
@@ -166,7 +167,7 @@ describe("Canvas runtime message metadata", () => {
 		g.nodes[0].errorMessage = canvasRuntimeMessage("error.timeout");
 		g.nodes[0].currentAction = "上次动作";
 		g.nodes[0].currentActionMessage = canvasRuntimeMessage("action.stopped");
-		admit(g);
+		await admit(g);
 		const raw = "模型自有文本，不得翻译 {example}";
 		vi.spyOn(runtime as any, "executeRealEngineNode").mockImplementation(async (...args: unknown[]) => {
 			(args[5] as (text: string, message?: CanvasMessage) => void)(raw);
@@ -176,8 +177,10 @@ describe("Canvas runtime message metadata", () => {
 		const rawEvent = events.find((event) => event.type === "canvas_node_event" && event.currentAction === raw);
 		expect(rawEvent).toMatchObject({ type: "canvas_node_event", currentAction: raw });
 		expect(rawEvent).toHaveProperty("currentActionMessage", undefined);
+		await runtime.flushRuntimeWrites();
 		const startedState = events.find((event) => event.type === "canvas_graph_state");
 		expect(startedState?.type === "canvas_graph_state" && startedState.graph.nodes[0].errorMessage).toBeUndefined();
+		await runtime.flushRuntimeWrites();
 		expect(g.nodes[0].lastOutputSummary).toBe(raw);
 		expect(g.nodes[0].errorMessage).toBeUndefined();
 		expect(runtime.getNodeLog(g.id, "n").find((entry) => entry.kind === "done")).toMatchObject({ text: raw });
@@ -191,7 +194,7 @@ describe("Canvas runtime message metadata", () => {
 	});
 
 	it("does not treat arbitrary external errors as translation keys", async () => {
-		const g = admit(graph());
+		const g = await admit(graph());
 		const raw = "供应商原始错误: canvas.runtime.error.timeout";
 		vi.spyOn(runtime as any, "executeRealEngineNode").mockRejectedValue(new Error(raw));
 		await runtime.runNode(g, "n");
@@ -207,7 +210,7 @@ describe("Canvas runtime message metadata", () => {
 	it("publishes simulation steps with message metadata", async () => {
 		const g = graph();
 		g.executionMode = "simulate";
-		admit(g);
+		await admit(g);
 		await runtime.runAll(g);
 		const steps = events.filter(
 			(event) =>
@@ -219,7 +222,7 @@ describe("Canvas runtime message metadata", () => {
 	});
 
 	it("replaces action metadata on cancellation and clears it on reset and rerun", async () => {
-		const g = admit(graph());
+		const g = await admit(graph());
 		vi.spyOn(runtime as any, "executeRealEngineNode").mockImplementation(async () => {
 			runtime.stopNode(g.id, "n");
 			return "late completion";
@@ -248,16 +251,16 @@ describe("Canvas runtime message metadata", () => {
 		});
 	});
 
-	it("keeps metadata authoritative across topology saves, and clears absent runtime metadata", () => {
-		const g = admit(graph());
+	it("keeps metadata authoritative across topology saves, and clears absent runtime metadata", async () => {
+		const g = await admit(graph());
 		const stale = structuredClone(g);
 		g.nodes[0].currentAction = "已手动中止";
 		g.nodes[0].currentActionMessage = canvasRuntimeMessage("action.stopped");
 		g.nodes[0].error = "引擎服务提供者未注入";
 		g.nodes[0].errorMessage = canvasRuntimeMessage("error.engineProviderMissing");
-		saveCanvasRuntimeState(dir, g);
+		await saveCanvasRuntimeState(dir, g);
 		stale.nodes[0].title = "新用户标题";
-		saveCanvasGraph(dir, stale);
+		await saveCanvasGraph(dir, stale);
 		expect(loadCanvasGraph(dir, g.id).nodes[0]).toMatchObject({
 			title: "新用户标题",
 			currentActionMessage: g.nodes[0].currentActionMessage,
@@ -267,7 +270,7 @@ describe("Canvas runtime message metadata", () => {
 		g.nodes[0].currentActionMessage = undefined;
 		g.nodes[0].error = undefined;
 		g.nodes[0].errorMessage = undefined;
-		saveCanvasRuntimeState(dir, g);
+		await saveCanvasRuntimeState(dir, g);
 		expect(loadCanvasGraph(dir, g.id).nodes[0]).toMatchObject({
 			title: "新用户标题",
 			currentAction: "legacy engine action",
@@ -276,11 +279,11 @@ describe("Canvas runtime message metadata", () => {
 		expect(loadCanvasGraph(dir, g.id).nodes[0].errorMessage).toBeUndefined();
 	});
 
-	it("keeps old graph and log text compatible without inventing metadata", () => {
+	it("keeps old graph and log text compatible without inventing metadata", async () => {
 		const g = graph();
 		g.nodes[0].currentAction = "旧版状态";
 		g.nodes[0].error = "旧版错误";
-		admit(g);
+		await admit(g);
 		const old = { id: "old", ts: 1, kind: "system", text: "旧版日志" };
 		mkdirSync(join(dir, "canvas", "logs"));
 		writeFileSync(join(dir, "canvas", "logs", `${g.id}__n.json`), JSON.stringify([old]));
@@ -289,13 +292,14 @@ describe("Canvas runtime message metadata", () => {
 		expect(loadCanvasGraph(dir, g.id).nodes[0].currentActionMessage).toBeUndefined();
 	});
 
-	it("replaces stale in-progress action metadata after server restart", () => {
+	it("replaces stale in-progress action metadata after server restart", async () => {
 		const g = graph();
 		g.status = "running";
 		g.nodes[0].status = "running";
 		g.nodes[0].currentActionMessage = canvasRuntimeMessage("action.running", { engine: "PI" });
-		admit(g);
+		await admit(g);
 		new CanvasOrchestrator(dir, dir);
+		await new Promise<void>((resolve) => setTimeout(resolve, 20));
 		expect(loadCanvasGraph(dir, g.id).nodes[0]).toMatchObject({
 			status: "paused",
 			currentAction: "Server restarted; run interrupted",
@@ -304,7 +308,7 @@ describe("Canvas runtime message metadata", () => {
 	});
 
 	it("preserves human guidance and review comments as interpolation values", async () => {
-		const g = admit(graph("human"));
+		const g = await admit(graph("human"));
 		await runtime.runNode(g, "n");
 		await runtime.steerNode(g.id, "n", "用户原文 {keep}");
 		expect(g.nodes[0].currentActionMessage).toEqual({
@@ -319,7 +323,7 @@ describe("Canvas runtime message metadata", () => {
 		expect(runtime.getNodeLog(g.id, "n").find((entry) => entry.kind === "steer")?.message).toBeUndefined();
 	});
 
-	it("includes metadata for request errors while preserving message, code, and request identity", () => {
+	it("includes metadata for request errors while preserving message, code, and request identity", async () => {
 		const sent: ServerMessage[] = [];
 		handleCanvasMessage({ type: "canvas_load", id: "missing", requestId: "load-1" }, dir, runtime, (event) =>
 			sent.push(event),
@@ -331,7 +335,7 @@ describe("Canvas runtime message metadata", () => {
 			message: "Canvas graph not found: missing",
 			messageI18n: { key: "canvas.runtime.error.graphNotFound", vars: { id: "missing" } },
 		});
-		const g = admit(graph());
+		const g = await admit(graph());
 		handleCanvasMessage(
 			{ type: "canvas_save", graph: { ...g, name: "x".repeat(301) }, requestId: "save-1" },
 			dir,
@@ -347,6 +351,10 @@ describe("Canvas runtime message metadata", () => {
 		handleCanvasMessage({ type: "canvas_save", graph: g, baseRev: 0, requestId: "save-2" }, dir, runtime, (event) =>
 			sent.push(event),
 		);
+		// 保存落盘已异步（#966）：等这一笔的异步回推落地
+		await vi.waitFor(() =>
+			expect(sent.some((event) => "requestId" in event && event.requestId === "save-2")).toBe(true),
+		);
 		expect(sent).toContainEqual(
 			expect.objectContaining({
 				type: "canvas_error",
@@ -357,14 +365,14 @@ describe("Canvas runtime message metadata", () => {
 		);
 	});
 
-	it("uses English source content for new default graphs without rewriting saved author content", () => {
+	it("uses English source content for new default graphs without rewriting saved author content", async () => {
 		const defaults = createDefaultCanvasGraph();
 		expect(JSON.stringify(defaults)).not.toMatch(/[\u4e00-\u9fff]/);
 		const authored = createDefaultCanvasGraph("authored");
 		authored.name = "用户画布";
 		authored.nodes[0].title = "用户节点";
 		authored.nodes[0].instruction = "保留用户指令 {{上游摘要}}";
-		saveCanvasGraph(dir, authored);
+		await saveCanvasGraph(dir, authored);
 		createDefaultCanvasGraph("authored");
 		expect(loadCanvasGraph(dir, "authored").nodes[0]).toMatchObject({
 			title: "用户节点",
@@ -382,7 +390,7 @@ describe("Canvas runtime message metadata", () => {
 		g.edges = [
 			{ id: "handoff", sourceNodeId: "n", targetNodeId: "accept", type: "handoff", targetPort: "instruction" },
 		];
-		admit(g);
+		await admit(g);
 		await runtime.runAll(g);
 		expect(g.nodes[0].lastOutputSummary).toBe(`[Manual trigger · Task input Input] Task:\n${original}`);
 		expect(g.nodes[1].lastOutputSummary).toContain("[Human approval Approval]");
@@ -395,7 +403,7 @@ describe("Canvas runtime message metadata", () => {
 		const g = graph("transform");
 		g.nodes[0].title = "Converter";
 		g.nodes[0].config = { mode };
-		admit(g);
+		await admit(g);
 		await runtime.runNode(g, "n");
 		expect(g.nodes[0].lastOutputSummary).toBe("[Format conversion Converter] Empty input; no output");
 	});

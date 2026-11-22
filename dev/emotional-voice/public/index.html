@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>大肥鱼 · 情绪语音</title>
+		<style>
+			:root {
+				color-scheme: dark;
+				font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+				--bg: #0f1420;
+				--panel: #18202f;
+				--line: #2a3547;
+				--text: #e8edf5;
+				--muted: #93a1b5;
+				--accent: #63d2b3;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				background: radial-gradient(1000px 600px at 50% -10%, #1d3142, var(--bg));
+				color: var(--text);
+				height: 100vh;
+				display: flex;
+				justify-content: center;
+				padding: 24px 16px;
+			}
+			main {
+				width: min(760px, 100%);
+				display: flex;
+				flex-direction: column;
+				gap: 14px;
+			}
+			header {
+				display: flex;
+				align-items: baseline;
+				gap: 12px;
+				flex-wrap: wrap;
+			}
+			h1 {
+				font-size: 22px;
+				margin: 0;
+			}
+			.chips {
+				display: flex;
+				gap: 8px;
+				font-size: 12px;
+			}
+			.chip {
+				border: 1px solid var(--line);
+				border-radius: 999px;
+				padding: 3px 10px;
+				color: var(--muted);
+			}
+			.chip.on {
+				color: var(--accent);
+				border-color: #2c6a5a;
+			}
+			#log {
+				flex: 1;
+				overflow-y: auto;
+				background: var(--panel);
+				border: 1px solid var(--line);
+				border-radius: 16px;
+				padding: 18px;
+				display: flex;
+				flex-direction: column;
+				gap: 14px;
+			}
+			.msg {
+				max-width: 86%;
+				line-height: 1.7;
+				white-space: pre-wrap;
+				word-break: break-word;
+			}
+			.msg.user {
+				align-self: flex-end;
+				background: #25415a;
+				padding: 9px 14px;
+				border-radius: 14px 14px 4px 14px;
+			}
+			.msg.bot {
+				align-self: flex-start;
+				background: #21312e;
+				padding: 9px 14px;
+				border-radius: 14px 14px 14px 4px;
+			}
+			.msg.error {
+				align-self: center;
+				color: #ff9c9c;
+				font-size: 13px;
+			}
+			.badge {
+				display: inline-block;
+				font-size: 11px;
+				color: #0f1420;
+				background: var(--accent);
+				border-radius: 6px;
+				padding: 1px 7px;
+				margin-right: 8px;
+			}
+			footer {
+				display: flex;
+				gap: 10px;
+				align-items: flex-end;
+			}
+			textarea {
+				flex: 1;
+				resize: none;
+				height: 62px;
+				padding: 12px 14px;
+				border-radius: 12px;
+				border: 1px solid var(--line);
+				background: var(--panel);
+				color: var(--text);
+				font: inherit;
+				outline: none;
+			}
+			textarea:focus {
+				border-color: var(--accent);
+			}
+			select,
+			button {
+				height: 42px;
+				border-radius: 10px;
+				border: 1px solid var(--line);
+				background: var(--panel);
+				color: var(--text);
+				padding: 0 12px;
+				font: inherit;
+				cursor: pointer;
+			}
+			button.primary {
+				background: var(--accent);
+				color: #0f1420;
+				border-color: transparent;
+				font-weight: 700;
+				min-width: 80px;
+			}
+			button:disabled {
+				opacity: 0.5;
+				cursor: wait;
+			}
+			.tip {
+				font-size: 12px;
+				color: var(--muted);
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<header>
+				<h1>🐟 大肥鱼</h1>
+				<span class="tip" id="model">加载中…</span>
+				<div class="chips">
+					<span class="chip" id="llm">LLM 检测中</span>
+					<span class="chip" id="tts">TTS 检测中</span>
+				</div>
+			</header>
+			<div id="log">
+				<div class="msg bot">（摇尾巴）你想聊点什么？我可以用带情绪的声音回你。</div>
+			</div>
+			<footer>
+				<textarea id="input" placeholder="打一句话，比如「你今天心情怎么样？」"></textarea>
+				<select id="emotion" title="情绪">
+					<option>自动</option>
+				</select>
+				<button class="primary" id="send">发送</button>
+				<button id="reset" title="清空对话记录">清空</button>
+			</footer>
+			<div class="tip">Enter 发送 · Shift+Enter 换行 · 首次回复要等本地模型热身，稍慢一点</div>
+		</main>
+		<script>
+			const log = document.getElementById("log");
+			const input = document.getElementById("input");
+			const sendBtn = document.getElementById("send");
+			const emotionSel = document.getElementById("emotion");
+
+			function append(cls, html) {
+				const el = document.createElement("div");
+				el.className = `msg ${cls}`;
+				el.innerHTML = html;
+				log.append(el);
+				log.scrollTop = log.scrollHeight;
+				return el;
+			}
+			function escapeHtml(s) {
+				return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+			}
+
+			async function refreshHealth() {
+				try {
+					const h = await (await fetch("/api/health")).json();
+					for (const [id, ok, label] of [
+						["llm", h.llm, "在线 LLM"],
+						["tts", h.tts, "情绪语音"],
+					]) {
+						const el = document.getElementById(id);
+						el.textContent = `${ok ? "●" : "○"} ${label}`;
+						el.classList.toggle("on", !!ok);
+					}
+					document.getElementById("model").textContent = h.model;
+				} catch {
+					/* 服务还没起来 */
+				}
+			}
+
+			async function send() {
+				const message = input.value.trim();
+				if (!message || sendBtn.disabled) return;
+				input.value = "";
+				append("user", escapeHtml(message));
+				sendBtn.disabled = true;
+				const pending = append("bot", "大肥鱼正在想…");
+				try {
+					const res = await fetch("/api/chat", {
+						method: "POST",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify({ message, emotion: emotionSel.value }),
+					});
+					const data = await res.json();
+					if (!res.ok) throw new Error(data.error || "请求失败");
+					pending.innerHTML = `<span class="badge">${escapeHtml(data.emotion)}</span>${escapeHtml(data.text)}`;
+					if (data.audios?.length) {
+						// 一句一句排队播放，和 GPU 上的短句合成节奏一致。
+						for (const wav of data.audios) {
+							await new Promise((resolve) => {
+								const audio = new Audio(`data:audio/wav;base64,${wav}`);
+								audio.onended = resolve;
+								audio.onerror = resolve;
+								audio.play().catch((e) => {
+									append("error", `浏览器拦住了自动播放：${e.message}`);
+									resolve();
+								});
+							});
+						}
+					} else if (data.ttsError) {
+						append("error", `语音合成失败（文字已显示）：${data.ttsError}`);
+					}
+				} catch (e) {
+					pending.innerHTML = `出错了：${escapeHtml(e.message)}`;
+				} finally {
+					sendBtn.disabled = false;
+					input.focus();
+				}
+			}
+
+			sendBtn.onclick = send;
+			input.onkeydown = (e) => {
+				if (e.key === "Enter" && !e.shiftKey) {
+					e.preventDefault();
+					send();
+				}
+			};
+			document.getElementById("reset").onclick = async () => {
+				await fetch("/api/reset", { method: "POST" });
+				log.innerHTML = "";
+				append("bot", "（甩甩尾巴）刚才的事我忘了，重新聊吧。");
+			};
+
+			fetch("/api/config")
+				.then((r) => r.json())
+				.then((c) => {
+					c.emotions.forEach((e) => emotionSel.add(new Option(e, e)));
+				});
+			refreshHealth();
+			setInterval(refreshHealth, 20000);
+		</script>
+	</body>
+</html>

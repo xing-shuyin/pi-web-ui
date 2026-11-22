@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { writeJsonAtomicSync } from "../atomic-file.js";
 import { type RoomActiveLock, type RoomLockInfo, type RoomLockWaiter } from "../protocol.js";
+import { createSerializedJsonWriter, type SerializedJsonWriter } from "../serialized-json-writer.js";
 
 export const RESOURCE_LOCK_KEY_PATTERN = /^[a-zA-Z0-9_.:/-]+$/;
 export const MAX_RESOURCE_LOCKS_PER_TASK = 10;
@@ -74,18 +74,25 @@ export class HubLockManager {
 	private readonly defaultTtlMs: number;
 	private readonly persistPath?: string;
 	private readonly isAlive?: (taskId: string) => boolean;
+	private readonly writer?: SerializedJsonWriter;
 	private timer?: NodeJS.Timeout;
 
 	constructor(options: HubLockManagerOptions = {}) {
 		this.defaultTtlMs = options.defaultTtlMs ?? DEFAULT_RESOURCE_LOCK_TTL_MS;
 		this.persistPath = options.persistPath;
 		this.isAlive = options.isAlive;
+		// 房间锁是重启后要还原的真值：走串行落盘器（同一文件有序、不阻塞事件循环），每个改锁方法 await 落盘后才改内存。
+		this.writer = options.persistPath
+			? createSerializedJsonWriter(options.persistPath, { label: "room-locks.json" })
+			: undefined;
 		if (this.persistPath) {
 			this.loadFromDisk();
 		}
 		if (options.autoCleanupIntervalMs && options.autoCleanupIntervalMs > 0) {
 			this.timer = setInterval(() => {
-				this.cleanupExpiredLocks();
+				void this.cleanupExpiredLocks().catch((error: unknown) => {
+					console.error("[device-center] 房间锁过期清理落盘失败：", error);
+				});
 			}, options.autoCleanupIntervalMs);
 			if (typeof this.timer.unref === "function") {
 				this.timer.unref();
@@ -128,36 +135,43 @@ export class HubLockManager {
 		}
 	}
 
-	private saveToDisk(): void {
-		if (!this.persistPath) return;
-		try {
-			const serializedRooms: Record<string, { activeLocks: RoomActiveLock[]; waitingQueue: RoomLockWaiter[] }> = {};
-			for (const [roomId, state] of this.rooms.entries()) {
-				if (state.activeLocks.size > 0 || state.waitingQueue.length > 0) {
-					serializedRooms[roomId] = {
-						activeLocks: Array.from(state.activeLocks.values()),
-						waitingQueue: [...state.waitingQueue],
-					};
-				}
-			}
-			writeJsonAtomicSync(this.persistPath, { version: 1, updatedAt: Date.now(), rooms: serializedRooms });
-		} catch {}
-	}
-
-	private getOrCreateRoom(roomId: string): RoomLockState {
-		let state = this.rooms.get(roomId);
-		if (!state) {
-			state = {
-				activeLocks: new Map(),
-				taskLocks: new Map(),
-				waitingQueue: [],
+	/**
+	 * 落盘快照。`overrides` 里的房间用「草稿」替换当前内存：先写草稿、写成功后再把草稿换成内存，
+	 * 这样即使落盘失败也不会留下一条只在内存里的锁（重启后就不见了）。
+	 * 空草稿（无活跃锁且无等待者）不出现在快照里，等于从文件里剔除该房间。
+	 */
+	private serializeRooms(overrides?: Map<string, RoomLockState>) {
+		const serializedRooms: Record<string, { activeLocks: RoomActiveLock[]; waitingQueue: RoomLockWaiter[] }> = {};
+		const push = (roomId: string, state: RoomLockState) => {
+			if (state.activeLocks.size === 0 && state.waitingQueue.length === 0) return;
+			serializedRooms[roomId] = {
+				activeLocks: Array.from(state.activeLocks.values()),
+				waitingQueue: [...state.waitingQueue],
 			};
-			this.rooms.set(roomId, state);
+		};
+		for (const [roomId, state] of this.rooms.entries()) {
+			if (overrides?.has(roomId)) continue;
+			push(roomId, state);
 		}
-		return state;
+		for (const [roomId, state] of overrides ?? []) push(roomId, state);
+		return serializedRooms;
 	}
 
-	acquireLocks(options: AcquireLocksOptions): AcquireLocksResult {
+	/** 落盘成功才返回；失败原样抛出（锁状态不能“看起来拿到了”）。 */
+	private async persist(overrides?: Map<string, RoomLockState>): Promise<void> {
+		if (!this.writer) return;
+		await this.writer.writeNow({ version: 1, updatedAt: Date.now(), rooms: this.serializeRooms(overrides) });
+	}
+
+	private cloneRoomState(state?: RoomLockState): RoomLockState {
+		return {
+			activeLocks: new Map(Array.from(state?.activeLocks ?? [], ([key, lock]) => [key, { ...lock }])),
+			taskLocks: new Map(Array.from(state?.taskLocks ?? [], ([taskId, keys]) => [taskId, new Set(keys)])),
+			waitingQueue: (state?.waitingQueue ?? []).map((waiter) => ({ ...waiter, lockKeys: [...waiter.lockKeys] })),
+		};
+	}
+
+	async acquireLocks(options: AcquireLocksOptions): Promise<AcquireLocksResult> {
 		const now = options.now ?? Date.now();
 		const ttlMs = options.ttlMs ?? this.defaultTtlMs;
 		const locks = validateResourceLocks(options.resourceLocks);
@@ -165,8 +179,8 @@ export class HubLockManager {
 			return { success: true, conflictingLocks: [], holderTaskIds: [] };
 		}
 
-		this.cleanupExpiredLocks(options.roomId, now);
-		const roomState = this.getOrCreateRoom(options.roomId);
+		await this.cleanupExpiredLocks(options.roomId, now);
+		const roomState = this.cloneRoomState(this.rooms.get(options.roomId));
 
 		const conflictingLocks: string[] = [];
 		const holderTaskIds = new Set<string>();
@@ -193,7 +207,8 @@ export class HubLockManager {
 					queuedAt: now,
 				});
 			}
-			this.saveToDisk();
+			await this.persist(new Map([[options.roomId, roomState]]));
+			this.rooms.set(options.roomId, roomState);
 			return {
 				success: false,
 				conflictingLocks,
@@ -226,13 +241,15 @@ export class HubLockManager {
 			taskHeld.add(key);
 		}
 
-		this.saveToDisk();
+		await this.persist(new Map([[options.roomId, roomState]]));
+		this.rooms.set(options.roomId, roomState);
 		return { success: true, conflictingLocks: [], holderTaskIds: [] };
 	}
 
-	releaseLocks(roomId: string, taskId: string, now = Date.now()): string[] {
-		const roomState = this.rooms.get(roomId);
-		if (!roomState) return [];
+	async releaseLocks(roomId: string, taskId: string, now = Date.now()): Promise<string[]> {
+		const stored = this.rooms.get(roomId);
+		if (!stored) return [];
+		const roomState = this.cloneRoomState(stored);
 
 		const heldKeys = roomState.taskLocks.get(taskId);
 		if (heldKeys) {
@@ -250,17 +267,19 @@ export class HubLockManager {
 			roomState.waitingQueue.splice(waiterIndex, 1);
 		}
 
-		const promoted = this.promoteWaitingTasks(roomId, now);
-		this.saveToDisk();
+		const promoted = this.promoteWaitingTasks(roomState, roomId, now);
+		await this.persist(new Map([[roomId, roomState]]));
+		this.rooms.set(roomId, roomState);
 		return promoted;
 	}
 
 	/** 心跳续期：运行中任务的锁到期前延长，避免长任务被静默摘锁。 */
-	renewLocks(roomId: string, taskId: string, now = Date.now(), ttlMs?: number): string[] {
-		const roomState = this.rooms.get(roomId);
-		if (!roomState) return [];
-		const held = roomState.taskLocks.get(taskId);
+	async renewLocks(roomId: string, taskId: string, now = Date.now(), ttlMs?: number): Promise<string[]> {
+		const stored = this.rooms.get(roomId);
+		if (!stored) return [];
+		const held = stored.taskLocks.get(taskId);
 		if (!held || held.size === 0) return [];
+		const roomState = this.cloneRoomState(stored);
 		const ttl = ttlMs ?? this.defaultTtlMs;
 		const renewed: string[] = [];
 		for (const key of held) {
@@ -270,7 +289,10 @@ export class HubLockManager {
 				renewed.push(key);
 			}
 		}
-		if (renewed.length > 0) this.saveToDisk();
+		if (renewed.length > 0) {
+			await this.persist(new Map([[roomId, roomState]]));
+			this.rooms.set(roomId, roomState);
+		}
 		return renewed;
 	}
 
@@ -285,14 +307,20 @@ export class HubLockManager {
 		return false;
 	}
 
-	cleanupExpiredLocks(roomId?: string, now = Date.now(), isAlive?: (taskId: string) => boolean): string[] {
+	async cleanupExpiredLocks(
+		roomId?: string,
+		now = Date.now(),
+		isAlive?: (taskId: string) => boolean,
+	): Promise<string[]> {
 		const alive = isAlive ?? this.isAlive;
 		const promotedAll: string[] = [];
 		const roomIds = roomId ? [roomId] : Array.from(this.rooms.keys());
+		const drafts = new Map<string, RoomLockState>();
 
 		for (const rId of roomIds) {
-			const roomState = this.rooms.get(rId);
-			if (!roomState) continue;
+			const stored = this.rooms.get(rId);
+			if (!stored) continue;
+			const roomState = this.cloneRoomState(stored);
 
 			let expiredAny = false;
 			let renewedAny = false;
@@ -317,19 +345,24 @@ export class HubLockManager {
 			}
 
 			if (expiredAny) {
-				const promoted = this.promoteWaitingTasks(rId, now);
+				const promoted = this.promoteWaitingTasks(roomState, rId, now);
 				promotedAll.push(...promoted);
+				drafts.set(rId, roomState);
 			} else if (renewedAny) {
-				this.saveToDisk();
+				drafts.set(rId, roomState);
 			}
+		}
+
+		if (drafts.size > 0) {
+			await this.persist(drafts);
+			for (const [rId, roomState] of drafts) this.rooms.set(rId, roomState);
 		}
 
 		return promotedAll;
 	}
 
-	private promoteWaitingTasks(roomId: string, now = Date.now()): string[] {
-		const roomState = this.rooms.get(roomId);
-		if (!roomState || roomState.waitingQueue.length === 0) return [];
+	private promoteWaitingTasks(roomState: RoomLockState, roomId: string, now = Date.now()): string[] {
+		if (roomState.waitingQueue.length === 0) return [];
 
 		const promoted: string[] = [];
 		const remainingWaiters: RoomLockWaiter[] = [];
@@ -372,13 +405,14 @@ export class HubLockManager {
 		return promoted;
 	}
 
-	clearRoom(roomId: string): void {
+	async clearRoom(roomId: string): Promise<void> {
+		// 空草稿 = 从落盘快照里剔除该房间，写成功后内存才跟着删。
+		await this.persist(new Map([[roomId, this.cloneRoomState()]]));
 		this.rooms.delete(roomId);
-		this.saveToDisk();
 	}
 
-	getRoomLockInfo(roomId: string, now = Date.now()): RoomLockInfo {
-		this.cleanupExpiredLocks(roomId, now);
+	async getRoomLockInfo(roomId: string, now = Date.now()): Promise<RoomLockInfo> {
+		await this.cleanupExpiredLocks(roomId, now);
 		const roomState = this.rooms.get(roomId);
 		return {
 			roomId,

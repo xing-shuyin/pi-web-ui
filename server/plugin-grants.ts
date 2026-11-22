@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { isAbsolute, resolve, sep } from "node:path";
-import { writeJsonAtomicSync } from "./atomic-file.js";
+import { createSerializedJsonWriter, type SerializedJsonWriter } from "./serialized-json-writer.js";
 
 const ID_RE = /^[A-Za-z0-9_-]+$/;
 
@@ -46,10 +46,6 @@ function isSameOrInside(targetKey: string, ancestorKey: string): boolean {
 	return targetKey.startsWith(prefix);
 }
 
-function atomicWriteJson(filePath: string, data: unknown): void {
-	writeJsonAtomicSync(filePath, data);
-}
-
 function readGrantsFile(filePath: string): Record<string, string[]> {
 	let raw: unknown;
 	try {
@@ -80,11 +76,26 @@ function readGrantsFile(filePath: string): Record<string, string[]> {
 
 export class PluginGrantsStore {
 	private cache: Record<string, string[]> | null = null;
+	private writer: SerializedJsonWriter | undefined;
 
 	constructor(private dataDir: string) {}
 
 	get filePath(): string {
 		return resolve(this.dataDir, "plugin-grants.json");
+	}
+
+	private writerOrCreate(): SerializedJsonWriter {
+		this.writer ??= createSerializedJsonWriter(this.filePath, { label: "plugin-grants.json" });
+		return this.writer;
+	}
+
+	/**
+	 * 授权是用户真值，但 `grant()` / `revoke()` 的返回类型（boolean / number）被
+	 * `dispatch-plugin-handlers` 同步消费，所以写入走排队（同文件有序、不阻塞），
+	 * 并保留缓存保证「写后就绪可见」；关停与测试用 `flush()` 等落定。
+	 */
+	flush(): Promise<void> {
+		return this.writer?.flush() ?? Promise.resolve();
 	}
 
 	private load(): Record<string, string[]> {
@@ -93,9 +104,7 @@ export class PluginGrantsStore {
 	}
 
 	private save(): void {
-		try {
-			atomicWriteJson(this.filePath, { grants: this.load() } satisfies PluginGrantsFile);
-		} catch {}
+		this.writerOrCreate().write({ grants: this.load() } satisfies PluginGrantsFile);
 	}
 
 	list(): { pluginId: string; paths: string[] }[] {

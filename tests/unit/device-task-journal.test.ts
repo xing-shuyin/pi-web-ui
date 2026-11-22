@@ -134,23 +134,23 @@ describe("device task journal and report storage", () => {
 		const reportStore = createTaskReportStore(testDir, "hub");
 		const context = { accountId: "acc-1", roomId: "room-1" };
 
-		expect(() => {
-			reportStore.saveFullReport("t1", "att-1", "room-1", "acc-1", "X".repeat(1000), 500);
-		}).toThrow(TaskReportQuotaError);
+		await expect(reportStore.saveFullReport("t1", "att-1", "room-1", "acc-1", "X".repeat(1000), 500)).rejects.toThrow(
+			TaskReportQuotaError,
+		);
 
-		const meta = reportStore.saveFullReport("t1", "att-1", "room-1", "acc-1", "Full Report Content", 2000);
+		const meta = await reportStore.saveFullReport("t1", "att-1", "room-1", "acc-1", "Full Report Content", 2000);
 		expect(meta.complete).toBe(true);
 		expect(meta.storageLocation.reportRef).toBeDefined();
 		expect((meta.storageLocation as any).path).toBeUndefined();
 
-		expect(() => {
-			reportStore.saveFullReport("t1", "att-1", "room-1", "acc-1", "Different Content", 2000);
-		}).toThrow(TaskReportConflictError);
+		await expect(
+			reportStore.saveFullReport("t1", "att-1", "room-1", "acc-1", "Different Content", 2000),
+		).rejects.toThrow(TaskReportConflictError);
 
-		const metaSame = reportStore.saveFullReport("t1", "att-1", "room-1", "acc-1", "Full Report Content", 2000);
+		const metaSame = await reportStore.saveFullReport("t1", "att-1", "room-1", "acc-1", "Full Report Content", 2000);
 		expect(metaSame.complete).toBe(true);
 
-		const chunk1 = reportStore.appendReportChunk(
+		const chunk1 = await reportStore.appendReportChunk(
 			{ taskId: "t2", attemptId: "att-1", chunkIndex: 0, totalChunks: 2, text: "Chunk 1; " },
 			"room-1",
 			"acc-1",
@@ -158,7 +158,7 @@ describe("device task journal and report storage", () => {
 		);
 		expect(chunk1.complete).toBe(false);
 
-		const chunk1Dup = reportStore.appendReportChunk(
+		const chunk1Dup = await reportStore.appendReportChunk(
 			{ taskId: "t2", attemptId: "att-1", chunkIndex: 0, totalChunks: 2, text: "Chunk 1; " },
 			"room-1",
 			"acc-1",
@@ -166,7 +166,7 @@ describe("device task journal and report storage", () => {
 		);
 		expect(chunk1Dup.receivedChunks).toBe(1);
 
-		const chunk2 = reportStore.appendReportChunk(
+		const chunk2 = await reportStore.appendReportChunk(
 			{ taskId: "t2", attemptId: "att-1", chunkIndex: 1, totalChunks: 2, text: "Chunk 2." },
 			"room-1",
 			"acc-1",

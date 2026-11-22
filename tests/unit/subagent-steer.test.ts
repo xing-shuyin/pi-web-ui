@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+
 import { ClientSession } from "../../server/agent-service.js";
 import { conversationIdentity } from "../../server/conversation-identity.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
+import { settle } from "../helpers/settle.js";
 
 function setup() {
 	let resolve!: () => void;
@@ -124,12 +126,17 @@ describe("idle subagent revision rounds (#784)", () => {
 		host.subagentNoticeTimers.set(child.parentId, { timer: null as any, subagents: new Set([child]) });
 		host.flushSubagentNoticeTimer(child.parentId);
 		// 让 drain 走到「worktree 收尾 await 处」再重新开工：旧的完成必须作废。
-		for (let i = 0; i < 12; i++) await Promise.resolve();
+		await settle();
 		await steer();
 		finalize();
-		for (let i = 0; i < 12; i++) await Promise.resolve();
+		await settle();
 		expect(child.subagentDoneNotified).toBe(false);
-		expect(host.emit).not.toHaveBeenCalled();
+		// 作废的完成通知不再静默消失（#981）：允许一条「已作废」warning，但不许有完成播报。
+		expect(
+			host.emit.mock.calls.every(
+				([e]: any[]) => e?.level === "warning" && /作废|invalidated/.test(String(e?.text ?? "")),
+			),
+		).toBe(true);
 		resolve();
 		await child.kickoff;
 	});
@@ -149,9 +156,11 @@ describe("idle subagent revision rounds (#784)", () => {
 			resolve();
 			await child.kickoff;
 			host.flushSubagentNoticeTimer(child.parentId);
-			for (let i = 0; i < 12; i++) await Promise.resolve();
+			await settle();
 			expect(child.subagentDoneNotified).toBe(true);
 			expect(parent.session.sendUserMessage).toHaveBeenCalledTimes(round);
+			// 这一轮跑完（agent_end）：在飞标记归位，下一轮才可能再投一次。
+			parent.promptInFlight = false;
 			child.subagentConsumedByParent = true;
 		}
 		child.notifyOnDone = false;

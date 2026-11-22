@@ -9,7 +9,15 @@ import { pathToFileURL } from "node:url";
 import { resolveDefaultPkgRoot } from "./plugin-updater.js";
 // shellQuotePosix 的单源在 shell-quote.ts；这里 re-export 是为了不让 6+ 个既有 import 点全部改一遍。
 import { shellQuotePosix } from "./shell-quote.js";
-import { isAudioFile, previewKind } from "./text-sniff.js";
+import { IMAGE_SNIFF_BYTES, imageMimeOfExt, isAudioFile, previewKind, sniffImageMime } from "./text-sniff.js";
+import type {
+	EditOperations,
+	FindOperations,
+	LsOperations,
+	ReadOperations,
+	WriteOperations,
+} from "@earendil-works/pi-coding-agent";
+import { openVersionedDoc, type VersionedDoc } from "./versioned-doc.js";
 import type {
 	RemoteSshDirItem,
 	RemoteSshHostTrustOffer,
@@ -240,6 +248,9 @@ export function createRemoteSdkOperations(localSessionDir: string) {
 				return false;
 			}
 		},
+		// SDK 的 ops 契约是可选项演进的（read 的 detectImageMimeType / createReadStream 都是可选）：
+		// 少实现一个不会报错，只会静默降级。所以每组都写 `satisfies` 声明被实现的契约，
+		// 可选项的覆盖由 tests/unit/remote-ops-contract.test.ts 按 SDK 类型逐成员校验。
 		read: {
 			readFile: async (p: string): Promise<Buffer> => {
 				const { data } = await getSvc().sftpReadFile(remoteUri, toRemote(p));
@@ -248,7 +259,34 @@ export function createRemoteSdkOperations(localSessionDir: string) {
 			access: async (p: string): Promise<void> => {
 				await getSvc().sftpStat(remoteUri, toRemote(p));
 			},
-		},
+			// 先按扩展名判（与 UI 预览分类同一口径，命名清楚的图片不必多付 SFTP 往返）；
+			// 只有没扩展名的文件（构建产物、截图导出）才读文件头按魔数判。
+			detectImageMimeType: async (p: string): Promise<string | null> => {
+				const ext = path.extname(p).toLowerCase();
+				const byExt = imageMimeOfExt(ext);
+				if (byExt) return byExt;
+				if (ext) return null;
+				try {
+					const { data, size } = await getSvc().sftpReadFile(remoteUri, toRemote(p), IMAGE_SNIFF_BYTES);
+					return size > 0 ? sniffImageMime(data, "") : null;
+				} catch {
+					// 契约要求「不是图片」返回 null；真读不出来让随后的 readFile 自己报错。
+					return null;
+				}
+			},
+			// 少了它，SDK 会退回 readFile：远程 read 哪怕只要 20 行也会把整个文件传回内存。
+			createReadStream: async function* (p: string, options: { signal?: AbortSignal }): AsyncGenerator<Uint8Array> {
+				const stream = await getSvc().sftpCreateReadStream(remoteUri, toRemote(p));
+				const onAbort = () => stream.destroy();
+				options?.signal?.addEventListener("abort", onAbort, { once: true });
+				try {
+					for await (const chunk of stream) yield typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+				} finally {
+					options?.signal?.removeEventListener("abort", onAbort);
+					stream.destroy();
+				}
+			},
+		} satisfies ReadOperations,
 		write: {
 			writeFile: async (p: string, content: string): Promise<void> => {
 				await getSvc().sftpWriteFile(remoteUri, toRemote(p), content, { createParents: true });
@@ -256,7 +294,7 @@ export function createRemoteSdkOperations(localSessionDir: string) {
 			mkdir: async (dir: string): Promise<void> => {
 				await getSvc().sftpMkdirRecursive(remoteUri, toRemote(dir));
 			},
-		},
+		} satisfies WriteOperations,
 		edit: {
 			readFile: async (p: string): Promise<Buffer> => {
 				const { data } = await getSvc().sftpReadFile(remoteUri, toRemote(p));
@@ -286,7 +324,7 @@ export function createRemoteSdkOperations(localSessionDir: string) {
 				const entries = await getSvc().sftpReaddir(remoteUri, toRemote(p));
 				return entries.map((e) => e.name);
 			},
-		},
+		} satisfies LsOperations,
 		find: {
 			exists: async (p: string): Promise<boolean> => {
 				try {
@@ -311,7 +349,7 @@ export function createRemoteSdkOperations(localSessionDir: string) {
 					.map((l) => l.trim().replace(/^\.\//, ""))
 					.filter((l) => l && l !== ".");
 			},
-		},
+		} satisfies FindOperations,
 		grepExecute: async (params: {
 			pattern: string;
 			path?: string;
@@ -339,7 +377,7 @@ export function createRemoteSdkOperations(localSessionDir: string) {
 
 let globalRemoteSshService: RemoteSshService | null = null;
 
-export function setGlobalRemoteSshService(svc: RemoteSshService): void {
+export function setGlobalRemoteSshService(svc: RemoteSshService | null): void {
 	globalRemoteSshService = svc;
 }
 
@@ -418,35 +456,72 @@ export class RemoteSshService {
 	}
 
 	private async loadProfilesData(): Promise<StoredProfilesFile> {
+		const primary = this.profilesDoc();
+		if (existsSync(this.profilesFilePath)) return primary.read();
+		if (!existsSync(this.legacyProfilesFilePath)) {
+			primary.read();
+			return { version: 1, profiles: {} };
+		}
+		// 旧命名（`ssh-profiles.json`）自动迁移：先把旧文件读出来（认不出就不碰），再建主文件。
+		const legacy = this.profilesDoc(this.legacyProfilesFilePath);
+		const data = legacy.read();
+		if (legacy.state !== "ready") return data;
 		try {
-			if (existsSync(this.profilesFilePath)) {
-				const content = await fs.readFile(this.profilesFilePath, "utf8");
-				const parsed = JSON.parse(content) as StoredProfilesFile;
-				if (parsed && parsed.version === 1 && typeof parsed.profiles === "object") {
-					return parsed;
-				}
-			} else if (existsSync(this.legacyProfilesFilePath)) {
-				const content = await fs.readFile(this.legacyProfilesFilePath, "utf8");
-				const parsed = JSON.parse(content) as StoredProfilesFile;
-				if (parsed && parsed.version === 1 && typeof parsed.profiles === "object") {
-					await fs.mkdir(this.dataDir, { recursive: true });
-					await fs.writeFile(this.profilesFilePath, JSON.stringify(parsed, null, 2), "utf8");
-					return parsed;
-				}
-			}
-		} catch {}
-		return { version: 1, profiles: {} };
+			await primary.write(data);
+		} catch (error) {
+			console.error("[remote-ssh] 旧版 profiles 迁移到 global-hosts.json 失败:", error);
+		}
+		return data;
 	}
 
+	private profilesDoc(file: string = this.profilesFilePath): VersionedDoc<StoredProfilesFile> {
+		return openVersionedDoc<StoredProfilesFile>({
+			file,
+			label: "remote-ssh",
+			versions: [1],
+			parse: (document) =>
+				document.profiles && typeof document.profiles === "object" && !Array.isArray(document.profiles)
+					? { version: 1, profiles: document.profiles as Record<string, StoredProfile> }
+					: null,
+			serialize: (value) => ({ version: 1, profiles: value.profiles }),
+			empty: () => ({ version: 1, profiles: {} }),
+		});
+	}
+
+	/**
+	 * 写盘前先确认「当前权威文件」认得出来（issues #982：版本不认识时曾静默落成空库并覆盖全部主机
+	 * 与密封口令）。认不出就抛 `StorageBlockedError`，由调用方回成失败回执 —— 绝不许吞成保存成功。
+	 */
 	private async saveProfilesData(data: StoredProfilesFile): Promise<void> {
-		try {
-			await fs.mkdir(this.dataDir, { recursive: true });
-			const json = JSON.stringify(data, null, 2);
-			await fs.writeFile(this.profilesFilePath, json, "utf8");
-			await fs.writeFile(this.legacyProfilesFilePath, json, "utf8").catch(() => {});
-		} catch (err) {
-			console.error("[remote-ssh] 无法保存 profiles 文件:", err);
+		const primary = this.profilesDoc();
+		const hasLegacy = existsSync(this.legacyProfilesFilePath);
+		const legacy = hasLegacy ? this.profilesDoc(this.legacyProfilesFilePath) : null;
+		if (existsSync(this.profilesFilePath)) primary.assertWritable();
+		else if (legacy) legacy.assertWritable();
+		const value: StoredProfilesFile = { version: 1, profiles: data.profiles };
+		await primary.write(value);
+		if (legacy) {
+			// 旧命名仍可能被更早的内核读取：主文件成功后尽力镜像一份；失败不回滚主文件。
+			try {
+				await legacy.write(value);
+			} catch {}
 		}
+	}
+
+	/**
+	 * 当前权威文件认不出来时的原因（版本不认识 / 读不出）；正常返回 `undefined`。
+	 * 只用于回执与排查：是否允许写由 `assertWritable()` 在写路径上裁定，不看这个。
+	 */
+	profilesStorageIssue(): string | undefined {
+		const primary = this.profilesDoc();
+		primary.read();
+		if (primary.state === "foreign" || primary.state === "damaged") return primary.blockedReason;
+		if (!existsSync(this.profilesFilePath) && existsSync(this.legacyProfilesFilePath)) {
+			const legacy = this.profilesDoc(this.legacyProfilesFilePath);
+			legacy.read();
+			if (legacy.state === "foreign" || legacy.state === "damaged") return legacy.blockedReason;
+		}
+		return undefined;
 	}
 
 	async listProfiles(): Promise<RemoteSshProfileSummary[]> {
@@ -837,9 +912,16 @@ export class RemoteSshService {
 			}
 		}
 
+		let profileSaveError: string | undefined;
 		if (params.saveProfile !== false) {
 			const pName = params.profileName?.trim() || `${hydrated.username}@${hydrated.host}`;
-			await this.saveProfile(pName, hydrated);
+			try {
+				await this.saveProfile(pName, hydrated);
+			} catch (error) {
+				// 已经连上了就不能因为「配置没落盘」判失败，也绝不算保存成功：原因随回执回去。
+				profileSaveError = (error as Error).message || String(error);
+				console.error(`[remote-ssh] 已连接，但 profile 未保存：${profileSaveError}`);
+			}
 		}
 
 		const probeScript = `
@@ -877,6 +959,7 @@ done
 				tools: parsed.tools,
 				packageManager: parsed.packageManager,
 				suggestedInstall: parsed.suggestedInstall,
+				...(profileSaveError ? { profileSaveError } : {}),
 			};
 		} catch (err) {
 			return {
@@ -1422,7 +1505,7 @@ fi
 		uri: string,
 		remoteAbsPath: string,
 		opts?: { start?: number; end?: number },
-	): Promise<NodeJS.ReadableStream> {
+	): Promise<Readable> {
 		const { sftp } = await this.getOrConnectByUri(uri);
 		if (typeof sftp.createReadStream === "function") {
 			return sftp.createReadStream(remoteAbsPath, opts);

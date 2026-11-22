@@ -33,7 +33,7 @@ afterEach(async () => {
 });
 
 describe("engine history isolation", () => {
-	it("separates equal IDs and imports ambiguous history as messages only once per engine", () => {
+	it("separates equal IDs and imports ambiguous history as messages only once per engine", async () => {
 		const root = temp();
 		const hash = createHash("sha256").update(normalizePathKey(root)).digest("hex").slice(0, 16);
 		const dir = join(root, "universal-sessions", hash);
@@ -56,7 +56,7 @@ describe("engine history isolation", () => {
 		expect(durable.listConversations(root)[0].driverSessionId).toBeUndefined();
 		claude.renameConversation(root, "old", "claude only");
 		expect(durable.loadConversation(root, "old")?.title).toBe("legacy");
-		claude.deleteConversation(root, "old");
+		await claude.deleteConversation(root, "old");
 		expect(new UniversalSessionStore(root, "claude").listConversations(root)).toEqual([]);
 		expect(existsSync(legacy)).toBe(true);
 		expect(durable.loadConversation(root, "old")?.messages).toHaveLength(1);

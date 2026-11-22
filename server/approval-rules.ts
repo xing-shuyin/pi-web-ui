@@ -1,7 +1,8 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { isAbsolute, relative, resolve, sep } from "node:path";
-import { writeJsonAtomicSync } from "./atomic-file.js";
+import { writeJsonAtomic } from "./atomic-file.js";
+import { createSerializedJsonWriter, type SerializedJsonWriter } from "./serialized-json-writer.js";
 import { DEFAULT_APPROVAL_RULES } from "./approval-default-rules.js";
+import { isInsideRoots } from "./path-boundary.js";
 import { LEGACY_TERMINAL_TOOL_NAMES } from "./tool-manager.js";
 import { conversationToolAllowed } from "./conversation-tool-names.js";
 
@@ -19,14 +20,6 @@ export type ApprovalRuleAction = "ask" | "deny" | "allow";
 export type ApprovalRuleField = "command" | "path" | "params";
 
 export type ApprovalRuleMatchKind = "regex" | "glob" | "contains" | "prefix" | "outside_workspace";
-
-export function isPathInsideRoot(target: string, root: string): boolean {
-	const fold = (p: string) => (process.platform === "win32" ? p.toLowerCase() : p);
-	const rel = relative(fold(resolve(root)), fold(resolve(target)));
-	if (rel === "") return true;
-	if (isAbsolute(rel)) return false;
-	return rel !== ".." && !rel.startsWith(`..${sep}`) && !rel.startsWith("../");
-}
 
 export interface ApprovalRule {
 	id: string;
@@ -193,10 +186,8 @@ export function matchApprovalRuleDetail(
 	if (rule.match === "outside_workspace") {
 		const targetPath = extractRuleFieldValue("path", toolName, params);
 		if (!targetPath) return null;
-		const abs = resolve(cwd, targetPath);
-		const allRoots = [resolve(cwd), ...workspaceRoots.map((r) => resolve(r))];
-		const inside = allRoots.some((r) => isPathInsideRoot(abs, r));
-		if (!inside) {
+		// 边界单源（server/path-boundary.ts）：target 用原始串（含 `..`/链接）判，不能先 resolve 折叠。
+		if (!isInsideRoots(targetPath, [cwd, ...workspaceRoots], cwd)) {
 			return { index: 0, length: targetPath.length, text: targetPath };
 		}
 		return null;
@@ -418,8 +409,17 @@ export function normalizeApprovalRule(raw: unknown): ApprovalRule | null {
 export class ApprovalRulesStore {
 	private rules: ApprovalRule[] | null = null;
 	private lastMtime = 0;
+	/** `.seeded.json` 的可重建标记：`load()` 是同步读，所以只能排队写，但同一文件必须只有一个队列。 */
+	private seededWriter: SerializedJsonWriter | null = null;
 
 	constructor(private readonly filePath: string) {}
+
+	private writer(): SerializedJsonWriter {
+		if (!this.seededWriter) {
+			this.seededWriter = createSerializedJsonWriter(this.seededPath(), { label: "approval-rules.seeded" });
+		}
+		return this.seededWriter;
+	}
 
 	private seededPath(): string {
 		return /\.json$/i.test(this.filePath)
@@ -441,9 +441,14 @@ export class ApprovalRulesStore {
 	}
 
 	private saveSeeded(names: Set<string>): void {
-		try {
-			writeJsonAtomicSync(this.seededPath(), [...names].sort());
-		} catch {}
+		// 播种标记只是「这些默认规则已经露过面」的投影（丢了顶多多露一次），本身不是真值：
+		// 因此排队写 + 失败只重建队列，不能让一次同步退避卡住事件循环。
+		// 队列的链一经拒绝就永久拒绝（见 `serialized-json-writer`），所以失败后换新链。
+		void this.writer()
+			.writeNow([...names].sort())
+			.catch(() => {
+				this.seededWriter = null;
+			});
 	}
 
 	private load(): ApprovalRule[] {
@@ -492,9 +497,9 @@ export class ApprovalRulesStore {
 		return this.rules;
 	}
 
-	private persist(): void {
+	private async persist(): Promise<void> {
 		try {
-			writeJsonAtomicSync(this.filePath, this.rules ?? []);
+			await writeJsonAtomic(this.filePath, this.rules ?? []);
 			try {
 				this.lastMtime = statSync(this.filePath).mtimeMs;
 			} catch {}
@@ -505,7 +510,7 @@ export class ApprovalRulesStore {
 		return this.load().map((r) => ({ ...r, tools: [...r.tools] }));
 	}
 
-	upsert(input: unknown): string | null {
+	async upsert(input: unknown): Promise<string | null> {
 		const rule = normalizeApprovalRule(input);
 		if (!rule) return "规则格式非法（缺少名称、工具列表或正则格式错误）";
 
@@ -519,11 +524,11 @@ export class ApprovalRulesStore {
 		} else {
 			list.push(rule);
 		}
-		this.persist();
+		await this.persist();
 		return null;
 	}
 
-	saveAll(inputs: unknown[]): string | null {
+	async saveAll(inputs: unknown[]): Promise<string | null> {
 		if (!Array.isArray(inputs)) return "规则列表必须是数组";
 		const normalized: ApprovalRule[] = [];
 		const ids = new Set<string>();
@@ -547,22 +552,22 @@ export class ApprovalRulesStore {
 		}
 
 		this.rules = normalized;
-		this.persist();
+		await this.persist();
 		return null;
 	}
 
-	remove(id: string): boolean {
+	async remove(id: string): Promise<boolean> {
 		const list = this.load();
 		const idx = list.findIndex((r) => r.id === id);
 		if (idx < 0) return false;
 		if (list[idx].builtin) return false;
 
 		list.splice(idx, 1);
-		this.persist();
+		await this.persist();
 		return true;
 	}
 
-	resetBuiltin(id: string): boolean {
+	async resetBuiltin(id: string): Promise<boolean> {
 		const def = DEFAULT_APPROVAL_RULES.find((r) => r.id === id);
 		if (!def) return false;
 
@@ -573,7 +578,7 @@ export class ApprovalRulesStore {
 		} else {
 			list.push({ ...def, tools: [...def.tools] });
 		}
-		this.persist();
+		await this.persist();
 		return true;
 	}
 }

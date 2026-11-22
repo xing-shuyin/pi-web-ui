@@ -1,9 +1,9 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { readPermissionFromSession } from "../../server/permission-preset.js";
+import { appendModeEntry, MODE_ENTRY_TYPES, readPermissionFromSession } from "../../server/permission-preset.js";
 
 describe("Conversation Permission Persistence", () => {
 	let tempDir: string;
@@ -52,5 +52,57 @@ describe("Conversation Permission Persistence", () => {
 
 		const reopened = SessionManager.open(sessionFile!);
 		expect(readPermissionFromSession(reopened)).toBe("danger-full-access");
+	});
+});
+
+describe("appendModeEntry：写结果三态（issues #968）", () => {
+	it("写进转录 = ok，且能沿叶链读回", () => {
+		const dir = mkdtempSync(join(tmpdir(), "perm-entry-"));
+		const sm = SessionManager.create(dir);
+		sm.appendMessage({ role: "user", content: [{ type: "text", text: "hello" }], timestamp: Date.now() });
+		expect(appendModeEntry(sm, MODE_ENTRY_TYPES.permission, { preset: "read-only" })).toBe("ok");
+		expect(readPermissionFromSession(sm)).toBe("read-only");
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("没有 sessionManager / 写不进去 = failed（调用方必须保持旧值）", () => {
+		expect(appendModeEntry(undefined, MODE_ENTRY_TYPES.plan, { enabled: true })).toBe("failed");
+		expect(
+			appendModeEntry(
+				{
+					appendCustomEntry: () => {
+						throw new Error("disk full");
+					},
+					isPersisted: () => true,
+				},
+				MODE_ENTRY_TYPES.plan,
+				{ enabled: true },
+			),
+		).toBe("failed");
+	});
+
+	it("未落盘的会话 = transient（不报错，但也不宣称已保存）", () => {
+		expect(
+			appendModeEntry({ appendCustomEntry: () => {}, isPersisted: () => false }, MODE_ENTRY_TYPES.delegate, {
+				enabled: true,
+			}),
+		).toBe("transient");
+	});
+
+	it("三个 setter 都是「先写条目，再改内存」", () => {
+		const source = readFileSync(join(process.cwd(), "server", "agent-service.ts"), "utf8");
+		for (const [setter, memoryWrite, entry] of [
+			["async setPermissionPreset(", "this.conv.permissionPreset = hit.value;", "MODE_ENTRY_TYPES.permission"],
+			["async setDelegateMode(", "target.delegateMode = enabled;", "MODE_ENTRY_TYPES.delegate"],
+			["async setPlanMode(", "target.planMode = enabled;", "MODE_ENTRY_TYPES.plan"],
+		] as const) {
+			const start = source.indexOf(setter);
+			expect(start, `${setter} 不存在`).toBeGreaterThan(-1);
+			const body = source.slice(start, source.indexOf("\n\t}", start));
+			expect(body).toContain(entry);
+			expect(body.indexOf("appendModeEntry(")).toBeGreaterThan(-1);
+			// 条目写盘必须先于内存投影：否则「写失败但界面已变」的老问题会回来。
+			expect(body.indexOf("appendModeEntry(")).toBeLessThan(body.indexOf(memoryWrite));
+		}
 	});
 });

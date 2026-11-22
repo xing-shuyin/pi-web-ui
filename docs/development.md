@@ -228,6 +228,9 @@ GitHub Actions ubuntu-latest（`.github/workflows/ci.yml`，push/PR → main 触
 - **删除重复项先核对替代关系**：生产路径、输入范围和约束强度须被保留测试覆盖；解析器还须保留有效样本数断言，避免全部跳过后假通过。不同边界仍需独立覆盖，不能只为减少 case 数合并。
 - **复用只读输入，隔离可变状态**：同套件扫描源码一次，昂贵基础 fixture 可以复制到每例独立目录；Git 的 `.git`、索引、浏览器 context 等可变资源不跨用例共享。保留 Vitest 默认模块隔离。
 
+- **测试不许绑死机器**：临时目录一律 `os.tmpdir()` 派生（单源 `tests/helpers/tmp.ts` 的 `makeTestTmpDir()`），仓库内文件从模块位置派生（`fileURLToPath(new URL("../..", import.meta.url))`，与 `process.cwd()` 无关），外部程序走发现逻辑（`tests/lib/chrome.mjs` 的 `CHROME_PATH`）。**禁**写死盘符（`E:/tmp`、`C:/Program Files/...`）——换个开发机就是整批 `ENOENT`，看着像代码坏了。假数据里的路径字符串（prompt 示例、期望输出）不受此限（守卫：`tests/unit/test-machine-independence.test.ts`）。
+- **等待异步链路用 `tests/helpers/settle.ts`**：`settle()` 在模块加载时抓住真实的 `setImmediate`，因此 `vi.useFakeTimers()` 下也能用；`for (i<12) await Promise.resolve()` 这类固定次数跳转在异步化之后不再可靠。
+
 `tests/unit/` 是历史目录名，里面还包含仓库扫描、真实 Git/CLI 与 Chromium 测试，不能都按「毫秒级纯函数」估算成本。优化先减少重复扫描、进程启动和过大的导入链，再用定向报告比较耗时；全量 CI 门禁保持覆盖。
 
 ### 全局 vs 本地
