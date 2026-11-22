@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import { tmpdir } from "node:os";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -199,6 +199,9 @@ describe("Approval System Security Bypass & Path Traversal Fixes (#333)", () => 
 			expect(res.isError).toBeUndefined();
 			expect(execute).toHaveBeenCalledTimes(1);
 
+			// 大写路径是不是“同一个目录”由**文件系统**决定：大小写敏感的 FS 上它是区外路径，必须拦。
+			writeFileSync(join(workspace, "CaseProbe.txt"), "x");
+			const caseInsensitive = existsSync(join(workspace, "caseprobe.txt"));
 			const upper = wrapWriteToolWithPermission(
 				workspace,
 				() => "workspace-write-never",
@@ -209,8 +212,15 @@ describe("Approval System Security Bypass & Path Traversal Fixes (#333)", () => 
 				undefined,
 				{ name: "write", execute } as unknown as ToolDefinition,
 			);
-			await upper.execute("call", { path: workspace.toUpperCase(), content: "x" }, undefined, undefined, {} as any);
-			expect(execute).toHaveBeenCalledTimes(2);
+			const upperRes = (await upper.execute(
+				"call",
+				{ path: workspace.toUpperCase(), content: "x" },
+				undefined,
+				undefined,
+				{} as any,
+			)) as any;
+			expect(execute).toHaveBeenCalledTimes(caseInsensitive ? 2 : 1);
+			expect(upperRes.isError === true).toBe(!caseInsensitive);
 		});
 
 		it("outside_workspace 规则对链接指向的区外目标仍会拦", () => {

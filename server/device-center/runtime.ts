@@ -374,7 +374,12 @@ export function createDeviceRuntime(options: {
 		return track(
 			new Promise<string>((resolve, reject) => {
 				let queued: ReturnType<typeof scheduler.enqueue> = null;
+				// 已开跑之后，结局只由 `runTask` 自己交代（先写恢复账本，再抛给调用方）。
+				// 这个监听器只负责「还排着队就被取消」：它一旦在跑动中抢着 reject，调用方会先拿到
+				// `Task cancelled`，而 interrupted 的账本还落在后台续作里——观测恢复账本的人会看到空记录。
+				let started = false;
 				const onAbort = () => {
+					if (started) return;
 					if (queued) scheduler.removeWaiting(queued);
 					taskSignal.removeEventListener("abort", onAbort);
 					reject(taskSignal.reason ?? new DeviceTaskError("Task cancelled"));
@@ -392,6 +397,7 @@ export function createDeviceRuntime(options: {
 						},
 						{
 							start() {
+								started = true;
 								taskSignal.removeEventListener("abort", onAbort);
 								void runTask(task, root, taskSignal, callbacks).then(resolve, reject).finally(drain);
 							},

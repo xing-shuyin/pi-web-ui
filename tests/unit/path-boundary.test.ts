@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { isInsideRoots, isInsideRootsLexical, realPathOrNearest } from "../../server/path-boundary.js";
@@ -69,11 +69,15 @@ describe("isInsideRoots：两侧都按真实路径比较", () => {
 		expect(isInsideRoots("/etc/passwd", [workspace])).toBe(false);
 	});
 
-	it("Windows 上大小写/分隔符归一后仍判定为区内", () => {
+	it("大小写不敏感的文件系统上大小写/分隔符归一后仍判定为区内", () => {
 		const { workspace } = fixture();
+		// 行为由**文件系统**决定，不是由平台名决定：Linux/大小写敏感的 APFS 上 `WORKSPACE` 就是另一个目录，
+		// 写成 `process.platform === "win32"` 会在 CI 的 ubuntu 上直接红。
+		writeFileSync(join(workspace, "CaseProbe.txt"), "x");
+		const caseInsensitive = existsSync(join(workspace, "caseprobe.txt"));
 		const upper = workspace.toUpperCase().replace(/\\/g, "/");
-		expect(isInsideRoots(upper, [workspace])).toBe(process.platform === "win32");
-		expect(isInsideRoots(join(workspace, "a", "b.txt"), [workspace.toUpperCase()])).toBe(true);
+		expect(isInsideRoots(upper, [workspace])).toBe(caseInsensitive);
+		expect(isInsideRoots(join(workspace, "a", "b.txt"), [workspace.toUpperCase()])).toBe(caseInsensitive);
 	});
 
 	it("区内链接指向区外时判为区外（#972 junction 穿透）", () => {
