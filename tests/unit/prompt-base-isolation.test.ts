@@ -40,7 +40,7 @@ function soulOf(loader: object | undefined): string {
 	const base = readPromptBase(loader);
 	const inputs = {
 		cwd: "/tmp",
-		systemPromptFile: base.system || undefined,
+		systemPromptFile: base.soul || undefined,
 		builtinSoul: BUILTIN_SOUL,
 		selectedTools: [],
 		toolSnippets: {},
@@ -68,7 +68,7 @@ describe("issue #812 — SYSTEM.md 不跨项目泄漏", () => {
 		expect(a.loader.getSystemPrompt()).toBe("You are summarization master.");
 		expect(soulOf(a.loader).startsWith("You are summarization master.")).toBe(true);
 
-		expect(readPromptBase(b.loader)).toEqual({ system: "", append: [] });
+		expect(readPromptBase(b.loader)).toEqual({ system: "", soul: "", append: [] });
 		expect(b.loader.getSystemPrompt()).toBeUndefined();
 		expect(soulOf(b.loader).startsWith(BUILTIN_SOUL)).toBe(true);
 
@@ -88,7 +88,7 @@ describe("issue #812 — SYSTEM.md 不跨项目泄漏", () => {
 
 		rmSync(join(cwd, ".pi", "SYSTEM.md"));
 		await loader.reload();
-		expect(readPromptBase(loader)).toEqual({ system: "", append: [] });
+		expect(readPromptBase(loader)).toEqual({ system: "", soul: "", append: [] });
 		expect(soulOf(loader).startsWith(BUILTIN_SOUL)).toBe(true);
 	});
 

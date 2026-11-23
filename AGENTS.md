@@ -22,7 +22,7 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | 前端 HTTP 请求（URL + 口令 + 失败回执） | `web/src/api-client.ts`★（`requestJson` / `apiFetch` / `readApiFailure`） · `web/src/base-url.ts` · `web/src/auth-token.ts` | [`architecture-ui.md`](docs/architecture-ui.md#http-请求websrcapi-clientts-单源) |
 | 安静模式（只显示每轮最终回复 / 折叠与零痕迹） | `web/src/quiet-fold.ts`★ · `web/src/quiet-mode.ts`★ · `web/src/components/MessageList.tsx` · `web/src/components/SettingsModal.tsx` | [`architecture-ui.md`](docs/architecture-ui.md#安静模式issue-956) |
 | 随手问 / 选中文字解释 | `server/quick-ask.ts` · `web/src/quick-ask.ts` · `web/src/components/QuickAskPopover.tsx` | [`architecture-ui.md`](docs/architecture-ui.md#随手问独立小窗) |
-| 系统提示词组装 / 设置保存回执 | `server/prompt-composer.ts`★ · `web/src/settings-sync.ts`★ | [`architecture-system-prompt.md`](docs/architecture-system-prompt.md) |
+| 系统提示词组装 / 设置保存回执 | `server/prompt-composer.ts`★ · `server/prompt-base-store.ts`★ · `web/src/settings-sync.ts`★ | [`architecture-system-prompt.md`](docs/architecture-system-prompt.md) |
 | 工具开关 / 工具提示词 / 内置工具覆盖 | `server/tool-manager.ts`★ · `server/tool-prompts.ts`★ · `packages/keel/src/tool-overrides.ts` · `server/bash-timeout.ts`（默认超时单源） | [`agent-rules.md`](docs/agent-rules.md#二工具定义与提示词规范) · [`tool-context-budget.md`](docs/tool-context-budget.md) |
 | 上下文预算 / 延迟加载 / 证据外置 | `server/soft-cap.ts` · `server/request-context.ts` · `server/evidence-tool-hooks.ts` · `server/context-recovery.ts` | [`tool-context-budget.md`](docs/tool-context-budget.md) |
 | **完整性单源** | `packages/keel/src/versioned-doc.ts`★ · `server/web-build.ts`★ | [`agent-rules.md`](docs/agent-rules.md#四架构与运行态约束) · [`architecture-kernel.md`](docs/architecture-kernel.md#31-界面资源缺失) |
@@ -75,9 +75,8 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | 域 | 一句话禁令 | 守卫 |
 | --- | --- | --- |
 | **安全/协议** | `details` ≤64KB；服务端 URL 必包 `appUrl()`；Cookie 校验前先解码；未登录页口令表单必须原生 `POST /__pi/auth`（禁 JS 拼 `?token=`） | `auth-login` |
-| **提示词/工具** | 工具提示词三处职责分离、纯英文精简；导出 schema 只留字段名/类型（装饰约束与自解释字段说明不写） | `tool-prompt-hygiene` · `tool-schema-slim` · `lazy-tools-test` |
+| **提示词/工具** | 工具提示词三处职责分离、纯英文精简；schema 只留字段名/类型；提示词只走结构化槽位（禁解析渲染文本）；soul/base 归属 session 的 loader | `tool-prompt-hygiene` · `tool-schema-slim` · `lazy-tools-test` · `prompt-render-parse-guard` · `subagent-template-soul` · `prompt-base-scope` |
 | **提示词/工具** | 新增可开关工具三处联动（catalog / customTools / 注册单测） | `tool-registration` |
-| **提示词/工具** | 提示词 base（SYSTEM.md / APPEND_SYSTEM.md）归属 session 的 loader，禁客户端级「最近一次」字段 | `prompt-base-scope` |
 | **服务端/运行态** | 压缩软上限双层监控；换模型只走 `applySessionModel` | — |
 | **服务端/运行态** | 出帧只走 `snapshot-channel`；禁在 emit 处手判全量/增量、禁把基线挂回会话级；`flushSnapshot(true)` 只留给「客户端没状态」 | `snapshot-channel` |
 | **内核/客户端** | 权威链只由 `desktop/kernel-authority.ts` 决定（npm-global → userData runtime → 包内自带）、元数据只由 `server/kernel-identity.ts` 推导；壳的内核判定只走 `desktop/kernel-mode.ts`（`planKernelBoot`：打包版默认服务优先，壳不拉 sidecar） | `kernel-single-source` |

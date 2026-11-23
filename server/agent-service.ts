@@ -3783,7 +3783,8 @@ export class ClientSession {
 		const realCwd = restoreWorkspaceUriFromSessionDir(src.cwd);
 		return {
 			cwd: formatCwdForPrompt(realCwd),
-			systemPromptFile: promptBase.system || undefined,
+			// 灵魂槽位读 soul（模板 replace 时是模板）；system 是 loader 原文，只给预览/迁移用。
+			systemPromptFile: promptBase.soul || undefined,
 			builtinSoul: BUILTIN_SOUL,
 			selectedTools: src.selectedTools,
 			toolSnippets: src.toolSnippets,
@@ -5044,15 +5045,17 @@ export class ClientSession {
 					effectiveCwd,
 				);
 				const promptBase = createPromptBaseObservers({
-					system: (base) =>
-						base && apply && apply.promptMode === "replace" && this.templatePrompt(apply).trim()
-							? this.templatePrompt(apply)
-							: base,
+					// 子代理模板 replace = 换灵魂槽位（issue #999）：交给 SDK 的 customPrompt 语义，
+					// tools/rules/docs 由它自动省略（0.85 → 1.6 同语义），不再按渲染文本切段。
+					soul: () => {
+						if (!apply || apply.promptMode !== "replace") return undefined;
+						const template = this.templatePrompt(apply);
+						return template.trim() ? template : undefined;
+					},
 					append: (base) => {
 						const out = [...base];
-						if (apply && apply.promptMode === "append" && this.templatePrompt(apply).trim()) {
-							out.push(this.templatePrompt(apply));
-						}
+						const appendTemplate = apply && apply.promptMode === "append" ? this.templatePrompt(apply) : "";
+						if (appendTemplate.trim()) out.push(appendTemplate);
 						if (this.planModeOf(ownerId)) {
 							const planPrefs = this.settingsSvc.current;
 							out.push(buildPlanModePrompt(planPrefs.planModePromptMode, planPrefs.planModePrompt));
@@ -5223,15 +5226,10 @@ export class ClientSession {
 										"before_agent_start",
 										staleSafe((event) => {
 											const { core, rewrap } = prepareBotExecutionSystemPrompt(event, botExecution);
-											if (apply) {
-												const tplPrompt = this.templatePrompt(apply).trim();
-												if (apply.promptMode !== "replace" || !tplPrompt) return undefined;
-												const boundary = core.indexOf("\n\nAvailable tools:");
-												const swapped = rewrap(
-													boundary === -1 ? `${tplPrompt}\n\n${core}` : tplPrompt + core.slice(boundary),
-												);
-												return swapped === event.systemPrompt ? undefined : { systemPrompt: swapped };
-											}
+											// 子代理模板的提示词完全由 loader 决定（prompt-base-store 的 soul 槽位：
+											// replace = 模板，append = 追加段），SDK 结构化段就是最终提示词。
+											// 这里不拼接任何文本，也不走主会话组合模板（两套组装不共存）。
+											if (apply) return undefined;
 											const conv = this.convs.get(ownerId ?? this.activeId) ?? this.conv;
 											const sess = conv?.session;
 											const activeToolNames = sess ? sess.getActiveToolNames() : [];

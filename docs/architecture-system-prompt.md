@@ -47,8 +47,9 @@
         3. 都没有 → undefined → SDK 默认分支拼出内置模板（persona + tools +
            guidelines + pi_docs）。注意：这段 SDK 自带文本**不是** pi-web-ui 的内置默认，
            内置默认（六条工程准则 + 上面那套顺序）由组合渲染产出。
-    组合模式下 systemPromptOverride 恒返回 base（= SYSTEM.md 原文，没有就 undefined）
-    → 组合模板激活时 before_agent_start 整体换掉提示词（`{{soul}}` 用同一份 base），
+    组合模式下 systemPromptOverride 返回灵魂槽位（= SYSTEM.md 原文，没有就 undefined；
+    子代理模板 replace 时是模板 —— 见下一条 soul）
+    → 组合模板激活时 before_agent_start 整体换掉提示词（`{{soul}}` 用同一份），
     组合模板未激活时 SDK 默认分支据此保留 .pi/SYSTEM.md（TUI 同语义；旧实现恒返回
     undefined，于是在「全默认 + 有 SYSTEM.md」的会话里这份文件被静默丢弃）。
 
@@ -61,6 +62,9 @@
         只有恰好访问一个「空白 SYSTEM.md」的项目才会被意外重置。
         口径：
         - 记录：每次 reload **无条件覆盖**（base 缺失即写空），没文件的项目永远是空记录；
+        - 两格：`system` = loader 观察到的**原文**（SYSTEM.md）；`soul` = 灵魂槽位的
+          **实际取值**（子代理模板 replace 时是模板，否则 = system）。组装最终提示词只读
+          `soul`；设置预览 / 迁移 / 口径核对只读 `system`（见 `PromptBaseRecord`）；
         - 读取：`readPromptBase(目标会话的 session.resourceLoader)` —— 预览算哪个
           会话就读哪个会话（回顾「拿活跃会话算后台会话」的同类串账）；
         - 过户：搬的是 session 本体，记录跟着走；session 销毁后 WeakMap 自动回收；
@@ -93,9 +97,23 @@
             - 主会话：若配置了模板或任一覆盖，用本次 run 的 systemPromptOptions
               （selectedTools / toolSnippets / promptGuidelines / contextFiles /
               skills 全是当时最新）渲染组合模板，替换该 run 的 systemPrompt 主体；
-            - 子代理模板 replace：默认分支下把灵魂段换成模板提示词（自动段保留）；
-              模板 append 仍走 loader 追加段。
-        链式保留（两个分支共用）—— 我们是 before_agent_start 链上最后一个 handler
+            - 子代理模板（apply）：**整段交给 loader，hook 不拼任何文本**
+              （`if (apply) return undefined`）：
+                replace = `prompt-base-store` 的 `soul` 槽位（交给 SDK 的 `customPrompt` 语义：
+                  模板成为 preamble，`<tools>`/`<rules>`/`<docs>` 由 SDK 自动省略，
+                  `<project_context>`/技能段/`<cwd>`/追加段照常自动生成）；
+                append = loader 追加段。
+              子代理模板不进入上面的组合模板分支：一个会话只有一套组装。
+              模板语言（zh/en）在 loader 装载 / `session.reload()` 时解析一次。
+              **禁止**再按渲染文本的边界串（旧实现用 `"Available tools:"`）切段：那是 SDK 的
+              输出格式，不是契约。SDK 0.86 改成分段提示词后边界恒不存在 → 模板退化成
+              "前置拼接"（子代理仍带整段平台提示词，且与 SYSTEM.md 同时存在时模板出现两遍），
+              也就是 issue #999。守卫：`tests/unit/subagent-template-soul.test.ts`、
+              `tests/unit/prompt-render-parse-guard.test.ts`。
+              已知缺口（不在 #999 范围）：模板子代理不走组合模板，所以“按需工具目录”
+              （lazy）、双语段等组合模板特性对它们不生效；给模板子代理发目录 / 在模板里
+              收窄工具属于独立的产品判断，不要用第二套提示词拼接去补。
+        链式保留（主会话分支）—— 我们是 before_agent_start 链上最后一个 handler
         （resource-loader 把内联扩展排在所有文件/包扩展之后），返回 systemPrompt 即
         forceSystemPrompt 整体替换，会把别的扩展写进去的内容一起丢掉。所以先拆：
             splitAgentStartPrompt(event) → { pre, core, post }

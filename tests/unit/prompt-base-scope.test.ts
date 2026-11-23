@@ -43,9 +43,18 @@ describe("提示词 base 作用域", () => {
 		expect(service).toMatch(/promptBase\.bind\(services\.resourceLoader\)/);
 	});
 
-	it("主会话 override 返回 base（组合模板未激活时 SYSTEM.md 不被丢弃）", () => {
+	it("composeInputs 读灵魂槽位（soul），不是 loader 原文", () => {
+		const service = readFileSync(join(SERVER, "agent-service.ts"), "utf8");
+		expect(service).toMatch(/systemPromptFile: promptBase\.soul \|\| undefined/);
+	});
+
+	it("主会话 override 返回 base / 模板；灵魂槽位与 base 有无无关（issue #999）", () => {
 		const store = readFileSync(join(SERVER, "prompt-base-store.ts"), "utf8");
-		expect(store).toMatch(/handlers\.system \? handlers\.system\(base\) : base/);
+		// 模板 replace 只在 soul handler 里决定，且不得再要求 base 非空。
+		expect(store).toMatch(/const candidate = handlers\.soul\?\.\(\);/);
+		expect(store).toMatch(/observed\.soul = override \?\? observedBase \?\? "";/);
+		expect(store).toMatch(/return override \?\? observedBase;/);
 		expect(store).toMatch(/handlers\.append \? handlers\.append\(base\) : base/);
+		expect(store).not.toMatch(/base &&/);
 	});
 });
