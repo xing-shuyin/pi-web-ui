@@ -37,12 +37,21 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - uses: android-actions/setup-android@v3
-
+      # 不要再用 android-actions/setup-android：ubuntu-latest 自带 cmdline-tools 16.0，而该 action
+      # 会把“预装版本不对”当成错误去装早已下架的 `tools` 包 → `Failed to find package 'tools'` 直接红。
+      # SDK 本来就在镜像的 /usr/local/lib/android/sdk 里，直接用现成的 sdkmanager 装所需包即可。
       - name: Install Android SDK packages
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          SDKM="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKM"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+          {
+            echo "ANDROID_HOME=$SDK_ROOT"
+            echo "ANDROID_SDK_ROOT=$SDK_ROOT"
+          } >> "$GITHUB_ENV"
 
       - name: Resolve version
         run: |
