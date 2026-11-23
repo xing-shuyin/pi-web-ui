@@ -19,6 +19,7 @@ import { InteractionInbox } from "../domains/interactions/index.js";
 import { createApprovalWaiter, createAskUserWaiter } from "../domains/interactions/index.js";
 import { createAskQuestionTool } from "../adapters/tools/ask-question.js";
 import { createGuardedBuiltinTools } from "../adapters/tools/guarded.js";
+import { createSubagentRuntime, type SubagentRuntime } from "./subagent-runtime.js";
 import { DEFAULT_PI_CAPABILITIES } from "../../engine-capabilities.js";
 import type { AgentEngineCapabilities } from "../../protocol.js";
 import { ClientRuntime, type ClientFrames } from "./client-runtime.js";
@@ -76,6 +77,7 @@ export class CoreEngine implements EngineService {
 			customToolsFor: (conv) => [
 				createAskQuestionTool({ waiter: askWaiter, conversationId: conv.id }),
 				// 内置 bash 重建一份带审批闸的同名工具，覆盖 SDK 里那个直接执行的内置实现。
+				...(subagents ? [subagents.toolFor(conv.id)] : []),
 				...createGuardedBuiltinTools({
 					cwd: this.cwd,
 					getLang: () => this.settingsLang,
@@ -101,12 +103,18 @@ export class CoreEngine implements EngineService {
 				unsubscribers.delete(conversationId);
 			},
 		});
+		let subagents: SubagentRuntime | undefined;
 		const runtime = new ClientRuntime({
 			clientId,
 			cwd: this.cwd,
 			clock: systemClock,
 			transport,
 			sessions,
+			turnEvents: {
+				onTurnSettled: (conversationId, outcome) => {
+					subagents?.settle(conversationId, outcome === "done" ? "done" : outcome === "aborted" ? "stopped" : "failed");
+				},
+			},
 			// 只会删自己会话目录里的文件：根 = agentDir/sessions（与 SDK 落盘位置一致）。
 			isAllowedPath: (target) =>
 				isInsideRoots(resolveFsPath(target), [joinPath(this.options.agentDir ?? this.cwd, "sessions")]),
@@ -144,6 +152,7 @@ export class CoreEngine implements EngineService {
 			agentDir: this.options.agentDir ?? this.cwd,
 			runtimeFactory: createModelRuntimeFactory(),
 		});
+		subagents = createSubagentRuntime({ runtime, sessions, now: () => Date.now() });
 		const frames: ClientFrames = {
 			pushSettings: () => pusher.push(),
 			pushProjects: async () => {
