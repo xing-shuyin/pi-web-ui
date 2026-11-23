@@ -461,6 +461,11 @@ body.pb-panel-layer [hidden] {
 	display: none;
 }
 
+/* 退出按钮不归修复组（任何失败态都得有），同样要让 [hidden] 压过 display:inline-flex */
+.pb-boot > .pb-boot-action[hidden] {
+	display: none;
+}
+
 /* 多标签栏 */
 .pb-tabs {
 	display: flex;

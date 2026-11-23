@@ -104,34 +104,53 @@ async function runRepair(action: "kernel.upgrade" | "kernel.installNode" | "kern
 const installKernelBtn = button(t("kernelMissingInstall"), () => void runRepair("kernel.upgrade"));
 const installNodeBtn = button(t("kernelMissingInstallNode"), () => void runRepair("kernel.installNode"));
 const retryBtn = button(t("kernelMissingRetry"), () => void runRepair("kernel.restart"));
+/**
+ * 退出出口：Agent 模式下壳的 chrome 整条隐藏，窗口按钮由内核界面的标题栏提供；
+ * 内核界面起不来时那些按钮就一个都不存在了，所以失败态必须自带一个能关窗的按钮。
+ */
+const exitBtn = button(t("bootExit"), () => window.piDesktop?.window.close());
 installKernelBtn.classList.add("pb-boot-action");
 installNodeBtn.classList.add("pb-boot-action");
 retryBtn.classList.add("pb-boot-action");
+exitBtn.classList.add("pb-boot-action");
 bootRepair.append(installNodeBtn, installKernelBtn, retryBtn);
-boot.append(bootIcon, bootText, bootError, bootRepair, bootAction);
+boot.append(bootIcon, bootText, bootError, bootRepair, bootAction, exitBtn);
 app.append(boot);
 
 function renderBoot(next: BrowserState, left: number): void {
-	const waiting = next.mode !== "browser" && !next.agentReady;
+	const missing = next.kernelMissing;
+	const repair = next.kernelRepair;
+	// 失败/需要修的时候覆盖层不能收：`agentReady` 只说明文档加载完了，
+	// 内核回一张 503 诊断页它也照样为真（实机白屏就是这么来的）。
+	const broken = Boolean(next.agentError || repair);
+	const waiting = next.mode !== "browser" && (!next.agentReady || broken);
 	boot.classList.toggle("pb-hidden", !waiting);
 	if (!waiting) return;
 	boot.style.left = "0px";
 	boot.style.width = next.mode === "split" ? `${Math.max(0, left)}px` : "100%";
-	const missing = next.kernelMissing;
-	boot.classList.toggle("pb-boot-failed", Boolean(next.agentError));
-	bootIcon.style.display = next.agentError ? "none" : "";
-	bootText.textContent = missing
-		? t("kernelMissingTitle")
-		: next.agentError
-			? t("agentUnavailable")
-			: t("bootingAgent");
-	// 有内核但起不来 = 只给“重试 + 去浏览器”；还没有内核 = 给“安装 Node / 安装内核 / 重试”。
-	bootRepair.hidden = !missing;
+	boot.classList.toggle("pb-boot-failed", broken || Boolean(missing));
+	// 失败/缺东西时没有人在干活，转圈只会让人以为“它在做事”（实机就是这个观感）。
+	bootIcon.style.display = broken || missing ? "none" : "";
+	bootText.textContent = repair
+		? t("kernelRepairTitle")
+		: missing
+			? t("kernelMissingTitle")
+			: next.agentError
+				? t("agentUnavailable")
+				: t("bootingAgent");
+	// 有内核但装包不完整 = 给“修复内核 / 重试 / 退出”；还没有内核 = 再加“安装 Node”；
+	// 其它失败 = 只给“重试 + 去浏览器 + 退出”。
+	bootRepair.hidden = !missing && !repair;
 	if (missing) {
 		installNodeBtn.hidden = missing.nodeOk;
 		installKernelBtn.hidden = !missing.nodeOk;
 	}
-	if (!bootBusy) bootError.textContent = next.agentError && !missing ? next.agentError : "";
+	if (repair) {
+		installNodeBtn.hidden = true;
+		installKernelBtn.hidden = false;
+	}
+	exitBtn.hidden = !broken && !missing;
+	if (!bootBusy) bootError.textContent = repair?.message ?? (next.agentError && !missing ? next.agentError : "");
 }
 
 const modeBtn = iconButton(splitModeIcon(13), "模式切换 (Ctrl+Alt+M)", async () => {
@@ -662,7 +681,11 @@ function updateChromePosition(next: BrowserState): void {
 		divider.style.display = "flex";
 		divider.style.left = `${left - 3}px`;
 	} else {
-		chrome.style.display = next.mode === "browser" ? "" : "none";
+		// Agent 模式下壳的 chrome 整条让位给内核界面（窗口按钮由它自己的标题栏提供）。
+		// 但内核界面起不来时它一个按钮都拿不出来，用户连关窗/最小化都做不到（实机：白页只能强杀），
+		// 所以失败态必须把壳自己的 chrome 放回来。
+		const agentBroken = Boolean(next.agentError || next.kernelRepair || next.kernelMissing);
+		chrome.style.display = next.mode === "browser" || agentBroken ? "" : "none";
 		chrome.style.left = "0px";
 		chrome.style.width = "100%";
 		chrome.style.borderLeft = "";

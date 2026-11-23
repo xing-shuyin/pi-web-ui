@@ -12,18 +12,28 @@ import { DESKTOP_EXPECTED_PROTOCOL } from "../../desktop/protocol-expectation.js
  */
 describe("compareKernelCompat", () => {
 	it("协议一致且壳能力够 → ok", () => {
-		expect(compareKernelCompat({ kernelProtocol: 60, kernelMinShell: 1, shellCapability: 1 })).toEqual({ kind: "ok" });
+		// 用生成常量推导，别写死数字：协议每 bump 一次就手改一遍只会让这条断言变成噪音。
+		expect(
+			compareKernelCompat({
+				kernelProtocol: DESKTOP_EXPECTED_PROTOCOL,
+				kernelMinShell: 1,
+				shellCapability: 1,
+			}),
+		).toEqual({ kind: "ok" });
 	});
 
 	it("内核协议与壳不一致（两个方向）→ 升级全局包", () => {
 		// 壳新、内核旧
-		expect(compareKernelCompat({ kernelProtocol: 59, kernelMinShell: 1, shellCapability: 1 })).toMatchObject({
+		const older = DESKTOP_EXPECTED_PROTOCOL - 1;
+		expect(compareKernelCompat({ kernelProtocol: older, kernelMinShell: 1, shellCapability: 1 })).toMatchObject({
 			kind: "upgrade-kernel",
-			kernelProtocol: 59,
+			kernelProtocol: older,
 			shellProtocol: DESKTOP_EXPECTED_PROTOCOL,
 		});
 		// 内核比壳新（壳读不懂新协议，也只能升内核/升壳，而壳不可热更 → 归到升全局包）
-		expect(compareKernelCompat({ kernelProtocol: 61, kernelMinShell: 1, shellCapability: 1 })).toMatchObject({
+		expect(
+			compareKernelCompat({ kernelProtocol: DESKTOP_EXPECTED_PROTOCOL + 1, kernelMinShell: 1, shellCapability: 1 }),
+		).toMatchObject({
 			kind: "upgrade-kernel",
 		});
 	});

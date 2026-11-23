@@ -3,7 +3,7 @@
 > **状态：P0（加载路径）+ P1（归档/清单/签名/解包）+ P2（下载 → 切换 → 健康检查 → 回滚 + 面板双段）已落地；P3 macOS 壳自更新仍是设计稿**。
 > 已实现：`desktop/runtime-store.ts`、`desktop/runtime-manifest.ts`、`desktop/runtime-updater.ts`、
 > `desktop/runtime-config.ts`（信任根/壳能力线）、`desktop/main.ts` 接线、`desktop/updater.ts` 的 runtime 通道、
-> 面板第二段（`DesktopUpdatePanel.tsx`）、`scripts/build-desktop-runtime.mjs` / `scripts/verify-desktop-runtime.mjs`。
+> 面板第二段（现为 `web/src/components/UpdateModal.tsx` 的运行时通道卡）、`scripts/build-desktop-runtime.mjs` / `scripts/verify-desktop-runtime.mjs`。
 > 未实现：macOS 壳换包（P3）、差分下载/灰度（P4）、`natives` 载荷的下载与复用（P2 只处理 `core`）。
 > **信任根已内置**：`desktop/runtime-config.ts` 的 `RUNTIME_PUBLIC_KEY_PEM`（指纹 `c144c1…`），私钥只存 CI secret
 > `DESKTOP_RUNTIME_SIGNING_KEY`（步骤见 [`release.md`](release.md#桌面运行时签名壳--运行时双层模型)）；清空公钥即回到"拒绝一切更新"。
@@ -282,7 +282,7 @@ P3 细节：换包前把 `.app` 移到同卷临时名（`mv` 成功后写新包�
 | `desktop/runtime-manifest.ts`（新，纯函数）                                     | ✅ P1：清单解析、ed25519 校验、四道闸门、归档白名单、摘要校验（不 import electron）                            |
 | `desktop/main.ts`                                                               | ✅ P0/P2：先问 `runtime-store` 再回落包内；生命周期串行队列、重启 + 健康检查 + 回滚、启动失败计数              |
 | `desktop/updater.ts`                                                            | ✅ P2：状态机加 `runtime` 片段，`check/download/cancel` 带 `channel`，新增 `applyRuntime`；仍是一条广播通道    |
-| `desktop/preload.cts` / `web/src/desktop-updater.ts` / `DesktopUpdatePanel.tsx` | ✅ P2：面板分两段显示；新增「立即重启服务」；运行时错误码独立文案                                              |
+| `desktop/preload.cts` / `web/src/desktop-updater.ts` / `UpdateModal.tsx` | ✅ P2：面板分两段显示；新增「立即重启服务」；运行时错误码独立文案                                              |
 | `scripts/build-desktop-runtime.mjs`（新）                                       | ✅ P1：打归档（tar.zst）、写清单、签名（ed25519）、`--keygen`                                                  |
 | `desktop/runtime-updater.ts`（新）                                              | ✅ P2：清单拉取 + 验签 + 闸门 + 流式下载（进度/取消）+ 摘要校验 + 解包暂存                                     |
 | `desktop/runtime-config.ts`（新）                                               | ✅ P2：内置公钥（留空=拒绝）、`SHELL_CAPABILITY_VERSION`、默认 feed                                            |

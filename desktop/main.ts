@@ -47,6 +47,7 @@ import {
 } from "./kernel-install.js";
 import { readKernelLock } from "../shared/instance-lock.js";
 import { findNativeCliExecutable } from "../server/native-cli-discovery.js";
+import { WEB_BUILD_REPAIR_COMMAND, describeWebBuild, resolveWebBuild } from "../server/web-build.js";
 import {
 	fetchLatestVersion,
 	nodeInstallLaunch,
@@ -618,8 +619,9 @@ async function startServerSidecar(): Promise<string> {
 		throw error;
 	}
 	sidecarUrl = url;
-	// 内核已经跑起来：把“没有内核”的覆盖层收回去（安装/修复成功后走的就是这里）。
+	// 内核已经跑起来：把“没有内核”与“装包不完整”的覆盖层收回去（安装/修复成功后走的就是这里）。
 	browserHost?.setKernelMissing(null);
+	browserHost?.setKernelRepair(null);
 	browserHost?.setAgentError("");
 	console.log(`[desktop] server 就绪：${url}`);
 	return url;
@@ -743,6 +745,32 @@ function kernelModeFor(url: string): KernelMode {
 /** 当前 shell 认为应在的内核地址：外部模式就是配置的地址，本地模式就是 sidecar 地址。 */
 function currentKernelUrl(): string {
 	return kernelState?.url ?? browserHost?.getState().agentUrl ?? "";
+}
+
+/**
+ * 「内核界面资源齐不齐」只由内核自己说（`/api/health.web`，推导单源在 `server/web-build.ts`）。
+ * 壳只转发结论：齐了当无事，缺了就让覆盖层留着并给修复入口——
+ * 不能把内核的 503 诊断页当成“界面已就绪”（那正是实机上白屏 + 卡死的原因）。
+ */
+async function verifyAgentBuild(): Promise<{ ok: boolean; message?: string }> {
+	const url = currentKernelUrl();
+	if (!url) return { ok: true };
+	try {
+		const response = await fetch(`${url.replace(/\/+$/, "")}/api/health`, {
+			signal: AbortSignal.timeout(4000),
+		});
+		if (!response.ok) return { ok: true };
+		const body = (await response.json()) as { web?: { ok?: unknown; missing?: unknown } };
+		if (body?.web?.ok !== false) return { ok: true };
+		const missing = typeof body.web.missing === "string" ? body.web.missing : "web/dist/index.html";
+		return {
+			ok: false,
+			message: `内核安装不完整：缺少 ${missing}，页面打不开。点「修复内核」重装即可（${WEB_BUILD_REPAIR_COMMAND}）。`,
+		};
+	} catch {
+		// 探测本身失败（内核已退出/超时）：走原有的加载失败路径，不在这里误报
+		return { ok: true };
+	}
 }
 
 function currentKernelPort(): number | null {
@@ -1059,6 +1087,7 @@ async function handOverToService(url: string, message: string): Promise<{ ok: bo
 	if (browserHost && settings && settings.agentUrl !== url)
 		browserHost.browser.saveSettings({ ...settings, agentUrl: url });
 	browserHost?.setKernelMissing(null);
+	browserHost?.setKernelRepair(null);
 	await switchAgentTo(url, "external", "external-reachable");
 	return { ok: true, message };
 }
@@ -1099,6 +1128,17 @@ async function readKernelEnvironment(): Promise<KernelEnvironmentView> {
 	};
 }
 
+/**
+ * 刚装好的全局包能不能提供界面：`<globalRoot>/web/dist` 走与内核相同的判据。
+ * 拿不到全局前缀/包根时返回 null（没得验收，不阻塞流程）。
+ */
+async function installedPackageWebBuild() {
+	const prefix = await currentNpmPrefix();
+	const root = prefix ? globalKernelRoot(prefix) : null;
+	if (!root) return null;
+	return resolveWebBuild(join(root, "web", "dist"));
+}
+
 /** npm 全局前缀：先看缓存（`kernel-authority.json`），没有再问 npm。 */
 async function currentNpmPrefix(): Promise<string | null> {
 	const cached = readAuthorityCache(readTextFile(authorityCachePath(app.getPath("userData"))), Date.now());
@@ -1135,6 +1175,17 @@ async function upgradeKernel(): Promise<{ ok: boolean; message: string }> {
 		};
 	// 装完内核：权威链指向新装的全局包，否则装服务拿到的是壳里那份 CLI。
 	if (await resolveGlobalKernelEntry()) kernelSource = "global-npm";
+	// 验收：装出来的包必须真能提供界面，否则交棒只会交出一个“能连上但白屏”的内核。
+	// 判据与内核自己、与诊断页是同一个（`server/web-build.ts`）。
+	const installedWebBuild = await installedPackageWebBuild();
+	if (installedWebBuild && !installedWebBuild.ok)
+		return {
+			ok: false,
+			message:
+				`已下载，但装出来的包不完整（${describeWebBuild(installedWebBuild)}）。请重试，或手动执行 ${WEB_BUILD_REPAIR_COMMAND}。\n${output}`.slice(
+					-2000,
+				),
+		};
 	const decision = decideServiceInstall({
 		mode: kernelMode,
 		supervisor: kernelState?.supervisor ?? null,
@@ -1260,6 +1311,8 @@ async function createWindow(): Promise<void> {
 		dataDir: join(app.getPath("userData"), "browser"),
 		// Agent 页就绪（含重新加载）后把疫情期间待打开的文件送进去
 		onAgentReady: () => flushOpenTargets(),
+		// 加载完成 ≠ 界面能用：内核缺 web/dist 时回的也是一张页面，这里再核一次装包完整性
+		probeAgentBuild: verifyAgentBuild,
 	});
 	// 内核状态的唯一来源在主进程：宿主只转发面板的查询/安装/重启请求。
 	browserHost.setKernelBridge({

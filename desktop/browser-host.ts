@@ -270,6 +270,8 @@ export class DesktopBrowserHost {
 	private kernelState: BrowserKernelState | undefined;
 	/** “本机还没有任何内核”（纯壳包首次启动）：覆盖层据此给安装/修复出口。 */
 	private kernelMissing: BrowserState["kernelMissing"] | undefined;
+	/** 内核在跑但装包不完整（见 `BrowserState.kernelRepair`）；null/undefined = 没事。 */
+	private kernelRepair: BrowserState["kernelRepair"] | undefined;
 	private kernelBridge: KernelBridge | null = null;
 	/** 搜索浮层：外壳自己的 DOM 浮层盖住整块内容区时，临时把内容视图藏起来 */
 	private overlay = false;
@@ -320,6 +322,12 @@ export class DesktopBrowserHost {
 			dataDir: string;
 			/** Agent 页就绪（含重新加载）：主进程用它把双击文件/点链接的待打开目标送进界面。 */
 			onAgentReady?: () => void;
+			/**
+			 * Agent 页加载完后确认「界面真的能用」：内核活着不代表它能提供界面
+			 * （缺 `web/dist/index.html` 时回的也是一张页面，`did-finish-load` 照样成功）。
+			 * 判据由主进程提供（探 `/api/health.web`），渲染层只负责展示结论。
+			 */
+			probeAgentBuild?: () => Promise<{ ok: boolean; message?: string }>;
 		},
 	) {
 		this.browser = new BrowserManager({
@@ -1003,6 +1011,7 @@ export class DesktopBrowserHost {
 			...(this.agentError ? { agentError: this.agentError } : {}),
 			...(this.kernelState ? { kernel: this.kernelState } : {}),
 			...(this.kernelMissing ? { kernelMissing: this.kernelMissing } : {}),
+			...(this.kernelRepair ? { kernelRepair: this.kernelRepair } : {}),
 		};
 	}
 
@@ -1014,6 +1023,17 @@ export class DesktopBrowserHost {
 		const next = missing ?? undefined;
 		if (JSON.stringify(this.kernelMissing) === JSON.stringify(next)) return;
 		this.kernelMissing = next;
+		this.publish();
+	}
+
+	/**
+	 * 「内核在跑，但装包不完整」：覆盖层要留着并给修复/重试/退出。
+	 * 与 `kernelMissing` 分开：一个说“还没有内核”，一个说“连上的内核需要修”。
+	 */
+	setKernelRepair(repair: BrowserState["kernelRepair"] | null): void {
+		const next = repair ?? undefined;
+		if (JSON.stringify(this.kernelRepair) === JSON.stringify(next)) return;
+		this.kernelRepair = next;
 		this.publish();
 	}
 
@@ -1209,6 +1229,7 @@ export class DesktopBrowserHost {
 		this.agentReady = false;
 		this.agentReferenceReady = false;
 		this.agentError = undefined;
+		this.kernelRepair = undefined;
 		if (persist) this.browser.saveSettings({ ...this.browser.getSettings(), agentUrl: url });
 		if (!this.agent) {
 			this.agent = new WebContentsView({
@@ -1260,6 +1281,7 @@ export class DesktopBrowserHost {
 				} catch (error) {
 					console.warn("[desktop] onAgentReady failed:", error);
 				}
+				void this.probeAgentBuild();
 			});
 			this.agent.webContents.on("render-process-gone", (_event, details) =>
 				this.setAgentError(`Agent renderer: ${details.reason}`),
@@ -1279,7 +1301,31 @@ export class DesktopBrowserHost {
 		this.agentReady = false;
 		this.agentReferenceReady = false;
 		this.agentError = error;
+		// 加载失败比“装包不完整”更靠前：覆盖层改说失败原因，不再报修复按钮
+		this.kernelRepair = undefined;
 		this.publish();
+	}
+
+	/**
+	 * 页面「加载完成」不等于「界面能用」：内核缺 web/dist 时回的也是一张 503 诊断页，
+	 * `did-finish-load` 照样成功。所以加载完再问一次内核「你的界面资源齐吗」，不齐就留着覆盖层给修复出口。
+	 */
+	private async probeAgentBuild(): Promise<void> {
+		const probe = this.options.probeAgentBuild;
+		if (!probe) return;
+		const generation = this.agentGeneration;
+		let verdict: { ok: boolean; message?: string } | null = null;
+		try {
+			verdict = await probe();
+		} catch {
+			return; // 探测本身失败（内核没了/超时）→ 走原有的加载失败路径，不在这里误报
+		}
+		if (!verdict || this.disposed || generation !== this.agentGeneration) return;
+		if (verdict.ok) {
+			this.setKernelRepair(null);
+			return;
+		}
+		this.setKernelRepair({ message: verdict.message ?? "这个内核的界面资源不完整，页面打不开" });
 	}
 
 	private async call(action: string, args: Record<string, unknown>, sender: WebContents): Promise<unknown> {

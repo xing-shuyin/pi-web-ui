@@ -73,6 +73,33 @@ describe("probeKernel", () => {
 		expect(result.supervisor).toBeNull();
 	});
 
+	it("health.web.ok=false → webBuild:missing（内核活着，但界面资源没装上）", async () => {
+		const result = await probeKernel("http://x", {
+			fetchImpl: fetchReturning({
+				ok: true,
+				kernel: { protocol: 60 },
+				web: { ok: false, missing: "web/dist/index.html" },
+			}),
+		});
+		expect(result.webBuild).toBe("missing");
+		// 页面能不能打开与内核是否可达是两个事实，不能混成一个
+		expect(result.reachable).toBe(true);
+	});
+
+	it("老内核没有 web 块 → 不推断（undefined = 当作可用，不误报坏安装）", async () => {
+		const result = await probeKernel("http://x", { fetchImpl: fetchReturning({ ok: true }) });
+		expect(result.webBuild).toBeUndefined();
+	});
+
+	it("toKernelState 把 webBuild 交给渲染层", () => {
+		const state = toKernelState({
+			decision: { mode: "local", reason: "no-external-configured" },
+			url: "http://127.0.0.1:8787",
+			probe: { reachable: true, version: "0.122.0", webBuild: "missing" },
+		});
+		expect(state.webBuild).toBe("missing");
+	});
+
 	it("非 2xx → 不可达（带回状态码）", async () => {
 		const result = await probeKernel("http://x", {
 			fetchImpl: fetchReturning({}, { ok: false, status: 502 }),

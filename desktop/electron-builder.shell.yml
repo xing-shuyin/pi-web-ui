@@ -31,9 +31,10 @@ files:
   - "!node_modules/**/*"
   - "!bin"
   - "!dist/server"
-  # 例外：壳自己要用到的 6 个纯工具模块（CLI 启动链：把 Windows 的 npm .cmd shim 还原成 node <entry>；
-  # 壳要跑 `npm i -g pi-web-ui` 就必须有它）。这些不是内核，只是被壳 require 的库。
-  # 这份名单由 `tests/unit/desktop-shell-package.test.ts` 的依赖闭包守卫校对：漏一个就红。
+  # 例外：壳自己要用到的纯工具模块（CLI 启动链：把 Windows 的 npm .cmd shim 还原成 node <entry>；
+  # 壳要跑 `npm i -g pi-web-ui` 就必须有它；web-build 是「装包能不能提供界面」的唯一判据，
+  # 壳用它验收刚装完的包，必须与内核同一份推导）。这些不是内核，只是被壳 require 的库。
+  # 这份名单由 `tests/unit/desktop-shell-closure.test.ts` 的依赖闭包守卫校对：漏一个就红。
   - dist/server/command-spawn.js
   - dist/server/engine-catalog.js
   - dist/server/engine-cli.js
@@ -41,6 +42,7 @@ files:
   - dist/server/native-cli-discovery.js
   - dist/server/process-utils.js
   - dist/server/run-process.js
+  - dist/server/web-build.js
   - "!web/dist"
   - "!themes"
   - "!plugin-sdk"

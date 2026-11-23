@@ -200,6 +200,8 @@ const messages = {
 		kernelMissingInstallNode: "安装 Node",
 		kernelMissingRetry: "重试",
 		kernelMissingBusy: "正在安装，请稍候（首次会下载依赖）…",
+		kernelRepairTitle: "内核在运行，但界面资源缺失（安装不完整）",
+		bootExit: "退出应用",
 		switchToBrowser: "切换到浏览器模式",
 		online: "网络",
 		shortcuts: "Ctrl+L 地址栏 · Ctrl+T 新标签 · Ctrl+W 关闭标签 · Ctrl+B 书签 · Ctrl+H 历史 · Ctrl+, 设置",
@@ -488,6 +490,8 @@ const messages = {
 		kernelMissingInstallNode: "Install Node",
 		kernelMissingRetry: "Retry",
 		kernelMissingBusy: "Installing… (first run downloads dependencies)",
+		kernelRepairTitle: "The kernel is running but its UI files are missing (incomplete install)",
+		bootExit: "Quit",
 		switchToBrowser: "Switch to browser mode",
 		online: "Network",
 		shortcuts:

@@ -29,6 +29,8 @@ export interface HealthProbeBody {
 		protocol?: unknown;
 		lock?: unknown;
 	};
+	/** 界面资源是否齐全：内核活着 ≠ 能提供界面（缺 web/dist/index.html 时只能回诊断页）。 */
+	web?: { ok?: unknown; missing?: unknown };
 }
 
 export interface KernelProbeResult {
@@ -44,6 +46,8 @@ export interface KernelProbeResult {
 	protocol?: number;
 	/** 不可达时的原因（展示给用户，不要吞掉）。 */
 	error?: string;
+	/** 内核自己上报的界面资源状态（`/api/health.web`）；老内核不报 → undefined（当作可用）。 */
+	webBuild?: "ok" | "missing";
 }
 
 export type FetchLike = (
@@ -100,6 +104,8 @@ export async function probeKernel(
 			uptimeMs: typeof kernel.uptimeMs === "number" ? kernel.uptimeMs : undefined,
 			minShell: typeof kernel.minShell === "number" ? kernel.minShell : undefined,
 			protocol: typeof kernel.protocol === "number" ? kernel.protocol : undefined,
+			// 只有内核明确说 `ok:false` 才算缺：老内核没这个字段，不能当成坏安装。
+			...(typeof body.web?.ok === "boolean" ? { webBuild: body.web.ok ? "ok" : "missing" } : {}),
 		};
 	} catch (error) {
 		const message = (error as Error)?.name === "AbortError" ? "探测超时" : ((error as Error)?.message ?? "连接失败");
@@ -250,6 +256,7 @@ export function toKernelState(input: {
 		...(typeof probe?.uptimeMs === "number" ? { uptimeMs: probe.uptimeMs } : {}),
 		...(typeof probe?.minShell === "number" ? { minShell: probe.minShell } : {}),
 		...(typeof probe?.protocol === "number" ? { protocol: probe.protocol } : {}),
+		...(probe?.webBuild ? { webBuild: probe.webBuild } : {}),
 		...(compat ? { compat } : {}),
 		...(probe?.error ? { error: probe.error } : {}),
 	};

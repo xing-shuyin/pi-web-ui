@@ -44,6 +44,12 @@ export interface BrowserState {
 	 * 与 `agentError` 的区别：后者可能是“内核在、但挂了”；这个专门表示“还没有内核可跑”。
 	 */
 	kernelMissing?: { nodeOk: boolean; nodeVersion: string | null; platform: string };
+	/**
+	 * 内核在跑、但装包不完整（最常见：缺 `web/dist/index.html`，页面只能回一张 503 诊断页）。
+	 * 它是“已连上的内核需要修”而不是“没有内核”，所以不能塞进 `kernelMissing`；
+	 * 覆盖层看到它就必须保留并给出修复/重试/退出出口，不能把内核的错误页当成正常界面收起自己。
+	 */
+	kernelRepair?: { message: string };
 }
 
 /**
@@ -65,6 +71,11 @@ export interface BrowserKernelState {
 	minShell?: number;
 	/** 内核上报的协议版本（`/api/health.kernel.protocol`）。 */
 	protocol?: number;
+	/**
+	 * 内核自己的界面资源是否齐全（`/api/health.web`）：`ok` 才代表页面能打开。
+	 * 老内核不上报这个字段 → undefined，一律当作可用（不能因为缺少新字段就报错）。
+	 */
+	webBuild?: "ok" | "missing";
 	/**
 	 * 壳 ↔ 内核的兼容结论（`desktop/kernel-compat.ts` 判定，渲染层只展示不重算）。
 	 * 纯壳包里这两者本是两个独立安装物，不匹配是常态而不是异常，所以必须能就地说出“该升级哪一边”。

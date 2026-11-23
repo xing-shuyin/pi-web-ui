@@ -11,12 +11,18 @@ import {
 } from "../../server/agent-service.js";
 import { BROWSER_PAGE_OPS, BROWSER_PAGE_OP_SIGNATURE } from "../../server/browser-page-tool.js";
 import { AGENT_TOOL_CATALOG, BROWSER_PAGE_TOOL_NAME, defaultDisabledAgentTools } from "../../server/tool-manager.js";
+import { SnapshotChannel } from "../../server/snapshot-channel.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
 
 function pageBridge(opts: { sinks?: number; disposed?: boolean } = {}) {
 	const cs = fakeClientSession() as unknown as Record<string, unknown>;
 	cs.disposed = opts.disposed ?? false;
-	cs.sinks = new Set(Array.from({ length: opts.sinks ?? 1 }, () => () => {}));
+	cs.sinks = new Map(
+		Array.from({ length: opts.sinks ?? 1 }, (_, i) => {
+			const deliver = () => {};
+			return [deliver, { deliver, snapshots: new SnapshotChannel() }];
+		}),
+	);
 	cs.pendingPageCalls = new Map();
 	cs.pageSeq = 0;
 	const calls = {
