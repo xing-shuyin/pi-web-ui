@@ -15,6 +15,8 @@ export interface ModelPusher {
 	push(): Promise<ModelInfo[]>;
 	/** 丢掉缓存的运行时，下次 `push()` 重建（登录态/模型配置变了之后调用）。 */
 	invalidate(): void;
+	/** 按 `provider/id` 取模型对象（换模型时传给会话）；运行时建不出或目录不支持则 `undefined`。 */
+	getModel(provider: string, id: string): Promise<unknown | undefined>;
 }
 
 export function buildModelsFrame(models: readonly ModelInfo[]): ServerMessage {
@@ -48,6 +50,13 @@ export function createModelPusher(options: ModelPusherOptions): ModelPusher {
 		},
 		invalidate(): void {
 			runtime = undefined;
+		},
+		async getModel(provider: string, id: string): Promise<unknown | undefined> {
+			try {
+				return (await runtimeOf()).getModel?.(provider, id);
+			} catch {
+				return undefined;
+			}
 		},
 	};
 }

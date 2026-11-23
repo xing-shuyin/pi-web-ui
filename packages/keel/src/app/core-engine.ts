@@ -4,9 +4,11 @@ import { toServiceInfo, launchOrigin } from "../launch-origin.js";
 import { join } from "node:path";
 import { join as joinPath, resolve as resolveFsPath } from "node:path";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
+import type { ModelAdminPort, ModelAdminSinks } from "../contracts/model-admin.js";
 import { isInsideRoots } from "../path-boundary.js";
 import { ClientStateStore } from "../../../../server/client-state.js";
 import { createProjectSource } from "../adapters/state/index.js";
+import { createModelMemory } from "../adapters/state/model-memory.js";
 import { createSettingsHost } from "../adapters/settings/index.js";
 import { createSettingsPusher } from "../domains/settings/index.js";
 import { conversationViewFromSession, subscribeSession } from "../adapters/sdk/view.js";
@@ -31,6 +33,18 @@ import { resolvePiEngineAttach } from "./engine-mode.js";
 
 export { CoreEngineNotReadyError };
 
+/** 门面的装配参数：宿主注入的能力都在这里（内核不认识宿主模块）。 */
+export interface CoreEngineOptions {
+	version: string;
+	attach?: boolean;
+	dataDir?: string;
+	agentDir?: string;
+	/** 模型/供应商管理面工厂（宿主实现：`server/core-model-adapter.ts`）；缺省 = 能力未接。 */
+	modelAdmin?: (sinks: ModelAdminSinks) => ModelAdminPort;
+	/** 换完模型后的宿主收尾（压缩预留重算 / 插件通知）：C 类能力一律留在宿主。 */
+	onSessionModelChanged?: (clientId: string, conversationId: string) => void;
+}
+
 const systemClock: ClockPort = {
 	now: () => Date.now(),
 	after: (ms, fn) => {
@@ -52,20 +66,43 @@ export class CoreEngine implements EngineService {
 
 	private readonly stateStore: ClientStateStore;
 	private readonly projectSource: ReturnType<typeof createProjectSource>;
+	/** 进程级模型/供应商管理面：一次引擎一份（老实现也是进程级），所有客户端共用。 */
+	private modelAdmin: ModelAdminPort | undefined;
+	/** 每个客户端的帧出口（`emit` 要广播时用）。 */
+	private readonly senders = new Map<string, (msg: ServerMessage) => void>();
 
 	constructor(
 		private readonly cwd: string,
-		private readonly options: { version: string; attach?: boolean; dataDir?: string; agentDir?: string },
+		private readonly options: CoreEngineOptions,
 	) {
 		const dataDir = options.dataDir ?? process.cwd();
 		this.stateStore = new ClientStateStore(join(dataDir, "client-state.json"));
 		this.projectSource = createProjectSource({ file: join(dataDir, "client-state.json") });
 	}
 
+	/** 模型管理面由宿主建（结构性适配器），内核只按窄面调用；没装配就当能力未接。 */
+	private modelAdminPort(): ModelAdminPort | undefined {
+		if (!this.options.modelAdmin) return undefined;
+		this.modelAdmin ??= this.options.modelAdmin({
+			emit: (msg) => {
+				for (const send of this.senders.values()) send(msg);
+			},
+			flushSnapshot: () => {
+				for (const runtime of this.runtimes.values()) runtime.handlers().flushSnapshot();
+			},
+			isDisposed: () => this.runtimes.size === 0,
+			pushModels: async () => {
+				for (const runtime of this.runtimes.values()) runtime.handlers().listModels();
+			},
+		});
+		return this.modelAdmin;
+	}
+
 	async attach(clientId: string, send: (msg: ServerMessage) => void): Promise<DispatchSession> {
 		if (!(this.options.attach ?? resolvePiEngineAttach())) throw new CoreEngineNotReadyError("attach");
 		const existing = this.runtimes.get(clientId);
 		if (existing) return existing.handlers();
+		this.senders.set(clientId, send);
 		const transport: TransportPort = { send, isClosed: () => !this.runtimes.has(clientId) };
 		const unsubscribers = new Map<string, () => void>();
 		const terminalHost = createTerminalHost({
@@ -133,6 +170,10 @@ export class CoreEngine implements EngineService {
 			persistSessionTitle: async (sessionFile, title) => {
 				await renameSessionFile({ sessionFile, title });
 			},
+			modelAdmin: this.modelAdminPort(),
+			modelMemory: createModelMemory(this.stateStore),
+			resolveModel: (provider, id) => modelPusher.getModel(provider, id),
+			onSessionModelChanged: (conversationId) => this.options.onSessionModelChanged?.(clientId, conversationId),
 			terminalManagerFor: (conversationId) => terminalHost.managerFor(conversationId, this.cwd),
 			isAllowedPath: (target) =>
 				isInsideRoots(resolveFsPath(target), [joinPath(this.options.agentDir ?? this.cwd, "sessions")]),
@@ -173,6 +214,10 @@ export class CoreEngine implements EngineService {
 		subagents = createSubagentRuntime({ runtime, sessions, now: () => Date.now() });
 		const frames: ClientFrames = {
 			pushSettings: () => pusher.push(),
+			pushDefaultModel: () => {
+				const modelId = this.stateStore.getDefaultModel("pi") ?? null;
+				if (!transport.isClosed()) transport.send({ type: "default_model", modelId });
+			},
 			pushProjects: async () => {
 				await pushProjects({ transport, clientId, cwd: this.cwd, source: this.projectSource });
 			},
@@ -189,6 +234,8 @@ export class CoreEngine implements EngineService {
 			},
 		};
 		runtime.attachFrames(frames);
+		// 连接期就把全局默认模型告诉前端（老实现 `pushDefaultModel()` 在 attach 时也推一次）。
+		frames.pushDefaultModel();
 		this.runtimes.set(clientId, runtime);
 		return runtime.handlers();
 	}
@@ -198,6 +245,7 @@ export class CoreEngine implements EngineService {
 		if (!runtime) return;
 		runtime.dispose();
 		this.runtimes.delete(clientId);
+		this.senders.delete(clientId);
 	}
 
 	get(clientId: string): DispatchSession | undefined {

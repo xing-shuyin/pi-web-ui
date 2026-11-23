@@ -1,6 +1,16 @@
 import type { ConversationId } from "./ids.js";
 
 /**
+ * SDK `settingsManager` 的窄面：只声明内核真的用到的「落盘 / 查询」口。
+ * 默认模型、思考档的持久化本来就归 SDK 设置层，内核不复写一份。
+ */
+export interface SessionSettingsPort {
+	setDefaultModelAndProvider?(provider?: string, modelId?: string): void;
+	setModelThinkingLevel?(provider: string, modelId: string, level: string): void;
+	getEnabledModels?(): string[] | undefined;
+}
+
+/**
  * 新树对「一轮对话的宿主会话」的全部要求。真身是 SDK 的 `AgentSession`，
  * 但只有 `domains/turns/feed.ts` 与 `adapters/sdk/**` 允许知道这一点，其它层只认这个窄面。
  */
@@ -16,6 +26,10 @@ export interface TurnCapableSession {
 	getLastAssistantText?(): string | undefined;
 	getAvailableThinkingLevels?(): string[];
 	subscribe?(listener: (event: unknown) => void): () => void;
+	/** 换模型：参数据是 SDK 的模型对象（由 `ModelAdminPort` / catalog 解析后传进来）。 */
+	setModel?(model: unknown): Promise<void> | void;
+	setThinkingLevel?(level: string, options?: { persist?: boolean }): void;
+	settingsManager?: SessionSettingsPort;
 }
 
 export interface TurnStartOptions {

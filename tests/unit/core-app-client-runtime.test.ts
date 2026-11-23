@@ -267,6 +267,7 @@ describe("app · 连接期帧", () => {
 			refreshSessions: async () => void calls.push("sessions"),
 			pushProjects: async () => void calls.push("projects"),
 			listModels: () => void calls.push("models"),
+			pushDefaultModel: () => void calls.push("defaultModel"),
 		});
 		return { runtime, calls, transport };
 	}

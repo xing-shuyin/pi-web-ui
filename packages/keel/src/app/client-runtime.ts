@@ -1,4 +1,5 @@
 import type { ClientId, ConversationId } from "../contracts/ids.js";
+import type { ModelAdminPort, ModelMemoryPort } from "../contracts/model-admin.js";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
 import type { SnapshotConversationView, SnapshotEnvView, SnapshotView } from "../contracts/snapshot-view.js";
 import { createDispatchSurfaceAdapter, type DispatchHandlers } from "../adapters/wire/index.js";
@@ -6,6 +7,8 @@ import type { DispatchSession } from "../engine-service.js";
 import type { PromptAttachment } from "../protocol.js";
 import { Conversation, ConversationRegistry, type ConversationInit } from "../kernel/conversation/index.js";
 import { createSnapshotBuilders, SnapshotPublisher, type SnapshotBuilders } from "../domains/snapshots/index.js";
+import { createModelSwitchers, type ModelSwitchers } from "../domains/models/index.js";
+import { createProviderHandlers, type ProviderHandlers } from "../domains/providers/index.js";
 import { TurnRunner, type TurnRunnerDeps } from "../domains/turns/index.js";
 import type { SessionListScanState } from "../session-list-scan.js";
 import { dirname } from "node:path";
@@ -26,6 +29,8 @@ export interface ClientFrames {
 	refreshSessions(): Promise<void>;
 	pushProjects(): Promise<void>;
 	listModels(): void;
+	/** 全局默认模型帧（`default_model`）：换默认模型后必须显式推一次。 */
+	pushDefaultModel(): void;
 }
 
 export interface ClientRuntimeOptions {
@@ -70,6 +75,14 @@ export interface ClientRuntimeOptions {
 	sessions?: SessionRegistry;
 	turnEvents?: TurnRunnerDeps["events"];
 	onTurnError?: (conversationId: ConversationId, error: unknown) => void;
+	/** 模型/供应商管理面（宿主实现）；缺省 = 该能力未接，相关 handler 抛 `CoreEngineNotReadyError`。 */
+	modelAdmin?: ModelAdminPort;
+	/** 项目/全局模型记忆 + 供应商 key pin（宿主设置存储）；缺省 = 不落盘。 */
+	modelMemory?: ModelMemoryPort;
+	/** 取模型对象（由模型目录域提供）；缺省 = `setModel` 报错。 */
+	resolveModel?(provider: string, id: string): Promise<unknown | undefined>;
+	/** 换完模型后的宿主收尾（压缩预留重算、插件通知）：C 类能力一律留在宿主。 */
+	onSessionModelChanged?(conversationId: ConversationId): void;
 }
 
 /**
@@ -86,6 +99,8 @@ export class ClientRuntime {
 	private frames: ClientFrames | undefined;
 	private historyRootPath: string | undefined;
 	private scanState: Map<string, SessionListScanState> | undefined;
+	private switchers: ModelSwitchers | undefined;
+	private providers: ProviderHandlers | undefined;
 
 	constructor(options: ClientRuntimeOptions) {
 		this.options = options;
@@ -107,6 +122,46 @@ export class ClientRuntime {
 
 	attachFrames(frames: ClientFrames): void {
 		this.frames = frames;
+	}
+
+	/**
+	 * 供应商/模型管理面的 24 个 handler：全部转发给宿主端口（`ModelAdminPort`）。
+	 * 端口未注入时逐个同步抛 `CoreEngineNotReadyError`（与注册表口径一致）。
+	 */
+	private providerHandlers(): ProviderHandlers {
+		return (this.providers ??= createProviderHandlers({
+			modelAdmin: this.options.modelAdmin,
+			getLang: () => this.options.getLang?.() ?? "zh",
+		}));
+	}
+
+	/**
+	 * 选模型 / 思考档 / 全局默认模型：会话取「当前对话」的那一份（换模型只影响当前对话）。
+	 * 默认模型帧由组合根提供（`pushDefaultModel`），没装配就不发（不自己造帧）。
+	 */
+	private modelSwitchers(): ModelSwitchers {
+		return (this.switchers ??= createModelSwitchers({
+			clientId: this.options.clientId,
+			cwd: this.options.cwd,
+			transport: this.options.transport,
+			modelAdmin: this.options.modelAdmin,
+			modelMemory: this.options.modelMemory,
+			resolveModel: this.options.resolveModel,
+			sessionOf: () => {
+				const conv = this.registry.activeConv();
+				return conv ? this.options.sessions?.get(conv.id)?.session : undefined;
+			},
+			flushSnapshot: () => {
+				if (!this.disposed) this.publisher.flush({ forceFull: false });
+			},
+			pushDefaultModel: () => {
+				if (!this.disposed) this.frames?.pushDefaultModel();
+			},
+			onSessionModelChanged: () => {
+				const conv = this.registry.activeConv();
+				if (conv) this.options.onSessionModelChanged?.(conv.id);
+			},
+		}));
 	}
 
 	/** 会话文件落在哪个目录，只有真正开过会话才知道（不猜 SDK 的目录布局）。 */
@@ -206,6 +261,11 @@ export class ClientRuntime {
 			refreshSessions: () => frames().refreshSessions(),
 			pushProjects: () => frames().pushProjects(),
 			listModels: () => frames().listModels(),
+			...this.providerHandlers(),
+			setModel: (modelId: string) => this.modelSwitchers().setModel(modelId),
+			setDefaultModel: (modelId: string) => this.modelSwitchers().setDefaultModel(modelId),
+			clearDefaultModel: () => this.modelSwitchers().clearDefaultModel(),
+			setThinking: (level: string) => this.modelSwitchers().setThinking(level),
 			deleteSession: async (path: string) => {
 				await deleteSessionFile({
 					registry: this.registry,

@@ -56,6 +56,7 @@ import { PROTOCOL_VERSION } from "./protocol-version.js";
 import { AgentService, workspacePath, QuiesceRejectedError, ClientSession } from "./agent-service.js";
 import { CoreEngine } from "../packages/keel/src/app/core-engine.js";
 import { resolvePiEngineMode } from "../packages/keel/src/app/engine-mode.js";
+import { createCoreModelAdmin } from "./core-model-adapter.js";
 import { ClientStateStore } from "./client-state.js";
 import { isAbsoluteWirePath, wireToAbs } from "./files-service.js";
 import { WS_MAX_PAYLOAD_BYTES } from "./payload-limits.js";
@@ -1611,6 +1612,7 @@ function ensureEngine(engine: EngineId): EngineService {
 						version: VERSION,
 						dataDir: DATA_DIR,
 						agentDir: getAgentDir(),
+						modelAdmin: (sinks) => createCoreModelAdmin({ agentDir: getAgentDir(), ...sinks }),
 					}) as unknown as AgentService)
 				: new AgentService(CWD, sharedStateStore);
 		for (let i = 0; i < sharedSocketCount; i++) piServiceInstance.noteSocketOpen();
