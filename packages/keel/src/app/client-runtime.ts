@@ -99,6 +99,8 @@ export interface ClientRuntimeOptions {
 	releasePendingApprovals?(reason: string): number;
 	/** 输入框草稿存储；缺省按 `cwd` 建一份（真实部署由组合根传 dataDir 下的路径）。 */
 	drafts?: ComposerDraftsStore;
+	/** 自定义命令文件落哪（远程工作区落会话目录是宿主知识）；缺省 = `<cwd>/.pi/commands.json`。 */
+	commandsPathOf?: (workspaceRoot: string) => string;
 	/** 后台任务面（宿主 `bg-servers` + `job-runner`）；缺省 = 该能力未接。 */
 	background?: () => BackgroundPort | undefined;
 	/** 斜杠命令面（宿主 `SlashCommandsService`）；缺省 = 该能力未接。 */
@@ -199,6 +201,7 @@ export class ClientRuntime {
 			slash: () => this.options.slashCommands?.(),
 			cwd: () => this.options.commandCwd?.() ?? this.options.cwd,
 			transport: this.options.transport,
+			commandsPathOf: (root) => this.options.commandsPathOf?.(root) ?? `${root}/.pi/commands.json`,
 		}));
 	}
 

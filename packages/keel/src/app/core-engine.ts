@@ -1,4 +1,4 @@
-import type { DispatchSession, EngineService } from "../engine-service.js";
+import type { DispatchSession, EngineService, TerminalManagerLike } from "../engine-service.js";
 import type { ServerMessage, UiApprovalPolicyState, UiServiceInfo } from "../protocol.js";
 import type { Conversation } from "../kernel/conversation/index.js";
 import { toServiceInfo, launchOrigin } from "../launch-origin.js";
@@ -59,6 +59,14 @@ export interface CoreEngineOptions {
 	workspace?: () => WorkspacePort;
 	/** Git 工作树面工厂（宿主实现：`server/core-worktree-adapter.ts`）；缺省 = 能力未接。 */
 	worktree?: () => WorktreePort;
+	/** 终端管理器工厂（宿主叶子 `TerminalManager`）；缺省 = 终端能力未接。 */
+	terminalManager?: (input: {
+		emit: (msg: ServerMessage) => void;
+		cwd: () => string;
+		lang: () => ServerLang;
+	}) => TerminalManagerLike;
+	/** 自定义命令文件的路径解析（远程工作区落会话目录）；缺省由运行时拼本地路径。 */
+	commandsPathOf?: (workspaceRoot: string) => string;
 	/** 远程工作区的 SDK 文件操作（宿主实现）；缺省 = 全是本地工具。 */
 	remoteOpsOf?: RemoteSdkOperationsFactory;
 	/** 换完模型后的宿主收尾（压缩预留重算 / 插件通知）：C 类能力一律留在宿主。 */
@@ -158,6 +166,12 @@ export class CoreEngine implements EngineService {
 			transport,
 			cwdOf: (conversationId) => runtime.registry.get(conversationId)?.meta.cwd ?? this.cwd,
 			lang: () => this.langOf(clientId),
+			// PTY 归宿主叶子；没注入就退回「终端能力未接」（与旧版一致）。
+			createManager: (input) => {
+				const factory = this.options.terminalManager;
+				if (!factory) throw new CoreEngineNotReadyError("terminal.manager");
+				return factory(input);
+			},
 		});
 		const inbox = new InteractionInbox(() => {});
 		const approvalWaiter = createApprovalWaiter({ inbox, transport });
@@ -227,6 +241,7 @@ export class CoreEngine implements EngineService {
 			workspace: () => this.options.workspace?.(),
 			worktree: () => this.options.worktree?.(),
 			commandCwd: () => runtime.registry.activeConv()?.meta.cwd ?? this.cwd,
+			commandsPathOf: this.options.commandsPathOf,
 			releasePendingApprovals: (reason) => approvalWaiter.settleAll("approve", reason),
 			modelAdmin: this.modelAdminPort(),
 			modelMemory: createModelMemory(this.stateStore),

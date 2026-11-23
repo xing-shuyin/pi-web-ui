@@ -2,10 +2,14 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+
 import { CoreEngineNotReadyError } from "../../packages/keel/src/contracts/core-engine-errors.js";
 import type { SlashCommandsPort } from "../../packages/keel/src/contracts/commands.js";
 import type { TransportPort } from "../../packages/keel/src/contracts/ports.js";
 import type { CommandDef, ServerMessage } from "../../packages/keel/src/protocol.js";
+
+/** 命令文件落 `<workspace>/.pi/commands.json`（宿主本地方案；远程方案由宿主注入）。 */
+const commandsPath = (root: string) => join(root, ".pi", "commands.json");
 import { createCommandHandlers } from "../../packages/keel/src/domains/commands/handlers.js";
 
 function fakeTransport(closed = false): { sent: ServerMessage[]; port: TransportPort } {
@@ -31,7 +35,12 @@ describe("斜杠命令 handler（B2/T1）· pushSlashCommands 只按一下宿主
 	it("异步 push：端口被调一次，内核自己不发帧（帧归 SlashCommandsService）", async () => {
 		const push = vi.fn(() => Promise.resolve());
 		const { sent, port } = fakeTransport();
-		const handlers = createCommandHandlers({ cwd: tempDir(), transport: port, slash: () => ({ push }) });
+		const handlers = createCommandHandlers({
+			commandsPathOf: commandsPath,
+			cwd: tempDir(),
+			transport: port,
+			slash: () => ({ push }),
+		});
 		await handlers.pushSlashCommands();
 		expect(push).toHaveBeenCalledTimes(1);
 		expect(sent).toEqual([]);
@@ -42,14 +51,19 @@ describe("斜杠命令 handler（B2/T1）· pushSlashCommands 只按一下宿主
 		const { port } = fakeTransport();
 		const slash: SlashCommandsPort = { push };
 		await expect(
-			createCommandHandlers({ cwd: tempDir(), transport: port, slash: () => slash }).pushSlashCommands(),
+			createCommandHandlers({
+				commandsPathOf: commandsPath,
+				cwd: tempDir(),
+				transport: port,
+				slash: () => slash,
+			}).pushSlashCommands(),
 		).resolves.toBeUndefined();
 		expect(push).toHaveBeenCalledTimes(1);
 	});
 
 	it("slash 缺省 → 同步抛 CoreEngineNotReadyError（不是 rejected promise）", () => {
 		const { sent, port } = fakeTransport();
-		const handlers = createCommandHandlers({ cwd: tempDir(), transport: port });
+		const handlers = createCommandHandlers({ commandsPathOf: commandsPath, cwd: tempDir(), transport: port });
 		let thrown: unknown;
 		let returned: unknown;
 		try {
@@ -64,7 +78,12 @@ describe("斜杠命令 handler（B2/T1）· pushSlashCommands 只按一下宿主
 
 	it("slash thunk 返回 undefined 也按未接处理", () => {
 		const { port } = fakeTransport();
-		const handlers = createCommandHandlers({ cwd: tempDir(), transport: port, slash: () => undefined });
+		const handlers = createCommandHandlers({
+			commandsPathOf: commandsPath,
+			cwd: tempDir(),
+			transport: port,
+			slash: () => undefined,
+		});
 		expect(() => handlers.pushSlashCommands()).toThrow(CoreEngineNotReadyError);
 	});
 });
@@ -73,7 +92,7 @@ describe("斜杠命令 handler（B2/T1）· 自定义命令文件往返（真临
 	it("saveCommands：写进磁盘 + 发 commands 帧 + info 回执", async () => {
 		const cwd = tempDir();
 		const { sent, port } = fakeTransport();
-		await createCommandHandlers({ cwd, transport: port }).saveCommands(SAVED);
+		await createCommandHandlers({ commandsPathOf: commandsPath, cwd, transport: port }).saveCommands(SAVED);
 
 		expect(JSON.parse(readFileSync(commandsFile(cwd), "utf8"))).toEqual({ commands: SAVED });
 		expect(sent[0]).toEqual({ type: "commands", commands: SAVED, path: commandsFile(cwd) });
@@ -84,7 +103,7 @@ describe("斜杠命令 handler（B2/T1）· 自定义命令文件往返（真临
 	it("listCommands：读回刚写进磁盘的那一份（往返一致，path 指向工作区文件）", async () => {
 		const cwd = tempDir();
 		const { sent, port } = fakeTransport();
-		const handlers = createCommandHandlers({ cwd, transport: port });
+		const handlers = createCommandHandlers({ commandsPathOf: commandsPath, cwd, transport: port });
 		await handlers.saveCommands(SAVED);
 		sent.length = 0;
 
@@ -98,7 +117,7 @@ describe("斜杠命令 handler（B2/T1）· 自定义命令文件往返（真临
 		const b = tempDir();
 		const { sent, port } = fakeTransport();
 		let current = a;
-		const handlers = createCommandHandlers({ cwd: () => current, transport: port });
+		const handlers = createCommandHandlers({ commandsPathOf: commandsPath, cwd: () => current, transport: port });
 		await handlers.saveCommands(SAVED);
 		expect(JSON.parse(readFileSync(commandsFile(a), "utf8"))).toEqual({ commands: SAVED });
 		current = b;
@@ -110,7 +129,7 @@ describe("斜杠命令 handler（B2/T1）· 自定义命令文件往返（真临
 	it("命令文件不存在 → 空命令表且不报警告", async () => {
 		const cwd = tempDir();
 		const { sent, port } = fakeTransport();
-		await createCommandHandlers({ cwd, transport: port }).listCommands();
+		await createCommandHandlers({ commandsPathOf: commandsPath, cwd, transport: port }).listCommands();
 		expect(sent).toEqual([{ type: "commands", commands: [], path: commandsFile(cwd) }]);
 	});
 
@@ -119,7 +138,7 @@ describe("斜杠命令 handler（B2/T1）· 自定义命令文件往返（真临
 		mkdirSync(join(cwd, ".pi"), { recursive: true });
 		writeFileSync(commandsFile(cwd), "{ not json", "utf8");
 		const { sent, port } = fakeTransport();
-		await createCommandHandlers({ cwd, transport: port }).listCommands();
+		await createCommandHandlers({ commandsPathOf: commandsPath, cwd, transport: port }).listCommands();
 		expect(sent[0]).toMatchObject({ type: "notice", level: "warning" });
 		expect(sent[1]).toEqual({ type: "commands", commands: [], path: commandsFile(cwd) });
 	});
@@ -134,7 +153,9 @@ describe("斜杠命令 handler（B2/T1）· 写失败不静默", () => {
 		const { sent, port } = fakeTransport();
 
 		await expect(
-			createCommandHandlers({ cwd: join(blocker, "sub"), transport: port }).saveCommands(SAVED),
+			createCommandHandlers({ commandsPathOf: commandsPath, cwd: join(blocker, "sub"), transport: port }).saveCommands(
+				SAVED,
+			),
 		).rejects.toThrow(/保存命令文件失败/);
 
 		expect(sent.filter((m) => m.type === "notice" && m.level === "error")).toHaveLength(1);
@@ -144,7 +165,7 @@ describe("斜杠命令 handler（B2/T1）· 写失败不静默", () => {
 	it("通道已关：磁盘照样写，但一帧都不发", async () => {
 		const cwd = tempDir();
 		const { sent, port } = fakeTransport(true);
-		await createCommandHandlers({ cwd, transport: port }).saveCommands(SAVED);
+		await createCommandHandlers({ commandsPathOf: commandsPath, cwd, transport: port }).saveCommands(SAVED);
 		expect(JSON.parse(readFileSync(commandsFile(cwd), "utf8"))).toEqual({ commands: SAVED });
 		expect(sent).toEqual([]);
 	});

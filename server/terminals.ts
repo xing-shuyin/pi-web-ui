@@ -28,6 +28,10 @@ import { BASH_DESCRIPTION, BASH_PARAMETERS, BASH_PROMPT_GUIDELINES, BASH_PROMPT_
 import { withDefaultBashTimeout } from "./bash-timeout.js";
 import { splitConptyDa1, stripTerminalQueryRequests, isTerminalQueryResponse } from "./terminal-query.js";
 import { pick, type ServerLang } from "./i18n.js";
+import {
+	loadCommands as keelLoadCommands,
+	saveCommandsFile as keelSaveCommandsFile,
+} from "../packages/keel/src/commands-file.js";
 import { armDelay } from "./plugin-schedule.js";
 import {
 	getGlobalRemoteSshService,
@@ -48,6 +52,23 @@ export function commandsFilePath(workspaceRoot: string): string {
 	return join(workspaceRoot, ".pi", "commands.json");
 }
 
+/**
+ * 命令文件的读写单源在 keel（`packages/keel/src/commands-file.ts`）：这里只把「落哪」绑上去
+ * （远程工作区落会话目录，本地落 `<workspace>/.pi`）。
+ */
+export async function loadCommands(
+	workspaceRoot: string,
+): Promise<{ commands: CommandDef[]; path: string; warning?: string; warningEn?: string }> {
+	return keelLoadCommands(workspaceRoot, commandsFilePath);
+}
+
+export async function saveCommandsFile(
+	workspaceRoot: string,
+	commands: CommandDef[],
+): Promise<{ path: string; error?: string; errorEn?: string }> {
+	return keelSaveCommandsFile(workspaceRoot, commands, commandsFilePath);
+}
+
 export function expandPwd(input: string, pwd: string): string {
 	let out = input.replace(/\$\{pwd\}/g, pwd);
 	if (out === "~") return homedir();
@@ -60,87 +81,6 @@ export function resolveCommandCwd(cwd: string | undefined, pwd: string): string 
 	if (isRemoteWorkspaceUri(pwd)) return pwd;
 	const expanded = expandPwd(cwd.trim(), pwd);
 	return isAbsolute(expanded) ? expanded : resolve(pwd, expanded);
-}
-
-export async function loadCommands(
-	workspaceRoot: string,
-): Promise<{ commands: CommandDef[]; path: string; warning?: string; warningEn?: string }> {
-	const path = commandsFilePath(workspaceRoot);
-	const { commands, warning, warningEn } = await readCommandsFile(path);
-	return { commands, path, warning, warningEn };
-}
-
-async function readCommandsFile(
-	path: string,
-): Promise<{ commands: CommandDef[]; warning?: string; warningEn?: string }> {
-	if (!existsSync(path)) return { commands: [] };
-	let raw: string;
-	try {
-		raw = await readFile(path, "utf8");
-	} catch (err) {
-		return {
-			commands: [],
-			warning: `读取命令文件失败：${(err as Error).message}`,
-			warningEn: `Failed to read commands file: ${(err as Error).message}`,
-		};
-	}
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch {
-		return {
-			commands: [],
-			warning: `命令文件不是有效 JSON：${path}`,
-			warningEn: `Commands file is not valid JSON: ${path}`,
-		};
-	}
-	if (Array.isArray(parsed)) {
-		return {
-			commands: parsed
-				.filter(
-					(c): c is CommandDef =>
-						typeof c === "object" &&
-						c !== null &&
-						typeof (c as CommandDef).name === "string" &&
-						typeof (c as CommandDef).command === "string",
-				)
-				.map((c) => ({ name: c.name, command: c.command, cwd: c.cwd })),
-		};
-	}
-	const obj = parsed as { commands?: unknown };
-	if (obj && Array.isArray(obj.commands)) {
-		return {
-			commands: obj.commands
-				.filter(
-					(c): c is CommandDef =>
-						typeof c === "object" &&
-						c !== null &&
-						typeof (c as CommandDef).name === "string" &&
-						typeof (c as CommandDef).command === "string",
-				)
-				.map((c) => ({ name: c.name, command: c.command, cwd: c.cwd })),
-		};
-	}
-	return { commands: [], warning: `命令文件格式不正确：${path}`, warningEn: `Commands file has a bad format: ${path}` };
-}
-
-export async function saveCommandsFile(
-	workspaceRoot: string,
-	commands: CommandDef[],
-): Promise<{ path: string; error?: string; errorEn?: string }> {
-	const path = commandsFilePath(workspaceRoot);
-	try {
-		await mkdir(join(workspaceRoot, ".pi"), { recursive: true });
-		const payload: CommandsFile = { commands };
-		await writeFile(path, JSON.stringify(payload, null, 2) + "\n", "utf8");
-		return { path };
-	} catch (err) {
-		return {
-			path,
-			error: `保存命令文件失败：${(err as Error).message}`,
-			errorEn: `Failed to save commands file: ${(err as Error).message}`,
-		};
-	}
 }
 
 interface TermEntry {

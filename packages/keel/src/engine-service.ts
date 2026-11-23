@@ -54,6 +54,8 @@ export interface TerminalManagerLike {
 		| undefined;
 	pasteNativeCli?(id: string, data: string): boolean;
 	input(id: string, data: string): void;
+	/** 当前持有的终端（信封清理要枚举「哪些还活着」）；缺省 = 宿主不支持枚举。 */
+	list?(): readonly { id: string; running: boolean }[];
 	resize(id: string, cols: number, rows: number): void;
 	kill(id: string): void;
 	rename(id: string, title: string): void;

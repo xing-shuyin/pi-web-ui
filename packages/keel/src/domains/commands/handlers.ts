@@ -2,7 +2,7 @@ import { CoreEngineNotReadyError } from "../../contracts/core-engine-errors.js";
 import type { SlashCommandsPort } from "../../contracts/commands.js";
 import type { TransportPort } from "../../contracts/ports.js";
 import type { CommandDef, ServerMessage } from "../../protocol.js";
-import { loadCommands, saveCommandsFile } from "../../../../../server/terminals.js";
+import { loadCommands, saveCommandsFile, type CommandsPathResolver } from "../../commands-file.js";
 
 export interface CommandHandlersOptions {
 	/** 缺省 = 未接：`pushSlashCommands` 调到时同步抛 `CoreEngineNotReadyError`（thunk 是防循环装配）。 */
@@ -14,6 +14,8 @@ export interface CommandHandlersOptions {
 	cwd: string | (() => string);
 	/** 这条客户端连接的上行通道：`commands` / `notice` 帧只从这里出去。 */
 	transport: TransportPort;
+	/** 命令文件落哪（远程工作区落会话目录）：宿主知识，注入。 */
+	commandsPathOf: CommandsPathResolver;
 }
 
 /** 斜杠命令面的 3 个 handler：命令解析与静态命令表归宿主，内核只管自定义命令文件的读写下发。 */
@@ -50,14 +52,14 @@ export function createCommandHandlers(options: CommandHandlersOptions): CommandH
 		},
 
 		listCommands: async () => {
-			const { commands, path, warning, warningEn } = await loadCommands(cwd());
+			const { commands, path, warning, warningEn } = await loadCommands(cwd(), options.commandsPathOf);
 			// 老实现同序：读取告警先发一帧，命令表照发（告警不代表没有命令）。
 			if (warning) notice("warning", warning, warningEn);
 			send({ type: "commands", commands, path });
 		},
 
 		saveCommands: async (commands) => {
-			const { path, error, errorEn } = await saveCommandsFile(cwd(), commands);
+			const { path, error, errorEn } = await saveCommandsFile(cwd(), commands, options.commandsPathOf);
 			if (error) {
 				// 老实现发完 error 帧就 return；DoD#2 要求失败不静默，所以这里补一次抛出。
 				notice("error", error, errorEn);

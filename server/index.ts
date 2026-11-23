@@ -1534,6 +1534,7 @@ import {
 import type { EngineId, EngineStatus } from "./protocol.js";
 
 import type { DispatchSession, EngineService, TerminalManagerLike } from "./engine-service.js";
+import { TerminalManager } from "./terminals.js";
 
 let piServiceInstance: AgentService | null = null;
 let dshServiceInstance: DshAgentService | null = null;
@@ -1619,6 +1620,7 @@ function ensureEngine(engine: EngineId): EngineService {
 						agentDir: getAgentDir(),
 						modelAdmin: (sinks) => createCoreModelAdmin({ agentDir: getAgentDir(), ...sinks }),
 						// 远程工作区里的内置写/编辑工具要用 SFTP：只有宿主知道怎么建这些操作。
+						terminalManager: ({ emit, cwd, lang }) => new TerminalManager(emit, cwd, lang),
 						remoteOpsOf: (cwd) => (isRemoteWorkspaceUri(cwd) ? createRemoteSdkOperations(cwd) : undefined),
 						settingsFrame: (sinks) => createCoreSettingsAdapter(sinks),
 						slashCommands: (sinks) => createCoreSlashCommands(sinks),

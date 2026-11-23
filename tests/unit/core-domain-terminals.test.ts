@@ -54,8 +54,6 @@ const fixture = vi.hoisted(() => {
 	return { MockTerminalManager };
 });
 
-vi.mock("../../server/terminals.js", () => ({ TerminalManager: fixture.MockTerminalManager }));
-
 function hostFor(over: { cwdOf?: (conversationId: string) => string; lang?: () => ServerLang } = {}) {
 	const sent: ServerMessage[] = [];
 	let closed = false;
@@ -69,6 +67,8 @@ function hostFor(over: { cwdOf?: (conversationId: string) => string; lang?: () =
 		transport,
 		cwdOf: over.cwdOf ?? ((conversationId: string) => `/work/${conversationId}`),
 		lang: over.lang ?? (() => "zh" as ServerLang),
+		// 叶子（真 PTY）由宿主注入：这里给假体，只实现用例用到的那几个方法。
+		createManager: ({ emit, cwd, lang }) => new fixture.MockTerminalManager(emit, cwd, lang) as never,
 	});
 	return {
 		host,

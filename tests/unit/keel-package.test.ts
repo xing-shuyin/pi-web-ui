@@ -21,7 +21,8 @@ const PENDING_PORT = [
 	"quick-ask-context",
 ];
 
-const PORTS = ["client-state", "settings-service", "terminals", "tool-manager"];
+/** P2 的端口反转清单：反完一个就删一行（ 已销账：终端叶子改成注入工厂）。 */
+const PORTS = ["client-state", "settings-service", "tool-manager"];
 
 /** 本轮还没搬、下一轮单独搬的模块（搬完必须把这一行删掉，否则棘轮测试红）。 */
 const PENDING_MOVE: string[] = [];
