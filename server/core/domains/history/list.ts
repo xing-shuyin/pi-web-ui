@@ -11,6 +11,8 @@ export interface HistoryEntry {
 	cwd: string;
 	updatedAt: number;
 	sessionFile: string;
+	/** 会话里的消息条数（`sessions` 帧要原样带着，老列表靠它判「空会话」）。 */
+	messageCount: number;
 }
 
 export interface ScanHistoryInput {
@@ -42,6 +44,8 @@ function entryOf(info: SessionListInfo): HistoryEntry {
 		cwd: info.cwd,
 		updatedAt: info.modified.getTime(),
 		sessionFile: info.path,
+		// 老索引里读回来的扫描状态可能没有这个字段：缺了就按 0 条算，别出 `undefined`。
+		messageCount: info.messageCount ?? 0,
 	};
 }
 

@@ -28,7 +28,8 @@ app        门面（EngineService）与装配    ← 唯一允许 import 全部�
 | W1    | 对话内核：TurnRunner（唯一碰 SDK）、snapshots、history、生命周期                                 | ✅ turns / snapshots / history / ClientRuntime |
 | W2    | 快照投影、设置读模型、转录投影                                                                   | ✅                                             |
 | W3    | 适配器：SDK 开会话 / 版本化状态落盘                                                              | ✅（能开会话；喂轮与接线在 W4）                |
-| W4~W6 | 接线（设置/模型/项目/会话帧）/ 生命周期退役 / 工具审批 / 子代理 / 插件终端                       | 未开始                                         |
+| W4    | 连接期帧：settings_state / sessions / projects / models + 会话持有（SessionRegistry）            | ✅（models 先给空表，模型域在 W5）             |
+| W5~W6 | 模型目录 / 生命周期退役 / 工具审批 / 子代理 / 插件终端                                           | 未开始                                         |
 | W7    | 删老树（`agent-service.ts` 不存在）                                                              | 未开始                                         |
 
 W3 之后 `CoreEngine.attach()` 仍默认关闭（`CoreEngineNotReadyError`）：能实例化、能过契约测试、能给空对话出合法帧、能真开一份 SDK 会话，但**连接期帧（settings_state / sessions / models / projects）还没接**，所以还不接生产流量。
@@ -55,6 +56,11 @@ W3 之后 `CoreEngine.attach()` 仍默认关闭（`CoreEngineNotReadyError`）�
 - **转录**：`skippedLines` 合并三种口径（坏行 / 序列化为 null / 整份不可用）；`seq` 对 null 消息不占位。
 - **状态落盘**：`StatePort.write` 保持同步签名，适配器**派发**一次异步落盘并另给 `flush()` 等待点（versioned-doc 只提供 async 写，不另开写入路径）。
 - **开会话**：`openTurnSession` 有 `sessionFile` 只续开、不偷偷新建；结果必过 `guardSession`；`dispose` 不发 `session_shutdown`（留给生命周期波次裁定）。
+- **会话持有**：`SessionRegistry` 开会话前先判相位（fail-closed），开会话失败不留半成品，`close` 幂等。
+- **连接期帧**：由组合根装配进 `ClientRuntime.attachFrames`；`refreshSessions` 的历史根**取自真开过的会话文件目录**（不猜 SDK 布局），没开过会话就发空帧。
+- **项目帧**：当前 cwd 的插入项 `lastUsed: 0`（客户端据此排在真实对话过的项目之后，但位置在最上）；来源读失败发空列表；沙盒项目待 W5。
+- **设置帧**：`SettingsHost` 的 apply*/reload/promptSnapshot 在 W5 前是安全空值（绝不抛），`isDisposed`/`isStreaming` 是构造期快照。
+- **模型帧**：W5 前发空 `models` 列表（前端允许空表，但选不了模型）。
 
 ## 源码约定
 

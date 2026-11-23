@@ -1568,7 +1568,7 @@ function ensureEngine(engine: EngineId): EngineService {
 		piServiceInstance =
 			resolvePiEngineMode() === "core"
 				? // W0 骨架：新引擎还没接 attach，类型面暂借 legacy 的 AgentService，W1 换成 EngineService 完整面。
-					(new CoreEngine(CWD, { version: VERSION }) as unknown as AgentService)
+					(new CoreEngine(CWD, { version: VERSION, dataDir: DATA_DIR, agentDir: getAgentDir() }) as unknown as AgentService)
 				: new AgentService(CWD, sharedStateStore);
 		for (let i = 0; i < sharedSocketCount; i++) piServiceInstance.noteSocketOpen();
 		if (sharedQuiesced) piServiceInstance.quiesce();

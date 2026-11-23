@@ -1,10 +1,18 @@
 import type { DispatchSession, EngineService } from "../../engine-service.js";
 import type { ServerMessage, UiServiceInfo } from "../../protocol.js";
 import { toServiceInfo, launchOrigin } from "../../launch-origin.js";
+import { join } from "node:path";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
+import { ClientStateStore } from "../../client-state.js";
+import { createProjectSource } from "../adapters/state/index.js";
+import { createSettingsHost } from "../adapters/settings/index.js";
+import { createSettingsPusher } from "../domains/settings/index.js";
+import { pushProjects } from "../domains/projects/index.js";
+import { refreshSessions } from "../domains/history/index.js";
 import { DEFAULT_PI_CAPABILITIES } from "../../engine-capabilities.js";
 import type { AgentEngineCapabilities } from "../../protocol.js";
-import { ClientRuntime } from "./client-runtime.js";
+import { ClientRuntime, type ClientFrames } from "./client-runtime.js";
+import { SessionRegistry } from "./session-registry.js";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
 import { resolvePiEngineAttach } from "./engine-mode.js";
 
@@ -28,21 +36,33 @@ export class CoreEngine implements EngineService {
 	private socketCount = 0;
 	private quiescedSince: number | undefined;
 
+	private readonly stateStore: ClientStateStore;
+	private readonly projectSource: ReturnType<typeof createProjectSource>;
+
 	constructor(
 		private readonly cwd: string,
-		private readonly options: { version: string; attach?: boolean },
-	) {}
+		private readonly options: { version: string; attach?: boolean; dataDir?: string; agentDir?: string },
+	) {
+		const dataDir = options.dataDir ?? process.cwd();
+		this.stateStore = new ClientStateStore(join(dataDir, "client-state.json"));
+		this.projectSource = createProjectSource({ file: join(dataDir, "client-state.json") });
+	}
 
 	async attach(clientId: string, send: (msg: ServerMessage) => void): Promise<DispatchSession> {
 		if (!(this.options.attach ?? resolvePiEngineAttach())) throw new CoreEngineNotReadyError("attach");
 		const existing = this.runtimes.get(clientId);
 		if (existing) return existing.handlers();
 		const transport: TransportPort = { send, isClosed: () => !this.runtimes.has(clientId) };
+		const sessions = new SessionRegistry({
+			agentDir: this.options.agentDir ?? this.cwd,
+			onOpened: (_conv, opened) => runtime.noteSessionFile(opened.sessionFile),
+		});
 		const runtime = new ClientRuntime({
 			clientId,
 			cwd: this.cwd,
 			clock: systemClock,
 			transport,
+			sessions,
 			env: {
 				settingsVersion: 0,
 				piConfigured: false,
@@ -50,6 +70,40 @@ export class CoreEngine implements EngineService {
 				capabilities: DEFAULT_PI_CAPABILITIES,
 			},
 		});
+		const pusher = createSettingsPusher({
+			host: createSettingsHost({
+				clientId,
+				stateStore: this.stateStore,
+				emit: (msg) => transport.send(msg),
+				cwd: this.cwd,
+				agentDir: this.options.agentDir ?? this.cwd,
+				isDisposed: false,
+				isStreaming: runtime.streamingCount() > 0,
+				getSession: () => {
+					const conv = runtime.registry.activeConv();
+					const opened = conv ? sessions.get(conv.id) : undefined;
+					if (!opened) throw new CoreEngineNotReadyError("settings session");
+					return opened.session;
+				},
+			}),
+			transport,
+		});
+		const frames: ClientFrames = {
+			pushSettings: () => pusher.push(),
+			pushProjects: async () => {
+				await pushProjects({ transport, clientId, cwd: this.cwd, source: this.projectSource });
+			},
+			refreshSessions: async () => {
+				const root = runtime.historyRoot();
+				if (!root) {
+					transport.send({ type: "sessions", sessions: [], cwd: this.cwd });
+					return;
+				}
+				await refreshSessions({ root, cwd: this.cwd, transport, state: runtime.historyState() });
+			},
+			listModels: () => transport.send({ type: "models", models: [] }),
+		};
+		runtime.attachFrames(frames);
 		this.runtimes.set(clientId, runtime);
 		return runtime.handlers();
 	}
@@ -68,6 +122,7 @@ export class CoreEngine implements EngineService {
 	async disposeAll(): Promise<void> {
 		for (const runtime of this.runtimes.values()) runtime.dispose();
 		this.runtimes.clear();
+		this.projectSource.close();
 		this.socketCount = 0;
 		this.quiescedSince = undefined;
 	}

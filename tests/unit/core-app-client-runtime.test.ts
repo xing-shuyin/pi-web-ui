@@ -105,7 +105,23 @@ describe("app · ClientRuntime 组合根", () => {
 		const { runtime } = makeRuntime();
 		const cs = runtime.handlers();
 		expect(() => cs.refreshSessions()).toThrow(CoreEngineNotReadyError);
-		expect(() => (cs.prompt as unknown as (t: string) => unknown)("hi")).toThrow(CoreEngineNotReadyError);
+	});
+
+	it("没接 session registry 时 prompt 不抛：只上报错误", async () => {
+		const errors: unknown[] = [];
+		const clock = fakeClock();
+		const transport = fakeTransport();
+		const runtime = new ClientRuntime({
+			clientId: "c1",
+			cwd: "/work",
+			env: { settingsVersion: 0, piConfigured: false, piAgentInstalled: false },
+			clock,
+			transport: transport.port,
+			onTurnError: (_id, err) => void errors.push(err),
+		});
+		runtime.handlers().prompt("hi");
+		await Promise.resolve();
+		expect(errors).toHaveLength(1);
 	});
 
 	it("flushSnapshot 经出帧闸门，dispose 之后不再发帧", () => {
@@ -230,5 +246,60 @@ describe("app · 默认快照帧", () => {
 		expect(frame.state.thinkingLevel).toBe("high");
 		expect(frame.state.tools).toEqual(["read", "bash"]);
 		expect(frame.state.queue).toMatchObject({ steering: ["排队一"], followUp: [] });
+	});
+});
+
+describe("app · 连接期帧", () => {
+	function withFrames() {
+		const clock = fakeClock();
+		const transport = fakeTransport();
+		const calls: string[] = [];
+		const runtime = new ClientRuntime({
+			clientId: "c1",
+			cwd: "/work",
+			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+			clock,
+			transport: transport.port,
+		});
+		runtime.attachFrames({
+			pushSettings: () => void calls.push("settings"),
+			refreshSessions: async () => void calls.push("sessions"),
+			pushProjects: async () => void calls.push("projects"),
+			listModels: () => void calls.push("models"),
+		});
+		return { runtime, calls, transport };
+	}
+
+	it("四个连接期 handler 都转发给装配好的帧", async () => {
+		const { runtime, calls } = withFrames();
+		const cs = runtime.handlers();
+		cs.pushSettings();
+		cs.pushProjects();
+		cs.listModels();
+		await cs.refreshSessions();
+		expect(calls).toEqual(["settings", "projects", "models", "sessions"]);
+	});
+
+	it("没装配帧时这四个 handler 明确报未就绪", () => {
+		const clock = fakeClock();
+		const transport = fakeTransport();
+		const runtime = new ClientRuntime({
+			clientId: "c1",
+			cwd: "/work",
+			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+			clock,
+			transport: transport.port,
+		});
+		const cs = runtime.handlers();
+		expect(() => cs.pushSettings()).toThrow(CoreEngineNotReadyError);
+		expect(() => cs.listModels()).toThrow(CoreEngineNotReadyError);
+	});
+
+	it("会话文件路径喂进 history 根，续扫状态复用同一份", () => {
+		const { runtime } = withFrames();
+		expect(runtime.historyRoot()).toBeUndefined();
+		runtime.noteSessionFile("/agent/sessions/--c--/s1.jsonl");
+		expect(runtime.historyRoot()).toBe("/agent/sessions/--c--");
+		expect(runtime.historyState()).toBe(runtime.historyState());
 	});
 });

@@ -1,13 +1,26 @@
-import type { ClientId } from "../contracts/ids.js";
+import type { ClientId, ConversationId } from "../contracts/ids.js";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
 import type { SnapshotConversationView, SnapshotEnvView, SnapshotView } from "../contracts/snapshot-view.js";
-import type { ConversationId } from "../contracts/ids.js";
 import { createDispatchSurfaceAdapter, type DispatchHandlers } from "../adapters/wire/index.js";
 import type { DispatchSession } from "../../engine-service.js";
+import type { PromptAttachment } from "../../protocol.js";
 import { Conversation, ConversationRegistry, type ConversationInit } from "../kernel/conversation/index.js";
 import { createSnapshotBuilders, SnapshotPublisher, type SnapshotBuilders } from "../domains/snapshots/index.js";
+import { TurnRunner, type TurnRunnerDeps } from "../domains/turns/index.js";
+import type { SessionListScanState } from "../../session-list-scan.js";
+import { dirname } from "node:path";
+import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
+import type { SessionRegistry } from "./session-registry.js";
 
 export type ClientEnvView = Omit<SnapshotEnvView, "clientId" | "cwd" | "workspaceRoots">;
+
+/** 连接期帧：由组合根装配（适配器/域都在 app 层之外），运行时不自己认识它们。 */
+export interface ClientFrames {
+	pushSettings(): void;
+	refreshSessions(): Promise<void>;
+	pushProjects(): Promise<void>;
+	listModels(): void;
+}
 
 export interface ClientRuntimeOptions {
 	clientId: ClientId;
@@ -19,6 +32,9 @@ export interface ClientRuntimeOptions {
 	/** 对话可见面的来源；缺省用注册表里的空视图（域接上后注入）。 */
 	viewOf?: (conversation: Conversation) => SnapshotConversationView;
 	builders?: SnapshotBuilders;
+	sessions?: SessionRegistry;
+	turnEvents?: TurnRunnerDeps["events"];
+	onTurnError?: (conversationId: ConversationId, error: unknown) => void;
 }
 
 /**
@@ -28,9 +44,13 @@ export interface ClientRuntimeOptions {
 export class ClientRuntime {
 	readonly registry = new ConversationRegistry<Conversation>();
 	readonly publisher: SnapshotPublisher;
+	readonly turns: TurnRunner;
 	private readonly options: ClientRuntimeOptions;
 	private disposed = false;
 	private adapter: DispatchSession | undefined;
+	private frames: ClientFrames | undefined;
+	private historyRootPath: string | undefined;
+	private scanState: Map<string, SessionListScanState> | undefined;
 
 	constructor(options: ClientRuntimeOptions) {
 		this.options = options;
@@ -39,6 +59,7 @@ export class ClientRuntime {
 			clock: options.clock,
 			build: options.builders ?? createSnapshotBuilders(() => this.snapshotView()),
 		});
+		this.turns = new TurnRunner({ clock: options.clock, events: options.turnEvents });
 	}
 
 	get clientId(): ClientId {
@@ -49,11 +70,31 @@ export class ClientRuntime {
 		return this.options.cwd;
 	}
 
-	createConversation(init: Omit<ConversationInit, "clientId" | "cwd"> & { cwd?: string }): Conversation {
+	attachFrames(frames: ClientFrames): void {
+		this.frames = frames;
+	}
+
+	/** 会话文件落在哪个目录，只有真正开过会话才知道（不猜 SDK 的目录布局）。 */
+	noteSessionFile(file: string | undefined): void {
+		if (file) this.historyRootPath = dirname(file);
+	}
+
+	historyRoot(): string | undefined {
+		return this.historyRootPath;
+	}
+
+	historyState(): Map<string, SessionListScanState> {
+		return (this.scanState ??= new Map());
+	}
+
+	createConversation(init?: Partial<ConversationInit>): Conversation {
 		const conv = new Conversation({
+			id: init?.id ?? `c-${this.registry.nextSeq()}`,
+			kind: init?.kind ?? "user",
+			createdAt: init?.createdAt ?? this.options.clock.now(),
 			...init,
 			clientId: this.options.clientId,
-			cwd: init.cwd ?? this.options.cwd,
+			cwd: init?.cwd ?? this.options.cwd,
 		});
 		this.registry.add(conv);
 		this.registry.activate(conv.id);
@@ -89,6 +130,10 @@ export class ClientRuntime {
 
 	handlers(): DispatchSession {
 		if (this.adapter) return this.adapter;
+		const frames = () => {
+			if (!this.frames) throw new CoreEngineNotReadyError("connect frames");
+			return this.frames;
+		};
 		const handlers: DispatchHandlers = {
 			cwd: this.options.cwd,
 			workspaceRoots: this.options.workspaceRoots,
@@ -97,15 +142,48 @@ export class ClientRuntime {
 				if (this.disposed) return;
 				this.publisher.flush({ forceFull });
 			},
+			newChat: async (_preset?: string, _ephemeral?: boolean, onReady?: (id: string) => void) => {
+				if (this.disposed) return false;
+				const conv = this.createConversation();
+				onReady?.(conv.id);
+				return true;
+			},
+			prompt: (text: string, _attachments?: PromptAttachment[], queue?: boolean) => this.prompt(text, queue),
+			pushSettings: () => frames().pushSettings(),
+			refreshSessions: () => frames().refreshSessions(),
+			pushProjects: () => frames().pushProjects(),
+			listModels: () => frames().listModels(),
+			abort: async () => {
+				const conv = this.registry.activeConv();
+				const opened = conv ? this.options.sessions?.get(conv.id) : undefined;
+				await opened?.session.abort?.();
+			},
 		};
 		this.adapter = createDispatchSurfaceAdapter(handlers);
 		return this.adapter;
+	}
+
+	private async prompt(text: string, queue?: boolean): Promise<void> {
+		if (this.disposed) return;
+		const conv = this.registry.activeConv() ?? this.createConversation();
+		try {
+			const sessions = this.options.sessions;
+			if (!sessions) throw new Error("core: session registry is not wired");
+			const opened = await sessions.ensure(conv);
+			await this.turns.start(conv, opened.session, text, queue ? { deliverAs: "followUp" } : undefined);
+		} catch (error) {
+			if (this.options.onTurnError) this.options.onTurnError(conv.id, error);
+			else console.error("[core] turn failed:", error);
+		} finally {
+			this.publisher.request();
+		}
 	}
 
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
 		this.publisher.dispose();
+		this.options.sessions?.closeAll();
 		for (const conv of this.registry.list()) {
 			if (conv.acceptsTurns) conv.retire();
 			conv.finishRetire();
@@ -114,11 +192,11 @@ export class ClientRuntime {
 	}
 }
 
-/** 会话实体还没接上 SDK 时的空视图：协议字段齐全，消息为空。 */
+/** 会话实体还没接上时的空视图：协议字段齐全，消息为空。 */
 function emptyView(conv: Conversation): SnapshotConversationView {
 	return {
 		conversationId: conv.id,
-		sessionId: conv.id,
+		sessionId: conv.meta.sessionFile ?? conv.id,
 		...(conv.meta.sessionFile ? { sessionFile: conv.meta.sessionFile } : {}),
 		messages: [],
 		streamingMessage: null,
@@ -131,5 +209,3 @@ function emptyView(conv: Conversation): SnapshotConversationView {
 		followUp: conv.queues.texts("followUp"),
 	};
 }
-
-export type { ConversationId };

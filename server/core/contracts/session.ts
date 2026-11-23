@@ -7,6 +7,7 @@ import type { ConversationId } from "./ids.js";
 export interface TurnCapableSession {
 	readonly sessionFile?: string;
 	dispose(): void;
+	abort?(): Promise<void> | void;
 	getLastAssistantText?(): string | undefined;
 	isStreaming?: boolean;
 }

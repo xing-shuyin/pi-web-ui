@@ -23,6 +23,7 @@ function entry(over: Partial<HistoryEntry> & { id: string }): HistoryEntry {
 		cwd: CWD,
 		updatedAt: 1_000,
 		sessionFile: `/sessions/${over.id}.jsonl`,
+		messageCount: 0,
 		...over,
 	};
 }
@@ -210,7 +211,7 @@ describe("scanHistory：session-list-scan 的薄封装", () => {
 
 		expect(result.skipped).toBe(false);
 		expect(result.entries).toEqual([
-			{ id: "sess-a", title: "你好，世界", cwd: CWD, updatedAt: 1_700_000_000_000, sessionFile: file },
+			{ id: "sess-a", title: "你好，世界", cwd: CWD, updatedAt: 1_700_000_000_000, sessionFile: file, messageCount: 1 },
 		]);
 		expect(result.states.has(file)).toBe(true);
 	});
