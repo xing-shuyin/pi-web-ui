@@ -12,37 +12,38 @@
 
 ## 现在到哪一步
 
-| 阶段   | 内容                                                                                | 状态                                                                    |
-| ------ | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| **P0** | 包骨架 + 依赖清单守卫（本目录）                                                     | ✅                                                                      |
-| P1     | 把 30 个随包模块物理搬进 `src/`，`src/index.ts` 的桥删掉                            | ✅ 63 个（29 + `protocol` + 33 个连带叶子），老位置留 shim              |
-| P2     | 剩下 4 个（settings / terminals / tool-manager / client-state）反转成端口，宿主注入 | ✅ 依赖 10 → **0**（`SettingsStorePort` / `SettingsFramePort` 落地）    |
-| P3     | 补齐 165 个 handler（B1~B8）                                                        | 🚧 已真实现 99 / 163（B1~B5 前四批）；另有 8 个「接线就绪」等宿主适配器 |
-| P5     | 发布 `@earendil-works/keel`，主应用改成版本依赖；启用 npm workspaces                | 未开始                                                                  |
+| 阶段   | 内容                                                                                | 状态                                                                                 |
+| ------ | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| **P0** | 包骨架 + 依赖清单守卫（本目录）                                                     | ✅                                                                                   |
+| P1     | 把 30 个随包模块物理搬进 `src/`，`src/index.ts` 的桥删掉                            | ✅ 63 个（29 + `protocol` + 33 个连带叶子），老位置留 shim                           |
+| P2     | 剩下 4 个（settings / terminals / tool-manager / client-state）反转成端口，宿主注入 | ✅ 依赖 10 → **0**（`SettingsStorePort` / `SettingsFramePort` 落地）                 |
+| P3     | 补齐 165 个 handler（B1~B8）                                                        | 🚧 已真实现 121 / 165（B1~B6）；剩余：沙盒 7（待 P4 的 `setCwd` 链）+ 会话实体重绑组 |
+| P5     | 发布 `@earendil-works/keel`，主应用改成版本依赖；启用 npm workspaces                | 未开始                                                                               |
 
 ## handler 进度
 
 「运行时可用」= 有宿主适配器在跑；「接线就绪」= 契约 + 域 + 接线都完成，只差一个宿主适配器（P4 补上零改动生效）。
 端口未注入时对应 handler **同步抛** `CoreEngineNotReadyError`（fail-closed，不是 rejected promise）。
 
-| 批次    | 域                                                                | handler | 状态       | 备注                                                                                         |
-| ------- | ----------------------------------------------------------------- | ------- | ---------- | -------------------------------------------------------------------------------------------- |
-| —       | 骨架期（W1~W7 已接）                                              | 22      | 可用       | 出帧 / 会话 / 审批回包 / 终端句柄 / 列表                                                     |
-| **B1**  | 模型 / 供应商                                                     | 28      | 可用       | 4 个真逻辑（选模型 / 思考档 / 全局默认），24 个走 `ModelAdminPort` 纯转发                    |
-| **B2**  | 设置 / 预设 / 审批 / 命令                                         | 20      | 可用       | 16 走 `SettingsFramePort`，`setApprovalPolicy` 归聚合根，3 个斜杠命令                        |
-| **B3a** | 文件 / 目录                                                       | 15      | 可用       | 13 个走 `FilesService`；`makeDir(setAsCwd)` 是「建目录 → 切工作区」两步                      |
-| **B3b** | Git 工作树                                                        | 3       | 可用       | `worktree-service` 三支纯函数直通；内核只编排「删当前树先回退 cwd」                          |
-| **B4a** | 会话状态                                                          | 7       | 可用       | 切对话 / 队列摘除 / 草稿 / 计数 / 取消息 / 子代理收口；`composer-drafts` 一并搬进 keel       |
-| **B5a** | 终端查询 / 项目脚本                                               | 4       | 可用       | `getTerminalCwd` / `findTerminalManager` / `listProjectScripts`；`project-scripts` 搬进 keel |
-| **B5b** | 后台任务                                                          | 8       | 接线就绪   | 要拼 `BgServerTracker` + `JobRegistry`；`abortBash` 还缺对话级 bash kill 句柄                |
-| B3 备   | 沙盒                                                              | 7       | 接线就绪   | 契约 + 域 + 27 条用例已落地；要 `coordinateSandboxLifecycle` + `setCwd` 一起抽               |
-| —       | 引擎预设 6 + `setClaudePermissionMode`                            | 0       | 显式不支持 | 依赖 `tool-manager` 目录 / SDK 分支写入 / claude driver，退到 B8/P4                          |
-| —       | `setCwd` / `setWorkspaceRoots`                                    | 0       | 显式报错   | 宿主实现 `createCoreWorkspaceUnavailable` 明说「core 引擎暂不支持」，不静默                  |
-| —       | `switchSession` / `forkSession` / `rollbackSession`               | 0       | 待 P4      | 与 `setCwd`、沙盒共用「释放旧会话 → 起新会话 → 推帧」链                                      |
-| —       | `editMessage` / `deleteMessage` / `retryLast`                     | 0       | 待 P4      | 要 `TurnCapableSession` 的消息编辑窄面                                                       |
-| —       | `pinSession` / `setConversationPinned`                            | 0       | 待 P2      | 要 `client-state.setSessionPinned` + `conversations` 帧                                      |
-| —       | `getUserTerminalManager`                                          | 0       | 待 P4      | 老树是「客户端级终端」，keel 只有「每对话一份」                                              |
-| —       | `newCliChat` / `openBotChat` / `controlNativeCli` / TUI 浮层 3 个 | 0       | 待 P4      | `native-cli-session`（682 行）+ 插件 Bot 子系统                                              |
+| 批次    | 域                                                                | handler | 状态       | 备注                                                                                                       |
+| ------- | ----------------------------------------------------------------- | ------- | ---------- | ---------------------------------------------------------------------------------------------------------- |
+| —       | 骨架期（W1~W7 已接）                                              | 22      | 可用       | 出帧 / 会话 / 审批回包 / 终端句柄 / 列表                                                                   |
+| **B1**  | 模型 / 供应商                                                     | 28      | 可用       | 4 个真逻辑（选模型 / 思考档 / 全局默认），24 个走 `ModelAdminPort` 纯转发                                  |
+| **B2**  | 设置 / 预设 / 审批 / 命令                                         | 20      | 可用       | 16 走 `SettingsFramePort`，`setApprovalPolicy` 归聚合根，3 个斜杠命令                                      |
+| **B3a** | 文件 / 目录                                                       | 15      | 可用       | 13 个走 `FilesService`；`makeDir(setAsCwd)` 是「建目录 → 切工作区」两步                                    |
+| **B3b** | Git 工作树                                                        | 3       | 可用       | `worktree-service` 三支纯函数直通；内核只编排「删当前树先回退 cwd」                                        |
+| **B4a** | 会话状态                                                          | 7       | 可用       | 切对话 / 队列摘除 / 草稿 / 计数 / 取消息 / 子代理收口；`composer-drafts` 一并搬进 keel                     |
+| **B5a** | 终端查询 / 项目脚本                                               | 4       | 可用       | `getTerminalCwd` / `findTerminalManager` / `listProjectScripts`；`project-scripts` 搬进 keel               |
+| **B5b** | 后台任务                                                          | 8       | 可用       | 宿主 `core-background-adapter`（`BgServerTracker` + `JobRegistry`）；`abortBash` 仍缺对话级 bash kill 句柄 |
+| **B6**  | 插件 / MCP / 扩展 / 技能                                          | 14      | 可用       | `PluginsPort` 14 个直通宿主叶子（mcp-manager / 市场 / 技能盘 / 插件更新）；`installPiAgent` 不在本组       |
+| B3 备   | 沙盒                                                              | 7       | 接线就绪   | 契约 + 域 + 27 条用例已落地；要 `coordinateSandboxLifecycle` + `setCwd` 一起抽                             |
+| —       | 引擎预设 6 + `setClaudePermissionMode`                            | 0       | 显式不支持 | 依赖 `tool-manager` 目录 / SDK 分支写入 / claude driver，退到 B8/P4                                        |
+| —       | `setCwd` / `setWorkspaceRoots`                                    | 0       | 显式报错   | 宿主实现 `createCoreWorkspaceUnavailable` 明说「core 引擎暂不支持」，不静默                                |
+| —       | `switchSession` / `forkSession` / `rollbackSession`               | 0       | 待 P4      | 与 `setCwd`、沙盒共用「释放旧会话 → 起新会话 → 推帧」链                                                    |
+| —       | `editMessage` / `deleteMessage` / `retryLast`                     | 0       | 待 P4      | 要 `TurnCapableSession` 的消息编辑窄面                                                                     |
+| —       | `pinSession` / `setConversationPinned`                            | 0       | 待 P2      | 要 `client-state.setSessionPinned` + `conversations` 帧                                                    |
+| —       | `getUserTerminalManager`                                          | 0       | 待 P4      | 老树是「客户端级终端」，keel 只有「每对话一份」                                                            |
+| —       | `newCliChat` / `openBotChat` / `controlNativeCli` / TUI 浮层 3 个 | 0       | 待 P4      | `native-cli-session`（682 行）+ 插件 Bot 子系统                                                            |
 
 两个新端口都由宿主编译期结构直通（不做参数搬运）：
 `server/core-model-adapter.ts`（`ModelAdminPort`）、`server/core-settings-adapter.ts` +

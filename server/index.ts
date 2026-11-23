@@ -60,7 +60,9 @@ import { createCoreModelAdmin } from "./core-model-adapter.js";
 import { createCoreSettingsAdapter } from "./core-settings-adapter.js";
 import { createCoreSlashCommands } from "./core-commands-adapter.js";
 import { createCoreFiles, createCoreWorkspaceUnavailable } from "./core-files-adapter.js";
+import { createCorePlugins } from "./core-plugin-adapter.js";
 import { createCoreWorktree } from "./core-worktree-adapter.js";
+import { createCoreBackground } from "./core-background-adapter.js";
 import { ClientStateStore } from "./client-state.js";
 import { isAbsoluteWirePath, wireToAbs } from "./files-service.js";
 import { WS_MAX_PAYLOAD_BYTES } from "./payload-limits.js";
@@ -1626,6 +1628,16 @@ function ensureEngine(engine: EngineId): EngineService {
 						settingsFrame: (sinks) => createCoreSettingsAdapter({ ...sinks, stateStore: sharedStateStore }),
 						slashCommands: (sinks) => createCoreSlashCommands(sinks),
 						files: (sinks) => createCoreFiles(sinks),
+						// 后台任务面：`BgServerTracker` + `JobRegistry` 都是进程级叶子，这里只把本客户端的帧出口接上。
+						background: (sinks) => createCoreBackground({ dataDir: DATA_DIR, ...sinks }),
+						plugins: (sinks) =>
+							createCorePlugins({
+								...sinks,
+								agentDir: getAgentDir(),
+								dataDir: DATA_DIR,
+								version: VERSION,
+								mcpProjects: () => mcpProjects,
+							}),
 						workspace: () => createCoreWorkspaceUnavailable(),
 						worktree: () => createCoreWorktree(),
 					}) as unknown as AgentService)

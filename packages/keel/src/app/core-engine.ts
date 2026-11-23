@@ -6,10 +6,12 @@ import { join as joinPath, resolve as resolveFsPath } from "node:path";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
 import type { ModelAdminPort, ModelAdminSinks } from "../contracts/model-admin.js";
 import type { SettingsFramePort } from "../contracts/settings.js";
+import type { BackgroundPort } from "../contracts/background.js";
 import type { SettingsStorePort } from "../contracts/settings-store.js";
 import type { SlashCommandSinks, SlashCommandsPort } from "../contracts/commands.js";
 import type { FilesPort, WorkspacePort } from "../contracts/files.js";
 import type { WorktreePort } from "../contracts/worktree.js";
+import type { PluginsPort } from "../contracts/plugins.js";
 import type { RemoteSdkOperationsFactory } from "../contracts/remote-ops.js";
 import { isInsideRoots } from "../path-boundary.js";
 import { createProjectSource } from "../adapters/state/index.js";
@@ -56,6 +58,21 @@ export interface CoreEngineOptions {
 	workspace?: () => WorkspacePort;
 	/** Git 工作树面工厂（宿主实现：`server/core-worktree-adapter.ts`）；缺省 = 能力未接。 */
 	worktree?: () => WorktreePort;
+	/**
+	 * 后台任务面工厂（宿主实现：`server/core-background-adapter.ts`）；缺省 = 能力未接。
+	 * 传进去的就是内核能回答的那几个值：帧出口、本对话的 cwd/id、清理阀值。
+	 * 宿主的 `CoreBackgroundSinks` 可以比他宽（插件常驻任务行等），这边只保证不漏项。
+	 */
+	background?: (sinks: {
+		emit(msg: ServerMessage): void;
+		flushSnapshot(): void;
+		isDisposed(): boolean;
+		getCwd(): string;
+		activeConversationId(): string;
+		cleanupMinutes(): number;
+	}) => BackgroundPort;
+	/** MCP / 技能 / 市场 / 插件更新面工厂（宿主实现：`server/core-plugin-adapter.ts`）；缺省 = 能力未接。 */
+	plugins?: (sinks: CorePluginsSinks) => PluginsPort;
 	/** 终端管理器工厂（宿主叶子 `TerminalManager`）；缺省 = 终端能力未接。 */
 	terminalManager?: (input: {
 		emit: (msg: ServerMessage) => void;
@@ -78,6 +95,24 @@ function approvalPolicyState(conv: Conversation | undefined): UiApprovalPolicySt
 		allowAll: policy?.allowAll ?? false,
 		categories: policy ? [...policy.categories.values()] : [],
 	};
+}
+
+/**
+ * 宿主实现 `PluginsPort` 时要拼的几块现成东西：本客户端的帧出口、当前工作目录、语言、设置名单。
+ * `reloadSession` 是内核自己才能做的事（技能目录只在开会话时扫描），所以由这里反向提供。
+ */
+export interface CorePluginsSinks {
+	/** 一帧发给本客户端。 */
+	emit(msg: ServerMessage): void;
+	isDisposed(): boolean;
+	/** 当前对话的工作目录（`mcp.json` 的项目作用域与技能的 `.pi/skills` 都跟着它走）。 */
+	getCwd(): string;
+	getLang(): ServerLang;
+	/** 技能装/卸后让下一轮按新目录重开会话。 */
+	reloadSession(): Promise<void>;
+	/** 「安装即启用」要读的名单（`disabledPlugins`，落盘仍归内核的设置面）。 */
+	getDisabledPlugins(): readonly string[] | undefined;
+	setDisabledPlugins(next: string[]): Promise<void>;
 }
 
 /** 宿主实现 `FilesPort` 时要拼的几块：帧出口 + 工作区线径根。 */
@@ -251,6 +286,8 @@ export class CoreEngine implements EngineService {
 			settingsFrame: () => settingsFrame,
 			slashCommands: () => slashCommands,
 			files: () => files,
+			plugins: () => plugins,
+			background: () => background,
 			workspace: () => this.options.workspace?.(),
 			worktree: () => this.options.worktree?.(),
 			commandCwd: () => runtime.registry.activeConv()?.meta.cwd ?? this.cwd,
@@ -306,6 +343,32 @@ export class CoreEngine implements EngineService {
 			getCwd: () => runtime.registry.activeConv()?.meta.cwd ?? this.cwd,
 			getActiveCwd: () => runtime.registry.activeConv()?.meta.cwd ?? this.cwd,
 			getLang: () => this.langOf(clientId),
+		});
+		const plugins = this.options.plugins?.({
+			emit: (msg) => transport.send(msg),
+			isDisposed: () => this.runtimes.get(clientId) !== runtime,
+			getCwd: () => runtime.registry.activeConv()?.meta.cwd ?? this.cwd,
+			getLang: () => this.langOf(clientId),
+			reloadSession: async () => {
+				const conv = runtime.registry.activeConv();
+				// 技能目录只在开会话时扫描，SDK 没有 reload 口：关掉会话，下一轮按新目录重开。
+				if (!conv || conv.phase === "running") return;
+				sessions.close(conv.id);
+			},
+			getDisabledPlugins: () => this.stateStore.getSettingsSnapshot(clientId).disabledPlugins,
+			setDisabledPlugins: async (next: string[]) => {
+				if (!settingsFrame) throw new CoreEngineNotReadyError("plugins.setDisabledPlugins");
+				await settingsFrame.set({ disabledPlugins: next });
+			},
+		});
+		// 后台任务面：清理阀值读的也是设置，所以用一个不取快照的闭包（用户改了阈值立刻生效）。
+		const background = this.options.background?.({
+			emit: (msg) => transport.send(msg),
+			flushSnapshot: () => runtime.publisher.request(),
+			isDisposed: () => this.runtimes.get(clientId) !== runtime,
+			getCwd: () => runtime.registry.activeConv()?.meta.cwd ?? this.cwd,
+			activeConversationId: () => runtime.registry.activeId(),
+			cleanupMinutes: () => this.stateStore.getSettings(clientId).bgAutoCleanupMin ?? 0,
 		});
 		const modelPusher = createModelPusher({
 			transport,

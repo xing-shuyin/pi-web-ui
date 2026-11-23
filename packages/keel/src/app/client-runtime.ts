@@ -5,6 +5,8 @@ import type { SlashCommandsPort } from "../contracts/commands.js";
 import type { FilesPort, WorkspacePort } from "../contracts/files.js";
 import type { WorktreePort } from "../contracts/worktree.js";
 import type { BackgroundPort } from "../contracts/background.js";
+import type { PluginsPort } from "../contracts/plugins.js";
+import { createPluginsHandlers, type PluginsHandlers } from "../domains/plugins/index.js";
 import { createCommandHandlers, type CommandHandlers } from "../domains/commands/index.js";
 import { createFilesHandlers, type FilesHandlers } from "../domains/files/index.js";
 import { createWorktreeHandlers, type WorktreeHandlers } from "../domains/worktree/index.js";
@@ -111,6 +113,8 @@ export interface ClientRuntimeOptions {
 	workspace?: () => WorkspacePort | undefined;
 	/** Git 工作树面（宿主 `worktree-service`）；缺省 = 该能力未接。 */
 	worktree?: () => WorktreePort | undefined;
+	/** MCP / 技能 / 市场 / 插件更新面（宿主 `core-plugin-adapter`）；缺省 = 该能力未接。 */
+	plugins?: () => PluginsPort | undefined;
 	/** `listCommands` / `saveCommands` 读写的目录（跟随当前对话的 cwd）。 */
 	commandCwd?: () => string;
 	/** 项目/全局模型记忆 + 供应商 key pin（宿主设置存储）；缺省 = 不落盘。 */
@@ -143,6 +147,7 @@ export class ClientRuntime {
 	private worktreeHandlers: WorktreeHandlers | undefined;
 	private conversationState: ConversationStateHandlers | undefined;
 	private backgroundHandlers: BackgroundHandlers | undefined;
+	private pluginHandlersCache: PluginsHandlers | undefined;
 	/** 工作树全貌：工作树域的发布口写它，刷新/删除都从这里读「当前是哪个」。 */
 	private worktreeInfo: WorktreeInfo | null = null;
 	/** 沙盒全貌：`null` = 当前工作区不是沙盒（沙盒适配器接线后由宿主写）。 */
@@ -241,6 +246,19 @@ export class ClientRuntime {
 			},
 			transport: this.options.transport,
 			getLang: () => this.options.getLang?.() ?? "zh",
+		}));
+	}
+
+	/**
+	 * MCP / 技能 / 市场 / 更新：宿主认得 mcp.json、GitHub、npm registry，内核只按位转发。
+	 * MCP 与技能变更后要重发设置帧（`settings_state` 里带 MCP 清单），帧出口在这里。
+	 */
+	private pluginHandlers(): PluginsHandlers {
+		return (this.pluginHandlersCache ??= createPluginsHandlers({
+			plugins: () => this.options.plugins?.(),
+			pushSettings: () => {
+				if (!this.disposed) this.frames?.pushSettings();
+			},
 		}));
 	}
 
@@ -388,6 +406,7 @@ export class ClientRuntime {
 			...this.worktrees(),
 			...this.conversations(),
 			...this.background(),
+			...this.pluginHandlers(),
 			setModel: (modelId: string) => this.modelSwitchers().setModel(modelId),
 			setDefaultModel: (modelId: string) => this.modelSwitchers().setDefaultModel(modelId),
 			clearDefaultModel: () => this.modelSwitchers().clearDefaultModel(),
