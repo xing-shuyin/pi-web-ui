@@ -8,13 +8,12 @@ describe("adapters/tools · 内置工具审批闸", () => {
 			getLang: () => "zh",
 			askApproval: vi.fn(async () => ({ decision: "deny" as const })),
 		});
-		expect(tools).toHaveLength(1);
-		expect(tools[0].name).toBe("bash");
-		expect(typeof tools[0].execute).toBe("function");
+		expect(tools.map((t) => t.name)).toEqual(["bash", "write", "edit"]);
+		for (const tool of tools) expect(typeof tool.execute).toBe("function");
 	});
 
 	it("声明的受闸名字与实现一致", () => {
-		expect([...GUARDED_BUILTIN_NAMES]).toEqual(["bash"]);
+		expect([...GUARDED_BUILTIN_NAMES]).toEqual(["bash", "write", "edit"]);
 	});
 
 	it("描述/参数 schema 沿用 SDK 内置定义（不自己写一份）", () => {

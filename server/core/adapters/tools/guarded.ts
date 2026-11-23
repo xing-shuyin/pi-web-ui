@@ -1,4 +1,8 @@
-import { createBashToolDefinition, createEditToolDefinition } from "@earendil-works/pi-coding-agent";
+import {
+	createBashToolDefinition,
+	createEditToolDefinition,
+	createWriteToolDefinition,
+} from "@earendil-works/pi-coding-agent";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { withToolGuard, type AskApprovalFn } from "../../../tool-guards.js";
 import type { ServerLang } from "../../../i18n.js";
@@ -18,6 +22,7 @@ export interface GuardedToolOptions {
  */
 export function createGuardedBuiltinTools(options: GuardedToolOptions): ToolDefinition[] {
 	const bash = createBashToolDefinition(options.cwd);
+	const write = createWriteToolDefinition(options.cwd);
 	const edit = createEditToolDefinition(options.cwd);
 	const common = {
 		guard: undefined,
@@ -27,10 +32,13 @@ export function createGuardedBuiltinTools(options: GuardedToolOptions): ToolDefi
 		getRoots: options.getRoots,
 		askApproval: options.askApproval,
 	};
-	// 只包 bash：`withToolGuard` 的 `GuardedToolName` 目前只收 bash/read（审批规则库也是按它建的），
-	// edit/write 的审批要先把那个类型与规则库一起扩，属于下一波。
-	void edit;
-	return [withToolGuard(bash as ToolDefinition, { ...common, toolName: "bash" })];
+	// 写盘类工具默认规则库已经覆盖（`approval-default-rules.ts` 的 `tools: ["write","edit","patch"]`），
+	// 这里只是把它们的执行接到同一个审批闸上。
+	return [
+		withToolGuard(bash as ToolDefinition, { ...common, toolName: "bash" }),
+		withToolGuard(write as ToolDefinition, { ...common, toolName: "write" }),
+		withToolGuard(edit as ToolDefinition, { ...common, toolName: "edit" }),
+	];
 }
 
-export const GUARDED_BUILTIN_NAMES = ["bash"] as const;
+export const GUARDED_BUILTIN_NAMES = ["bash", "write", "edit"] as const;
