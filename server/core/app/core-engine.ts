@@ -7,8 +7,11 @@ import { ClientStateStore } from "../../client-state.js";
 import { createProjectSource } from "../adapters/state/index.js";
 import { createSettingsHost } from "../adapters/settings/index.js";
 import { createSettingsPusher } from "../domains/settings/index.js";
+import { conversationViewFromSession, subscribeSession } from "../adapters/sdk/view.js";
 import { pushProjects } from "../domains/projects/index.js";
 import { refreshSessions } from "../domains/history/index.js";
+import { createModelPusher } from "../domains/models/index.js";
+import { createModelRuntimeFactory } from "../adapters/models/index.js";
 import { DEFAULT_PI_CAPABILITIES } from "../../engine-capabilities.js";
 import type { AgentEngineCapabilities } from "../../protocol.js";
 import { ClientRuntime, type ClientFrames } from "./client-runtime.js";
@@ -53,9 +56,20 @@ export class CoreEngine implements EngineService {
 		const existing = this.runtimes.get(clientId);
 		if (existing) return existing.handlers();
 		const transport: TransportPort = { send, isClosed: () => !this.runtimes.has(clientId) };
+		const unsubscribers = new Map<string, () => void>();
 		const sessions = new SessionRegistry({
 			agentDir: this.options.agentDir ?? this.cwd,
-			onOpened: (_conv, opened) => runtime.noteSessionFile(opened.sessionFile),
+			onOpened: (conv, opened) => {
+				runtime.noteSessionFile(opened.sessionFile);
+				unsubscribers.set(
+					conv.id,
+					subscribeSession(opened.session, () => runtime.publisher.request()),
+				);
+			},
+			onClosed: (conversationId) => {
+				unsubscribers.get(conversationId)?.();
+				unsubscribers.delete(conversationId);
+			},
 		});
 		const runtime = new ClientRuntime({
 			clientId,
@@ -63,6 +77,7 @@ export class CoreEngine implements EngineService {
 			clock: systemClock,
 			transport,
 			sessions,
+			viewOf: (conv) => conversationViewFromSession(conv, sessions.get(conv.id)?.session),
 			env: {
 				settingsVersion: 0,
 				piConfigured: false,
@@ -88,6 +103,11 @@ export class CoreEngine implements EngineService {
 			}),
 			transport,
 		});
+		const modelPusher = createModelPusher({
+			transport,
+			agentDir: this.options.agentDir ?? this.cwd,
+			runtimeFactory: createModelRuntimeFactory(),
+		});
 		const frames: ClientFrames = {
 			pushSettings: () => pusher.push(),
 			pushProjects: async () => {
@@ -101,7 +121,9 @@ export class CoreEngine implements EngineService {
 				}
 				await refreshSessions({ root, cwd: this.cwd, transport, state: runtime.historyState() });
 			},
-			listModels: () => transport.send({ type: "models", models: [] }),
+			listModels: () => {
+				void modelPusher.push();
+			},
 		};
 		runtime.attachFrames(frames);
 		this.runtimes.set(clientId, runtime);

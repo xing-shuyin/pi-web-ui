@@ -18,3 +18,4 @@ export {
 	type ProjectionResult,
 	type TranscriptProjection,
 } from "./transcript.js";
+export { openHistoryConversation, type OpenHistoryInput, type OpenedHistoryConversation } from "./open.js";

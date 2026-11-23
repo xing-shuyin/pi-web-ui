@@ -29,7 +29,8 @@ app        门面（EngineService）与装配    ← 唯一允许 import 全部�
 | W2    | 快照投影、设置读模型、转录投影                                                                   | ✅                                             |
 | W3    | 适配器：SDK 开会话 / 版本化状态落盘                                                              | ✅（能开会话；喂轮与接线在 W4）                |
 | W4    | 连接期帧：settings_state / sessions / projects / models + 会话持有（SessionRegistry）            | ✅（models 先给空表，模型域在 W5）             |
-| W5~W6 | 模型目录 / 生命周期退役 / 工具审批 / 子代理 / 插件终端                                           | 未开始                                         |
+| W5    | 模型目录帧 / 会话可见面投影 / 打开历史会话                                                       | ✅（工具审批与流式增量在 W6）                  |
+| W6~W7 | 工具门控+审批 / 子代理 / 插件终端 / 删老树                                                       | 未开始                                         |
 | W7    | 删老树（`agent-service.ts` 不存在）                                                              | 未开始                                         |
 
 W3 之后 `CoreEngine.attach()` 仍默认关闭（`CoreEngineNotReadyError`）：能实例化、能过契约测试、能给空对话出合法帧、能真开一份 SDK 会话，但**连接期帧（settings_state / sessions / models / projects）还没接**，所以还不接生产流量。
@@ -60,7 +61,9 @@ W3 之后 `CoreEngine.attach()` 仍默认关闭（`CoreEngineNotReadyError`）�
 - **连接期帧**：由组合根装配进 `ClientRuntime.attachFrames`；`refreshSessions` 的历史根**取自真开过的会话文件目录**（不猜 SDK 布局），没开过会话就发空帧。
 - **项目帧**：当前 cwd 的插入项 `lastUsed: 0`（客户端据此排在真实对话过的项目之后，但位置在最上）；来源读失败发空列表；沙盒项目待 W5。
 - **设置帧**：`SettingsHost` 的 apply*/reload/promptSnapshot 在 W5 前是安全空值（绝不抛），`isDisposed`/`isStreaming` 是构造期快照。
-- **模型帧**：W5 前发空 `models` 列表（前端允许空表，但选不了模型）。
+- **模型帧**：域只认注入的 `runtimeFactory`（SDK 的 `ModelRuntime` 只在 `adapters/models/` 里建），失败发空表；`enabled` 高亮留给 app 层叠加。
+- **会话可见面**：`adapters/sdk/view.ts` 把会话消息经 `serialize.ts` 投影成 `UiMessage`（id 稳定），并在开会话时订阅事件触发重帧；流式增量仍是「整段重投影」，细粒度 delta 待消息窗口域。
+- **打开历史**：`openHistoryConversation` 先按 `sessionFile` 去重再建，读盘/投影失败不抛（空消息 + 计数）。
 
 ## 源码约定
 

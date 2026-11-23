@@ -2,14 +2,20 @@ import type { ConversationId } from "./ids.js";
 
 /**
  * 新树对「一轮对话的宿主会话」的全部要求。真身是 SDK 的 `AgentSession`，
- * 但只有 `domains/turns/feed.ts` 允许知道这一点，其它域只认这个窄面。
+ * 但只有 `domains/turns/feed.ts` 与 `adapters/sdk/**` 允许知道这一点，其它层只认这个窄面。
  */
 export interface TurnCapableSession {
+	readonly sessionId?: string;
 	readonly sessionFile?: string;
+	readonly messages?: readonly unknown[];
+	readonly isStreaming?: boolean;
+	readonly thinkingLevel?: string;
+	readonly model?: unknown;
 	dispose(): void;
 	abort?(): Promise<void> | void;
 	getLastAssistantText?(): string | undefined;
-	isStreaming?: boolean;
+	getAvailableThinkingLevels?(): string[];
+	subscribe?(listener: (event: unknown) => void): () => void;
 }
 
 export interface TurnStartOptions {
