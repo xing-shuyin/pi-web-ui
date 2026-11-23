@@ -79,7 +79,7 @@ W3 之后 `CoreEngine.attach()` 仍默认关闭（`CoreEngineNotReadyError`）�
 
 按「解锁价值 ÷ 成本」排序，每条都已标注现状与入口：
 
-1. **审批真正生效**（最高价值）：SDK 没有审批钩子，内置 `bash`/`edit` 绕过 `askApproval`。
+1. **审批真正生效**（已落 bash，edit/write 待扩）：`adapters/tools/guarded.ts` 用 `createBashToolDefinition` 重建同名 bash 再过 `withToolGuard`，由 `customTools` 覆盖内置同名项（SDK 的 definitionRegistry 是 `set(name, …)`，自定义后写覆盖内置）。**edit/write 还没包**：`GuardedToolName` 目前只收 `bash`/`read`，扩它要连审批规则库一起动。原方案如下：
    做法：用 SDK 的 `createBashTool` / `createEditTool` 等工厂 + `server/tool-guards.ts` 的
    `withToolGuards({ askApproval: approvalWaiter.request })` 造出同名的自定义工具，
    在 `customToolsFor` 里替换内置同名工具；`approvalWaiter` 已经在 `app/core-engine.ts` 里建好、`resolveToolApproval` 已接。

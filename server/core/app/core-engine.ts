@@ -18,6 +18,7 @@ import { resolveToolLoadout } from "../domains/tools/index.js";
 import { InteractionInbox } from "../domains/interactions/index.js";
 import { createApprovalWaiter, createAskUserWaiter } from "../domains/interactions/index.js";
 import { createAskQuestionTool } from "../adapters/tools/ask-question.js";
+import { createGuardedBuiltinTools } from "../adapters/tools/guarded.js";
 import { DEFAULT_PI_CAPABILITIES } from "../../engine-capabilities.js";
 import type { AgentEngineCapabilities } from "../../protocol.js";
 import { ClientRuntime, type ClientFrames } from "./client-runtime.js";
@@ -42,6 +43,7 @@ const systemClock: ClockPort = {
 export class CoreEngine implements EngineService {
 	onQuit?: () => boolean;
 	private readonly runtimes = new Map<string, ClientRuntime>();
+	private settingsLang: "zh" | "en" | "zh-TW" = "zh";
 	private socketCount = 0;
 	private quiescedSince: number | undefined;
 
@@ -71,7 +73,22 @@ export class CoreEngine implements EngineService {
 			// 工具装载域决定注册哪些工具；注册表只转发，不给默认值。
 			toolsFor: () => resolveToolLoadout({ switches: this.stateStore.getSettingsSnapshot(clientId) }).tools,
 			// 自定义工具是审批/提问/子代理的唯一入口；一个对话一份闭包（工具里要带会话身份）。
-			customToolsFor: (conv) => [createAskQuestionTool({ waiter: askWaiter, conversationId: conv.id })],
+			customToolsFor: (conv) => [
+				createAskQuestionTool({ waiter: askWaiter, conversationId: conv.id }),
+				// 内置 bash 重建一份带审批闸的同名工具，覆盖 SDK 里那个直接执行的内置实现。
+				...createGuardedBuiltinTools({
+					cwd: this.cwd,
+					getLang: () => this.settingsLang,
+					conversationId: () => conv.id,
+					askApproval: (_toolCallId, toolName, params, reason, reasonEn) =>
+						approvalWaiter.request({
+							conversationId: conv.id,
+							toolName,
+							params,
+							reason: reason ?? reasonEn,
+						}),
+				}),
+			],
 			onOpened: (conv, opened) => {
 				runtime.noteSessionFile(opened.sessionFile);
 				unsubscribers.set(
@@ -237,7 +254,9 @@ export class CoreEngine implements EngineService {
 
 	refreshBackgroundServers(): void {}
 
-	async setLocale(_clientId: string, _locale: string): Promise<void> {}
+	async setLocale(_clientId: string, locale: string): Promise<void> {
+		this.settingsLang = locale.startsWith("en") ? "en" : locale === "zh-TW" ? "zh-TW" : "zh";
+	}
 
 	getCapabilities(): AgentEngineCapabilities {
 		return DEFAULT_PI_CAPABILITIES;

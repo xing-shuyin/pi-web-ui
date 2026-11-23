@@ -22,7 +22,12 @@ const FORBIDDEN_LEGACY = [
 const MAX_CORE_FILE_LINES = 600;
 
 /** 只允许这些路径碰 SDK 与喂轮出口；其余层只认 `contracts/session.ts` 的窄面。 */
-const SDK_BOUNDARY = ["server/core/domains/turns/feed.ts", "server/core/adapters/sdk/", "server/core/adapters/models/"];
+const SDK_BOUNDARY = [
+	"server/core/domains/turns/feed.ts",
+	"server/core/adapters/sdk/",
+	"server/core/adapters/models/",
+	"server/core/adapters/tools/",
+];
 
 function inSdkBoundary(rel: string): boolean {
 	return SDK_BOUNDARY.some((prefix) => rel === prefix || rel.startsWith(prefix));
