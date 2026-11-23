@@ -3,13 +3,15 @@ import type { ModelAdminPort, ModelMemoryPort } from "../contracts/model-admin.j
 import type { SettingsFramePort } from "../contracts/settings.js";
 import type { SlashCommandsPort } from "../contracts/commands.js";
 import type { FilesPort, WorkspacePort } from "../contracts/files.js";
+import type { WorktreePort } from "../contracts/worktree.js";
 import { createCommandHandlers, type CommandHandlers } from "../domains/commands/index.js";
 import { createFilesHandlers, type FilesHandlers } from "../domains/files/index.js";
+import { createWorktreeHandlers, type WorktreeHandlers } from "../domains/worktree/index.js";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
 import type { SnapshotConversationView, SnapshotEnvView, SnapshotView } from "../contracts/snapshot-view.js";
 import { createDispatchSurfaceAdapter, type DispatchHandlers } from "../adapters/wire/index.js";
 import type { DispatchSession } from "../engine-service.js";
-import type { PromptAttachment } from "../protocol.js";
+import type { PromptAttachment, WorktreeInfo } from "../protocol.js";
 import { Conversation, ConversationRegistry, type ConversationInit } from "../kernel/conversation/index.js";
 import { createSnapshotBuilders, SnapshotPublisher, type SnapshotBuilders } from "../domains/snapshots/index.js";
 import { createModelSwitchers, type ModelSwitchers } from "../domains/models/index.js";
@@ -96,6 +98,8 @@ export interface ClientRuntimeOptions {
 	files?: () => FilesPort | undefined;
 	/** 工作区绑定（换 cwd / 换额外根）；缺省 = 该能力未接。 */
 	workspace?: () => WorkspacePort | undefined;
+	/** Git 工作树面（宿主 `worktree-service`）；缺省 = 该能力未接。 */
+	worktree?: () => WorktreePort | undefined;
 	/** `listCommands` / `saveCommands` 读写的目录（跟随当前对话的 cwd）。 */
 	commandCwd?: () => string;
 	/** 项目/全局模型记忆 + 供应商 key pin（宿主设置存储）；缺省 = 不落盘。 */
@@ -125,6 +129,9 @@ export class ClientRuntime {
 	private settingsHandlers: SettingsHandlers | undefined;
 	private commandHandlers: CommandHandlers | undefined;
 	private fileHandlers: FilesHandlers | undefined;
+	private worktreeHandlers: WorktreeHandlers | undefined;
+	/** 工作树全貌：工作树域的发布口写它，刷新/删除都从这里读「当前是哪个」。 */
+	private worktreeInfo: WorktreeInfo | null = null;
 
 	constructor(options: ClientRuntimeOptions) {
 		this.options = options;
@@ -176,6 +183,22 @@ export class ClientRuntime {
 			slash: () => this.options.slashCommands?.(),
 			cwd: () => this.options.commandCwd?.() ?? this.options.cwd,
 			transport: this.options.transport,
+		}));
+	}
+
+	/** 工作树：`git worktree` 的细节全在宿主，内核只编排「删当前树先回退 cwd → 刷帧」。 */
+	private worktrees(): WorktreeHandlers {
+		return (this.worktreeHandlers ??= createWorktreeHandlers({
+			worktree: () => this.options.worktree?.(),
+			workspace: () => this.options.workspace?.(),
+			cwd: () => this.registry.activeConv()?.meta.cwd ?? this.options.cwd,
+			currentInfo: () => this.worktreeInfo,
+			publish: (info) => {
+				this.worktreeInfo = info;
+				if (!this.disposed) this.publisher.request();
+			},
+			transport: this.options.transport,
+			getLang: () => this.options.getLang?.() ?? "zh",
 		}));
 	}
 
@@ -317,6 +340,7 @@ export class ClientRuntime {
 			...this.settings(),
 			...this.commands(),
 			...this.filesHandlers(),
+			...this.worktrees(),
 			setModel: (modelId: string) => this.modelSwitchers().setModel(modelId),
 			setDefaultModel: (modelId: string) => this.modelSwitchers().setDefaultModel(modelId),
 			clearDefaultModel: () => this.modelSwitchers().clearDefaultModel(),

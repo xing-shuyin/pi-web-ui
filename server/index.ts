@@ -60,6 +60,7 @@ import { createCoreModelAdmin } from "./core-model-adapter.js";
 import { createCoreSettingsAdapter } from "./core-settings-adapter.js";
 import { createCoreSlashCommands } from "./core-commands-adapter.js";
 import { createCoreFiles, createCoreWorkspaceUnavailable } from "./core-files-adapter.js";
+import { createCoreWorktree } from "./core-worktree-adapter.js";
 import { ClientStateStore } from "./client-state.js";
 import { isAbsoluteWirePath, wireToAbs } from "./files-service.js";
 import { WS_MAX_PAYLOAD_BYTES } from "./payload-limits.js";
@@ -1620,6 +1621,7 @@ function ensureEngine(engine: EngineId): EngineService {
 						slashCommands: (sinks) => createCoreSlashCommands(sinks),
 						files: (sinks) => createCoreFiles(sinks),
 						workspace: () => createCoreWorkspaceUnavailable(),
+						worktree: () => createCoreWorktree(),
 					}) as unknown as AgentService)
 				: new AgentService(CWD, sharedStateStore);
 		for (let i = 0; i < sharedSocketCount; i++) piServiceInstance.noteSocketOpen();

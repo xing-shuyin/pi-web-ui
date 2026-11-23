@@ -9,6 +9,7 @@ import type { ModelAdminPort, ModelAdminSinks } from "../contracts/model-admin.j
 import type { SettingsFramePort } from "../contracts/settings.js";
 import type { SlashCommandSinks, SlashCommandsPort } from "../contracts/commands.js";
 import type { FilesPort, WorkspacePort } from "../contracts/files.js";
+import type { WorktreePort } from "../contracts/worktree.js";
 import type { SettingsService } from "../../../../server/settings-service.js";
 import { isInsideRoots } from "../path-boundary.js";
 import { ClientStateStore } from "../../../../server/client-state.js";
@@ -55,6 +56,8 @@ export interface CoreEngineOptions {
 	files?: (sinks: CoreFilesSinks) => FilesPort;
 	/** 工作区绑定面工厂；缺省 = 能力未接。 */
 	workspace?: () => WorkspacePort;
+	/** Git 工作树面工厂（宿主实现：`server/core-worktree-adapter.ts`）；缺省 = 能力未接。 */
+	worktree?: () => WorktreePort;
 	/** 换完模型后的宿主收尾（压缩预留重算 / 插件通知）：C 类能力一律留在宿主。 */
 	onSessionModelChanged?: (clientId: string, conversationId: string) => void;
 }
@@ -218,6 +221,7 @@ export class CoreEngine implements EngineService {
 			slashCommands: () => slashCommands,
 			files: () => files,
 			workspace: () => this.options.workspace?.(),
+			worktree: () => this.options.worktree?.(),
 			commandCwd: () => runtime.registry.activeConv()?.meta.cwd ?? this.cwd,
 			releasePendingApprovals: (reason) => approvalWaiter.settleAll("approve", reason),
 			modelAdmin: this.modelAdminPort(),
