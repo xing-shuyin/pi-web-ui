@@ -74,3 +74,21 @@ W3 之后 `CoreEngine.attach()` 仍默认关闭（`CoreEngineNotReadyError`）�
 - tab 缩进、`printWidth 120`、import 带 `.js`、类型用 `import type`。
 - **不写文件头注释**；只给非显然的约束留一句短说明（见 `docs/agent-rules.md` §六）。
 - 门面（`app/core-engine.ts`）里禁止出现业务分支：每多一个 `if`，编排就回到了上帝对象。
+
+## 交接清单（下一次接着做）
+
+按「解锁价值 ÷ 成本」排序，每条都已标注现状与入口：
+
+1. **审批真正生效**（最高价值）：SDK 没有审批钩子，内置 `bash`/`edit` 绕过 `askApproval`。
+   做法：用 SDK 的 `createBashTool` / `createEditTool` 等工厂 + `server/tool-guards.ts` 的
+   `withToolGuards({ askApproval: approvalWaiter.request })` 造出同名的自定义工具，
+   在 `customToolsFor` 里替换内置同名工具；`approvalWaiter` 已经在 `app/core-engine.ts` 里建好、`resolveToolApproval` 已接。
+   待验证：自定义工具与 `tools: string[]` 同名时 SDK 的覆盖语义（先写一条最小集成用例确认）。
+2. **会话管理接 dispatch 表**：`deleteSession` / `renameSession` / `renameConversation` / `dismissConversation`
+   已接进 `ClientRuntime.handlers()`（`isAllowedPath` 由组合根注入 `agentDir/sessions`）；
+   还差「重命名标题落盘到会话文件头」（`renameSession` 目前只做归一，写盘要 `appendSessionInfo` 一类叶子）。
+3. **`stop` 语义**：`abort()` 直接调 `session.abort()`；要补 `TurnRunner` 的 aborted 结算与 UI 回执。
+4. **子代理 / 终端 / 插件运行态 / `present_files` / `communicate`**：都需要 `tool-host-factories.ts` 的宿主能力，
+   一个域一个域搬（对应老树 580 方法里的 `subagent*` / `terminal*` / `plugin*` / `files` 几簇）。
+5. **W9 删老树**：`agent-service.ts` 退场 + 18 个守卫重定向 + 71 个白盒测试按域重写
+   （`tests/helpers/fake-session.ts` 会随之删除——它存在的唯一目的是给上帝对象造假体）。

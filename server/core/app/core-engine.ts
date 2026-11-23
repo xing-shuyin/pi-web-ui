@@ -2,7 +2,9 @@ import type { DispatchSession, EngineService } from "../../engine-service.js";
 import type { ServerMessage, UiServiceInfo } from "../../protocol.js";
 import { toServiceInfo, launchOrigin } from "../../launch-origin.js";
 import { join } from "node:path";
+import { join as joinPath, resolve as resolveFsPath } from "node:path";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
+import { isInsideRoots } from "../../path-boundary.js";
 import { ClientStateStore } from "../../client-state.js";
 import { createProjectSource } from "../adapters/state/index.js";
 import { createSettingsHost } from "../adapters/settings/index.js";
@@ -88,6 +90,9 @@ export class CoreEngine implements EngineService {
 			clock: systemClock,
 			transport,
 			sessions,
+			// 只会删自己会话目录里的文件：根 = agentDir/sessions（与 SDK 落盘位置一致）。
+			isAllowedPath: (target) =>
+				isInsideRoots(resolveFsPath(target), [joinPath(this.options.agentDir ?? this.cwd, "sessions")]),
 			viewOf: (conv) => ({
 				...conversationViewFromSession(conv, sessions.get(conv.id)?.session),
 				pendingApprovals: approvalWaiter.pendingForSnapshot(conv.id),

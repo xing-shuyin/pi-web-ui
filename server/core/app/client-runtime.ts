@@ -11,6 +11,12 @@ import type { SessionListScanState } from "../../session-list-scan.js";
 import { dirname } from "node:path";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
 import type { SessionRegistry } from "./session-registry.js";
+import {
+	deleteSessionFile,
+	dismissConversation,
+	renameConversation,
+	renameSession,
+} from "../domains/sessions/index.js";
 
 export type ClientEnvView = Omit<SnapshotEnvView, "clientId" | "cwd" | "workspaceRoots">;
 
@@ -31,6 +37,8 @@ export interface ClientRuntimeOptions {
 	transport: TransportPort;
 	/** 对话可见面的来源；缺省用注册表里的空视图（域接上后注入）。 */
 	viewOf?: (conversation: Conversation) => SnapshotConversationView;
+	/** 删会话文件前的路径谓词（缺省 fail-closed：一律拒绝）。 */
+	isAllowedPath?(path: string): boolean;
 	builders?: SnapshotBuilders;
 	sessions?: SessionRegistry;
 	turnEvents?: TurnRunnerDeps["events"];
@@ -153,6 +161,30 @@ export class ClientRuntime {
 			refreshSessions: () => frames().refreshSessions(),
 			pushProjects: () => frames().pushProjects(),
 			listModels: () => frames().listModels(),
+			deleteSession: async (path: string) => {
+				await deleteSessionFile({
+					registry: this.registry,
+					sessionFile: path,
+					now: () => this.options.clock.now(),
+					isAllowedPath: this.options.isAllowedPath,
+				});
+			},
+			renameSession: async (path: string, name: string) => {
+				renameSession({ sessionFile: path, title: name });
+			},
+			renameConversation: async (id: string, name: string) => {
+				renameConversation({ registry: this.registry, conversationId: id, title: name, now: this.options.clock.now() });
+			},
+			dismissConversation: async (id: string, withFinishedSubagents?: boolean) => {
+				await dismissConversation({
+					registry: this.registry,
+					conversationId: id,
+					withFinishedSubagents,
+					now: () => this.options.clock.now(),
+					isAllowedPath: this.options.isAllowedPath,
+					closeSession: (convId) => this.options.sessions?.close(convId),
+				});
+			},
 			abort: async () => {
 				const conv = this.registry.activeConv();
 				const opened = conv ? this.options.sessions?.get(conv.id) : undefined;

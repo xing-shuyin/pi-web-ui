@@ -303,3 +303,49 @@ describe("app · 连接期帧", () => {
 		expect(runtime.historyState()).toBe(runtime.historyState());
 	});
 });
+
+describe("app · 会话管理 handler", () => {
+	function adminRuntime() {
+		const clock = fakeClock();
+		const transport = fakeTransport();
+		const runtime = new ClientRuntime({
+			clientId: "c1",
+			cwd: "/work",
+			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+			clock,
+			transport: transport.port,
+			isAllowedPath: () => false,
+		});
+		return { runtime, transport };
+	}
+
+	it("renameConversation 改标题并触碰活跃时间", async () => {
+		const { runtime } = adminRuntime();
+		const conv = runtime.createConversation({ id: "c1", kind: "user", createdAt: 1 });
+		await runtime.handlers().renameConversation("c1", "  新标题 ");
+		expect(conv.meta.title).toBe("新标题");
+		expect(conv.meta.lastActiveAt).toBe(1000);
+	});
+
+	it("renameConversation 对未知对话不抛", async () => {
+		const { runtime } = adminRuntime();
+		await expect(runtime.handlers().renameConversation("nope", "x")).resolves.toBeUndefined();
+	});
+
+	it("dismissConversation 退役并从注册表摘除，幂等", async () => {
+		const { runtime } = adminRuntime();
+		runtime.createConversation({ id: "c1", kind: "user", createdAt: 1 });
+		const cs = runtime.handlers();
+		await cs.dismissConversation("c1");
+		expect(runtime.registry.has("c1")).toBe(false);
+		await expect(cs.dismissConversation("c1")).resolves.toBeUndefined();
+	});
+
+	it("deleteSession 在路径不被允许时不动注册表", async () => {
+		const { runtime } = adminRuntime();
+		runtime.createConversation({ id: "c1", kind: "user", createdAt: 1, sessionFile: "/agent/sessions/x.jsonl" });
+		await runtime.handlers().deleteSession("/agent/sessions/x.jsonl");
+		expect(runtime.registry.has("c1")).toBe(true);
+		expect(runtime.registry.bySessionFile("/agent/sessions/x.jsonl")?.id).toBe("c1");
+	});
+});
