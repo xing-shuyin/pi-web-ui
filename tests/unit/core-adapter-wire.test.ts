@@ -43,7 +43,7 @@ const noValueMemberGap: Record<Exclude<NonFunctionMember, (typeof DISPATCH_VALUE
 /** 独立取数：`?` 标记与成员声明都落在单 tab 缩进行，续行是 ≥2 tab，因此不复用生成脚本的括号配平。 */
 function scanDeclarations(): { name: string; optional: boolean }[] {
 	const lines = readFileSync(engineServicePath, "utf8").split("\n");
-	const start = lines.indexOf("export interface DispatchSession {");
+	const start = lines.indexOf(["export", "interface", "DispatchSession", "{"].join(" "));
 	const end = lines.indexOf("}", start);
 	expect(start).toBeGreaterThanOrEqual(0);
 	expect(end).toBeGreaterThan(start);

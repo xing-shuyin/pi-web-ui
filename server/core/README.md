@@ -22,12 +22,12 @@ app        门面（EngineService）与装配    ← 唯一允许 import 全部�
 
 ## 进度
 
-| 波次  | 内容                                                                                             | 状态   |
-| ----- | ------------------------------------------------------------------------------------------------ | ------ |
-| W0    | 骨架：ports / kernel（对话聚合 + 注册表 + 相位 + 排队）/ 门面壳 / 引擎开关 / 边界守卫 / 所有权表 | ✅     |
-| W1    | 对话内核：TurnRunner（唯一碰 SDK）、snapshots、history、生命周期                                 | 进行中 |
-| W2~W6 | 生命周期退役 / 工具审批 / 子代理 / 插件终端 / 设置模型                                           | 未开始 |
-| W7    | 删老树（`agent-service.ts` 不存在）                                                              | 未开始 |
+| 波次  | 内容                                                                                             | 状态                                                                          |
+| ----- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| W0    | 骨架：ports / kernel（对话聚合 + 注册表 + 相位 + 排队）/ 门面壳 / 引擎开关 / 边界守卫 / 所有权表 | ✅                                                                            |
+| W1    | 对话内核：TurnRunner（唯一碰 SDK）、snapshots、history、生命周期                                 | 进行中（turns / snapshots / history / ClientRuntime 已落；SDK 会话创建在 W2） |
+| W2~W6 | 生命周期退役 / 工具审批 / 子代理 / 插件终端 / 设置模型                                           | 未开始                                                                        |
+| W7    | 删老树（`agent-service.ts` 不存在）                                                              | 未开始                                                                        |
 
 W0 的 `CoreEngine.attach()` 会抛 `CoreEngineNotReadyError`：骨架能实例化、能过契约测试，但**还不接生产流量**。
 
@@ -45,6 +45,9 @@ W0 的 `CoreEngine.attach()` 会抛 `CoreEngineNotReadyError`：骨架能实例�
 - **工具门控**：`resolveActiveToolNames` 只做并集减法；调用方必须先过滤 `onDemand`（核心工具永不延迟），域里不做第二套兜底。
 - **线适配器**：`DispatchSession` 现有 **183** 个唯一成员（184 条声明，`forkSession` 重复），清单由 `scripts/gen-core-dispatch-surface.mjs` 生成；未提供 handler 的成员**同步抛** `CoreEngineNotReadyError`（fail-closed，不返回 rejected promise）。
 - **错误类**：`CoreEngineNotReadyError` 住在 `contracts/`（否则 `adapters` 要依赖 `app`，违反分层）。
+- **轮次**：`deliverAs` 只在 `running` 相位可用；`running` 却不传 `deliverAs` 直接拒（不静默叠轮）；退役错误不做 `instanceof` 分支，靠「全程无 catch」结构性透传。
+- **历史行**：`openIds` 只参与去重（不参与归属）；`cwd` 只筛磁盘历史行；纯磁盘历史行不带 `kind`。
+- **attach**：`CoreEngine.attach` 需 `PI_WEB_PI_ENGINE_ATTACH=1`；快照投影未接前 `builders` 会抛 `CoreEngineNotReadyError`。
 
 ## 源码约定
 

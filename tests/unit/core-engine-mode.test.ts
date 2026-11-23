@@ -14,7 +14,7 @@ describe("core/app · 引擎开关", () => {
 
 describe("core/app · CoreEngine 生命周期", () => {
 	it("quiesce / unquiesce 与 serviceStatus 自洽", async () => {
-		const engine = new CoreEngine("/work");
+		const engine = new CoreEngine("/work", { version: "test-version" });
 		expect(engine.isQuiesced()).toBe(false);
 		engine.quiesce();
 		expect(engine.isQuiesced()).toBe(true);
@@ -31,7 +31,7 @@ describe("core/app · CoreEngine 生命周期", () => {
 	});
 
 	it("socket 计数不为负", () => {
-		const engine = new CoreEngine("/work");
+		const engine = new CoreEngine("/work", { version: "test-version" });
 		engine.noteSocketClose();
 		expect(engine.serviceStatus().connectedClients).toBe(0);
 		engine.noteSocketOpen();
@@ -41,9 +41,29 @@ describe("core/app · CoreEngine 生命周期", () => {
 		expect(engine.serviceStatus().connectedClients).toBe(1);
 	});
 
-	it("W0 骨架：attach 明确报「尚未接入」，不静默降级", async () => {
-		const engine = new CoreEngine("/work");
+	it("attach 默认关闭：明确报「尚未接入」，不静默降级", async () => {
+		const engine = new CoreEngine("/work", { version: "test-version", attach: false });
 		await expect(engine.attach("c1", () => {})).rejects.toBeInstanceOf(CoreEngineNotReadyError);
 		expect(engine.get("c1")).toBeUndefined();
+	});
+
+	it("显式打开 attach：接客户端并保持同一份运行时", async () => {
+		const engine = new CoreEngine("/work", { version: "test-version", attach: true });
+		const sent: unknown[] = [];
+		const cs = await engine.attach("c1", (msg) => void sent.push(msg));
+		expect(cs.cwd).toBe("/work");
+		expect(engine.get("c1")).toBe(cs);
+		expect(engine.serviceStatus().connectedClients).toBe(0);
+		engine.detach("c1", () => {});
+		expect(engine.get("c1")).toBeUndefined();
+	});
+
+	it("activeConversations / pendingMessages 汇总各客户端运行时", async () => {
+		const engine = new CoreEngine("/work", { version: "test-version", attach: true });
+		const a = await engine.attach("a", () => {});
+		await engine.attach("b", () => {});
+		expect(engine.activeConversations()).toBe(0);
+		expect(engine.pendingMessages()).toBe(0);
+		expect(a.activeConversationId?.()).toBeUndefined();
 	});
 });

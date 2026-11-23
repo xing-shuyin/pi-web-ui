@@ -21,6 +21,13 @@ const FORBIDDEN_LEGACY = [
 
 const MAX_CORE_FILE_LINES = 600;
 
+/** 只允许这两处碰 SDK 与喂轮出口；其余层只认 `contracts/session.ts` 的窄面。 */
+const SDK_BOUNDARY = ["server/core/domains/turns/feed.ts", "server/core/adapters/sdk/"];
+
+function inSdkBoundary(rel: string): boolean {
+	return SDK_BOUNDARY.some((prefix) => rel === prefix || rel.startsWith(prefix));
+}
+
 function walk(dir: string, out: string[] = []): string[] {
 	for (const entry of readdirSync(dir, { withFileTypes: true })) {
 		const path = join(dir, entry.name);
@@ -108,6 +115,17 @@ describe("server/core 分层边界", () => {
 				const target = toRepoPath(file.abs, spec);
 				if (target && FORBIDDEN_LEGACY.includes(target)) violations.push(`${file.rel} → ${target}`);
 			}
+		}
+		expect(violations).toEqual([]);
+	});
+
+	it("SDK 与喂轮出口只在声明过的边界文件里出现", () => {
+		const violations: string[] = [];
+		for (const file of files) {
+			if (inSdkBoundary(file.rel)) continue;
+			const text = readFileSync(file.abs, "utf8");
+			if (/@earendil-works\/pi-coding-agent/.test(text)) violations.push(`${file.rel}（直接依赖 SDK）`);
+			if (/session-turns\.js/.test(text)) violations.push(`${file.rel}（直接依赖喂轮出口）`);
 		}
 		expect(violations).toEqual([]);
 	});
