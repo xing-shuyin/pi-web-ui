@@ -137,7 +137,9 @@
 		"audit:themes": "node scripts/theme-audit.mjs --out .theme-audit/current",
 		"audit:diff": "node scripts/theme-diff.mjs .theme-audit/baseline .theme-audit/current",
 		"gen:atomic": "node scripts/gen-bin-atomic-file.mjs",
-		"gen:bin-mirrors": "node scripts/gen-bin-mirrors.mjs"
+		"gen:bin-mirrors": "node scripts/gen-bin-mirrors.mjs",
+		"gen:core-ownership": "node scripts/gen-core-ownership.mjs",
+		"gen:core-dispatch": "node scripts/gen-core-dispatch-surface.mjs"
 	},
 	"dependencies": {
 		"@deepseek-ai/dsh-sdk-jsonrpc-server": "^0.2.1-rc.2",

@@ -54,6 +54,8 @@ import { VERSION, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { sdkCopies, sdkOriginNote } from "./sdk-origin.js";
 import { PROTOCOL_VERSION } from "./protocol-version.js";
 import { AgentService, workspacePath, QuiesceRejectedError, ClientSession } from "./agent-service.js";
+import { CoreEngine } from "./core/app/core-engine.js";
+import { resolvePiEngineMode } from "./core/app/engine-mode.js";
 import { ClientStateStore } from "./client-state.js";
 import { isAbsoluteWirePath, wireToAbs } from "./files-service.js";
 import { WS_MAX_PAYLOAD_BYTES } from "./payload-limits.js";
@@ -1563,7 +1565,11 @@ function ensureEngine(engine: EngineId): EngineService {
 		return dshServiceInstance;
 	}
 	if (!piServiceInstance) {
-		piServiceInstance = new AgentService(CWD, sharedStateStore);
+		piServiceInstance =
+			resolvePiEngineMode() === "core"
+				? // W0 骨架：新引擎还没接 attach，类型面暂借 legacy 的 AgentService，W1 换成 EngineService 完整面。
+					(new CoreEngine(CWD) as unknown as AgentService)
+				: new AgentService(CWD, sharedStateStore);
 		for (let i = 0; i < sharedSocketCount; i++) piServiceInstance.noteSocketOpen();
 		if (sharedQuiesced) piServiceInstance.quiesce();
 		wireEngineHooks?.(piServiceInstance);
