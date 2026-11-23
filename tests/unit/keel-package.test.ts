@@ -15,14 +15,10 @@ const serverDir = join(root, "server");
  * - `PORTS`：P2 要反转成端口的四个宿主模块。
  * 除这三桶以外的任何 `server/*` 依赖都会红——这是「新增耦合」的唯一门禁。
  */
-const PENDING_PORT = [
-	"approval-default-rules",
-	"plugins",
-	"quick-ask-context",
-];
+const PENDING_PORT = ["approval-default-rules", "plugins", "quick-ask-context"];
 
-/** P2 的端口反转清单：反完一个就删一行（ 已销账：终端叶子改成注入工厂）。 */
-const PORTS = ["client-state", "settings-service", "tool-manager"];
+/** P2 的端口反转清单：反完一个就删一行（terminals 与 tool-manager 已销账）。 */
+const PORTS = ["client-state", "settings-service"];
 
 /** 本轮还没搬、下一轮单独搬的模块（搬完必须把这一行删掉，否则棘轮测试红）。 */
 const PENDING_MOVE: string[] = [];

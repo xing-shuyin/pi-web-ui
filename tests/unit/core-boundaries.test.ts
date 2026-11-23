@@ -31,6 +31,8 @@ const LEGACY_LEAF_BUDGET: Record<string, number> = {
 	// P2 给 write/edit 注入远程工作区操作（+1 行）：仍是只许降，下一个改它的人请顺手压回去。
 	"packages/keel/src/tool-guards.ts": 912,
 	"packages/keel/src/hashline-engine.ts": 876,
+	// 工具目录（纯数据 + 纯函数，P2 从 server/tool-manager.ts 整份搬入）。
+	"packages/keel/src/tool-catalog.ts": 748,
 	"packages/keel/src/subagent-templates.ts": 732,
 };
 

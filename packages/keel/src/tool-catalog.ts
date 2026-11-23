@@ -1,0 +1,747 @@
+/**
+ * 工具目录（单源）：有哪些工具、默认开关、分组、平台限制、按需/延迟名单与旧开关折叠。
+ *
+ * 这里全是纯数据与纯函数（不碰 IO、不碰进程），所以它属于内核而不是宿主：
+ * 工具门控（`domains/tools`）与设置面板读的是同一张表，各写一份必然分家。
+ */
+import type { DshPermissionOption, UiAgentPreset } from "./protocol.js";
+import * as toolNames from "./tool-names.js";
+
+export * from "./tool-names.js";
+
+export type AgentToolGroup = "core" | "terminal" | "subagent" | "other";
+
+export interface AgentToolEntry {
+	name: string;
+	group: AgentToolGroup;
+	defaultOn: boolean;
+	platform?: "win32" | "posix";
+	allowAgentToggle?: boolean;
+	dshVisible: boolean;
+	descKey?: string;
+	offHintKey?: string;
+}
+
+export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
+	...toolNames.TERMINAL_TOOL_NAMES.map((name): AgentToolEntry => ({
+		name,
+		group: "terminal",
+		defaultOn: false,
+		dshVisible: true,
+	})),
+	{
+		name: toolNames.CONVERSATION_TOOL_NAME,
+		group: "subagent",
+		defaultOn: true,
+		dshVisible: false,
+	},
+	{
+		name: toolNames.COMMUNICATE_TOOL_NAME,
+		group: "subagent",
+		defaultOn: true,
+		dshVisible: false,
+		descKey: "communicateEnabledDesc",
+		offHintKey: "communicateOffHint",
+	},
+	{
+		name: toolNames.DELEGATE_TASK_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		dshVisible: false,
+		descKey: "delegateTaskEnabledDesc",
+		offHintKey: "delegateTaskOffHint",
+	},
+	{
+		name: toolNames.ASK_USER_QUESTION_TOOL_NAME,
+		group: "other",
+		defaultOn: true,
+		dshVisible: true,
+		descKey: "questionnaireEnabledDesc",
+		offHintKey: "questionnaireOffHint",
+	},
+	{
+		name: toolNames.BROWSER_PAGE_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		dshVisible: false,
+		descKey: "browserPageEnabledDesc",
+		offHintKey: "browserPageOffHint",
+	},
+	{
+		name: toolNames.BROWSER_SCRIPT_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		dshVisible: false,
+		descKey: "browserScriptEnabledDesc",
+		offHintKey: "browserScriptOffHint",
+	},
+	{
+		// 改浏览器自己的新标签页 / 主题。默认关：等于允许模型重写一个和内部页同权的本地页面。
+		name: toolNames.BROWSER_DESIGN_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		dshVisible: false,
+		descKey: "browserDesignEnabledDesc",
+		offHintKey: "browserDesignOffHint",
+	},
+	{
+		// 让智能体操作手机（无障碍服务）。默认关：等于把整台手机交给模型，必须用户显式打开。
+		name: toolNames.PHONE_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		dshVisible: false,
+		descKey: "phoneEnabledDesc",
+		offHintKey: "phoneOffHint",
+	},
+	{
+		name: toolNames.CLAIM_FILES_TOOL_NAME,
+		group: "other",
+		defaultOn: true,
+		dshVisible: false,
+		descKey: "claimFilesEnabledDesc",
+		offHintKey: "claimFilesOffHint",
+	},
+	{
+		name: toolNames.PLAN_UPDATE_TOOL_NAME,
+		group: "other",
+		defaultOn: true,
+		dshVisible: true,
+		descKey: "planUpdateEnabledDesc",
+		offHintKey: "planUpdateOffHint",
+	},
+	{
+		// 一句话创建智能体：默认常驻（轻量），但只会产出"待确认草案"，不能自建自授权。
+		name: toolNames.AGENT_BOT_TOOL_NAME,
+		group: "other",
+		defaultOn: true,
+		dshVisible: false,
+		descKey: "agentBotToolEnabledDesc",
+		offHintKey: "agentBotToolOffHint",
+	},
+	{
+		name: toolNames.PATCH_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		dshVisible: false,
+		descKey: "patchToolEnabledDesc",
+		offHintKey: "patchToolOffHint",
+	},
+	{
+		name: toolNames.LSP_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		dshVisible: false,
+		descKey: "lspToolEnabledDesc",
+		offHintKey: "lspToolOffHint",
+	},
+	{
+		name: toolNames.PRESENT_FILES_TOOL_NAME,
+		group: "other",
+		defaultOn: true,
+		dshVisible: false,
+		descKey: "presentFilesEnabledDesc",
+		offHintKey: "presentFilesOffHint",
+	},
+	{
+		name: toolNames.SKILL_TOOL_NAME,
+		group: "other",
+		defaultOn: true,
+		dshVisible: false,
+		descKey: "skillEnabledDesc",
+		offHintKey: "skillOffHint",
+	},
+	{
+		name: toolNames.EVAL_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		dshVisible: false,
+		descKey: "evalEnabledDesc",
+		offHintKey: "evalOffHint",
+	},
+	{
+		name: toolNames.CODEMODE_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		dshVisible: false,
+		descKey: "codemodeEnabledDesc",
+		offHintKey: "codemodeOffHint",
+	},
+	{
+		name: toolNames.TOOL_SEARCH_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		dshVisible: false,
+		descKey: "toolSearchEnabledDesc",
+		offHintKey: "toolSearchOffHint",
+	},
+	{
+		name: toolNames.SCHEDULE_TOOL_NAME,
+		group: "other",
+		defaultOn: true,
+		dshVisible: false,
+		descKey: "scheduleTaskEnabledDesc",
+		offHintKey: "scheduleTaskOffHint",
+	},
+	{
+		name: toolNames.COMPACT_CONTEXT_TOOL_NAME,
+		group: "other",
+		defaultOn: true,
+		dshVisible: false,
+		descKey: "compactContextEnabledDesc",
+		offHintKey: "compactContextOffHint",
+	},
+	{
+		name: toolNames.MCP_MANAGE_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		dshVisible: false,
+		descKey: "mcpManageEnabledDesc",
+		offHintKey: "mcpManageOffHint",
+	},
+	{
+		name: toolNames.SANDBOX_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		dshVisible: false,
+		descKey: "sandboxEnabledDesc",
+		offHintKey: "sandboxOffHint",
+	},
+	{
+		name: toolNames.WORKTREE_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		dshVisible: false,
+		descKey: "toolsWorktreeDesc",
+		offHintKey: "toolsWorktreeOffHint",
+	},
+	{
+		name: toolNames.CANVAS_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		dshVisible: false,
+		descKey: "canvasToolEnabledDesc",
+		offHintKey: "canvasToolOffHint",
+	},
+];
+
+export const GROUP_BOT_TOOL_CATALOG: readonly AgentToolEntry[] = [
+	{
+		name: toolNames.DEVICE_COLLAB_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		allowAgentToggle: false,
+		dshVisible: false,
+		descKey: "toolsDeviceCollabDesc",
+		offHintKey: "toolsDeviceCollabOffHint",
+	},
+	{
+		// 记忆是 Bot 私产：开关由 Bot 的工具白名单决定，不在用户 Web 设置里出现。
+		name: toolNames.BOT_MEMORY_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		allowAgentToggle: false,
+		dshVisible: false,
+	},
+] as const;
+
+export const CORE_BUILTIN_TOOL_NAMES = ["bash", "read", "edit", "write", "powershell", "ls", "grep", "find"] as const;
+
+export type CoreBuiltinToolName = (typeof CORE_BUILTIN_TOOL_NAMES)[number];
+
+export interface CoreToolEntry {
+	name: CoreBuiltinToolName;
+	group: "core";
+	defaultOn: boolean;
+	platform?: "win32" | "posix";
+	allowAgentToggle?: boolean;
+	descKey: string;
+}
+
+export const CORE_TOOL_CATALOG: readonly CoreToolEntry[] = [
+	{ name: "bash", group: "core", defaultOn: true, allowAgentToggle: false, descKey: "toolCoreBashDesc" },
+	{ name: "read", group: "core", defaultOn: true, allowAgentToggle: false, descKey: "toolCoreReadDesc" },
+	{ name: "edit", group: "core", defaultOn: true, allowAgentToggle: false, descKey: "toolCoreEditDesc" },
+	{ name: "write", group: "core", defaultOn: true, allowAgentToggle: false, descKey: "toolCoreWriteDesc" },
+	{
+		name: "powershell",
+		group: "core",
+		defaultOn: false,
+		platform: "win32",
+		allowAgentToggle: false,
+		descKey: "toolCorePowershellDesc",
+	},
+	{ name: "ls", group: "core", defaultOn: false, allowAgentToggle: false, descKey: "toolCoreLsDesc" },
+	{ name: "grep", group: "core", defaultOn: true, allowAgentToggle: false, descKey: "toolCoreGrepDesc" },
+	{ name: "find", group: "core", defaultOn: true, allowAgentToggle: false, descKey: "toolCoreFindDesc" },
+] as const;
+
+export const ALL_AGENT_TOOL_ENTRIES: readonly AgentToolEntry[] = [
+	...CORE_TOOL_CATALOG.map((c): AgentToolEntry => ({
+		name: c.name,
+		group: "core",
+		defaultOn: c.defaultOn,
+		platform: c.platform,
+		allowAgentToggle: c.allowAgentToggle,
+		dshVisible: false,
+		descKey: c.descKey,
+	})),
+	...AGENT_TOOL_CATALOG,
+	...GROUP_BOT_TOOL_CATALOG,
+];
+
+const ALL_AGENT_TOOL_MAP = new Map<string, AgentToolEntry>(ALL_AGENT_TOOL_ENTRIES.map((t) => [t.name, t]));
+
+export function getAgentToolEntry(name: string): AgentToolEntry | undefined {
+	return ALL_AGENT_TOOL_MAP.get(name);
+}
+
+export function isToolSupportedOnPlatform(name: string, platform: NodeJS.Platform = process.platform): boolean {
+	const entry = ALL_AGENT_TOOL_MAP.get(name);
+	if (!entry?.platform) return true;
+	if (entry.platform === "win32") return platform === "win32";
+	if (entry.platform === "posix") return platform !== "win32";
+	return true;
+}
+
+export function isCoreBuiltinTool(name: string): name is CoreBuiltinToolName {
+	return (CORE_BUILTIN_TOOL_NAMES as readonly string[]).includes(name);
+}
+
+const ALL_KNOWN_SET = new Set(ALL_AGENT_TOOL_ENTRIES.map((t) => t.name));
+
+export const ALL_KNOWN_AGENT_TOOL_NAMES: readonly string[] = ALL_AGENT_TOOL_ENTRIES.map((t) => t.name);
+
+export function isKnownAgentTool(name: string): boolean {
+	const entry = ALL_AGENT_TOOL_MAP.get(name);
+	return Boolean(entry && entry.allowAgentToggle !== false);
+}
+
+export function isHostManagedTool(name: string): boolean {
+	return ALL_KNOWN_SET.has(name);
+}
+
+export function isConfigurableAgentTool(name: string): boolean {
+	return isHostManagedTool(name);
+}
+
+export function resolveEnabledAgentTools(disabled: readonly string[]): string[] {
+	const disabledSet = new Set(normalizeDisabledAgentTools(disabled));
+	return ALL_KNOWN_AGENT_TOOL_NAMES.filter((name) => !disabledSet.has(name));
+}
+
+export function resolveDisabledAgentToolsFromEnabled(enabled: readonly string[]): string[] {
+	const enabledSet = new Set(enabled);
+	if (toolNames.LEGACY_TERMINAL_TOOL_NAMES.every((name) => enabledSet.has(name)))
+		enabledSet.add(toolNames.TERMINAL_TOOL_NAME);
+	return ALL_KNOWN_AGENT_TOOL_NAMES.filter((name) => !enabledSet.has(name));
+}
+
+export function normalizeDisabledAgentTools(v: unknown): string[] {
+	if (!Array.isArray(v)) return defaultDisabledAgentTools();
+	const out: string[] = [];
+	for (const x of v) {
+		let name = x;
+		if (typeof name === "string" && (toolNames.LEGACY_TERMINAL_TOOL_NAMES as readonly string[]).includes(name)) {
+			name = toolNames.TERMINAL_TOOL_NAME;
+		}
+		if (typeof name === "string" && (toolNames.LEGACY_SUBAGENT_TOOL_NAMES as readonly string[]).includes(name)) {
+			name = toolNames.CONVERSATION_TOOL_NAME;
+		}
+		if (name === "conversation_read") name = toolNames.CONVERSATION_TOOL_NAME;
+		if (typeof name === "string" && (toolNames.LEGACY_SCHEDULE_TOOL_NAMES as readonly string[]).includes(name)) {
+			name = toolNames.SCHEDULE_TOOL_NAME;
+		}
+		if (typeof name === "string" && ALL_KNOWN_SET.has(name) && !out.includes(name)) {
+			out.push(name);
+		}
+	}
+	return out;
+}
+
+export function defaultDisabledAgentTools(): string[] {
+	return ALL_AGENT_TOOL_ENTRIES.filter((t) => !t.defaultOn).map((t) => t.name);
+}
+
+export function isAgentToolEnabled(name: string, disabled: readonly string[]): boolean {
+	return !disabled.includes(name);
+}
+
+export interface ActiveToolSet {
+	getActiveToolNames(): string[];
+	setActiveToolsByName(names: string[]): void;
+	getAllTools(): Array<{
+		name: string;
+		namespace?: { name?: string };
+		exposure?: string;
+	}>;
+}
+
+export function setAgentToolEnabled(session: ActiveToolSet, name: string, on: boolean): boolean {
+	if (!isKnownAgentTool(name)) return false;
+	try {
+		const names = new Set(session.getActiveToolNames());
+		if (on) names.add(name);
+		else names.delete(name);
+		session.setActiveToolsByName([...names]);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+export function setAgentToolsEnabled(session: ActiveToolSet, names: readonly string[], on: boolean): number {
+	const known = names.filter(isKnownAgentTool);
+	if (known.length === 0) return 0;
+	try {
+		const active = new Set(session.getActiveToolNames());
+		for (const n of known) {
+			if (on) active.add(n);
+			else active.delete(n);
+		}
+		session.setActiveToolsByName([...active]);
+		return known.length;
+	} catch {
+		return 0;
+	}
+}
+
+export function applyAgentToolsGating(
+	session: ActiveToolSet,
+	disabled: readonly string[],
+	preset?: string,
+	options?: {
+		forceActive?: readonly string[];
+	},
+): void {
+	try {
+		const off = new Set(disabled);
+		const allNames = session.getAllTools().map((t) => t.name);
+		const initialActiveNames = new Set(session.getActiveToolNames());
+
+		const names = new Set<string>();
+		for (const name of allNames) {
+			if (isHostManagedTool(name)) {
+				names.add(name);
+			} else if (initialActiveNames.has(name) && !off.has(name)) {
+				names.add(name);
+			}
+		}
+
+		for (const t of AGENT_TOOL_CATALOG) {
+			if (off.has(t.name)) {
+				const isShadowedCustomTool = t.name === toolNames.CONVERSATION_TOOL_NAME;
+				const hasExtensionTool =
+					isShadowedCustomTool &&
+					Boolean(
+						(
+							session as {
+								extensionRunner?: { getAllRegisteredTools?: () => Array<{ definition?: { name?: string } }> };
+							}
+						)?.extensionRunner
+							?.getAllRegisteredTools?.()
+							?.some((tool) => tool.definition?.name === t.name),
+					);
+				if (!hasExtensionTool) {
+					names.delete(t.name);
+				}
+			} else {
+				names.add(t.name);
+			}
+		}
+		for (const core of CORE_BUILTIN_TOOL_NAMES) {
+			if (off.has(core)) names.delete(core);
+			else if (allNames.includes(core)) names.add(core);
+		}
+		names.delete(toolNames.LOAD_TOOLS_TOOL_NAME);
+		const allToolsSnapshot = session.getAllTools?.() ?? [];
+		let hasDeferredMcp = false;
+		for (const t of allToolsSnapshot) {
+			const ns = t?.namespace?.name ?? "";
+			if (typeof ns !== "string" || !ns.startsWith("mcp__")) continue;
+			const exp = t.exposure ?? "codemode";
+			if (exp === "direct" || exp === "model-only") continue;
+			names.delete(t.name);
+			if (exp === "deferred") hasDeferredMcp = true;
+		}
+		if (hasDeferredMcp && allNames.includes("tool_search") && !off.has("tool_search")) names.add("tool_search");
+		const filtered = filterToolsByPreset(names, preset);
+		const active = new Set(filtered);
+		const baseline = new Set(allNames);
+		for (const name of options?.forceActive ?? []) {
+			if (baseline.has(name) && !off.has(name)) active.add(name);
+		}
+		session.setActiveToolsByName([...active]);
+	} catch {}
+}
+
+export function normalizeToolOnDemandList(v: unknown): string[] {
+	if (!Array.isArray(v)) return [];
+	const out: string[] = [];
+	for (const x of v) {
+		if (typeof x !== "string") continue;
+		const name = toolNames.foldLegacyToolName(x.trim());
+		if (!name || out.includes(name)) continue;
+		// 内置直接收；插件 / MCP / 未来工具按统一命名规则收，不写死名单，自动包含插件。
+		// 孤儿项（插件已卸载、跨设备同步）同样保留，UI 兜底展示， gating 按 live 库存解析。
+		if (ALL_KNOWN_SET.has(name) || toolNames.isValidToolName(name)) {
+			out.push(name);
+			if (out.length >= toolNames.TOOL_LIST_MAX_ENTRIES) break;
+		}
+	}
+	return out;
+}
+
+export function normalizeLazyOnDemandList(v: unknown): string[] {
+	return normalizeToolOnDemandList(v).filter(
+		(n) => n !== toolNames.LOAD_TOOLS_TOOL_NAME && !(toolNames.LAZY_CORE_TOOL_NAMES as readonly string[]).includes(n),
+	);
+}
+
+export function lazyLoadingDisabledTools(
+	allNames: readonly string[],
+	loaded: Iterable<string>,
+	core: readonly string[] = toolNames.LAZY_CORE_TOOL_NAMES,
+	only?: Iterable<string>,
+): string[] {
+	const keep = new Set<string>([...core, toolNames.LOAD_TOOLS_TOOL_NAME, ...loaded]);
+	const onlySet = only ? new Set(only) : undefined;
+	return allNames.filter((n) => {
+		if (keep.has(n)) return false;
+		// 名单制：只延迟名单里的工具；名单外常驻。`only` 为空集合时等于都不延迟。
+		if (onlySet && !onlySet.has(n)) return false;
+		return true;
+	});
+}
+
+export interface LazyPartition {
+	/** 常驻：允许集里不在名单里的（天然含核心 + load_tools），stable，用于提示词基线与 guidelines */
+	resident: string[];
+	/** 待延迟：名单里允许、尚未加载的，用于门控禁用与 load_tools 可加载列表 */
+	pending: string[];
+	/** 已延迟加载：名单里已加载的，用于 forceActive */
+	loadedLazy: string[];
+}
+
+/**
+ * 延迟划分单源（架构级）：所有调用方（门控/目录/加载/JIT/提示词）共用同一划分，
+ * 避免各处手写 `allowed - onDemand` 导致分歧。输入均为 live 库存，孤儿名单项自动忽略。
+ */
+export function partitionLazyTools(args: {
+	all: readonly string[];
+	allowed: readonly string[] | Set<string>;
+	onDemand: readonly string[] | Set<string>;
+	loaded: readonly string[] | Set<string>;
+	core?: readonly string[];
+}): LazyPartition {
+	const allowedSet = args.allowed instanceof Set ? args.allowed : new Set(args.allowed);
+	const onDemandSet = args.onDemand instanceof Set ? args.onDemand : new Set(args.onDemand);
+	const loadedSet = args.loaded instanceof Set ? args.loaded : new Set(args.loaded);
+	// 名单里永不延迟的（核心/load）直接视为常驻，不进入 pending。
+	const lazyable = new Set([...onDemandSet].filter((n) => !toolNames.isNeverLazyTool(n)));
+	const resident: string[] = [];
+	const pending: string[] = [];
+	const loadedLazy: string[] = [];
+	for (const n of args.all) {
+		if (!allowedSet.has(n)) continue;
+		if (!lazyable.has(n)) {
+			resident.push(n);
+			continue;
+		}
+		if (loadedSet.has(n)) loadedLazy.push(n);
+		else pending.push(n);
+	}
+	return { resident, pending, loadedLazy };
+}
+
+export const PI_AGENT_PRESETS: UiAgentPreset[] = [
+	{
+		id: "standard",
+		trust: "system",
+		isDefault: true,
+		name: "全功能",
+		nameEn: "Full access",
+		description: "提供全部可用工具与扩展能力（默认）",
+		descriptionEn: "All available tools and extension capabilities (default)",
+		order: 0,
+	},
+	{
+		id: "minimal",
+		trust: "system",
+		isDefault: false,
+		name: "极简模式",
+		nameEn: "Minimal",
+		description: "仅保留 bash 与 read；插件工具、技能名录与终端引导同步隐藏",
+		descriptionEn: "Keeps only bash and read; plugin tools, skill catalog and terminal guidance are hidden too",
+		order: 1,
+	},
+	{
+		id: "code",
+		trust: "system",
+		isDefault: false,
+		name: "代码开发",
+		nameEn: "Code development",
+		description: "专注于代码读写与执行（bash, read, edit, write）；插件工具与技能名录同步隐藏",
+		descriptionEn:
+			"Focused on reading, writing and running code (bash, read, edit, write); plugin tools and skill catalog are hidden too",
+		order: 2,
+	},
+	{
+		id: "reader",
+		trust: "system",
+		isDefault: false,
+		name: "只读分析",
+		nameEn: "Read-only analysis",
+		description: "仅保留只读工具，禁止写操作；插件工具同步隐藏（读写未知，保守处理）",
+		descriptionEn:
+			"Keeps only read-only tools and forbids writes; plugin tools are hidden too (read/write unknown, handled conservatively)",
+		order: 3,
+	},
+	{
+		id: "ask",
+		trust: "system",
+		isDefault: false,
+		name: "纯对话",
+		nameEn: "Chat only",
+		description: "无工具问答模式，模型不调用任何工具；插件工具与技能名录同步隐藏",
+		descriptionEn: "No-tools Q&A: the model never calls a tool; plugin tools and skill catalog are hidden too",
+		order: 4,
+	},
+];
+
+export const PI_PERMISSION_OPTIONS: DshPermissionOption[] = [
+	{
+		value: "read-only",
+		name: "只读模式",
+		nameEn: "Read Only",
+		description: "禁止所有文件修改（write/edit）及任何非只读操作",
+		descriptionEn: "Forbids all file modification (write/edit) and any non-read-only operation",
+	},
+	{
+		value: "workspace-write-never",
+		name: "工作区内修改",
+		nameEn: "Workspace Write",
+		description: "仅允许在当前工作区目录下修改文件，工作区外写操作一律拒绝",
+		descriptionEn: "Only files under the current workspace may be modified; writes outside it are always denied",
+	},
+	{
+		value: "danger-full-access",
+		name: "完全权限",
+		nameEn: "Full access",
+		description: "允许修改任意目录文件及执行全量操作（需要二次确认）",
+		descriptionEn: "Allows modifying files anywhere and running any operation (needs a second confirmation)",
+	},
+];
+
+export function localizedName(
+	item: { name?: string; nameEn?: string } | undefined,
+	lang: string,
+	fallback = "",
+): string {
+	if (!item) return fallback;
+	return lang === "zh" ? (item.name ?? item.nameEn ?? fallback) : (item.nameEn ?? item.name ?? fallback);
+}
+
+export function localizedDescription(
+	item: { description?: string; descriptionEn?: string } | undefined,
+	lang: string,
+): string | undefined {
+	if (!item) return undefined;
+	return lang === "zh" ? (item.description ?? item.descriptionEn) : (item.descriptionEn ?? item.description);
+}
+
+export function filterToolsByPreset(tools: Iterable<string>, preset?: string): string[] {
+	const all = Array.from(tools);
+	if (!preset || preset === "standard") return all;
+	if (preset === "ask") return [];
+	if (preset === "minimal") {
+		return all.filter((n) => n === "bash" || n === "read");
+	}
+	if (preset === "code") {
+		const codeSet = new Set(["bash", "read", "edit", "write"]);
+		return all.filter((n) => codeSet.has(n));
+	}
+	if (preset === "reader") {
+		const writeTools = new Set([
+			"write",
+			"edit",
+			"bash",
+			"powershell",
+			"terminal_create",
+			"terminal_input",
+			"terminal_close",
+			"terminal_key",
+			"codemode",
+		]);
+		return all.filter((n) => !writeTools.has(n));
+	}
+	return all;
+}
+
+export function presetAllowsPluginTools(preset?: string): boolean {
+	if (!preset || preset === "standard") return true;
+	return !PI_AGENT_PRESETS.some((p) => p.id === preset);
+}
+
+export function presetShowsSkillCatalog(preset?: string): boolean {
+	return filterToolsByPreset([toolNames.SKILL_TOOL_NAME], preset).includes(toolNames.SKILL_TOOL_NAME);
+}
+
+export function presetHasQuestionnaire(preset?: string): boolean {
+	return filterToolsByPreset([toolNames.ASK_USER_QUESTION_TOOL_NAME], preset).includes(
+		toolNames.ASK_USER_QUESTION_TOOL_NAME,
+	);
+}
+
+export interface LegacyToolSwitches {
+	terminalToolsEnabled?: boolean;
+	questionnaireEnabled?: boolean;
+	disabledAgentTools?: unknown;
+	/** 按需名单：仅当 `toolLazyLoading` 开启时生效，列内工具走延迟加载（需 `load_tools` 拉取）。 */
+	toolOnDemandTools?: unknown;
+}
+
+export function legacyToDisabled(s: LegacyToolSwitches): string[] {
+	if (Array.isArray(s.disabledAgentTools)) return normalizeDisabledAgentTools(s.disabledAgentTools);
+	const off = new Set(defaultDisabledAgentTools());
+	if (s.terminalToolsEnabled === true) {
+		for (const n of toolNames.TERMINAL_TOOL_NAMES) off.delete(n);
+	}
+	if (s.questionnaireEnabled === false) off.add(toolNames.ASK_USER_QUESTION_TOOL_NAME);
+	return normalizeDisabledAgentTools([...off]);
+}
+
+export function deriveLegacy(disabled: readonly string[]): {
+	terminalToolsEnabled: boolean;
+	questionnaireEnabled: boolean;
+} {
+	const off = new Set(disabled);
+	return {
+		terminalToolsEnabled: toolNames.TERMINAL_TOOL_NAMES.every((n) => !off.has(n)),
+		questionnaireEnabled: !off.has(toolNames.ASK_USER_QUESTION_TOOL_NAME),
+	};
+}
+
+export function foldLegacyIntoDisabled(
+	current: readonly string[],
+	legacy: Pick<LegacyToolSwitches, "terminalToolsEnabled" | "questionnaireEnabled">,
+): string[] {
+	const next = new Set(normalizeDisabledAgentTools(current));
+	const applyGroup = (names: readonly string[], v: boolean | undefined) => {
+		if (v === undefined) return;
+		for (const n of names) {
+			if (v) next.delete(n);
+			else next.add(n);
+		}
+	};
+	applyGroup(toolNames.TERMINAL_TOOL_NAMES, legacy.terminalToolsEnabled);
+	applyGroup([toolNames.ASK_USER_QUESTION_TOOL_NAME], legacy.questionnaireEnabled);
+	return [...next];
+}
+
+export function effectiveDisabledAgentTools(s: LegacyToolSwitches): string[] {
+	const next = new Set(legacyToDisabled({ ...s, disabledAgentTools: s.disabledAgentTools }));
+	if (s.questionnaireEnabled === false) next.add(toolNames.ASK_USER_QUESTION_TOOL_NAME);
+	// 按需名单不再是硬关闭：它只在 `toolLazyLoading` 开启时决定哪些工具延迟，
+	// 常驻/禁用只由 `disabledAgentTools`、预设与模式闸门决定。这里不并入名单。
+	return [...next];
+}

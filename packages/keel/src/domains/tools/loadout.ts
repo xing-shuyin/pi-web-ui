@@ -1,8 +1,4 @@
-import {
-	ALL_AGENT_TOOL_ENTRIES,
-	effectiveDisabledAgentTools,
-	isToolSupportedOnPlatform,
-} from "../../../../../server/tool-manager.js";
+import { ALL_AGENT_TOOL_ENTRIES, effectiveDisabledAgentTools, isToolSupportedOnPlatform } from "../../tool-catalog.js";
 import { resolveActiveToolNames } from "./gating.js";
 
 export interface ToolLoadoutInput {
