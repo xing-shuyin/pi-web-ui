@@ -1,4 +1,4 @@
-import { createQueuedEntry, removeQueuedEntry, type QueuedMessageEntry } from "../../../../../server/queue-utils.js";
+import { createQueuedEntry, removeQueuedEntry, type QueuedMessageEntry } from "../../queue-utils.js";
 
 export type QueueKind = "steer" | "followUp";
 

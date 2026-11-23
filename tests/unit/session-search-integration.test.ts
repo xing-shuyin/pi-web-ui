@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
-import * as transcriptSearch from "../../server/session-search.js";
+import * as transcriptSearch from "../../packages/keel/src/session-search.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
 
 function deferred<T>() {

@@ -27,7 +27,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
 const generatorPath = join(root, "scripts", "gen-core-dispatch-surface.mjs");
 const surfacePath = join(root, "packages", "keel", "src", "adapters", "wire", "dispatch-surface.ts");
-const engineServicePath = join(root, "server", "engine-service.ts");
+const engineServicePath = join(root, "packages", "keel", "src", "engine-service.ts");
 const generatedHeader = "// 生成物，勿手改：node scripts/gen-core-dispatch-surface.mjs";
 const workspace = "D:/ws";
 

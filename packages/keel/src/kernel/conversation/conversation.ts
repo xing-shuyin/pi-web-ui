@@ -1,4 +1,4 @@
-import { DEFAULT_CONV_TITLE } from "../../../../../server/agent-formatters.js";
+import { DEFAULT_CONV_TITLE } from "../../agent-formatters.js";
 import type { ClientId, ConversationId, SessionFile } from "../../contracts/ids.js";
 import { acceptsTurns, transition } from "./phase.js";
 import { ConversationQueues } from "./queues.js";

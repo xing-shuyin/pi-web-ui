@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import * as atomic from "../../server/atomic-file.js";
+import * as atomic from "../../packages/keel/src/atomic-file.js";
 import { consumeInterrupted, finish, mark } from "../../server/compaction-state.js";
 import { repairSessionTranscript } from "../../server/compaction-markers.js";
 

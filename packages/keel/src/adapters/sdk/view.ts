@@ -2,7 +2,7 @@ import type { AgentSession } from "@earendil-works/pi-coding-agent";
 
 type AgentMessage = AgentSession["messages"][number];
 import type { UiMessage, UiModelInfo } from "../../../../../server/protocol.js";
-import { serializeMessage, serializeStreamingMessage } from "../../../../../server/serialize.js";
+import { serializeMessage, serializeStreamingMessage } from "../../serialize.js";
 import type { Conversation } from "../../kernel/conversation/index.js";
 import type { SnapshotConversationView } from "../../contracts/snapshot-view.js";
 import type { TurnCapableSession } from "../../contracts/session.js";

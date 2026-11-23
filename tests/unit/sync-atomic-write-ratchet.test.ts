@@ -6,8 +6,12 @@ import { blankNonCode } from "../helpers/code-scan.js";
 import { codeFiles, sourceOf } from "../helpers/guard-roots.js";
 
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
-/** 登记项的键：相对仓库根的路径（搬家前后同一函数解析）。 */
-const moduleId = (file: string) => relative(repoRoot, file).split("\\").join("/");
+/** 登记键统一回老树口径（`server/...`）：模块搬进 keel 后不换键，存量预算不会因搬家而失真。 */
+const moduleId = (file: string) =>
+	relative(repoRoot, file)
+		.split("\\")
+		.join("/")
+		.replace(/^packages\/keel\/src\//, "server/");
 const SYNC_ATOMIC_CALL = /\b(writeAtomicSync|writeJsonAtomicSync|readFileSyncRetry)\s*\(/;
 const SYNC_ATOMIC_DECL =
 	/^\s*(export\s+)?(async\s+)?function\s+(writeAtomicSync|writeJsonAtomicSync|readFileSyncRetry)\b/;
@@ -37,7 +41,7 @@ const ALLOWED: Record<string, number> = {
 	"server/native-cli-model.ts": 1,
 
 	// versioned-doc 的 handle 同时持有读与写：写入侧已异步化，只剩读侧的同步退避重试。
-	[moduleId(sourceOf("versioned-doc"))]: 1,
+	"server/versioned-doc.ts": 1,
 
 	// 设置 / 客户端状态：saveSettings 的失败契约是同步抛错（订阅者据此不广播），
 	// 异步化要先拆「提交」语义并改动 40+ 调用点。

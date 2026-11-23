@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 const SDK = "@earendil-works/pi-coding-agent";
-const PREPARE = "../../server/transcript-prepare.js";
+const PREPARE = "../../packages/keel/src/transcript-prepare.js";
 const OPENER = "../../packages/keel/src/adapters/sdk/session-opener.js";
 
 type OpenerModule = typeof import("../../packages/keel/src/adapters/sdk/session-opener.js");

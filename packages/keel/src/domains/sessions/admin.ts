@@ -1,5 +1,5 @@
 import { unlink } from "node:fs/promises";
-import { isInsideRoots } from "../../../../../server/path-boundary.js";
+import { isInsideRoots } from "../../path-boundary.js";
 import type { ConversationId } from "../../contracts/ids.js";
 import {
 	type Conversation,

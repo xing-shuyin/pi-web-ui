@@ -1,5 +1,5 @@
-import { makeAskUserQuestionTool } from "../../../../../server/ask-user-question-tool.js";
-import type { QuestionResult } from "../../../../../server/pending-question.js";
+import { makeAskUserQuestionTool } from "../../ask-user-question-tool.js";
+import type { QuestionResult } from "../../pending-question.js";
 import type { UiQuestion } from "../../../../../server/protocol.js";
 
 /**

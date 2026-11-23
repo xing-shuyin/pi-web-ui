@@ -4,8 +4,8 @@ import {
 	createWriteToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { withToolGuard, type AskApprovalFn } from "../../../../../server/tool-guards.js";
-import type { ServerLang } from "../../../../../server/i18n.js";
+import { withToolGuard, type AskApprovalFn } from "../../tool-guards.js";
+import type { ServerLang } from "../../i18n.js";
 
 export interface GuardedToolOptions {
 	cwd: string;

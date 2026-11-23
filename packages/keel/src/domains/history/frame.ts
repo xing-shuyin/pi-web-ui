@@ -1,4 +1,4 @@
-import type { SessionListScanState } from "../../../../../server/session-list-scan.js";
+import type { SessionListScanState } from "../../session-list-scan.js";
 import type { ServerMessage, SessionSummary } from "../../../../../server/protocol.js";
 import type { TransportPort } from "../../contracts/ports.js";
 import { scanHistory, type HistoryEntry } from "./list.js";

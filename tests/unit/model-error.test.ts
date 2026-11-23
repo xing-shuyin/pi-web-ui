@@ -5,8 +5,8 @@
  * 分类结果对不对（网关错误页 / 配额 / 鉴权 / 模型拒答 / 认不出），以及别处没有第二份
  * 状态码提取、HTML 清洗或关键词表（先有第二份实现，就会先有一份分叉的文案）。
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { readFileSync } from "node:fs";
+import { relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
@@ -18,6 +18,7 @@ import {
 	modelErrorReport,
 	summarizeModelErrorText,
 } from "../../server/model-error.js";
+import { codeFiles, isShim, sourceOf } from "../helpers/guard-roots.js";
 import { withRetrySummary } from "../../server/serialize.js";
 import type { UiMessage } from "../../server/protocol.js";
 
@@ -27,17 +28,19 @@ const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const GATEWAY_408 =
 	"408 <html><body><h1>408 Request Time-out</h1>\nYour browser didn't send a complete request in time.\n</body></html>";
 
-function serverSources(dir = join(ROOT, "server"), out: string[] = []): string[] {
-	for (const name of readdirSync(dir)) {
-		const full = join(dir, name);
-		if (statSync(full).isDirectory()) serverSources(full, out);
-		else if (name.endsWith(".ts")) out.push(full);
-	}
-	return out;
+function serverSources(): string[] {
+	return codeFiles().filter((file) => !isShim(readFileSync(file, "utf8")));
+}
+
+/** 登记口径统一回老树路径（`server/...`），模块搬进 keel 后不变。 */
+function legacyId(file: string): string {
+	return relative(ROOT, file)
+		.replaceAll("\\", "/")
+		.replace(/^packages\/keel\/src\//, "server/");
 }
 
 function readServerSource(rel: string): string {
-	return readFileSync(join(ROOT, "server", rel), "utf8");
+	return readFileSync(sourceOf(rel.replace(/\.ts$/, "")), "utf8");
 }
 
 describe("classifyModelError 分类", () => {
@@ -184,7 +187,7 @@ describe("重试收尾（已重试 N 次后失败）", () => {
 describe("单源守卫：没有第二份错误分类/清洗实现", () => {
 	it("classifyModelError 只定义一次", () => {
 		const owners = serverSources().filter((file) => /function classifyModelError\b/.test(readFileSync(file, "utf8")));
-		expect(owners.map((file) => relative(ROOT, file).replaceAll("\\", "/"))).toEqual(["server/model-error.ts"]);
+		expect(owners.map(legacyId)).toEqual(["server/model-error.ts"]);
 	});
 
 	it("配额/鉴权/HTML 关键词表只在 model-error.ts 里", () => {
@@ -192,9 +195,9 @@ describe("单源守卫：没有第二份错误分类/清洗实现", () => {
 		// 直接输出 HTML 页面的地方不算），避免把设备中心的页面模板误判成第二套实现。
 		const secondImplementation = /insufficient_quota|invalid_api_key|<html\[|<!doctype\|/;
 		const offenders = serverSources()
-			.filter((file) => !file.endsWith(join("server", "model-error.ts")))
+			.filter((file) => legacyId(file) !== "server/model-error.ts")
 			.filter((file) => secondImplementation.test(readFileSync(file, "utf8")));
-		expect(offenders.map((file) => relative(ROOT, file).replaceAll("\\", "/"))).toEqual([]);
+		expect(offenders.map(legacyId)).toEqual([]);
 	});
 
 	it("气泡 / 通知 / verdict 都走同一个入口", () => {

@@ -1,4 +1,4 @@
-import { MAX_SUBAGENTS } from "../../../../../server/agent-formatters.js";
+import { MAX_SUBAGENTS } from "../../agent-formatters.js";
 
 export type SubagentSettleState = "done" | "failed" | "stopped";
 

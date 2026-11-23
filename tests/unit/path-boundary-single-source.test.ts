@@ -40,6 +40,14 @@ function guardSources(): string[] {
 	return codeFiles().filter((file) => file !== SINGLE_SOURCE && !isShim(readFileSync(file, "utf8")));
 }
 
+/** 登记键统一回老树口径：同一个模块搬进 keel 后不换键，存量名单才不会因搬家而膨大。 */
+function legacyId(file: string): string {
+	return relative(root, file)
+		.split("\\")
+		.join("/")
+		.replace(/^packages\/keel\/src\//, "server/");
+}
+
 /** `relative(...)` 之后紧跟 `startsWith("..")` 的写法，就是第二份「越界判定」。 */
 function hasLexicalContainment(source: string): boolean {
 	const lines = source.split("\n");
@@ -72,7 +80,7 @@ describe("路径边界判定只有一个单源（server/path-boundary.ts）", ()
 	it("除单源外没有新增「relative + startsWith('..')」形态的越界判定", () => {
 		const offenders: string[] = [];
 		for (const file of guardSources()) {
-			const rel = relative(root, file).split("\\").join("/");
+			const rel = legacyId(file);
 			if (!hasLexicalContainment(readFileSync(file, "utf8"))) continue;
 			if (!KNOWN_LEXICAL_DUPLICATES.has(rel)) offenders.push(rel);
 		}

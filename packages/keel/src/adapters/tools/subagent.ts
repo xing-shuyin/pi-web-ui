@@ -1,5 +1,5 @@
-import { makeSubagentTool } from "../../../../../server/subagents.js";
-import type { SubagentToolHost } from "../../../../../server/subagents.js";
+import { makeSubagentTool } from "../../subagents.js";
+import type { SubagentToolHost } from "../../subagents.js";
 
 /** 工具定义形状直接取自叶子实现，新树里不再引一次 SDK。 */
 export type SubagentTool = ReturnType<typeof makeSubagentTool>;

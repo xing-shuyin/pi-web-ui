@@ -1,6 +1,6 @@
-import type { SettleWakeReason } from "../../../../../server/subagent-settle.js";
-import type { SubagentSpawnExtra } from "../../../../../server/subagent-security-gate.js";
-import type { SubagentSnapshot, SubagentToolHost } from "../../../../../server/subagents.js";
+import type { SettleWakeReason } from "../../subagent-settle.js";
+import type { SubagentSpawnExtra } from "../../subagent-security-gate.js";
+import type { SubagentSnapshot, SubagentToolHost } from "../../subagents.js";
 import type { SettleWaitResult, SubagentRegistry } from "./registry.js";
 
 /** 老宿主那串位置参数在这里合成一个对象：漏传任何一项（persist / thinking / isolation / extra）都是静默丢行为。 */

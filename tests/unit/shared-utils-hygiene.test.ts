@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isShim } from "../helpers/guard-roots.js";
 
 const ROOT = resolve(fileURLToPath(import.meta.url), "../../..");
 const WEB_ROOT = join(ROOT, "web", "src");
@@ -19,8 +20,19 @@ function walkFiles(dir: string, accept: (name: string) => boolean, out: string[]
 }
 
 const pluginFiles = walkFiles(join(ROOT, "plugins"), (n) => n.endsWith(".mjs") && !n.includes(".test."));
-const serverFiles = walkFiles(join(ROOT, "server"), (n) => n.endsWith(".ts"));
+// 服务端扫描两个根：老树 + 已搬进 keel 的叶子（只扫 server/ 会让搬走的模块静默失守）。
+const serverFiles = [
+	...walkFiles(join(ROOT, "server"), (n) => n.endsWith(".ts")),
+	...walkFiles(join(ROOT, "packages", "keel", "src"), (n) => n.endsWith(".ts")),
+];
 const webFiles = walkFiles(WEB_ROOT, (n) => n.endsWith(".ts") || n.endsWith(".tsx"));
+
+/** 登记键统一回老树口径（`server/...`）：模块搬进 keel 后不换键，存量名单不会因搬家而失真。 */
+function legacyId(file: string): string {
+	return relative(ROOT, file)
+		.replaceAll("\\", "/")
+		.replace(/^packages\/keel\/src\//, "server/");
+}
 
 // 存量手写异步 tmp+rename（fs/promises 形态）。守卫 3 从「同步 API 组合」扩到两种形态时
 // 一次性豁免的历史文件：**这份名单只许变短**，改到这些文件时请顺手换成 writeAtomic。
@@ -91,8 +103,7 @@ describe("共享工具收敛与防回潮守卫 (Issue #730)", () => {
 		const isAtomicViolation = (source: string): boolean =>
 			/\brename(?:Sync)?\s*\(/.test(source) && writesTempPath(source);
 		const files = serverFiles.filter(
-			(file) =>
-				!file.endsWith("atomic-file.ts") && !ASYNC_ATOMIC_LEGACY.has(relative(ROOT, file).replaceAll("\\", "/")),
+			(file) => !file.endsWith("atomic-file.ts") && !ASYNC_ATOMIC_LEGACY.has(legacyId(file)),
 		);
 		checkFiles(
 			files,
@@ -101,7 +112,15 @@ describe("共享工具收敛与防回潮守卫 (Issue #730)", () => {
 		);
 		// 存量名单只许变短：某条已改成 writeAtomic 后，这里会因为「名单条目不再违规」而红，
 		// 提醒把该条从 ASYNC_ATOMIC_LEGACY 删掉（而不是放任名单腐化成永久豁免）。
-		const stale = [...ASYNC_ATOMIC_LEGACY].filter((file) => !isAtomicViolation(readFileSync(join(ROOT, file), "utf8")));
+		const currentPathOf = (id: string) => {
+			const candidates = serverFiles.filter((file) => legacyId(file) === id);
+			// 同一个模块可能有两份路径（keel 真实现 + 老位置 shim）：只拿真实现判违规。
+			return candidates.find((file) => !isShim(readFileSync(file, "utf8"))) ?? candidates[0];
+		};
+		const stale = [...ASYNC_ATOMIC_LEGACY].filter((id) => {
+			const file = currentPathOf(id);
+			return !file || !isAtomicViolation(readFileSync(file, "utf8"));
+		});
 		expect(stale, `以下文件已不再手写 tmp+rename，请从 ASYNC_ATOMIC_LEGACY 删除：\n${stale.join("\n")}`).toEqual([]);
 	});
 

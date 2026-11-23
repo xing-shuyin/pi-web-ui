@@ -1,4 +1,4 @@
-import type { DispatchSession } from "../../../../../server/engine-service.js";
+import type { DispatchSession } from "../../engine-service.js";
 import { CoreEngineNotReadyError } from "../../contracts/core-engine-errors.js";
 import { DISPATCH_SURFACE, type DispatchSessionMember } from "./dispatch-surface.js";
 

@@ -1,4 +1,4 @@
-import { evaluateApprovalRules, type ApprovalRule } from "../../../../../server/approval-rules.js";
+import { evaluateApprovalRules, type ApprovalRule } from "../../approval-rules.js";
 
 export interface AutoApproveRequest {
 	rule: ApprovalRule;

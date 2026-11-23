@@ -1,6 +1,6 @@
 import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
-import { assertSupportedTranscriptVersion, openSessionManagerAsync } from "../../../../../server/session-open.js";
+import { assertSupportedTranscriptVersion, openSessionManagerAsync } from "../../session-open.js";
 import { normalizeTitle } from "../../kernel/conversation/index.js";
 
 export interface RenameSessionFileInput {

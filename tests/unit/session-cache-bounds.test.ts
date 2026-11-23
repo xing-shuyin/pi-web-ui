@@ -1,12 +1,12 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, statSync, utimesSync } from "node:fs";
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
-import { searchSessions } from "../../server/session-search.js";
+import { searchSessions } from "../../packages/keel/src/session-search.js";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { ClientSession } from "../../server/agent-service.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
-import * as sessionListScan from "../../server/session-list-scan.js";
+import * as sessionListScan from "../../packages/keel/src/session-list-scan.js";
 
 const CS = ClientSession as unknown as Record<string, any>;
 

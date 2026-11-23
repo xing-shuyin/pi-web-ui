@@ -1,4 +1,4 @@
-import type { SubagentSnapshot } from "../../../../server/subagents.js";
+import type { SubagentSnapshot } from "../subagents.js";
 import { SubagentRegistry, type SubagentRecord } from "../domains/subagents/registry.js";
 import { createSubagentToolHost, type SubagentSnapshotSource } from "../domains/subagents/host.js";
 import { createSubagentTool } from "../adapters/tools/subagent.js";

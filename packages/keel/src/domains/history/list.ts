@@ -1,11 +1,7 @@
 import { promises as fsPromises } from "node:fs";
 import { join } from "node:path";
-import { mapSessionsConcurrent } from "../../../../../server/session-scan.js";
-import {
-	scanSessionListInfo,
-	type SessionListInfo,
-	type SessionListScanState,
-} from "../../../../../server/session-list-scan.js";
+import { mapSessionsConcurrent } from "../../session-scan.js";
+import { scanSessionListInfo, type SessionListInfo, type SessionListScanState } from "../../session-list-scan.js";
 import { compareText } from "./order.js";
 
 /** 磁盘历史条目：`SessionListInfo` 在域内的窄面，只留列表要用的字段。 */

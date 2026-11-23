@@ -1,7 +1,7 @@
 import { dirname, join, resolve } from "node:path";
 import { ClientStateStore } from "../../../../../server/client-state.js";
-import { discoverRecentProjectsFromDisk } from "../../../../../server/session-parser.js";
-import { piSessionsRoot } from "../../../../../server/session-search.js";
+import { discoverRecentProjectsFromDisk } from "../../session-parser.js";
+import { piSessionsRoot } from "../../session-search.js";
 
 /** 一次扫盘最多发现多少个项目（老实现 `ensureProjectsCache` 的 30）。 */
 const DISCOVERY_LIMIT = 30;

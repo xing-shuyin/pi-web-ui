@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import type { StatePort } from "../../contracts/ports.js";
-import { openVersionedDoc, type DocState } from "../../../../../server/versioned-doc.js";
+import { openVersionedDoc, type DocState } from "../../versioned-doc.js";
 
 const DOC_VERSION = 1;
 

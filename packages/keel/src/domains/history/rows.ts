@@ -1,7 +1,7 @@
 import type { ConversationId } from "../../contracts/ids.js";
 import type { ConversationKind } from "../../kernel/conversation/index.js";
-import { conversationRowKind, type ConversationRowKind } from "../../../../../server/conversation-rows.js";
-import { sameCwd } from "../../../../../server/orphan-manager.js";
+import { conversationRowKind, type ConversationRowKind } from "../../conversation-rows.js";
+import { sameCwd } from "../../orphan-manager.js";
 import type { HistoryEntry } from "./list.js";
 import { compareText } from "./order.js";
 

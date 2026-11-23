@@ -21,6 +21,17 @@ const FORBIDDEN_LEGACY = [
 
 const MAX_CORE_FILE_LINES = 600;
 
+/**
+ * 老叶子搬入预算表：P1 从 `server/` 搬进来的模块**搬之前就超过 600 行**，只许降不许升。
+ * 不在这张表里的文件一律受 600 行限制；把这里的数字改大 = 又长出一个巨型模块。
+ */
+const LEGACY_LEAF_BUDGET: Record<string, number> = {
+	"packages/keel/src/subagents.ts": 2183,
+	"packages/keel/src/tool-guards.ts": 910,
+	"packages/keel/src/hashline-engine.ts": 876,
+	"packages/keel/src/subagent-templates.ts": 732,
+};
+
 /** 只允许这些路径碰 SDK 与喂轮出口；其余层只认 `contracts/session.ts` 的窄面。 */
 const SDK_BOUNDARY = [
 	"packages/keel/src/domains/turns/feed.ts",
@@ -29,8 +40,37 @@ const SDK_BOUNDARY = [
 	"packages/keel/src/adapters/tools/",
 ];
 
+/**
+ * P1 搬进来的老叶子**原本就直连 SDK**（搬之前住在 `server/`，不受本守卫扫描）：
+ * 搬入不是新授权，这张表只许变短——每条都要么被端口反转掉，要么被改造成只认 `contracts/` 的窄面。
+ */
+const LEGACY_LEAF_SDK = new Set([
+	"packages/keel/src/agent-formatters.ts",
+	"packages/keel/src/ask-user-question-tool.ts",
+	"packages/keel/src/browser-page-tool.ts",
+	"packages/keel/src/engine-catalog.ts",
+	"packages/keel/src/serialize.ts",
+	"packages/keel/src/session-branch.ts",
+	"packages/keel/src/session-list-scan.ts",
+	"packages/keel/src/session-open.ts",
+	"packages/keel/src/session-parser.ts",
+	"packages/keel/src/session-projection.ts",
+	"packages/keel/src/session-search.ts",
+	"packages/keel/src/session-turns.ts",
+	"packages/keel/src/subagent-security-gate.ts",
+	"packages/keel/src/subagents.ts",
+	"packages/keel/src/tool-guards.ts",
+	"packages/keel/src/tool-overrides.ts",
+]);
+
 function inSdkBoundary(rel: string): boolean {
 	return SDK_BOUNDARY.some((prefix) => rel === prefix || rel.startsWith(prefix));
+}
+
+/** 老叶子 = `packages/keel/src/<m>.ts`（直接躺在 src 根，不属于五个分层）。 */
+function isLegacyLeaf(rel: string): boolean {
+	const parts = rel.split("/");
+	return parts[2] === "src" && parts.length === 4 && !(LAYERS as readonly string[]).includes(parts[3]);
 }
 
 function walk(dir: string, out: string[] = []): string[] {
@@ -57,14 +97,14 @@ function toRepoPath(file: string, spec: string): string | undefined {
 
 function layerOf(rel: string): Layer | undefined {
 	const parts = rel.split("/");
-	return parts[0] === "server" && parts[1] === "core" && LAYERS.includes(parts[2] as Layer)
-		? (parts[2] as Layer)
+	return parts[0] === "packages" && parts[1] === "keel" && parts[2] === "src" && LAYERS.includes(parts[3] as Layer)
+		? (parts[3] as Layer)
 		: undefined;
 }
 
 function domainOf(rel: string): string | undefined {
 	const parts = rel.split("/");
-	return parts[2] === "domains" && parts.length > 4 ? parts[3] : undefined;
+	return parts[3] === "domains" && parts.length > 5 ? parts[4] : undefined;
 }
 
 const files = walk(coreDir).map((file) => ({ abs: file, rel: relative(root, file).split(sep).join("/") }));
@@ -127,7 +167,7 @@ describe("keel/src 分层边界", () => {
 	it("SDK 与喂轮出口只在声明过的边界文件里出现", () => {
 		const violations: string[] = [];
 		for (const file of files) {
-			if (inSdkBoundary(file.rel)) continue;
+			if (inSdkBoundary(file.rel) || LEGACY_LEAF_SDK.has(file.rel)) continue;
 			const text = readFileSync(file.abs, "utf8");
 			if (/@earendil-works\/pi-coding-agent/.test(text)) violations.push(`${file.rel}（直接依赖 SDK）`);
 			if (/session-turns\.js/.test(text)) violations.push(`${file.rel}（直接依赖喂轮出口）`);
@@ -135,11 +175,42 @@ describe("keel/src 分层边界", () => {
 		expect(violations).toEqual([]);
 	});
 
-	it("单个文件不超过 600 行（新树不许再长出巨型模块）", () => {
-		const big = files
-			.map((f) => ({ rel: f.rel, lines: readFileSync(f.abs, "utf8").split("\n").length }))
-			.filter((f) => f.lines > MAX_CORE_FILE_LINES)
-			.map((f) => `${f.rel}: ${f.lines}`);
+	it("老叶子 SDK 例外表只许变短（每条都必须真的还在 import SDK）", () => {
+		const stale = [...LEGACY_LEAF_SDK].filter((rel) => {
+			const abs = join(root, rel);
+			return !readFileSync(abs, "utf8").includes("@earendil-works/pi-coding-agent");
+		});
+		expect(stale, `这些文件已经不碰 SDK 了，把例外行删掉：\n${stale.join("\n")}`).toEqual([]);
+	});
+
+	it("老叶子不得反向 import 分层目录（只有包入口可以引 app/）", () => {
+		const violations: string[] = [];
+		for (const file of files) {
+			if (!isLegacyLeaf(file.rel) || file.rel === "packages/keel/src/index.ts") continue;
+			for (const spec of specifiers(readFileSync(file.abs, "utf8"))) {
+				const target = toRepoPath(file.abs, spec);
+				if (target && layerOf(target)) violations.push(`${file.rel} → ${target}`);
+			}
+		}
+		expect(violations).toEqual([]);
+	});
+
+	it("单个文件不超过 600 行（老叶子搬入按预算表豁免，只许降）", () => {
+		const big: string[] = [];
+		for (const file of files) {
+			const lines = readFileSync(file.abs, "utf8").split("\n").length;
+			const budget = LEGACY_LEAF_BUDGET[file.rel];
+			if (budget === undefined) {
+				if (lines > MAX_CORE_FILE_LINES) big.push(`${file.rel}: ${lines}`);
+			} else if (lines > budget) big.push(`${file.rel}: ${lines} > 预算 ${budget}`);
+		}
 		expect(big).toEqual([]);
+	});
+
+	it("预算表只许变短（存量条目已降到预算以下时，把数字改小）", () => {
+		const stale = Object.entries(LEGACY_LEAF_BUDGET)
+			.filter(([rel, budget]) => readFileSync(join(root, rel), "utf8").split("\n").length < budget / 2)
+			.map(([rel, budget]) => `${rel}: 预算 ${budget} 已远高于实际`);
+		expect(stale).toEqual([]);
 	});
 });

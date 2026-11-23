@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
-import * as atomicFile from "../../server/atomic-file.js";
+import * as atomicFile from "../../packages/keel/src/atomic-file.js";
 import { withFileRmwLock } from "../../server/plugin-facilities.js";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

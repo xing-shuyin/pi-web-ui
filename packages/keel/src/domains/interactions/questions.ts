@@ -1,4 +1,4 @@
-import type { QuestionResult } from "../../../../../server/pending-question.js";
+import type { QuestionResult } from "../../pending-question.js";
 import type { QuestionAnswer, ServerMessage, UiQuestion } from "../../../../../server/protocol.js";
 import type { TransportPort } from "../../contracts/ports.js";
 import type { InteractionInbox } from "./inbox.js";

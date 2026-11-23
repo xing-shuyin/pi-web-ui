@@ -65,7 +65,20 @@
    按 `server/**` 扫源码的守卫，必须同时扫 `packages/keel/src/**`，否则模块搬走后守卫静默失守。
 
 验收：`npm run typecheck` + `npx vitest run` + `npm run check:protocol` + `npm run i18n:check` 全绿；
-`packages/keel/README.md` 的清单只剩 `client-state` / `settings-service` / `terminals` / `tool-manager` 四个。
+`packages/keel/README.md` 的依赖清单只剩 `PENDING_PORT` + `PORTS` 两桶（且两桶都只许变短）。
+
+> **P1 口径修正（执行时实测）**：原验收写的是「清单只剩 4 个端口候选」，实测不成立——30 个叶子对**老树里
+> 不在清单上的 33 个纯叶子**有首跳依赖（`plugins` / `remote-ssh-service` / `conversation-read-tool` /
+> `hashline-engine` / `plan-mode` / `atomic-file` …，合计 15,662 行）。若把这 33 个也一起搬，闭包会继续
+> 追出 **243 个模块 / 94,960 行**（含 `agent-service` 17.8k、`plugins` 5.2k），等于掏空整个 `server/`，与 P2
+> 「端口反转」的存在意义直接冲突。故采用**三桶棘轮**：
+>
+> - `MOVED`（实际搬走的）——本次 62 个：原 30 个（`protocol` 单独一轮）+ 26 个**自含的纯工具叶子**
+>   - `markers/` 7 个文件（`serialize` 依赖 `markers/index`，顺便解掉 `*/index.ts` 基名撞车）；
+> - `PENDING_PORT`（6 个）——真正的宿主能力，由 P2/P4 端口反转逐个销账，**只许变短**；
+> - `PORTS`（4 个）——P2 的四端口候选。
+>
+> 判据 `tests/unit/keel-package.test.ts` 同步改成两桶 + 两条棘轮（不再被引用就删行 / 宿主能力不许搬进来）。
 
 ### P2 · 四个宿主模块反转成端口（7,419 行）
 

@@ -1,11 +1,7 @@
 import type { UiMessage } from "../../../../../server/protocol.js";
-import { serializeMessage } from "../../../../../server/serialize.js";
-import type { AnySessionEntry } from "../../../../../server/session-branch.js";
-import {
-	buildSessionTranscript,
-	projectSessionText,
-	type SessionTranscript,
-} from "../../../../../server/session-projection.js";
+import { serializeMessage } from "../../serialize.js";
+import type { AnySessionEntry } from "../../session-branch.js";
+import { buildSessionTranscript, projectSessionText, type SessionTranscript } from "../../session-projection.js";
 
 /** 一份转录投影后的可见面：已序列化、按条目顺序排列、id 稳定。 */
 export interface TranscriptProjection {

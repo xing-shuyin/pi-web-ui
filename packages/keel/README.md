@@ -7,12 +7,13 @@
 
 ## 现在到哪一步
 
-| 阶段   | 内容                                                                                | 状态                  |
-| ------ | ----------------------------------------------------------------------------------- | --------------------- |
-| **P0** | 包骨架 + 依赖清单守卫（本目录）                                                     | ✅ 进行中的就是这一步 |
-| P1     | 把 30 个随包模块物理搬进 `src/`，`src/index.ts` 的桥删掉                            | 未开始                |
-| P2     | 剩下 4 个（settings / terminals / tool-manager / client-state）反转成端口，宿主注入 | 未开始                |
-| P3     | 发布 `@earendil-works/keel`，主应用改成版本依赖；启用 npm workspaces                | 未开始                |
+| 阶段   | 内容                                                                                | 状态                                                  |
+| ------ | ----------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| **P0** | 包骨架 + 依赖清单守卫（本目录）                                                     | ✅                                                    |
+| P1     | 把 30 个随包模块物理搬进 `src/`，`src/index.ts` 的桥删掉                            | 🚧 62 个已搬（含 33 个连带叶子），`protocol` 单独一轮 |
+| P2     | 剩下 4 个（settings / terminals / tool-manager / client-state）反转成端口，宿主注入 | 未开始                                                |
+| P3     | 补齐 165 个 handler（B1~B8）                                                        | 未开始                                                |
+| P5     | 发布 `@earendil-works/keel`，主应用改成版本依赖；启用 npm workspaces                | 未开始                                                |
 
 ## 为什么 P0 不启用 npm workspaces
 
@@ -20,20 +21,42 @@ workspaces 要求 lockfile 里登记 workspace 包，`npm ci` 会因此校验失
 等于给 CI 埋一颗「锁文件不同步」的雷。P0 用 **tsconfig paths + 依赖清单守卫**拿到同样的边界，
 等 P3 真正发布时再启用 workspaces（那时 lockfile 会随发布一起更新）。
 
-## 依赖清单（P0 冻结，只许变短）
+## 依赖清单（P1 后：三桶棘轮，只许变短）
 
-`src/` 当前允许 import 的 app 模块（守卫：`tests/unit/keel-package.test.ts`）。
-P1 之后这张表逐行划掉，搬进 `src/`；**新增一行都会红**。
+`src/` 当前允许 import 的 app 模块（守卫：`tests/unit/keel-package.test.ts`）。**除下面两桶以外的任何
+`server/*` 依赖都会红**——这是「新增耦合」的唯一门禁。
 
-**随包搬走（30 个 / 13,526 行）**
-`protocol` `session-turns` `session-projection` `conversation-rows` `queue-utils` `serialize`
-`versioned-doc` `path-boundary` `session-open` `transcript-prepare` `session-branch` `session-parser`
-`session-search` `session-scan` `session-list-scan` `i18n` `agent-formatters` `engine-capabilities`
-`tool-guards` `tool-approval` `approval-rules` `pending-question` `ask-user-question-tool` `subagents`
-`subagent-templates` `subagent-settle` `subagent-security-gate` `engine-service` `launch-origin` `orphan-manager`
+**PENDING_PORT（6 个，P2/P4 端口反转销账）**
+被搬进来的老叶子的首跳宿主依赖。它们不是「新树要的耦合」，而是叶子本来就有的边；销账方式是把宿主能力反转成端口：
 
-**留在宿主、反转成端口（4 个 / 7,419 行）**
+| 模块                     | 谁在用                                                | 销账方式                                                                |
+| ------------------------ | ----------------------------------------------------- | ----------------------------------------------------------------------- |
+| `plugins`                | `engine-service` / `agent-formatters`（均 type-only） | P4 插件 host 适配器 + 窄类型进 `contracts/`                             |
+| `remote-ssh-service`     | `tool-guards`                                         | P4 远程工作区端口                                                       |
+| `conversation-read-tool` | `session-projection`                                  | P4 宿主工具注入                                                         |
+| `quick-ask-context`      | `engine-service`                                      | P4 随手问端口                                                           |
+| `native-cli`             | `session-list-scan`                                   | P4/B5 终端端口                                                          |
+| `approval-default-rules` | `approval-rules`                                      | 内置规则表随 `phone-tool` 一起端口化（`phone-tool` 直连 SDK，不进内核） |
+
+**PORTS（4 个，P2 反转成端口）**
 `client-state`（设置存储）· `settings-service`（设置帧）· `terminals`（PTY）· `tool-manager`（工具目录）
+
+**已经搬进来的（62 个）**
+30 个原计划模块（除 `protocol`，它单独一轮）+ 33 个「纯叶子」连带项：
+`atomic-file` `text-quote` `attachment-store` `model-error` `engine-catalog` `transcript-scan`
+`serialized-json-writer` `client-id-utils` `conversation-tool-names` `question-params` `approval-audit`
+`tool-overrides` `mobile-notification-events` `quick-ask-settings` `delegate-mode` `plugin-tool-guard`
+`browser-page-tool` `subagent-evidence` `subagent-ledger` `subagent-templates-hant` `goal-review-gate`
+`conversation-communication` `dangling-tools` `compaction-markers` `plan-mode` `hashline-engine`
+
+- `markers/`（`index` `registry` `marker` `store` `builtins/{notify,rename,action}`）
+
+连带项为什么必须一起搬：`session-projection` / `serialize` / `transcript-prepare` / `tool-guards` / `subagents`
+这些叶子对上面这些纯工具叶子有**首跳依赖**；只搬 30 个会让依赖清单暴涨，而纯叶子（自身零宿主依赖）
+搬进来的边际成本只有一次机械移动。
+
+老位置（`server/<m>.ts`）一律只剩 `export * from "../packages/keel/src/<m>.js";` 的 shim，
+主应用 100+ 处 import 不用动，直到 P5 删 shim。
 
 ## 契约
 
@@ -41,7 +64,7 @@ P1 之后这张表逐行划掉，搬进 `src/`；**新增一行都会红**。
 - 内核不得 import 宿主的 UI / 插件 / 面板 / PTY 实现（P1 后由守卫强制）。
 - 现有不变量继续有效：喂轮单出口、出帧单源、退役 fail-closed、版本化存储单源、前缀缓存只追加。
 
-## P1b 预习笔记（一次尝试后的实测结论）
+## P1b 预习笔记（一次尝试后的实测结论，已全部落地）
 
 试搬 29 个模块（除 `protocol`）后回退：机械搬移本身没问题，**连带项比预想多**。下次按这份清单一次做完：
 

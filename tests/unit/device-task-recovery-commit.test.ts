@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import * as atomicFile from "../../server/atomic-file.js";
+import * as atomicFile from "../../packages/keel/src/atomic-file.js";
 import { TaskRecoveryManager } from "../../server/device-center/task-recovery.js";
 import { computeLegacyOutcomeFingerprint } from "../../server/device-center/task-outcome.js";
 

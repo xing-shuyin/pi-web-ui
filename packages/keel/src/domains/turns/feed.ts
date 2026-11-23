@@ -1,5 +1,5 @@
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import { promptSession, steerSession } from "../../../../../server/session-turns.js";
+import { promptSession, steerSession } from "../../session-turns.js";
 import type { TurnCapableSession } from "../../contracts/session.js";
 
 /**

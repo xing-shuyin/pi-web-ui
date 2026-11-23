@@ -1,6 +1,6 @@
 import type { ConversationId } from "../../contracts/ids.js";
-import type { QuestionResult } from "../../../../../server/pending-question.js";
-import type { ToolApprovalResolution } from "../../../../../server/tool-approval.js";
+import type { QuestionResult } from "../../pending-question.js";
+import type { ToolApprovalResolution } from "../../tool-approval.js";
 
 export type InteractionKind = "approval" | "question" | "page" | "phone";
 

@@ -7,9 +7,9 @@ import {
 	SessionManager,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { assertSupportedTranscriptVersion, openSessionManagerAsync } from "../../../../../server/session-open.js";
-import { guardSession } from "../../../../../server/session-turns.js";
-import { prepareTranscriptForOpen } from "../../../../../server/transcript-prepare.js";
+import { assertSupportedTranscriptVersion, openSessionManagerAsync } from "../../session-open.js";
+import { guardSession } from "../../session-turns.js";
+import { prepareTranscriptForOpen } from "../../transcript-prepare.js";
 import type { TurnCapableSession } from "../../contracts/session.js";
 
 export interface OpenSessionOptions {

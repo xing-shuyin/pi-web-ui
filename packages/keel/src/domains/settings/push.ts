@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { SettingsService, type SettingsHost } from "../../../../../server/settings-service.js";
-import { SubagentTemplatesStore } from "../../../../../server/subagent-templates.js";
+import { SubagentTemplatesStore } from "../../subagent-templates.js";
 import type { TransportPort } from "../../contracts/ports.js";
 
 export interface SettingsPusherOptions {
