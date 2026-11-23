@@ -4,10 +4,14 @@ name: Mobile APK
 # 所以这里先构建运行时再打包，两者同源同版（协议版本不会错位）。
 # x86_64 flavor 只给模拟器冒烟用，不发 Release。
 
-# 只在手动触发时跑：日常发版走本地 `npm run release:local -- vX.Y.Z`（快，且用本机固定
-# keystore 签名，包能覆盖升级）。CI 每次 runner 都会新生成 debug keystore，产物装不上旧包，
-# 所以不让它跟着 tag 自动发。需要云端兜底时在 Actions 里手点。
+# 触发方式：推 tag 自动出包（v*），并保留 workflow_dispatch 作手动兑底。
+# 为何现在能自动：签名密钥已经固定入库（secrets MOBILE_KEYSTORE_BASE64 / _PASSWORD / KEY_ALIAS /
+# KEY_PASSWORD），产物每次同一个证书，能覆盖升级。之前不自动是因为 CI 每次新生成 debug
+# keystore（新包装不上旧包，还会把本地引擎数据一起清）。
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -57,6 +61,11 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="$(node -p "require('./package.json').version")"
+          # 自动触发时必须先核对 tag 与 package.json：不一致就不许出包（APK 名/运行时版本都按它算）。
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ] && [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME 与 package.json 的 $VERSION 不一致，拒绝出包" >&2
+            exit 1
+          fi
           IFS=. read -r MAJOR MINOR PATCH <<< "$VERSION"
           {
             echo "PI_MOBILE_VERSION=$VERSION"

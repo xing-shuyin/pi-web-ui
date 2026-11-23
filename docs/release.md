@@ -81,23 +81,26 @@ NPM_OTP=123456 npm run release:npm     # 预检脏工作区/账号/tag + 构建 
 #    签名（SignPath Foundation）以后加在这个 workflow 里——SignPath 只签 CI 产物，
 #    本地 npm run desktop:dist 永远签不上（本地打包只能验证 Windows）。
 
-# 8.6) 手机端 APK + 桌面安装包（本地一键，推荐）
-#    一条命令出齐：桌面（当前平台）+ 手机 arm64（含引擎运行时），并挂到该 tag 的 Release：
+# 8.6) 手机端 APK：tag 推送后自动出（本地命令仅作兜底）
+#    mobile-release.yml 现在也跟 tag 走（v*）：构建 arm64 引擎运行时 → 打 APK → 自动挂到该 tag 的 Release，
+#    并且必须先对 tag 与 package.json 版本一致，否则直接拒绝出包。
+#    之所以能自动：签名密钥已固定入库（secrets MOBILE_KEYSTORE_BASE64 / _PASSWORD / KEY_ALIAS / KEY_PASSWORD），
+#    每次产物同一张证书，能覆盖升级；此前不自动是因为 CI 每次新生成 debug keystore（新包装不上旧包，还会清引擎数据）。
+#    本地兜底（云端挂了、或要出一个不走 CI 的包时，仍是同一条命令一套产物）：
 npm run release:local -- vX.Y.Z                # 全量：桌面 + 手机（手机那步 qemu 构建 15–25 分钟）
 npm run release:local -- vX.Y.Z --skip-mobile  # 只打桌面
 npm run release:local -- vX.Y.Z --skip-desktop # 只打手机
 npm run release:local -- vX.Y.Z --skip-desktop --reuse-runtime  # 只打手机且不重建运行时（引擎没变时首选，几分钟）
 npm run release:local -- vX.Y.Z --no-upload    # 只打包，不碰 Release
 npm run release:local -- vX.Y.Z --portable     # 额外出便携版（内置 Git/Node，较慢）
-#    注意：手机包不会跟着 tag 自动出。tag 只触发 desktop-release / release-notes / 扩展；
-#    mobile-release 是手动 workflow（CI 每次新生成 debug keystore，装不上旧包还会清引擎数据），
-#    所以每个版本的 APK 都得本地跑一次上面的命令。
+#    注意：上面的本地命令现在只在兜底时用；正常发版不需要跑——tag 一推，Release 说明 / 桌面三平台 /
+#    浏览器扩展 / 手机 APK 会并行自动出。唯一必须本地手动跑的仍是第 8 步的 npm 发布（2FA/OTP）。
 #    --reuse-runtime 只在「服务端代码没变、只动了外壳/插件」时成立：运行时里装的就是本仓库
 #    npm pack 的服务端包，piWebUi 版本对不上时脚本会直接拦下（确认真没改可加 --allow-stale-engine）。
 #    脚本会先校验 tag 与 package.json 版本一致，然后：npm run build → 桌面打包 → （可选）构建
 #    arm64 运行时并打 APK → 生成 SHA256SUMS.txt → gh release upload --clobber。
-#    为什么本地优先：手机 APK 里带 280 MB 引擎运行时，CI 那份 qemu 又慢又每次换 debug 签名
-#    （新包装不上旧包，连手机上的引擎数据一起清）；桌面 Windows 安装包本地几分钟就出。
+#    签名是升级信任根：同一把密钥签出来的 APK 才能覆盖安装；换钥=用户必须卸载（引擎数据一起清）。
+#    密钥本体请离线备份（生成脚本见下），丢了就再也发不出可升级的包。
 #    两个已知限制：
 #      - Windows 的 NSIS 安装包本地生不出来（electron-builder 打完要执行刚产出的 setup.exe
 #        生成卸载器，本机被系统拦下：ERR_ELECTRON_BUILDER_CANNOT_EXECUTE / exit code null），
@@ -107,8 +110,9 @@ npm run release:local -- vX.Y.Z --portable     # 额外出便携版（内置 Git
 #        （WiX 4 直接把 win-unpacked 压成 MSI，不执行产物，所以不受上面那条限制；未签名，首启有 SmartScreen 提示）。
 #        MSI 是可选目标，不在 electron-builder.yml 的 win.target 里——CI 的 `--win` 只出 exe，避免白打一个不收的包。
 #      - macOS / Linux 安装包只能在对应系统上打，仍由 .github/workflows/desktop-release.yml 出。
-#    .github/workflows/mobile-release.yml 保留但改成手动触发（Actions 里点），用于云端兜底；
-#    它需要可选的 MOBILE_KEYSTORE_BASE64 等 secrets 才能发出可升级的包。
+#    .github/workflows/mobile-release.yml 同时保留 workflow_dispatch：云端兜底时在 Actions 里手点
+#    （或 `gh workflow run mobile-release.yml --ref vX.Y.Z`，ref 是 tag 时才会自动挂到 Release）。
+#    它依赖 MOBILE_KEYSTORE_BASE64 等 secrets；没有这些 secrets 时退回 debug 签名（装不上旧包）。
 
 # 9) 验证
 npm run release:check -- vX.Y.Z  # npm 版本是否已发 + Release 资产是否齐全（桌面 3 平台 + 扩展 + 手机 APK + SHA256SUMS）
@@ -121,7 +125,7 @@ git ls-remote --tags origin       # 应能看到 vX.Y.Z
 ## 注意事项
 
 - 版本号**必须**高于 npm registry 上已有的（用 `npm view pi-web-ui version` 查当前值）。
-- **发完 npm 必须看得见（issue #949）**：第 8 步是整条流程里唯一必须本地带 OTP 手动跑的步骤，tag 推送会自动出 Release / 桌面包 / 扩展，手机包也有 `release:check` 盯着 —— 唯独 npm 落后时全绿，用户 `npm i -g` 拿到几周前的旧包（#949 报的就是这个：registry 停在 0.120.0，仓库已经 0.121.3）。所以：
+- **发完 npm 必须看得见（issue #949）**：第 8 步是整条流程里唯一必须本地带 OTP 手动跑的步骤（tag 推送会自动出 Release / 桌面包 / 扩展 / 手机 APK，全部有 `release:check` 盯着） —— 唯独 npm 落后时全绿，用户 `npm i -g` 拿到几周前的旧包（#949 报的就是这个：registry 停在 0.120.0，仓库已经 0.121.3）。所以：
   - `npm run release:check` 现在**先核 npm**（`scripts/check-npm-version.mjs`，纯读 registry，不需要登录态），缺版本 / `latest` 指向旧版 / registry 比本地新都直接 exit 1；只差 npm 时先跑 `npm run release:check:npm` 就能确认。
   - `.github/workflows/npm-drift.yml` 每天 03:17 UTC 跑一次同样的校验，漂移就红（红叉 + GitHub 通知），不需要任何人想起来手查。
   - 漏发了补就是 `NPM_OTP=<验证码> npm run release:npm`（脚本自带「registry 已有该版本就跳过」的幂等预检），补完再跑一次 `release:check`。
