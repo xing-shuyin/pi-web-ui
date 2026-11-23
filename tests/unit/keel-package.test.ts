@@ -15,13 +15,11 @@ const serverDir = join(root, "server");
  * - `PORTS`：P2 要反转成端口的四个宿主模块。
  * 除这三桶以外的任何 `server/*` 依赖都会红——这是「新增耦合」的唯一门禁。
  */
-const PENDING_PORT = ["approval-default-rules", "plugins", "quick-ask-context"];
+/** 已清零：approval-default-rules / plugins / quick-ask-context 都改成 keel 内的单源或窄类型。 */
+const PENDING_PORT: string[] = [];
 
 /** P2 的端口反转清单：反完一个就删一行（terminals 与 tool-manager 已销账）。 */
 const PORTS = ["client-state", "settings-service"];
-
-/** 本轮还没搬、下一轮单独搬的模块（搬完必须把这一行删掉，否则棘轮测试红）。 */
-const PENDING_MOVE: string[] = [];
 
 /** 宿主实现只许 type-only 引用（运行时拿到插件实例 = keel 又绑回了面板与生态）。 */
 const TYPE_ONLY_HOST = new Set(["plugins"]);
@@ -87,15 +85,10 @@ describe("keel · 包骨架", () => {
 
 describe("keel · 依赖清单（只许变短）", () => {
 	const deps = appDepsOf(coreFiles);
-	const known = new Set([...PENDING_PORT, ...PORTS, ...PENDING_MOVE]);
+	const known = new Set([...PENDING_PORT, ...PORTS]);
 
 	it("内核依赖的 app 模块都在清单里（新增耦合会红）", () => {
 		expect([...deps].filter((d) => !known.has(d))).toEqual([]);
-	});
-
-	it("PENDING_MOVE 里的模块还没进 keel（搬完就把行删掉）", () => {
-		const moved = PENDING_MOVE.filter((m) => existsSync(join(coreDir, `${m}.ts`)));
-		expect(moved, `这些已经搬进来了，从 PENDING_MOVE 删掉：${moved.join(", ")}`).toEqual([]);
 	});
 
 	it("PENDING_PORT 不再被引用时要把行删掉（棘轮只往一个方向转）", () => {

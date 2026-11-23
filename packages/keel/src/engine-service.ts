@@ -12,7 +12,7 @@ import type {
 	PluginConversationQuery,
 	PluginConversationSnapshot,
 	PluginRunEvent,
-} from "../../../server/plugins.js";
+} from "./contracts/plugin.js";
 import type { ToolPostRequest, ToolPreRequest } from "./plugin-tool-guard.js";
 import type { MaterialBlob } from "./protocol.js";
 import type {
@@ -257,9 +257,9 @@ export interface DispatchSession {
 		conversationId?: string,
 	): Promise<import("./browser-page-tool.js").PageCallResult>;
 	readQuickAskConversation?(
-		source: import("../../../server/quick-ask-context.js").QuickAskConversationSource,
+		source: import("./contracts/plugin.js").QuickAskConversationSource,
 		signal: AbortSignal,
-	): Promise<import("../../../server/quick-ask-context.js").QuickAskConversationSnapshot | undefined>;
+	): Promise<import("./contracts/plugin.js").QuickAskConversationSnapshot | undefined>;
 	pushSettings(): void;
 	refreshSettings(): void;
 	setSettings(partial: {

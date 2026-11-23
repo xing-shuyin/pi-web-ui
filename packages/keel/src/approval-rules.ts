@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { writeJsonAtomic } from "./atomic-file.js";
 import { createSerializedJsonWriter, type SerializedJsonWriter } from "./serialized-json-writer.js";
-import { DEFAULT_APPROVAL_RULES } from "../../../server/approval-default-rules.js";
+import { DEFAULT_APPROVAL_RULES } from "./approval-default-rules.js";
 import { isInsideRoots } from "./path-boundary.js";
 import { LEGACY_TERMINAL_TOOL_NAMES } from "./tool-names.js";
 import { conversationToolAllowed } from "./conversation-tool-names.js";

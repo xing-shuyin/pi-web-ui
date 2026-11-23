@@ -1,6 +1,6 @@
 import type { AgentSession, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentMessage } from "./serialize.js";
-import type { PluginAgentTool } from "../../../server/plugins.js";
+import type { PluginAgentTool } from "./contracts/plugin.js";
 
 export const RUN_TASK_CAP = 500;
 export const RUN_ARGS_CAP = 4000;
