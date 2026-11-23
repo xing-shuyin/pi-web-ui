@@ -138,6 +138,11 @@ jobs:
             echo "PI_ANDROID_KEY_PASSWORD=$KEY_PASSWORD"
           } >> "$GITHUB_ENV"
 
+      # splash / ic_launcher 的 png 是生成物（.gitignore 里 *.png 一律不入库），
+      # 干净 checkout 上必须先生成，不然 gradle 合并资源时会报 drawable/splash not found。
+      - name: Generate app icons + splash
+        run: node mobile/scripts/gen-app-icon.mjs
+
       - name: Build APK
         run: node mobile/scripts/package-all.mjs --abis arm64
 
