@@ -7,11 +7,13 @@ import type { WorktreePort } from "../contracts/worktree.js";
 import { createCommandHandlers, type CommandHandlers } from "../domains/commands/index.js";
 import { createFilesHandlers, type FilesHandlers } from "../domains/files/index.js";
 import { createWorktreeHandlers, type WorktreeHandlers } from "../domains/worktree/index.js";
+import { createConversationStateHandlers, type ConversationStateHandlers } from "../domains/sessions/index.js";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
 import type { SnapshotConversationView, SnapshotEnvView, SnapshotView } from "../contracts/snapshot-view.js";
 import { createDispatchSurfaceAdapter, type DispatchHandlers } from "../adapters/wire/index.js";
 import type { DispatchSession } from "../engine-service.js";
 import type { PromptAttachment, SandboxInfo, WorktreeInfo } from "../protocol.js";
+import { ComposerDraftsStore } from "../composer-drafts.js";
 import { Conversation, ConversationRegistry, type ConversationInit } from "../kernel/conversation/index.js";
 import { createSnapshotBuilders, SnapshotPublisher, type SnapshotBuilders } from "../domains/snapshots/index.js";
 import { createModelSwitchers, type ModelSwitchers } from "../domains/models/index.js";
@@ -19,7 +21,7 @@ import { createProviderHandlers, type ProviderHandlers } from "../domains/provid
 import { createSettingsHandlers, type SettingsHandlers } from "../domains/settings/index.js";
 import { TurnRunner, type TurnRunnerDeps } from "../domains/turns/index.js";
 import type { SessionListScanState } from "../session-list-scan.js";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
 import type { SessionRegistry } from "./session-registry.js";
 import {
@@ -92,6 +94,8 @@ export interface ClientRuntimeOptions {
 	settingsFrame?: () => SettingsFramePort | undefined;
 	/** 「关闭审批」时把待审批一次性放行。 */
 	releasePendingApprovals?(reason: string): number;
+	/** 输入框草稿存储；缺省按 `cwd` 建一份（真实部署由组合根传 dataDir 下的路径）。 */
+	drafts?: ComposerDraftsStore;
 	/** 斜杠命令面（宿主 `SlashCommandsService`）；缺省 = 该能力未接。 */
 	slashCommands?: () => SlashCommandsPort | undefined;
 	/** 文件 / 目录面（宿主 `FilesService`）；缺省 = 该能力未接。 */
@@ -130,13 +134,17 @@ export class ClientRuntime {
 	private commandHandlers: CommandHandlers | undefined;
 	private fileHandlers: FilesHandlers | undefined;
 	private worktreeHandlers: WorktreeHandlers | undefined;
+	private conversationState: ConversationStateHandlers | undefined;
 	/** 工作树全貌：工作树域的发布口写它，刷新/删除都从这里读「当前是哪个」。 */
 	private worktreeInfo: WorktreeInfo | null = null;
 	/** 沙盒全貌：`null` = 当前工作区不是沙盒（沙盒适配器接线后由宿主写）。 */
 	private sandboxInfo: SandboxInfo | null = null;
+	/** 输入框草稿：不传就按 `dataDir/composer-drafts.json` 建（构造不读盘，首次访问才读）。 */
+	private readonly drafts: ComposerDraftsStore;
 
 	constructor(options: ClientRuntimeOptions) {
 		this.options = options;
+		this.drafts = options.drafts ?? new ComposerDraftsStore(join(options.cwd, "composer-drafts.json"));
 		this.publisher = new SnapshotPublisher({
 			transport: options.transport,
 			clock: options.clock,
@@ -185,6 +193,22 @@ export class ClientRuntime {
 			slash: () => this.options.slashCommands?.(),
 			cwd: () => this.options.commandCwd?.() ?? this.options.cwd,
 			transport: this.options.transport,
+		}));
+	}
+
+	/** 会话状态：队列摘除 / 草稿 / 子代理收口——全是聚合根 + 草稿叶子的内存操作。 */
+	private conversations(): ConversationStateHandlers {
+		return (this.conversationState ??= createConversationStateHandlers({
+			clientId: this.options.clientId,
+			registry: this.registry,
+			transport: this.options.transport,
+			drafts: this.drafts,
+			flushSnapshot: () => {
+				if (!this.disposed) this.publisher.request();
+			},
+			pushSessions: () => {
+				if (!this.disposed) void this.frames?.refreshSessions();
+			},
 		}));
 	}
 
@@ -346,6 +370,7 @@ export class ClientRuntime {
 			...this.commands(),
 			...this.filesHandlers(),
 			...this.worktrees(),
+			...this.conversations(),
 			setModel: (modelId: string) => this.modelSwitchers().setModel(modelId),
 			setDefaultModel: (modelId: string) => this.modelSwitchers().setDefaultModel(modelId),
 			clearDefaultModel: () => this.modelSwitchers().clearDefaultModel(),
@@ -373,6 +398,29 @@ export class ClientRuntime {
 			},
 			getTerminalManager: (conversationId?: string) =>
 				this.options.terminalManagerFor?.(conversationId ?? this.registry.activeId()) as never,
+			// 切对话：只改注册表的活动指针（会话实体归 registry，不在这里重开）。
+			switchConversation: async (id: string) => {
+				if (!this.registry.has(id)) {
+					this.options.transport.send({
+						type: "notice",
+						level: "warning",
+						text: "该对话不存在或已关闭",
+						textEn: "This conversation does not exist or is already closed",
+					});
+					return;
+				}
+				this.registry.activate(id);
+				this.publisher.request();
+			},
+			// 计数口径与老实现逐字一致：只说「在跑几条」「还排着几条」。
+			activeConversations: () => this.registry.list().filter((conv) => conv.phase === "running").length,
+			pendingMessages: () => this.registry.list().reduce((n, conv) => n + conv.queues.total(), 0),
+			getMessagesOfConversation: (convId: string) => {
+				const conv = this.registry.get(convId);
+				if (!conv) return undefined;
+				const view = this.options.viewOf?.(conv) ?? emptyView(conv);
+				return [...view.messages];
+			},
 			renameConversation: async (id: string, name: string) => {
 				renameConversation({ registry: this.registry, conversationId: id, title: name, now: this.options.clock.now() });
 			},
