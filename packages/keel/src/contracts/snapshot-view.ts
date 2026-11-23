@@ -1,4 +1,12 @@
-import type { AgentEngineCapabilities, QueuedPromptItem, UiMessage, UiModelInfo, UiToolApproval } from "../protocol.js";
+import type {
+	AgentEngineCapabilities,
+	QueuedPromptItem,
+	SandboxInfo,
+	UiMessage,
+	UiModelInfo,
+	UiToolApproval,
+	WorktreeInfo,
+} from "../protocol.js";
 
 /** 出帧时与「当前对话」无关的进程级信息。 */
 export interface SnapshotEnvView {
@@ -11,6 +19,9 @@ export interface SnapshotEnvView {
 	piConfigured: boolean;
 	piAgentInstalled: boolean;
 	capabilities?: AgentEngineCapabilities;
+	/** 沙盒 / Git 工作树的全貌：进程级（跟着 cwd 走，不跟对话），由宿主端口刷。 */
+	sandbox?: SandboxInfo | null;
+	worktree?: WorktreeInfo | null;
 }
 
 /** 出帧时「当前对话」的可见面。域逐步接上，缺省项由构建器补安全值。 */

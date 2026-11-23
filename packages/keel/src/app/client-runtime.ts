@@ -11,7 +11,7 @@ import type { ClockPort, TransportPort } from "../contracts/ports.js";
 import type { SnapshotConversationView, SnapshotEnvView, SnapshotView } from "../contracts/snapshot-view.js";
 import { createDispatchSurfaceAdapter, type DispatchHandlers } from "../adapters/wire/index.js";
 import type { DispatchSession } from "../engine-service.js";
-import type { PromptAttachment, WorktreeInfo } from "../protocol.js";
+import type { PromptAttachment, SandboxInfo, WorktreeInfo } from "../protocol.js";
 import { Conversation, ConversationRegistry, type ConversationInit } from "../kernel/conversation/index.js";
 import { createSnapshotBuilders, SnapshotPublisher, type SnapshotBuilders } from "../domains/snapshots/index.js";
 import { createModelSwitchers, type ModelSwitchers } from "../domains/models/index.js";
@@ -132,6 +132,8 @@ export class ClientRuntime {
 	private worktreeHandlers: WorktreeHandlers | undefined;
 	/** 工作树全貌：工作树域的发布口写它，刷新/删除都从这里读「当前是哪个」。 */
 	private worktreeInfo: WorktreeInfo | null = null;
+	/** 沙盒全貌：`null` = 当前工作区不是沙盒（沙盒适配器接线后由宿主写）。 */
+	private sandboxInfo: SandboxInfo | null = null;
 
 	constructor(options: ClientRuntimeOptions) {
 		this.options = options;
@@ -288,6 +290,9 @@ export class ClientRuntime {
 				clientId: this.options.clientId,
 				cwd: this.options.cwd,
 				workspaceRoots: this.options.workspaceRoots,
+				// 沙盒 / 工作树是「跟着 cwd 走」的进程级状态，随每次组帧现取（不在构造期快照）。
+				sandbox: this.sandboxInfo,
+				worktree: this.worktreeInfo,
 			},
 			conversation: conv ? (this.options.viewOf?.(conv) ?? emptyView(conv)) : null,
 		};

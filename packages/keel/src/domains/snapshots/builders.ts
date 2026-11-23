@@ -1,4 +1,4 @@
-import type { ServerMessage, UiState } from "../../protocol.js";
+import type { ServerMessage, SandboxInfo, UiState, WorktreeInfo } from "../../protocol.js";
 import type { SnapshotConversationView, SnapshotEnvView, SnapshotView } from "../../contracts/snapshot-view.js";
 import type { SnapshotBuilders, SnapshotDeltaFrame, SnapshotFrame } from "./publisher.js";
 
@@ -30,7 +30,12 @@ export function buildSnapshotState(rev: number, env: SnapshotEnvView, conv: Snap
 		piAgentInstalled: env.piAgentInstalled,
 		stats: EMPTY_STATS,
 	};
-	if (!conv) return { ...base, workspaceRoots: env.workspaceRoots ? [...env.workspaceRoots] : undefined };
+	if (!conv)
+		return {
+			...base,
+			workspaceRoots: env.workspaceRoots ? [...env.workspaceRoots] : undefined,
+			...sandboxAndWorktree(env),
+		};
 	return {
 		...base,
 		...(env.workspaceRoots ? { workspaceRoots: [...env.workspaceRoots] } : {}),
@@ -56,7 +61,16 @@ export function buildSnapshotState(rev: number, env: SnapshotEnvView, conv: Snap
 		delegateConvId: conv.delegateConvId ?? null,
 		...(conv.draft ? { draft: conv.draft } : {}),
 		...(conv.pendingApprovals && conv.pendingApprovals.length > 0 ? { pendingApprovals: conv.pendingApprovals } : {}),
+		...sandboxAndWorktree(env),
 		tools: [...conv.tools],
+	};
+}
+
+/** 沙盒 / 工作树：两个字段在协议里都是可空值，没值就不写键（旧帧形状逐字不变）。 */
+function sandboxAndWorktree(env: SnapshotEnvView): { sandbox?: SandboxInfo | null; worktree?: WorktreeInfo | null } {
+	return {
+		...(env.sandbox !== undefined ? { sandbox: env.sandbox } : {}),
+		...(env.worktree !== undefined ? { worktree: env.worktree } : {}),
 	};
 }
 

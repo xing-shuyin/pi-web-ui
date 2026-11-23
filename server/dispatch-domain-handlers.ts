@@ -120,10 +120,22 @@ export function handleFileMessage(msg: ClientMessage, cs: DispatchSession): bool
 			void cs.diffSandbox?.(msg.path, msg.requestId);
 			return true;
 		case "apply_sandbox_to_source":
+			// 写回源项目只改源项目的文件，**不重绑工作区**（cwd 仍在沙盒里），所以不进工作区队列：
+			// 排队会把“写回的进度/错误帧”推后到后续命令之后，用户会以为没反应。
 			void cs.applySandboxToSource?.(msg.path, msg.expectedRevision);
 			return true;
 		case "destroy_sandbox":
-			void cs.destroySandbox?.(msg.path);
+			void runWorkspaceCommand(cs, async () => {
+				try {
+					await cs.destroySandbox?.(msg.path);
+				} catch (err) {
+					cs.emitNotice(
+						"error",
+						`销毁沙盒失败：${(err as Error).message}`,
+						`Failed to destroy sandbox: ${(err as Error).message}`,
+					);
+				}
+			});
 			return true;
 		default:
 			return false;
@@ -161,10 +173,31 @@ export function handleScmMessage(msg: ClientMessage, cs: DispatchSession, send: 
 			void cs.refreshWorktreeInfo?.();
 			return true;
 		case "switch_worktree":
-			void cs.switchWorktree?.(msg.path);
+			// 切工作树 = 换工作区，必须与 set_cwd 共用同一条队列（否则后续命令拿旧 cwd 开工）。
+			void runWorkspaceCommand(cs, async () => {
+				try {
+					await cs.switchWorktree?.(msg.path);
+				} catch (err) {
+					cs.emitNotice(
+						"error",
+						`切换工作树失败：${(err as Error).message}`,
+						`Failed to switch worktree: ${(err as Error).message}`,
+					);
+				}
+			});
 			return true;
 		case "remove_worktree":
-			void cs.removeWorktree?.(msg.path, msg.force);
+			void runWorkspaceCommand(cs, async () => {
+				try {
+					await cs.removeWorktree?.(msg.path, msg.force);
+				} catch (err) {
+					cs.emitNotice(
+						"error",
+						`移除工作树失败：${(err as Error).message}`,
+						`Failed to remove worktree: ${(err as Error).message}`,
+					);
+				}
+			});
 			return true;
 		default:
 			return false;

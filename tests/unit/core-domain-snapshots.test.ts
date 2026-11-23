@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ClockPort, TransportPort } from "../../packages/keel/src/contracts/ports.js";
 import type { ServerMessage } from "../../server/protocol.js";
 import {
+	buildSnapshotState,
 	DELTA_ACTIVE_WINDOW_MS,
 	planSnapshot,
 	SnapshotPublisher,
@@ -11,6 +12,7 @@ import {
 	type SnapshotPlanInput,
 	type SnapshotReason,
 } from "../../packages/keel/src/domains/snapshots/index.js";
+import type { SnapshotEnvView } from "../../packages/keel/src/contracts/snapshot-view.js";
 
 const BASE: SnapshotPlanInput = {
 	lastEmit: { rev: 3, at: 10_000 },
@@ -328,5 +330,41 @@ describe("domains/snapshots · SnapshotPublisher 出帧闸门", () => {
 		clock.advance(1);
 		expect(publisher.flush()).toEqual({ kind: "delta", rev: 2, reason: "interval" });
 		expect(transport.frames).toHaveLength(2);
+	});
+});
+
+const ENV: SnapshotEnvView = {
+	clientId: "c1",
+	cwd: "/work",
+	settingsVersion: 1,
+	piConfigured: true,
+	piAgentInstalled: true,
+};
+
+describe("快照状态 · 沙盒 / 工作树是全貌字段（协议 UiState 已声明）", () => {
+	it("env 给了就出键（值原样）", () => {
+		const state = buildSnapshotState(
+			1,
+			{
+				...ENV,
+				sandbox: { name: "box", path: "/work/.sandbox/box", sourcePath: null, ephemeral: true } as never,
+				worktree: { currentPath: "/work", mainPath: "/work", worktrees: [] } as never,
+			},
+			null,
+		);
+		expect(state.sandbox).toMatchObject({ name: "box" });
+		expect(state.worktree).toMatchObject({ currentPath: "/work" });
+	});
+
+	it("env 不给就不出键（旧帧形状逐字不变）", () => {
+		const state = buildSnapshotState(1, ENV, null);
+		expect("sandbox" in state).toBe(false);
+		expect("worktree" in state).toBe(false);
+	});
+
+	it("显式 null 会出键（客户端据此清掉沙盒/工作树横幅）", () => {
+		const state = buildSnapshotState(1, { ...ENV, sandbox: null, worktree: null }, null);
+		expect(state.sandbox).toBeNull();
+		expect(state.worktree).toBeNull();
 	});
 });
