@@ -10,3 +10,4 @@ export {
 } from "./inbox.js";
 export { shouldAutoApprove, type AutoApproveRequest } from "./policy.js";
 export { createApprovalWaiter, type ApprovalRequestInput, type ApprovalWaiter } from "./wire.js";
+export { createAskUserWaiter, type AskUserWaiter } from "./questions.js";

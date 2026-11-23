@@ -5,6 +5,8 @@ export interface SessionRegistryOptions {
 	agentDir: string;
 	/** 开会话时注册哪些工具；由装载域算出，注册表不做默认值。 */
 	toolsFor?(conversation: Conversation): readonly string[] | undefined;
+	/** 开会话时注册哪些自定义工具；由 app 层按对话装配。 */
+	customToolsFor?(conversation: Conversation): readonly unknown[] | undefined;
 	onOpened?(conversation: Conversation, opened: OpenedSession): void;
 	onClosed?(conversationId: string): void;
 }
@@ -47,6 +49,7 @@ export class SessionRegistry {
 			agentDir: this.options.agentDir,
 			sessionFile: conv.meta.sessionFile,
 			tools: this.options.toolsFor?.(conv),
+			customTools: this.options.customToolsFor?.(conv),
 		});
 		if (opened.sessionFile && opened.sessionFile !== conv.meta.sessionFile) conv.setSessionFile(opened.sessionFile);
 		this.byConversation.set(conv.id, opened);

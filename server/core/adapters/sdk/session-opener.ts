@@ -5,6 +5,7 @@ import {
 	createAgentSessionServices,
 	type AgentSession,
 	SessionManager,
+	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { assertSupportedTranscriptVersion, openSessionManagerAsync } from "../../../session-open.js";
 import { guardSession } from "../../../session-turns.js";
@@ -18,6 +19,11 @@ export interface OpenSessionOptions {
 	sessionFile?: string;
 	/** 本次要注册的工具名（由 `domains/tools` 的装载域给出）；缺省 = SDK 自己的默认集。 */
 	tools?: readonly string[];
+	/**
+	 * 宿主自定义工具（审批、提问、子代理等能力的唯一入口）；缺省 = 不注册。
+	 * 类型故意收成 `unknown`：app 层不许依赖 SDK，形状在这里收回 `ToolDefinition`。
+	 */
+	customTools?: readonly unknown[];
 }
 
 export interface OpenedSession {
@@ -99,6 +105,7 @@ export async function openTurnSession(opts: OpenSessionOptions): Promise<OpenedS
 				services,
 				sessionManager: manager,
 				...(opts.tools ? { tools: [...opts.tools] } : {}),
+				...(opts.customTools ? { customTools: [...opts.customTools] as ToolDefinition[] } : {}),
 			})
 		).session;
 	} catch (error) {

@@ -119,3 +119,32 @@ describe("app · SessionRegistry", () => {
 		expect(onOpened).toHaveBeenCalledWith(conv, opened.value);
 	});
 });
+
+describe("app · SessionRegistry 工具装载透传", () => {
+	beforeEach(() => {
+		openTurnSession.mockReset();
+	});
+
+	it("tools / customTools 由注入的装载钩子决定，注册表不加默认值", async () => {
+		openTurnSession.mockResolvedValue(fakeOpened().value);
+		const tool = { name: "ask_user_question" };
+		const registry = new SessionRegistry({
+			agentDir: "/agent",
+			toolsFor: () => ["read", "bash"],
+			customToolsFor: () => [tool],
+		});
+		await registry.ensure(makeConv());
+		expect(openTurnSession).toHaveBeenCalledWith(
+			expect.objectContaining({ tools: ["read", "bash"], customTools: [tool] }),
+		);
+	});
+
+	it("钩子没给就不传，交给 SDK 默认", async () => {
+		openTurnSession.mockResolvedValue(fakeOpened().value);
+		const registry = new SessionRegistry({ agentDir: "/agent" });
+		await registry.ensure(makeConv());
+		const arg = openTurnSession.mock.calls[0][0] as Record<string, unknown>;
+		expect(arg.tools).toBeUndefined();
+		expect(arg.customTools).toBeUndefined();
+	});
+});

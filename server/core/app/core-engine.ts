@@ -14,7 +14,8 @@ import { createModelPusher } from "../domains/models/index.js";
 import { createModelRuntimeFactory } from "../adapters/models/index.js";
 import { resolveToolLoadout } from "../domains/tools/index.js";
 import { InteractionInbox } from "../domains/interactions/index.js";
-import { createApprovalWaiter } from "../domains/interactions/index.js";
+import { createApprovalWaiter, createAskUserWaiter } from "../domains/interactions/index.js";
+import { createAskQuestionTool } from "../adapters/tools/ask-question.js";
 import { DEFAULT_PI_CAPABILITIES } from "../../engine-capabilities.js";
 import type { AgentEngineCapabilities } from "../../protocol.js";
 import { ClientRuntime, type ClientFrames } from "./client-runtime.js";
@@ -60,14 +61,15 @@ export class CoreEngine implements EngineService {
 		if (existing) return existing.handlers();
 		const transport: TransportPort = { send, isClosed: () => !this.runtimes.has(clientId) };
 		const unsubscribers = new Map<string, () => void>();
-		const approvalWaiter = createApprovalWaiter({
-			inbox: new InteractionInbox(() => {}),
-			transport,
-		});
+		const inbox = new InteractionInbox(() => {});
+		const approvalWaiter = createApprovalWaiter({ inbox, transport });
+		const askWaiter = createAskUserWaiter({ inbox, transport });
 		const sessions = new SessionRegistry({
 			agentDir: this.options.agentDir ?? this.cwd,
 			// 工具装载域决定注册哪些工具；注册表只转发，不给默认值。
 			toolsFor: () => resolveToolLoadout({ switches: this.stateStore.getSettingsSnapshot(clientId) }).tools,
+			// 自定义工具是审批/提问/子代理的唯一入口；一个对话一份闭包（工具里要带会话身份）。
+			customToolsFor: (conv) => [createAskQuestionTool({ waiter: askWaiter, conversationId: conv.id })],
 			onOpened: (conv, opened) => {
 				runtime.noteSessionFile(opened.sessionFile);
 				unsubscribers.set(

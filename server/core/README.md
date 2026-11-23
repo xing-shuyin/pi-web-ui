@@ -66,6 +66,7 @@ W3 之后 `CoreEngine.attach()` 仍默认关闭（`CoreEngineNotReadyError`）�
 - **会话可见面**：`adapters/sdk/view.ts` 把会话消息经 `serialize.ts` 投影成 `UiMessage`（id 稳定），并在开会话时订阅事件触发重帧；流式增量仍是「整段重投影」，细粒度 delta 待消息窗口域。
 - **打开历史**：`openHistoryConversation` 先按 `sessionFile` 去重再建，读盘/投影失败不抛（空消息 + 计数）。
 - **工具装载**：开会话前由装载域算 `resolveToolLoadout(...).tools` 传给 SDK；活动集只经 `resolveActiveToolNames` 这一个漏斗，装载域只备料（禁用集/平台支持/按需未加载）。
+- **自定义工具**：`customToolsFor(conv)` 一个对话一份闭包（工具里要带会话身份）；`ask_user_question` 已接，经 `InteractionInbox` 的 question 类进出。
 - **审批**：SDK 没有审批钩子——审批只能长在自定义工具里（`tool-guards.ts` 的 `askApproval`）。所以 `createApprovalWaiter` 现在只是协议面就绪（登记 → 发 `tool_approval_pending` → 结算 → 发 `tool_approval_resolved`），**内置工具仍绕过审批**，真正触发要等 W7 自定义工具。
 
 ## 源码约定
