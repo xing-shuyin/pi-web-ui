@@ -113,6 +113,19 @@
               已知缺口（不在 #999 范围）：模板子代理不走组合模板，所以“按需工具目录”
               （lazy）、双语段等组合模板特性对它们不生效；给模板子代理发目录 / 在模板里
               收窄工具属于独立的产品判断，不要用第二套提示词拼接去补。
+        平台/模式约束（沙盒 / 远程工作区 / 计划模式 / 审查者模式）：
+            文本只在 `server/platform-constraints.ts` 生产（`buildPlatformConstraints`）。
+            两条组装路径各有一个必经仓道，两处都调同一个生产函数：
+                SDK 结构化路径（模板子代理 / 主会话回退）→ loader 的 append 段；
+                组合模板路径（主会话默认走这条）→ prompt 整体被替换，所以在 hook 出口用
+                  `appendConstraints(...)` 再追一次；设置预览（`sessionPromptSnapshot`）同口径。
+            历史事故：这四段曾只塞进 loader 的 append 段，而主会话走组合模板时 append 段
+            整体被顶掉 → 模型不知道自己处于计划模式，沙盒 / 远程约束也一起消失（只剩工具
+            闸门在拒）。与 issue #999 同一病根：没一条路径能“自己看着办”，就必须有单一生产
+            处 + 每个组装出口都显式消费。
+            仅 Windows 的 `WINDOWS_PERSONA` 已删除：它的“bash 没有默认超时”已不成立
+            （`server/bash-timeout.ts` 默认 120s），超时/后台/长任务的规矩归 bash 工具的
+            promptGuidelines（`server/tool-prompts.ts`），不再占系统提示词。
         链式保留（主会话分支）—— 我们是 before_agent_start 链上最后一个 handler
         （resource-loader 把内联扩展排在所有文件/包扩展之后），返回 systemPrompt 即
         forceSystemPrompt 整体替换，会把别的扩展写进去的内容一起丢掉。所以先拆：

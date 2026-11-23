@@ -117,7 +117,6 @@ import { SlashCommandsService, parseSlash } from "./slash-commands.js";
 import { ModelAdminService } from "./model-admin.js";
 import { FilesService, MACHINE_ROOT, desktopDirWire, workspacePath } from "./files-service.js";
 import {
-	buildRemoteWorkspacePersona,
 	createRemoteSdkOperations,
 	formatCwdForPrompt,
 	formatRemoteWorkspaceUri,
@@ -323,13 +322,12 @@ import { PlanManager } from "./plan-manager.js";
 import { ApprovalAuditLogger } from "./approval-audit.js";
 export { ApprovalAuditLogger };
 import {
-	buildPlanModePrompt,
 	planModeDenial,
 	planModeNoticeText,
 	PLAN_MODE_BLOCKED_TOOL_NAMES,
 	syncTerminalReadOnlySchema,
 } from "./plan-mode.js";
-import { DELEGATE_MODE_BLOCKED_TOOL_NAMES, DELEGATION_SYSTEM_PROMPT, delegateNoticeText } from "./delegate-mode.js";
+import { DELEGATE_MODE_BLOCKED_TOOL_NAMES, delegateNoticeText } from "./delegate-mode.js";
 import { goalReviewDenial, shouldDeferPromptForReview } from "./goal-review-gate.js";
 import { readPlanModeFromSession, readPlanFromSession, type SessionPlanEvent } from "./permission-preset.js";
 import { readDelegateModeFromSession } from "./permission-preset.js";
@@ -608,7 +606,8 @@ export class QuiesceRejectedError extends Error {
 	}
 }
 
-import { splitAgentStartPrompt, WINDOWS_PERSONA } from "./persona-chain.js";
+import { appendConstraints, buildPlatformConstraints } from "./platform-constraints.js";
+import { splitAgentStartPrompt } from "./persona-chain.js";
 export { splitAgentStartPrompt };
 
 import { makeKillableBashTool, makeAdaptiveBashTool } from "./bash-tool.js";
@@ -3842,6 +3841,30 @@ export class ClientSession {
 		});
 	}
 
+	/**
+	 * 平台 / 模式约束（沙盒 / 远程 / 计划 / 审查者）：文本生产在 `platform-constraints.ts`，
+	 * 组装有两个必经的仓道，两边共用这一个生产函数：
+	 *   - SDK 结构化路径（模板子代理、主会话回退）：loader 的 append 段；
+	 *   - 组合模板路径（主会话默认走这条）：prompt 整体被替换，所以必须在 hook 出口重新追加。
+	 * 设置面板预览与真实请求同口径（组合模板渲染 + 同一拨约束）。
+	 * 沙盒身份直接取 `makeRuntimeFactory` 捕获的那一份（不重新查身份：文本不是闸门）。
+	 */
+	private platformConstraintsFor(
+		modes: { planMode?: boolean; delegateMode?: boolean } | undefined,
+		cwd: string,
+		sandbox?: { name: string; path: string; sourcePath?: string },
+	): string[] {
+		const planPrefs = this.settingsSvc.current;
+		const realCwd = restoreWorkspaceUriFromSessionDir(cwd);
+		return buildPlatformConstraints({
+			sandbox: sandbox ? { name: sandbox.name, path: sandbox.path, sourcePath: sandbox.sourcePath } : undefined,
+			remoteCwd: isRemoteWorkspaceUri(realCwd) ? realCwd : undefined,
+			planMode: modes?.planMode === true,
+			delegateMode: modes?.delegateMode === true,
+			planPrompt: { mode: planPrefs.planModePromptMode, custom: planPrefs.planModePrompt },
+		});
+	}
+
 	private sessionPromptSnapshot(target?: Conversation):
 		| {
 				texts: Record<string, string>;
@@ -3915,7 +3938,13 @@ export class ClientSession {
 				hasOverride ? ovs : undefined,
 				new Set(this.settingsSvc.current.promptDisabled ?? []),
 			);
-			return { texts, full: rendered, toolsSchema: buildToolsSchemaText(schemaEntries) };
+			// 预览必须与真实请求同口径：平台/模式约束也在出口追加（沙盒身份查不到就不显示）。
+			let sandbox: { name: string; path: string; sourcePath?: string } | undefined;
+			try {
+				sandbox = this.sandboxes.getExecutionIdentity(cwd);
+			} catch {}
+			const full = appendConstraints(rendered, this.platformConstraintsFor(conv, cwd, sandbox));
+			return { texts, full, toolsSchema: buildToolsSchemaText(schemaEntries) };
 		} catch {
 			return undefined;
 		}
@@ -5056,29 +5085,15 @@ export class ClientSession {
 						const out = [...base];
 						const appendTemplate = apply && apply.promptMode === "append" ? this.templatePrompt(apply) : "";
 						if (appendTemplate.trim()) out.push(appendTemplate);
-						if (this.planModeOf(ownerId)) {
-							const planPrefs = this.settingsSvc.current;
-							out.push(buildPlanModePrompt(planPrefs.planModePromptMode, planPrefs.planModePrompt));
-						}
-						if (this.delegateModeOf(ownerId) && !this.planModeOf(ownerId)) {
-							out.push(DELEGATION_SYSTEM_PROMPT);
-						}
-						const activeSandbox = this.sandboxes.getExecutionIdentity(effectiveCwd, sandboxIdentity);
-						if (activeSandbox) {
-							out.push(
-								`[Sandbox Isolation Mode] You are operating inside an isolated sandbox workspace "${activeSandbox.name}" at "${activeSandbox.path}".` +
-									(activeSandbox.sourcePath
-										? ` This sandbox is an isolated copy of "${activeSandbox.sourcePath}". NEVER read from or modify "${activeSandbox.sourcePath}" directly; make all changes exclusively within the current sandbox directory "${activeSandbox.path}".`
-										: ` Keep all file operations strictly inside "${activeSandbox.path}".`) +
-									" Only restricted local file editing is supported. Shell commands, scripts, terminals, evaluation, and unknown tools are unavailable without an OS isolation backend.",
-							);
-						}
-						const realCwd = restoreWorkspaceUriFromSessionDir(effectiveCwd);
-						if (isRemoteWorkspaceUri(realCwd)) {
-							out.push(buildRemoteWorkspacePersona(realCwd));
-						} else if (process.platform === "win32") {
-							out.push(WINDOWS_PERSONA);
-						}
+						// 平台/模式约束：SDK 结构化路径（模板子代理 / 主会话回退）靠 append 段到达模型；
+						// 组合模板路径看不到 append 段，由 hook 出口再追加（同一生产函数）。
+						out.push(
+							...this.platformConstraintsFor(
+								{ planMode: this.planModeOf(ownerId), delegateMode: this.delegateModeOf(ownerId) },
+								effectiveCwd,
+								sandboxIdentity,
+							),
+						);
 						const markerGuidance = this.markerSvc.buildGuidance();
 						if (markerGuidance) out.push(markerGuidance);
 						return out;
@@ -5286,8 +5301,11 @@ export class ClientSession {
 												preset: currentPreset,
 												session: sess ?? undefined,
 											});
+											// 组合模板把整份提示词换掉了（append 段不可见），平台/模式约束必须在出口再追加一次。
+											// 回退路径不需要：那边约束已在 loader 的 append 段里（同一生产函数）。
 											if (rendered) {
-												return { systemPrompt: rewrap(rendered) };
+												const constraints = this.platformConstraintsFor(conv, effectiveCwd, sandboxIdentity);
+												return { systemPrompt: rewrap(appendConstraints(rendered, constraints)) };
 											}
 											if (isRemoteWorkspaceUri(realCwdForPrompt)) {
 												const patchedCore = core.replace(
@@ -5298,6 +5316,7 @@ export class ClientSession {
 													return { systemPrompt: rewrap(patchedCore) };
 												}
 											}
+											// 完全默认：保持 zero-cost（扩展的改动原样生效）。
 											return undefined;
 										}),
 									);

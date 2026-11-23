@@ -22,8 +22,11 @@ export function isReadonlyPromptSource(token: string): boolean {
  * - `{{guidelines}}`（行为准则：工具 promptGuidelines 汇总）、`{{pi_docs}}`（pi 文档指引）。
  * 老模板/老预设里残留这些 token 时渲染为空——不留字面量，也不复活该段文本。
  *
- * `{{persona}}` 下线理由：Windows / 远程工作区约束由宿主在 append 段无条件注入（`WINDOWS_PERSONA`），
+ * `{{persona}}` 下线理由：平台/模式约束（沙盒 / 远程工作区 / 计划模式 / 审查者模式）由宿主
+ * 在 persona hook 出口无条件追加（`server/platform-constraints.ts`，真实请求与预览同一入口），
  * 再挂一个可开关 token 只会让同一段文字注入两遍；设置面板也不该让用户去「启用」平台安全约束。
+ * （仅 Windows 的 `WINDOWS_PERSONA` 已删除：它说的「bash 没有默认超时」已不成立，
+ *  超时/后台/长任务的规矩统一在 bash 工具的 promptGuidelines 里。）
  * `{{guidelines}}` / `{{pi_docs}}` 下线理由：内置默认提示词配置不再输出这两段（产品决定），
  * 留空渲染以抵消存量模板里的引用，避免 `{{guidelines}}` 字面量直接漏进提示词。
  */
