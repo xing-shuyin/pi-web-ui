@@ -927,6 +927,7 @@ function GroupRoom({
 				modelState={null}
 				models={[]}
 				modelsLoading={false}
+				defaultModel={null}
 				attachments={[]}
 				onRemoveAttachment={noop}
 				onAddImageFiles={noop}

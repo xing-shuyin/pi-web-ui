@@ -3,7 +3,7 @@ import { ClientSession } from "../../server/agent-service.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
 
 describe("returning from a shared view to the active local conversation", () => {
-	it("sends a full local snapshot and completes the transition without displacing the conversation", async () => {
+	it("re-checks the local snapshot without forcing a duplicate full frame, and completes the transition", async () => {
 		const flushSnapshot = vi.fn();
 		const emit = vi.fn();
 		const displaceActive = vi.fn();
@@ -16,7 +16,8 @@ describe("returning from a shared view to the active local conversation", () => 
 
 		await client.switchConversation("local-conversation");
 
-		expect(flushSnapshot).toHaveBeenCalledExactlyOnceWith(true);
+		// 内容没变就不重发整包：切换回当前对话只是一次「可能变了」的核对（issue #965）。
+		expect(flushSnapshot).toHaveBeenCalledExactlyOnceWith();
 		expect(emit).toHaveBeenCalledExactlyOnceWith({
 			type: "transition_progress",
 			kind: "conversation",

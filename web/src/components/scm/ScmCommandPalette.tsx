@@ -39,12 +39,15 @@ export function ScmCommandPalette({ open, onClose, labels, actions }: Props) {
 	const [cursor, setCursor] = useState(0);
 	const inputRef = useRef<HTMLInputElement | null>(null);
 	const listRef = useRef<HTMLDivElement | null>(null);
+	/** 上一次参与过滤的查询词：区分「查询变了」与「只是一次重渲染」。 */
+	const lastQueryRef = useRef("");
 	useEscapeKey(onClose, open);
 
 	useEffect(() => {
 		if (!open) return;
 		setQuery("");
 		setCursor(0);
+		lastQueryRef.current = "";
 		const timer = window.setTimeout(() => inputRef.current?.focus(), 0);
 		return () => window.clearTimeout(timer);
 	}, [open]);
@@ -52,11 +55,22 @@ export function ScmCommandPalette({ open, onClose, labels, actions }: Props) {
 	const normalized = query.trim().toLowerCase();
 	const rows = useMemo(() => actions.filter((a) => matches(a, normalized)), [actions, normalized]);
 
-	// 过滤 / 状态变化后游标落到第一条可执行项：不让 Enter 落在灰掉的行上。
+	// 游标只在「查询变了」或「当前行已不可执行」时归位：
+	// `actions` 每次宿主重渲染都可能换引用（状态轮询 / 终端输出 / 动作表重建），
+	// 单看 `rows` 引用就归零会让鼠标悬停到的那行被弹回第一行。
 	useEffect(() => {
-		const first = rows.findIndex((r) => !r.disabled);
-		setCursor(first < 0 ? 0 : first);
-	}, [rows]);
+		if (!open) return;
+		const queryChanged = lastQueryRef.current !== normalized;
+		lastQueryRef.current = normalized;
+		setCursor((prev) => {
+			if (!queryChanged) {
+				const current = rows[prev];
+				if (current && !current.disabled) return prev;
+			}
+			const first = rows.findIndex((r) => !r.disabled);
+			return first < 0 ? 0 : first;
+		});
+	}, [open, normalized, rows]);
 
 	const groups = useMemo(() => {
 		const order: string[] = [];
