@@ -95,6 +95,16 @@ jobs:
             sudo install -m 0755 /tmp/qemu-aarch64-static /usr/bin/qemu-aarch64-static
           fi
           test -x /usr/bin/qemu-aarch64-static
+          # 有静态解释器还不够：chroot 要能直接 exec arm64 ELF，必须有 binfmt_misc 注册。
+          # runner 里 binfmt 未必预注册，用 tonistiigi/binfmt 装（失败就手写 register）。
+          if [ ! -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
+            sudo mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true
+            docker run --privileged --rm tonistiigi/binfmt --install arm64 >/dev/null 2>&1 || true
+          fi
+          if [ ! -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
+            printf '%b' ':qemu-aarch64:M::\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\xb7\x00:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/bin/qemu-aarch64-static:F\n' | sudo tee /proc/sys/fs/binfmt_misc/register >/dev/null
+          fi
+          test -e /proc/sys/fs/binfmt_misc/qemu-aarch64
           # arm64 base rootfs 用 docker export 取，不依赖镜像源上会漂移的 ubuntu-base 版本号
           docker create --platform linux/arm64 --name pwu-base ubuntu:24.04 >/dev/null
           mkdir -p mobile/local-engine/runtime/out
