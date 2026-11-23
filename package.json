@@ -28,6 +28,7 @@
 		"scripts/verify-desktop-codec.mjs",
 		"dist/server/",
 		"dist/shared/",
+		"dist/packages/",
 		"web/dist/",
 		"web/public/",
 		"themes/",

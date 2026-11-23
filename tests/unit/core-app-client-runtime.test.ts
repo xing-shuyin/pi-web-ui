@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ClientRuntime } from "../../packages/keel/src/app/client-runtime.js";
+import { ClientRuntime, type ClientRuntimeOptions } from "../../packages/keel/src/app/client-runtime.js";
 import { CoreEngineNotReadyError } from "../../packages/keel/src/app/core-engine.js";
 import type { ClockPort } from "../../packages/keel/src/contracts/ports.js";
 import type { ServerMessage } from "../../server/protocol.js";
@@ -52,7 +52,7 @@ function builders(): SnapshotBuilders & { full: ReturnType<typeof vi.fn>; delta:
 	return { full, delta } as never;
 }
 
-function makeRuntime(overrides: Partial<Parameters<typeof ClientRuntime.prototype.constructor>[0]> = {}) {
+function makeRuntime(overrides: Partial<ClientRuntimeOptions> = {}) {
 	const clock = fakeClock();
 	const transport = fakeTransport();
 	const build = builders();
@@ -60,10 +60,11 @@ function makeRuntime(overrides: Partial<Parameters<typeof ClientRuntime.prototyp
 		clientId: "client-1",
 		cwd: "/work",
 		workspaceRoots: ["/work"],
+		env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: false },
 		clock,
 		transport: transport.port,
 		builders: build,
-		...(overrides as object),
+		...overrides,
 	});
 	return { runtime, clock, transport, build };
 }
