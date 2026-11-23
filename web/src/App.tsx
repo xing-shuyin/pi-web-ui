@@ -96,6 +96,7 @@ import {
 } from "./plugin-loader";
 import { setFenceSend, syncFenceRenderers, syncMessageWidgets } from "./plugin-fence";
 import { findFileHandler, syncFileHandlers, type FileHandlerPlugin } from "./plugin-file-handlers";
+import { useChatDecorations } from "./plugin-decorations";
 const PiSetupModal = lazy(() => import("./components/PiSetupModal").then((m) => ({ default: m.PiSetupModal })));
 import {
 	getDesktopBrowserReferenceBridge,
@@ -662,6 +663,8 @@ export function App() {
 		() => chat.plugins.filter((p) => !chat.settings?.disabledPlugins?.includes(p.id)),
 		[chat.plugins, chat.settings?.disabledPlugins],
 	);
+	// 插件声明的聊天正文装饰（manifest.chatDecorations）：纯展示层，宿主统一注入，插件不碰 DOM。
+	useChatDecorations(enabledPlugins);
 	const [uiSlots, uiDiagnostics] = useMemo(() => {
 		const diagnostics: UiDiagnostic[] = [];
 		const slots = buildUiSlots(withPluginViewItems(chat.plugins), {

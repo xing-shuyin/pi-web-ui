@@ -29,6 +29,7 @@ export const KNOWN_PERMISSION_FAMILIES: ReadonlySet<string> = new Set([
 	"notify",
 	"storage",
 	"secrets",
+	"decorate",
 ]);
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -275,12 +276,24 @@ export function validatePluginManifest(raw: unknown, dirName: string): ManifestV
 		"messageWidgets",
 		"attachmentCards",
 		"composerProviders",
+		"chatDecorations",
 	] as const) {
 		if (o[key] !== undefined && !Array.isArray(o[key])) {
 			warnings.push({
 				path: key,
 				message: `${key} 必须是数组，已忽略`,
 				messageEn: `"${key}" must be an array, ignored`,
+			});
+		}
+	}
+	if (o.chatDecorations !== undefined) {
+		const perms = Array.isArray(o.permissions) ? o.permissions : [];
+		const allowed = perms.some((p) => typeof p === "string" && p.split(":")[0]?.trim() === "decorate");
+		if (!allowed) {
+			warnings.push({
+				path: "chatDecorations",
+				message: 'chatDecorations 需要 permissions 声明 "decorate"，否则整份忽略',
+				messageEn: '`chatDecorations` requires the "decorate" permission, otherwise the list is ignored',
 			});
 		}
 	}

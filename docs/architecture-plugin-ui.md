@@ -5,6 +5,7 @@
 ## 目录
 
 - [fenced-code 渲染插件（renderer plugins）](#fenced-code-渲染插件renderer-plugins)
+- [聊天正文装饰（`chatDecorations`）](#聊天正文装饰chatdecorations)
 - [前端集成](#前端集成)
   - [插件 → 宿主动作桥（`window.__piWebUiHost`）](#插件--宿主动作桥windowpiwebuihost)
   - [插件界面语言（全局语言单源，issue #920）](#插件界面语言全局语言单源issue-920)
@@ -46,6 +47,75 @@ renderer 插件可自带 vendor（如 mermaid 插件 `vendor/mermaid.bundle.mjs`
 **注意**：renderer 是浏览器直接执行的裸 ESM，**不能 import npm 包**（无 bare
 specifier 解析）。需要大依赖的插件自带打包 bundle（如 vscode-editor）或自带
 vendor 本地加载（如 mermaid 插件 `vendor/mermaid.bundle.mjs`，本地优先、缺省回退 CDN）。
+
+
+## 聊天正文装饰（`chatDecorations`）
+
+> 「按内容模式上样式」（对话引号高亮、邮件正文里的地址/工单号…）不需要每个需求写一个插件，
+> 也不用授整页 `dom` 权限：插件在 manifest 里**声明规则**，宿主统一注入。issue #956 评论里的
+> 「内置输出正则」诉求就落在这里——产品内置的是「声明式规则 + 宿主执行」，不是用户可见的正则编辑器。
+
+**形态**：`permissions: ["decorate"]` + `chatDecorations` 数组。规则字段：
+
+| 字段 | 可选 | 说明 |
+| --- | --- | --- |
+| `pattern` | 否 | 正则源字面量，或 `{ "setting": "<text/select 设置>" }`（用户没填 = 静默不生效） |
+| `flags` | 是 | 只允许 `gimsu`，自动补 `g` |
+| `scope` | 是 | `assistant` / `user` / `all`（默认）：靠消息根的 `data-role` 分流 |
+| `enabledBy` | 是 | 一个或多个 **boolean** 设置（AND）：实现总开关 + 分组开关；关掉的分组连正则都不编译 |
+| `style` | 否 | `color` / `backgroundColor` / `fontWeight`，值可写 `{ "setting": "<key>" }` |
+
+```json
+{
+  "permissions": ["decorate"],
+  "settings": [
+    { "key": "enabled", "type": "boolean", "default": true },
+    { "key": "quotes", "type": "boolean", "default": true },
+    { "key": "color", "type": "text", "default": "var(--accent)" },
+    { "key": "custom", "type": "text", "default": "" }
+  ],
+  "chatDecorations": [
+    { "id": "quotes", "pattern": "“[^”\\n]+?”", "flags": "gu", "scope": "assistant",
+      "enabledBy": ["enabled", "quotes"], "style": { "color": { "setting": "color" } } },
+    { "id": "custom", "pattern": { "setting": "custom" }, "enabledBy": ["enabled"],
+      "style": { "color": { "setting": "color" } } }
+  ]
+}
+```
+
+**能力边界**：只支持 `color` / `backgroundColor` / `fontWeight`。不替换文本、不插 HTML，
+所以复制、全局搜索、导出图片、TTS 读到的永远是原文；「格式化」这种会污染内容的能力**故意不做**。
+
+**分层（一份实现，三个使用者）**：
+
+| 层                              | 文件                                                                                    | 职责                                                                                                                                                       |
+| ------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 契约 + 限额 + 编译 + 匹配       | `shared/chat-decorations.ts`                                                            | 纯函数（无 DOM / 无进程），服务端与浏览器共用；`compileChatDecorations()` 是**唯一语义阑门**（权限、正则合法性、样式白名单、设置引用、名字唯一性、总条数） |
+| manifest 形状归一 + 面板告警    | `server/plugins.ts`（`normalizeChatDecorations`）、`server/plugin-manifest-validate.ts` | 只收形状（类型 / 条数 / 长度）；「声明了 decorations 但没有 `decorate` 能力」给一条 warning 进插件面板                                                     |
+| 注入                            | `web/src/plugin-decorations.ts`                                                         | `useChatDecorations(enabledPlugins)` 在 App 挂一次；一个 `<style>` + 每规则一个 `Highlight`                                                                |
+
+**作用域**：只装饰 `[data-chat-transcript]`（`MessageList` 的消息滚动容器）里的 `.md`；插件页、笔记等 markdown 不受影响。属性名与常量的一致性由 `tests/unit/plugin-decorations-dom.test.ts` 守着。
+
+**协议**：`UiPluginInfo.chatDecorations` 是可选字段（纯加法，旧客户端忽略即可，`PROTOCOL_VERSION` 不升）；
+设置改色后服务端 `pushToAll()` 重推 plugins 清单，客户端重新编译就生效，不用重载。
+
+**实现要点（都是踩过的坑）**：
+
+- CSS Custom Highlight API（`CSS.highlights` + `::highlight()`）：DOM 结构零改动——正文由
+  React/ReactMarkdown 渲染且流式反复重写，拆文本节点会和它抢 DOM。
+- 按块扫描（`p/li/blockquote/td/th/h1..h6`，嵌套块只扫最内层），跳过 `pre/code/kbd/samp/.codeblock`；
+  Range 可跨行内标签（`**“引用”**` 照样整段命中）。
+- `MutationObserver` + `rAF` 合批 + 每帧 6ms 预算：流式不停刷也不会占住主线程；旧 Range 重扫前统一回收。
+- 样式声明直接来自编译产物；用户值已过 CSS 白名单（`{}` `;` `<>` 引号与 `url(` 全拒），`fontWeight`
+  只认 CSS 关键字与百位数值；`secret` 类型的设置**永不**进 CSS（防凭据落进样式表）。
+- 限额：单插件 ≤12 条、全局 ≤48 条、pattern ≤200 字符、每块命中 ≤200、flags 只留 `gimsu`（强制 `g`）。
+- 浏览器没有 Highlight API（Firefox < 140）时静默降级：不报错、不空白、不影响正文。
+- 禁用插件不生效（App 传的是已过滤的 `enabledPlugins`）。
+- 整颗正文根被移除（切会话 / 卸载）时主动回收 Range，不把旧节点钉在内存里。
+
+**示例**：内置插件 `plugins/chat-highlight/`（正文高亮）就是纯 manifest —— 11 组规则、零代码、零 `dom` 授权；
+用户插件 `dialogue-color` 也能同样退化成「纯 manifest」。验证：`tests/unit/chat-highlight-plugin.test.ts`
+（真 manifest → 真编译：分组、scope、颜色令牌、自定义正则、引用键都存在）。
 
 
 ## 前端集成

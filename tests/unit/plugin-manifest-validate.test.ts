@@ -68,6 +68,20 @@ describe("P1-6 manifest 校验失败即拒", () => {
 		expect(ok.errors).toEqual([]);
 	});
 
+	it("chatDecorations 缺 decorate 能力：只警告（客户端会整份忽略），不阻断插件", () => {
+		const deco = [{ pattern: "a", style: { color: "red" } }];
+		const missing = validatePluginManifest({ permissions: ["ui"], chatDecorations: deco }, "x");
+		expect(missing.errors).toEqual([]);
+		expect(missing.warnings.some((w) => w.path === "chatDecorations")).toBe(true);
+
+		const ok = validatePluginManifest({ permissions: ["decorate"], chatDecorations: deco }, "x");
+		expect(ok.warnings.some((w) => w.path === "chatDecorations")).toBe(false);
+		expect(
+			validatePluginManifest({ chatDecorations: "bad" }, "x").warnings.some((w) => w.path === "chatDecorations"),
+		).toBe(true);
+		expect(KNOWN_PERMISSION_FAMILIES.has("decorate")).toBe(true);
+	});
+
 	it("坏类型字段只警告不阻断", () => {
 		const v = validatePluginManifest({ name: 123, view: "yes", renderers: "x" }, "x");
 		expect(v.errors).toEqual([]);

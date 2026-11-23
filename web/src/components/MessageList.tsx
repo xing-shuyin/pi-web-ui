@@ -1382,6 +1382,7 @@ export function MessageList({
 			/>
 			<div
 				className={`messages${searchOpen || anchorLock ? "" : stickBottom && !escapedRef.current ? "" : " anchor-live"}`}
+				data-chat-transcript=""
 				ref={scrollRef}
 				onScroll={onScroll}
 				onWheel={handleWheel}

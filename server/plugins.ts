@@ -67,6 +67,7 @@ import {
 } from "./plugin-catalog.js";
 import { PluginGrantsStore, normalizeGrantPath } from "./plugin-grants.js";
 import { normalizeIconSvg } from "./icon-svg.js";
+import { normalizeChatDecorations } from "../shared/chat-decorations.js";
 import { cleanupRemovedPlugins } from "./plugin-removal.js";
 import { prepareBundledPlugins } from "./plugin-bundled.js";
 import { materializePlugin } from "./plugin-materialize.js";
@@ -2974,6 +2975,7 @@ export class PluginManager {
 					settings?: unknown;
 					renderers?: unknown;
 					messageWidgets?: unknown;
+					chatDecorations?: unknown;
 					attachmentCards?: unknown;
 					composerProviders?: unknown;
 					fileHandlers?: unknown;
@@ -3029,6 +3031,8 @@ export class PluginManager {
 					{ has: (k) => new PluginSecrets(this.dataDir, stateDir).has(k) },
 				);
 				const hasClient = existsSync(join(dir, "client", "entry.mjs"));
+				// 形状归一（类型 / 条数 / 长度）；语义校验全在客户端 compileChatDecorations 一处。
+				const chatDecorations = normalizeChatDecorations(m.chatDecorations);
 				out.push({
 					id: name,
 					name: typeof m.name === "string" && m.name ? m.name : name,
@@ -3087,6 +3091,7 @@ export class PluginManager {
 					messageWidgets: Array.isArray(m.messageWidgets)
 						? m.messageWidgets.filter((r): r is string => typeof r === "string" && r.length > 0).slice(0, 32)
 						: undefined,
+					...(chatDecorations.length ? { chatDecorations } : {}),
 					attachmentCards: Array.isArray(m.attachmentCards)
 						? m.attachmentCards.filter((r): r is string => typeof r === "string" && r.length > 0).slice(0, 32)
 						: undefined,

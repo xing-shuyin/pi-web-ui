@@ -1,5 +1,6 @@
 import type { NativeCliInheritModel } from "./engine-catalog.js";
 import type { ModelErrorReport } from "./model-error.js";
+import type { ChatDecorationSpec } from "../shared/chat-decorations.js";
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
@@ -2603,6 +2604,8 @@ export interface UiPluginInfo {
 	domGranted?: boolean;
 	renderers?: string[];
 	messageWidgets?: string[];
+	/** 聊天正文装饰（manifest.chatDecorations，服务端只做形状归一；客户端 compile 是唯一语义闸门）。 */
+	chatDecorations?: ChatDecorationSpec[];
 	attachmentCards?: string[];
 	composerProviders?: string[];
 	fileHandlers?: UiPluginFileHandler[];

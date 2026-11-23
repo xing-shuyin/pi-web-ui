@@ -273,6 +273,7 @@ HTTP MCP 卡片的 OAuth 登录通过 `mcp_oauth_start {reqId,name,scope}` 发�
 | `http`  | `host.route` + `host.registerProxy`                                                                                                                              |
 | `chat`  | `host.chat`（无头调用）                                                                                                                                          |
 | `llm`   | `host.llm.complete`（孤立无工具补全；实现见 `server/plugin-llm.ts`，经 agent-service `completeForPlugins` + index.ts `llmProvider` 注入；DSH 下回 `{ok:false}`） |
+| `decorate` | manifest `chatDecorations`（聊天正文装饰）：客户端编译时校验，未声明即整份忽略；宿主执行，不需要 `dom` 授权（见 `architecture-plugin-ui.md` 的「聊天正文装饰」） |
 
 `host.llm.supportsImages === true` 表示宿主支持图片入参。`images?: Array<{data: string; mimeType: string}>` 使用标准带 padding 的纯 base64（不带 data URL）；仅接受 JPEG/PNG/WebP，并校验解码签名与 MIME 一致。最多 8 张，每张解码后 ≤1 MiB，合计 ≤6 MiB；超限或无效输入在创建 SDK 会话前拒绝。图片通过 SDK `prompt(text, {images})` 传入；当前模型不支持图片时显式返回 `{ok:false,error}`。可选 `signal?: AbortSignal` 仅用于宿主进程内取消，不经 JSON 传输；取消或超时会 abort/dispose 会话，成功或失败均清除计时器。初始化期间取消后，迟到的会话也会回收；并发位保留到实际任务结束。
 
@@ -340,6 +341,9 @@ HTTP MCP 卡片的 OAuth 登录通过 `mcp_oauth_start {reqId,name,scope}` 发�
   实现见 `web/src/plugin-loader.ts` 的 `preloaded` 集合（不进视图注册表，因此不产生 tab）
 - `renderers`（字符串数组）：该插件能渲染的 fenced-code 语言（`"mermaid"` 等），
   与 `client/entry.mjs` 的 `default.renderers[lang]` 一一对应
+- `chatDecorations`（数组）：聊天正文装饰规则（`{ id?, pattern, flags?, style?: { color? / backgroundColor? / fontWeight? } }`），
+  样式值可写成 `{ "setting": "<settingsSchema 的 key>" }` 让用户改；需要 `permissions` 含 `decorate`，
+  由宿主用 CSS Custom Highlight 注入，只改颜色/字重、不改文本（见 `architecture-plugin-ui.md` 的「聊天正文装饰」）
 - `ui`（对象）：插件对宿主 UI 的**全部贡献**（slot 条目 + `arrange` 整理意图，见「UI 扩展点（slot 框架）」）；
   严格模式下需要 `permissions` 含 `ui` 族，否则整份忽略
 - `build`（对象，可选）：源码安装时的构建声明（`{ install?, command, outputs? }`，见

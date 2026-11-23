@@ -489,5 +489,17 @@
 		"descriptionEn": "No-extension page capture: a bookmarklet picks elements on any site; snapshots + steps stream back to this tab, one click sends a report to chat; AI reads and saves via 6 web_capture_* tools.",
 		"source": "xing-shuyin/pi-web-ui/plugins/web-capture",
 		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/web-capture"
+	},
+	{
+		"id": "chat-highlight",
+		"name": "正文高亮",
+		"nameEn": "Text Highlight",
+		"version": "1.0.0",
+		"icon": "🖍️",
+		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m9 11-6 6v3h3l6-6\"/><path d=\"m14 6 4 4\"/><path d=\"M13 5.5 18.5 11 21 8.5a2 2 0 0 0 0-2.8l-2.7-2.7a2 2 0 0 0-2.8 0Z\"/><path d=\"M3 21h8\"/></svg>",
+		"description": "按内容给聊天正文上色：引号台词、角色行、旁白、邮件头、issue/SHA/路径、链接邮箱、日期、金额、斜杠命令，外加一条自定义正则。纯展示，不改文本、不碰 DOM、不需要 dom 授权。",
+		"descriptionEn": "Colors chat text by pattern: quoted dialogue, speaker lines, stage directions, mail headers, issue/SHA/paths, links & emails, dates, amounts, slash commands, plus one custom regex. Display-only: no text rewriting, no DOM mutation, no dom grant.",
+		"source": "xing-shuyin/pi-web-ui/plugins/chat-highlight",
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/chat-highlight"
 	}
 ]

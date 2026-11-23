@@ -1,0 +1,260 @@
+{
+	"id": "chat-highlight",
+	"name": "正文高亮",
+	"nameEn": "Text Highlight",
+	"version": "1.0.0",
+	"icon": "🖍️",
+	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m9 11-6 6v3h3l6-6\"/><path d=\"m14 6 4 4\"/><path d=\"M13 5.5 18.5 11 21 8.5a2 2 0 0 0 0-2.8l-2.7-2.7a2 2 0 0 0-2.8 0Z\"/><path d=\"M3 21h8\"/></svg>",
+	"description": "按内容给聊天正文上色：引号台词、角色行、旁白、邮件头、issue/SHA/路径、链接邮箱、日期、金额、斜杠命令，外加一条自定义正则。纯展示，不改文本、不碰 DOM、不需要 dom 授权。",
+	"descriptionEn": "Colors chat text by pattern: quoted dialogue, speaker lines, stage directions, mail headers, issue/SHA/paths, links & emails, dates, amounts, slash commands, plus one custom regex. Display-only: no text rewriting, no DOM mutation, no dom grant.",
+	"apiVersion": 2,
+	"view": false,
+	"permissions": ["decorate"],
+	"settings": [
+		{
+			"key": "enabled",
+			"type": "boolean",
+			"label": "启用正文高亮",
+			"labelEn": "Enable text highlight",
+			"default": true,
+			"hint": "总开关。关掉后所有分组都不生效，正文回到原样。",
+			"hintEn": "Master switch. Turning it off disables every group and leaves text untouched."
+		},
+		{
+			"key": "dialogue",
+			"type": "boolean",
+			"label": "对话引号",
+			"labelEn": "Quoted dialogue",
+			"default": true,
+			"hint": "„…“、“…”、«…»、»…« 与直引号 \"…\"（代码块内不算）。",
+			"hintEn": "German, curly, guillemet and straight quotes (code blocks excluded)."
+		},
+		{
+			"key": "speaker",
+			"type": "boolean",
+			"label": "角色台词行",
+			"labelEn": "Speaker lines",
+			"default": true,
+			"hint": "行首「名字：」加粗并用主色（角色扮演、剧本、邮件正文都常见）。",
+			"hintEn": "Bolds a leading “Name:” and paints it with the accent color."
+		},
+		{
+			"key": "stage",
+			"type": "boolean",
+			"label": "括号旁白",
+			"labelEn": "Stage directions",
+			"default": true,
+			"hint": "全角括号（…）内的动作/旁白用弱色。",
+			"hintEn": "Full-width parenthesised actions use the muted color."
+		},
+		{
+			"key": "headers",
+			"type": "boolean",
+			"label": "邮件 / 信封头",
+			"labelEn": "Mail / envelope headers",
+			"default": true,
+			"hint": "From:、Subject:、发件人：、主题：这类键名加粗高亮。",
+			"hintEn": "Bolds and colors keys such as From:, Subject:, 发件人：."
+		},
+		{
+			"key": "tech",
+			"type": "boolean",
+			"label": "技术标识",
+			"labelEn": "Technical refs",
+			"default": true,
+			"hint": "#123、7 位以上十六进制 SHA、src/web/server 等路径（可带 :行号）。",
+			"hintEn": "#123, hex SHAs (7+), and repo paths such as src/web/server (optional :line)."
+		},
+		{
+			"key": "contact",
+			"type": "boolean",
+			"label": "链接与邮箱",
+			"labelEn": "Links & emails",
+			"default": true,
+			"hint": "http(s) 链接与邮箱地址。",
+			"hintEn": "http(s) links and email addresses."
+		},
+		{
+			"key": "date",
+			"type": "boolean",
+			"label": "日期与时间",
+			"labelEn": "Dates & times",
+			"default": true,
+			"hint": "2026-11-22 / 2026年11月22日 / 14:05 这类时间戳，用弱色。",
+			"hintEn": "Dates like 2026-11-22 and times like 14:05, in the muted color."
+		},
+		{
+			"key": "money",
+			"type": "boolean",
+			"label": "金额",
+			"labelEn": "Amounts",
+			"default": true,
+			"hint": "¥1,299.00、$99、99 元 / USD 这类金额。",
+			"hintEn": "Amounts such as ¥1,299.00, $99, 99 元 / USD."
+		},
+		{
+			"key": "mention",
+			"type": "boolean",
+			"label": "@ 提及",
+			"labelEn": "@ mentions",
+			"default": false,
+			"hint": "行内 @someone；和邮箱冲突时以邮箱优先（邮箱不会被拆开）。",
+			"hintEn": "Inline @someone; emails win when both could match."
+		},
+		{
+			"key": "command",
+			"type": "boolean",
+			"label": "斜杠命令（我的消息）",
+			"labelEn": "Slash commands (my messages)",
+			"default": true,
+			"hint": "只作用于用户消息：/compact、/new 这类命令加粗高亮。",
+			"hintEn": "User messages only: /compact, /new and friends get bold accent."
+		},
+		{
+			"key": "custom",
+			"type": "boolean",
+			"label": "自定义规则",
+			"labelEn": "Custom rule",
+			"default": false,
+			"hint": "打开后使用下面的「自定义正则」；正则非法时这条规则自动不生效（其它规则照常）。",
+			"hintEn": "Uses the custom regex below; an invalid regex simply disables this one rule."
+		},
+		{
+			"key": "colorMain",
+			"type": "text",
+			"label": "主色（台词 / 角色行 / 命令）",
+			"labelEn": "Main color (dialogue / speaker / commands)",
+			"default": "var(--accent)",
+			"hint": "任意 CSS 颜色，可写主题令牌，如 var(--accent) 或 #e8832a。",
+			"hintEn": "Any CSS color; theme tokens work, e.g. var(--accent) or #e8832a."
+		},
+		{
+			"key": "colorSoft",
+			"type": "text",
+			"label": "弱色（旁白 / 时间）",
+			"labelEn": "Muted color (stage / time)",
+			"default": "var(--text-dim)",
+			"hint": "建议用主题的次要文字色，避免喧宾夺主。",
+			"hintEn": "Prefer the theme’s secondary text color."
+		},
+		{
+			"key": "colorLink",
+			"type": "text",
+			"label": "链接色（链接 / 邮箱 / 技术标识 / 邮件头）",
+			"labelEn": "Link color (links / emails / refs / headers)",
+			"default": "var(--blue, var(--accent))",
+			"hint": "默认取主题蓝，主题没有时回落强调色。",
+			"hintEn": "Theme blue with accent fallback."
+		},
+		{
+			"key": "colorMoney",
+			"type": "text",
+			"label": "金额色",
+			"labelEn": "Amount color",
+			"default": "var(--amber, var(--accent))",
+			"hint": "默认取主题琥珀色，主题没有时回落强调色。",
+			"hintEn": "Theme amber with accent fallback."
+		},
+		{
+			"key": "colorCustom",
+			"type": "text",
+			"label": "自定义规则颜色",
+			"labelEn": "Custom rule color",
+			"default": "var(--accent)",
+			"hint": "只作用于自定义规则。",
+			"hintEn": "Applies to the custom rule only."
+		},
+		{
+			"key": "customPattern",
+			"type": "text",
+			"label": "自定义正则",
+			"labelEn": "Custom regex",
+			"default": "",
+			"hint": "JavaScript 正则源（≤200 字符），例如 订单号[:：]\\s*\\w+ 。留空 = 不生效；单次最多命中 200 处。",
+			"hintEn": "JavaScript regex source (≤200 chars), e.g. 订单号[:：]\\s*\\w+ . Empty means off; at most 200 matches per block."
+		}
+	],
+	"chatDecorations": [
+		{
+			"id": "dialogue",
+			"pattern": "„[^„“”\"\\n]+?[“”\"]|“[^“”\\n]+?”|«[^«»\\n]+?»|»[^«»\\n]+?«|\"[^\"\\n]+?\"",
+			"flags": "gu",
+			"scope": "assistant",
+			"enabledBy": ["enabled", "dialogue"],
+			"style": { "color": { "setting": "colorMain" } }
+		},
+		{
+			"id": "speaker",
+			"pattern": "^[A-Za-z\\u4e00-\\u9fa5][^\\n：:]{0,11}[：:]",
+			"flags": "gmu",
+			"scope": "assistant",
+			"enabledBy": ["enabled", "speaker"],
+			"style": { "color": { "setting": "colorMain" }, "fontWeight": "700" }
+		},
+		{
+			"id": "stage",
+			"pattern": "（[^（）\\n]{1,120}）",
+			"flags": "gu",
+			"scope": "assistant",
+			"enabledBy": ["enabled", "stage"],
+			"style": { "color": { "setting": "colorSoft" } }
+		},
+		{
+			"id": "headers",
+			"pattern": "^(?:From|To|Cc|Bcc|Subject|Date|Reply-To|发件人|收件人|抄送|主题|日期)\\s*[:：]",
+			"flags": "gmu",
+			"enabledBy": ["enabled", "headers"],
+			"style": { "color": { "setting": "colorLink" }, "fontWeight": "700" }
+		},
+		{
+			"id": "tech",
+			"pattern": "(?<![\\w#])#\\d{1,7}\\b|\\b[0-9a-f]{7,40}\\b|(?:src|lib|server|web|docs|tests|plugins|desktop|shared|scripts)/[\\w./-]+(?::\\d+)?",
+			"flags": "gmu",
+			"enabledBy": ["enabled", "tech"],
+			"style": { "color": { "setting": "colorLink" } }
+		},
+		{
+			"id": "contact",
+			"pattern": "https?://[^\\s<>()（）]+|[\\w.+-]+@[\\w-]+\\.[\\w.-]+",
+			"flags": "gu",
+			"enabledBy": ["enabled", "contact"],
+			"style": { "color": { "setting": "colorLink" } }
+		},
+		{
+			"id": "date",
+			"pattern": "\\b\\d{4}[-/年]\\d{1,2}[-/月]\\d{1,2}日?|\\b\\d{1,2}:\\d{2}(?::\\d{2})?\\b",
+			"flags": "gu",
+			"enabledBy": ["enabled", "date"],
+			"style": { "color": { "setting": "colorSoft" } }
+		},
+		{
+			"id": "money",
+			"pattern": "[¥$€£]\\s?\\d[\\d,]*(?:\\.\\d+)?|\\b\\d[\\d,]*(?:\\.\\d{2})?\\s?(?:元|美元|USD|EUR|CNY|RMB)(?!\\w)",
+			"flags": "gu",
+			"enabledBy": ["enabled", "money"],
+			"style": { "color": { "setting": "colorMoney" } }
+		},
+		{
+			"id": "mention",
+			"pattern": "(?<![\\w@.])@[A-Za-z_][\\w.-]{1,31}",
+			"flags": "gmu",
+			"enabledBy": ["enabled", "mention"],
+			"style": { "color": { "setting": "colorLink" }, "fontWeight": "700" }
+		},
+		{
+			"id": "command",
+			"pattern": "(?<![\\w/])/[a-zA-Z][\\w-]{0,32}",
+			"flags": "gmu",
+			"scope": "user",
+			"enabledBy": ["enabled", "command"],
+			"style": { "color": { "setting": "colorMain" }, "fontWeight": "700" }
+		},
+		{
+			"id": "custom",
+			"pattern": { "setting": "customPattern" },
+			"flags": "gmu",
+			"enabledBy": ["enabled", "custom"],
+			"style": { "color": { "setting": "colorCustom" } }
+		}
+	]
+}

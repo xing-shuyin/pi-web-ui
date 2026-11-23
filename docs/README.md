@@ -35,7 +35,7 @@
 | 文档                                                                       | 主题                                                                                                                 | 何时读                                           |
 | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | [`architecture-browser.md`](architecture-browser.md)                       | 内置浏览器模块、桌面 browser/agent/split、可信原生页面桥、数据与打包                                                 | 动浏览器、桌面组合、Web 原生操作                 |
-| [`architecture-plugin-ui.md`](architecture-plugin-ui.md)                   | 插件界面集成与 UI 扩展点：renderer 渲染、宿主动作桥与语言单源、静态服务、常驻播放器、slot 框架（挂载点/合并优先级/弹窗） | 动 UI 插槽、插件前端集成                         |
+| [`architecture-plugin-ui.md`](architecture-plugin-ui.md)                   | 插件界面集成与 UI 扩展点：renderer 渲染、聊天正文装饰（`chatDecorations`）、宿主动作桥与语言单源、静态服务、常驻播放器、slot 框架（挂载点/合并优先级/弹窗） | 动 UI 插槽、插件前端集成、正文高亮 |
 | [`architecture-plugin-host-api.md`](architecture-plugin-host-api.md)       | 插件宿主 API 清单：目录授权与跨目录 fs、requestPermission、schedule、project/openSession、多根工作区、MCP 工具桥、注册面 | 加宿主能力、改插件 API 边界                      |
 | [`architecture-plugin-market.md`](architecture-plugin-market.md)           | 插件市场、验收与运营面：市场清单与一键安装、仓库自带真实插件、回归测试要求、设置页扩展菜单                       | 动市场、插件验收与设置页                         |
 | [`architecture-desktop-update.md`](architecture-desktop-update.md)         | 桌面应用内更新：主进程状态机、能力判定（dev/便携/无 feed）、失败分类、发布说明、IPC 三面对齐                         | 动桌面更新、更新面板、发布说明                   |
