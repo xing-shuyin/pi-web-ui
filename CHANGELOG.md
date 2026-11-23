@@ -10,6 +10,12 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **手机 APK 改为跟随 tag 自动发布（签名固定，能覆盖升级）**：`mobile-release.yml` 此前只留 `workflow_dispatch`，理由是「CI 每次新生成 debug keystore，新包装不上旧包、还会连引擎数据一起清」。v0.122.0 起签名密钥已固定入库（secrets `MOBILE_KEYSTORE_BASE64` / `MOBILE_KEYSTORE_PASSWORD` / `MOBILE_KEY_ALIAS` / `MOBILE_KEY_PASSWORD`，产物证书已核验），于是手机包和桌面三平台、浏览器扩展、Release 说明一样，推 `v*` tag 就自动出；工作流新增「tag 与 `package.json` 版本必须一致」的出包守卫，本地 `npm run release:local` 降级为云端兜底。整条发版流程里唯一仍要本地手动的是 npm 发布（2FA/OTP）（文档：`docs/release.md` §8.6、`docs/mobile.md`）。
+
+- **手机包 CI 链路打通**（此前在干净 checkout 上必红）：Android SDK 改用 runner 自带的 `sdkmanager`（`setup-android` 会去装已下架的 `tools` 包）；qemu-user-static 三级兜底（自带 → apt → multiarch 镜像取静态解释器）并补 binfmt_misc 注册；`build-runtime.sh` 与 `android/gradlew` 补上可执行位；打包前先跑 `mobile/scripts/gen-app-icon.mjs` 生成 `splash` / `ic_launcher`（png 是生成物，不入库）。
+
 ## [0.122.0] — 2026-11-23
 
 ### Added
@@ -31,11 +37,13 @@
 - **远程工作区 `read` 不再把图片当文本回传，也不再为读几行把整个文件传回内存**：SDK 的 `ReadOperations` 里 `detectImageMimeType` / `createReadStream` 都是**可选项**，`createRemoteSdkOperations()` 只实现了 `readFile` / `access` —— `?` 天然绕过 TS 的赋值检查，SDK 于是退回默认行为：PNG/JPEG 被按 UTF-8 解码成 `\x89PNG` 乱码，文本 `read` 则把整份文件 SFTP 下载后 `Buffer.concat` 进服务端堆（远端 1 GB 日志能把进程打爆）。现在三件事一起收口：①**图片判据**先看扩展名（与 UI 的 `previewKind` 同口径，命名清楚的图片零额外往返），只有无扩展名的构建产物才读 `IMAGE_SNIFF_BYTES`（4100，与 SDK 本地探测对齐）字节头按魔数判，0 字节或读不出返回 `null` 而不是把异常扔给 SDK；②**补上 `createReadStream`** 复用 `sftpCreateReadStream`，分行/截断/`offset` 仍由 SDK 负责，`signal` abort 即刻销毁 SFTP 流；③**契约锚点**：每组 ops 加 `satisfies <SDK Ops 类型>`，并新增 `tests/unit/remote-ops-contract.test.ts`（`Record<keyof Required<XxxOperations>, true>` 字面量 + 运行时键比对）—— 上游任何成员变更（含可选项）都会编译失败，逼桥接层做显式决定而不是静默降级。顺带：`setGlobalRemoteSshService()` 接受 `null`（测试不必再 `as never`）、`sftpCreateReadStream()` 返回类型收窄到 `Readable`、图片 MIME 表与嗅探字节数单源到 `server/text-sniff.ts`（`imageMimeOfExt` / `IMAGE_SNIFF_BYTES`）。已知取舍：文件名撒谎（`foo.png` 里装文本）时远程按扩展名、本地按内容，两处行为不同（守卫：`tests/unit/remote-ops-contract.test.ts`、`tests/unit/remote-workspace.test.ts`、`tests/unit/text-sniff.test.ts`，文档 `docs/architecture-remote-workspace.md`）。
 
 <!-- auto-i18n:start -->
+
 ### i18n
 
 - 前端新增 key（36）：`role.page`、`modelError.gateway`、`modelError.auth`、`modelError.quota`、`modelError.model`、`modelError.unknown`、`modelError.retried`、`modelError.rawResponse`、`tpl.sk.prreview`、`tpl.sk.prreview.desc`、`tpl.sk.prreview.prompt`、`goalMaterialUnaddressable`、`hideQuestionNav`、`hideQuestionNavDesc`、`quietMode`、`quietModeDesc`、`quietModeStyle`、`quietStyleFold`、`quietStyleZero`、`quietActivity`、`quietHidden`、`schedulerOpenConversation`、`schedulerOpenConversationTip`、`thinkingFormat.chatTemplate`、`thinkingPreset.gemma4ChatTemplate.name`、`thinkingPreset.gemma4ChatTemplate.desc`、`kernelStatusTitle`、`kernelStatusSupervised`、`kernelStatusStandalone`、`kernelStatusUnknown`、`kernelStatusHint`、`kernelUptimeUnderMinute`、`kernelUptimeMinutes`、`kernelUptimeHours`、`kernelUptimeDays`、`browserRefTruncated`
 - 服务端新增 key（7）：`modelError.kind.gateway`、`modelError.kind.auth`、`modelError.kind.quota`、`modelError.kind.model`、`modelError.kind.unknown`、`subagents.verdict.error.rerun`、`worktree.not.registered`
 - 服务端文案变更（4）：`goal.role.exec`、`goal.role.review`、`subagents.notify.status.failed`、`subagents.verdict.error.detail`
+
 <!-- auto-i18n:end -->
 
 ## [0.121.3] — 2026-11-20

@@ -71,7 +71,7 @@
 | [`env-vars.md`](env-vars.md)                                                       | 环境变量全表（端口/鉴权/数据目录/引擎/窗口/预设/SSH/远程桌面）       | 改配置、排查行为差异                 |
 | [`deployment.md`](deployment.md)                                                   | 部署：前台、自启（launchd/systemd/Run 键）、Docker、反代与子路径     | 上线、装机、守护进程                 |
 | [`device-center-deployment.md`](device-center-deployment.md)                       | 设备中心独立部署：Hub 拓扑、账号、连接器、域名与 TLS                 | 部署设备中心                         |
-| [`release.md`](release.md)                                                         | 发布：版本号、changelog:i18n、tag 与 Action、npm publish、Hub 发布包升级验收 | 发版、验证 Hub 升级                  |
+| [`release.md`](release.md)                                                         | 发布：版本号、changelog:i18n、tag 与 Action（推 tag 自动出说明/桌面/扩展/手机 APK，只有 npm 要手动 OTP）、Hub 发布包升级验收| 发版、验证 Hub 升级                  |
 | [`official-providers.md`](official-providers.md)                                   | 官方供应商快速配置；Antigravity-Manager / Magpie 反代接入与「补参数」 | 接官方 API Key、用反代               |
 | [`external-channel-capabilities.md`](external-channel-capabilities.md)             | 外部消息渠道：11 个平台命令与能力矩阵                                | 接微信/QQ/飞书/Telegram 等           |
 | [`unattended-operation.md`](unattended-operation.md)                               | 无人值守：`manifest.alwaysOn` 与后台执行者注册表、`/api/health` 探针 | 不开网页也要跑（机房/容器/开机自启） |
