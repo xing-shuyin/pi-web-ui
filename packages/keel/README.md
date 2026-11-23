@@ -12,22 +12,29 @@
 | **P0** | 包骨架 + 依赖清单守卫（本目录）                                                     | ✅                                                         |
 | P1     | 把 30 个随包模块物理搬进 `src/`，`src/index.ts` 的桥删掉                            | ✅ 63 个（29 + `protocol` + 33 个连带叶子），老位置留 shim |
 | P2     | 剩下 4 个（settings / terminals / tool-manager / client-state）反转成端口，宿主注入 | 未开始                                                     |
-| P3     | 补齐 165 个 handler（B1~B8）                                                        | 🚧 已真实现 70 / 163（B1 28 + B2 20）                      |
+| P3     | 补齐 165 个 handler（B1~B8）                                                        | 🚧 已真实现 88 / 163（B1 28 + B2 20 + B3 18）              |
 | P5     | 发布 `@earendil-works/keel`，主应用改成版本依赖；启用 npm workspaces                | 未开始                                                     |
 
 ## handler 进度（`handlers()` 里已注册的成员）
 
-| 批次    | 域                                     | 已真实现 | 备注                                                                                      |
-| ------- | -------------------------------------- | -------- | ----------------------------------------------------------------------------------------- |
-| —       | 骨架期（W1~W7 已接）                   | 22       | 出帧 / 会话 / 审批回包 / 终端句柄 / 列表                                                  |
-| **B1**  | 模型 / 供应商                          | 28       | 4 个真逻辑（选模型 / 思考档 / 全局默认），24 个走 `ModelAdminPort` 纯转发                 |
-| **B2**  | 设置 / 预设 / 审批 / 命令              | 20       | 16 走 `SettingsFramePort`，`setApprovalPolicy` 归聚合根，3 个斜杠命令                     |
-| B2 未做 | 引擎预设 6 + `setClaudePermissionMode` | 0        | **本引擎显式不支持**：依赖 `tool-manager` 目录 / SDK 分支写入 / claude driver，退到 B8/P4 |
+| 批次    | 域                                     | 已真实现 | 备注                                                                                                                             |
+| ------- | -------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| —       | 骨架期（W1~W7 已接）                   | 22       | 出帧 / 会话 / 审批回包 / 终端句柄 / 列表                                                                                         |
+| **B1**  | 模型 / 供应商                          | 28       | 4 个真逻辑（选模型 / 思考档 / 全局默认），24 个走 `ModelAdminPort` 纯转发                                                        |
+| **B2**  | 设置 / 预设 / 审批 / 命令              | 20       | 16 走 `SettingsFramePort`，`setApprovalPolicy` 归聚合根，3 个斜杠命令                                                            |
+| B2 未做 | 引擎预设 6 + `setClaudePermissionMode` | 0        | **本引擎显式不支持**：依赖 `tool-manager` 目录 / SDK 分支写入 / claude driver，退到 B8/P4                                        |
+| **B3a** | 文件 / 目录                            | 15       | 13 个走 `FilesService`；`makeDir(setAsCwd)` 是「建目录 → 切工作区」两步                                                          |
+| **B3b** | Git 工作树                             | 3        | `worktree-service` 三支纯函数直通；内核只编排「删当前树先回退 cwd」                                                              |
+| B3 未做 | 沙盒 7                                 | 0        | 真实实现长在 `ClientSession`：要 `coordinateSandboxLifecycle` + `setCwd` 一起抽（P4）。契约与域已落地、27 条用例，只差宿主适配器 |
+| B3 未做 | `setCwd` / `setWorkspaceRoots`         | 0        | 同属工作区重绑：宿主实现显式报「core 引擎暂不支持」（`createCoreWorkspaceUnavailable`），不静默                                  |
 
 两个新端口都由宿主编译期结构直通（不做参数搬运）：
 `server/core-model-adapter.ts`（`ModelAdminPort`）、`server/core-settings-adapter.ts` +
 `server/core-commands-adapter.ts`（`SettingsFramePort` / `SlashCommandsPort`）。
 端口未注入时对应 handler **同步抛** `CoreEngineNotReadyError`（fail-closed，不是 rejected promise）。
+
+**沙盒 / 工作树是全貌字段**（`UiState.sandbox` / `UiState.worktree`）：进程级、跟着 cwd 走，
+由每次组帧现取；`undefined` 不出键、显式 `null` 出键（客户端据此清横幅）。
 
 ## 为什么 P0 不启用 npm workspaces
 
