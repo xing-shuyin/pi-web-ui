@@ -27,7 +27,7 @@ const PENDING_PORT = [
 const PORTS = ["client-state", "settings-service", "terminals", "tool-manager"];
 
 /** 本轮还没搬、下一轮单独搬的模块（搬完必须把这一行删掉，否则棘轮测试红）。 */
-const PENDING_MOVE = ["protocol"];
+const PENDING_MOVE: string[] = [];
 
 /** 宿主实现只许 type-only 引用（运行时拿到插件实例 = keel 又绑回了面板与生态）。 */
 const TYPE_ONLY_HOST = new Set(["plugins"]);

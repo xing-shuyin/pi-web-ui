@@ -1,4 +1,4 @@
-import type { ConversationSummary } from "../../../server/protocol.js";
+import type { ConversationSummary } from "./protocol.js";
 
 /**
  * 左栏行归属单源。

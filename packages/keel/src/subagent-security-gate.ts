@@ -7,7 +7,7 @@ import {
 	conversationToolAllowed,
 	isConversationTool,
 } from "./conversation-tool-names.js";
-import type { SubagentSecurityMode } from "../../../server/protocol.js";
+import type { SubagentSecurityMode } from "./protocol.js";
 
 // 协议单源：类型定义在 protocol.ts（前端也要用），这里只做转出沿用既有 import 路径。
 export type { SubagentSecurityMode };

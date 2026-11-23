@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { PendingQuestion, type QuestionResult } from "./pending-question.js";
-import type { QuestionAnswer, UiQuestion } from "../../../server/protocol.js";
+import type { QuestionAnswer, UiQuestion } from "./protocol.js";
 
 export function formatCommunicationMessage(
 	envelope: CommunicationEnvelope,

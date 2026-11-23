@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { QuestionAnswer, UiQuestion } from "../../../server/protocol.js";
+import type { QuestionAnswer, UiQuestion } from "./protocol.js";
 
 export type QuestionResult =
 	QuestionAnswer[] | { cancelled: true; reason?: string } | { status: "timed_out"; timed_out: true } | null;

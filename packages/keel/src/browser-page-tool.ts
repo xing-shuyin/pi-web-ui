@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { ServerMessage } from "../../../server/protocol.js";
+import type { ServerMessage } from "./protocol.js";
 import { BROWSER_PAGE_TOOL_NAME } from "../../../server/tool-manager.js";
 
 const PAGE_CALL_DEFAULT_TIMEOUT_MS = 30_000;

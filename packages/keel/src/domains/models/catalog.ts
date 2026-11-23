@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { ModelInfo } from "../../../../../server/protocol.js";
+import type { ModelInfo } from "../../protocol.js";
 
 /**
  * 运行时给出的模型形状：本域只认这几个字段，与 SDK 的 `Model` 保持结构兼容

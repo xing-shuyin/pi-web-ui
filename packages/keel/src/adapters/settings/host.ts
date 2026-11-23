@@ -1,5 +1,5 @@
 import type { ClientStateStore } from "../../../../../server/client-state.js";
-import type { ServerMessage } from "../../../../../server/protocol.js";
+import type { ServerMessage } from "../../protocol.js";
 import type { SettingsHost } from "../../../../../server/settings-service.js";
 
 export interface SettingsHostInput {

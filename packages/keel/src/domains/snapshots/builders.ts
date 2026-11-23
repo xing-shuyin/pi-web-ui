@@ -1,4 +1,4 @@
-import type { ServerMessage, UiState } from "../../../../../server/protocol.js";
+import type { ServerMessage, UiState } from "../../protocol.js";
 import type { SnapshotConversationView, SnapshotEnvView, SnapshotView } from "../../contracts/snapshot-view.js";
 import type { SnapshotBuilders, SnapshotDeltaFrame, SnapshotFrame } from "./publisher.js";
 

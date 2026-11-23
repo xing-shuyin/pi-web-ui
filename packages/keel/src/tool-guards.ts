@@ -18,7 +18,7 @@ import {
 	type ToolPostRequest,
 	type ToolPostEdit,
 } from "./plugin-tool-guard.js";
-import type { UiApprovalCategory, UiApprovalHit } from "../../../server/protocol.js";
+import type { UiApprovalCategory, UiApprovalHit } from "./protocol.js";
 import type { AnyToolDefinition } from "./tool-overrides.js";
 import type { ToolAuditRecordFn } from "./approval-audit.js";
 import {

@@ -1,6 +1,6 @@
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import type { QuestionAnswer, UiQuestion } from "../../../server/protocol.js";
+import type { QuestionAnswer, UiQuestion } from "./protocol.js";
 import { pick, type ServerLang } from "./i18n.js";
 import { type SubagentSpawnExtra, resolveSecurityMode } from "./subagent-security-gate.js";
 import { THINKING_LEVELS } from "./subagent-templates.js";

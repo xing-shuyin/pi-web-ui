@@ -1,6 +1,6 @@
 import type { ConversationId } from "../../contracts/ids.js";
 import type { ClockPort, TransportPort } from "../../contracts/ports.js";
-import type { ServerMessage } from "../../../../../server/protocol.js";
+import type { ServerMessage } from "../../protocol.js";
 import {
 	DEFAULT_SNAPSHOT_INTERVALS,
 	planSnapshot,

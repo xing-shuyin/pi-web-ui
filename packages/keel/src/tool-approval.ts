@@ -1,4 +1,4 @@
-import type { UiApprovalCategory } from "../../../server/protocol.js";
+import type { UiApprovalCategory } from "./protocol.js";
 import { isPseudoClientId } from "./client-id-utils.js";
 import {
 	DEFAULT_APPROVAL_RULES,

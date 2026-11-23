@@ -1,5 +1,5 @@
 import type { ToolApprovalResolution } from "../../tool-approval.js";
-import type { ServerMessage, UiApprovalCategory, UiToolApproval } from "../../../../../server/protocol.js";
+import type { ServerMessage, UiApprovalCategory, UiToolApproval } from "../../protocol.js";
 import type { TransportPort } from "../../contracts/ports.js";
 import type { InteractionInbox } from "./inbox.js";
 

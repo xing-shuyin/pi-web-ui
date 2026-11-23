@@ -1,5 +1,5 @@
-export type { TextQuote } from "../../../server/protocol.js";
-import type { TextQuote } from "../../../server/protocol.js";
+export type { TextQuote } from "./protocol.js";
+import type { TextQuote } from "./protocol.js";
 
 export function readTextQuote(value: unknown): TextQuote | null {
 	if (!value || typeof value !== "object") return null;

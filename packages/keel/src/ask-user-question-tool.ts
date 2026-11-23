@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { QuestionAnswer, UiQuestion } from "../../../server/protocol.js";
+import type { QuestionAnswer, UiQuestion } from "./protocol.js";
 import type { QuestionResult } from "./pending-question.js";
 import { askQuestionsSchema } from "./question-params.js";
 

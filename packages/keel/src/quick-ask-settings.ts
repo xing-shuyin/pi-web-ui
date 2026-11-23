@@ -1,4 +1,4 @@
-import type { ThinkingLevel, QuickAskTranslateTarget, QuickAskTranslateStyle } from "../../../server/protocol.js";
+import type { ThinkingLevel, QuickAskTranslateTarget, QuickAskTranslateStyle } from "./protocol.js";
 
 export const DEFAULT_QUICK_ASK_EXPLAIN_PROMPT = "解释下: {{input}}";
 export const DEFAULT_QUICK_ASK_TRANSLATE_PROMPT =

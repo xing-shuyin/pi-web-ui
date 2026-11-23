@@ -1,7 +1,7 @@
 import * as fsPromises from "node:fs/promises";
 import { basename, resolve, sep } from "node:path";
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
-import type { MessageAnchor } from "../../../server/protocol.js";
+import type { MessageAnchor } from "./protocol.js";
 import { sessionLines, mapSessionsConcurrent } from "./session-scan.js";
 import { isVisibleOnBranch, selectSessionBranch } from "./session-projection.js";
 export { mapSessionsConcurrent } from "./session-scan.js";

@@ -1,4 +1,4 @@
-import type { ServerMessage } from "../../../../server/protocol.js";
+import type { ServerMessage } from "../protocol.js";
 
 export interface TransportPort {
 	send(msg: ServerMessage): void;

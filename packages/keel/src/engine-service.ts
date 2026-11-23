@@ -14,7 +14,7 @@ import type {
 	PluginRunEvent,
 } from "../../../server/plugins.js";
 import type { ToolPostRequest, ToolPreRequest } from "./plugin-tool-guard.js";
-import type { MaterialBlob } from "../../../server/protocol.js";
+import type { MaterialBlob } from "./protocol.js";
 import type {
 	AgentEngineCapabilities,
 	BgServer,
@@ -29,7 +29,7 @@ import type {
 	UiLayoutPrefs,
 	UiServiceInfo,
 	UiSubagentTemplate,
-} from "../../../server/protocol.js";
+} from "./protocol.js";
 
 export interface TerminalManagerLike {
 	attach?(id: string, cols: number, rows: number): boolean;
@@ -88,7 +88,7 @@ export interface DispatchSession {
 	openBotChat?(botId: string, opts?: { fresh?: boolean }): Promise<boolean>;
 	newCliChat?(config: NativeCliConfig, cwd?: string, onReady?: (id: string) => void): Promise<boolean>;
 	controlNativeCli?(conversationId: string, terminalId: string, action: "detach" | "reconnect" | "stop"): Promise<void>;
-	getNativeCliConversation?(conversationId?: string): import("../../../server/protocol.js").NativeCliConversation | undefined;
+	getNativeCliConversation?(conversationId?: string): import("./protocol.js").NativeCliConversation | undefined;
 	deleteMessage?(messageId: string, conversationId?: string): Promise<void>;
 	editMessage(messageId: string, text: string, attachments?: PromptAttachment[]): Promise<void>;
 	forkSession?(messageId: string, position?: "before" | "at", targetConvId?: string): Promise<void>;
@@ -98,11 +98,11 @@ export interface DispatchSession {
 	 * `since` 决定增量还是全量。引擎不实现时调用方退化为 `flushSnapshot(true)`。
 	 */
 	respondWithSnapshot?(
-		send: (msg: import("../../../server/protocol.js").ServerMessage) => void | boolean,
+		send: (msg: import("./protocol.js").ServerMessage) => void | boolean,
 		options?: { since?: number; force?: boolean },
 	): void;
 	activeConversationId?(): string;
-	getMessagesOfConversation?(convId: string): import("../../../server/protocol.js").UiMessage[] | undefined;
+	getMessagesOfConversation?(convId: string): import("./protocol.js").UiMessage[] | undefined;
 	pushSlashCommands(): Promise<void>;
 	getToolInfo?(name: string): void | Promise<void>;
 	getToolPrompt?(name: string): void | Promise<void>;
@@ -130,10 +130,10 @@ export interface DispatchSession {
 	persistConversation?(id: string): Promise<void>;
 	setConversationPinned?(id: string, pinned: boolean): Promise<void>;
 	pinSession?(path: string, pinned: boolean): Promise<void>;
-	updatePlanStep?(stepId: string, patch: Partial<import("../../../server/protocol.js").PlanStep>, conversationId?: string): void;
+	updatePlanStep?(stepId: string, patch: Partial<import("./protocol.js").PlanStep>, conversationId?: string): void;
 	deletePlanStep?(stepId: string, conversationId?: string): void;
-	addPlanStep?(step: import("../../../server/protocol.js").PlanStep, afterStepId?: string, conversationId?: string): void;
-	planCleanHandoff?(steps: import("../../../server/protocol.js").PlanStep[], promptText: string): Promise<void>;
+	addPlanStep?(step: import("./protocol.js").PlanStep, afterStepId?: string, conversationId?: string): void;
+	planCleanHandoff?(steps: import("./protocol.js").PlanStep[], promptText: string): Promise<void>;
 	switchSession(path: string, sessionId?: string, independent?: boolean): Promise<void>;
 	switchConversation(id: string): Promise<void>;
 	listFiles(path?: string): Promise<void>;
@@ -339,19 +339,19 @@ export interface DispatchSession {
 		scope?: "once" | "category" | "all",
 	): boolean;
 	setApprovalPolicy?(partial: { conversationId?: string; allowAll?: boolean; categories?: string[] }): void;
-	updatePlan?(steps: import("../../../server/protocol.js").PlanStep[], activeStepId?: string | null, conversationId?: string): void;
+	updatePlan?(steps: import("./protocol.js").PlanStep[], activeStepId?: string | null, conversationId?: string): void;
 	setPlanMode?(enabled: boolean, conversationId?: string): Promise<void>;
 	setDelegateMode?(enabled: boolean, conversationId?: string): Promise<void>;
 	savePreset(name: string, groups?: readonly string[]): Promise<void>;
 	applyPreset(name: string): Promise<void>;
 	deletePreset(name: string): Promise<void>;
 	saveMcpServer?(
-		server: import("../../../server/protocol.js").UiMcpServer,
+		server: import("./protocol.js").UiMcpServer,
 		prevName?: string,
-		prevScope?: import("../../../server/protocol.js").McpScope,
+		prevScope?: import("./protocol.js").McpScope,
 	): Promise<void>;
-	deleteMcpServer?(name: string, scope: import("../../../server/protocol.js").McpScope): Promise<void>;
-	toggleMcpServer?(name: string, scope: import("../../../server/protocol.js").McpScope, enabled: boolean): Promise<void>;
+	deleteMcpServer?(name: string, scope: import("./protocol.js").McpScope): Promise<void>;
+	toggleMcpServer?(name: string, scope: import("./protocol.js").McpScope, enabled: boolean): Promise<void>;
 	reloadMcp?(): Promise<void>;
 	handleMcpOAuth?(
 		msg: Extract<

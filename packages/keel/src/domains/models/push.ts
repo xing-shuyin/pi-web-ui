@@ -1,4 +1,4 @@
-import type { ModelInfo, ServerMessage } from "../../../../../server/protocol.js";
+import type { ModelInfo, ServerMessage } from "../../protocol.js";
 import type { TransportPort } from "../../contracts/ports.js";
 import { modelRuntimePaths, readModelCatalog, type ModelCatalogRuntime, type ModelRuntimeFactory } from "./catalog.js";
 

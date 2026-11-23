@@ -1,5 +1,5 @@
 import type { DispatchSession, EngineService } from "../engine-service.js";
-import type { ServerMessage, UiServiceInfo } from "../../../../server/protocol.js";
+import type { ServerMessage, UiServiceInfo } from "../protocol.js";
 import { toServiceInfo, launchOrigin } from "../launch-origin.js";
 import { join } from "node:path";
 import { join as joinPath, resolve as resolveFsPath } from "node:path";
@@ -23,7 +23,7 @@ import { createSubagentRuntime, type SubagentRuntime } from "./subagent-runtime.
 import { renameSessionFile } from "../adapters/sdk/session-info.js";
 import { createTerminalHost } from "../domains/terminals/index.js";
 import { DEFAULT_PI_CAPABILITIES } from "../engine-capabilities.js";
-import type { AgentEngineCapabilities } from "../../../../server/protocol.js";
+import type { AgentEngineCapabilities } from "../protocol.js";
 import { ClientRuntime, type ClientFrames } from "./client-runtime.js";
 import { SessionRegistry } from "./session-registry.js";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";

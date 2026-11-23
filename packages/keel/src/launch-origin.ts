@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ServiceSupervisor, UiServiceInfo } from "../../../server/protocol.js";
+import type { ServiceSupervisor, UiServiceInfo } from "./protocol.js";
 
 export const DEFAULT_SERVICE_NAME = "pi-web-ui";
 const LAUNCHD_LABEL_DEFAULT = "com.xingshuyin.pi-web-ui";

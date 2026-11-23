@@ -1,5 +1,5 @@
 import type { ServerLang } from "../../i18n.js";
-import type { ServerMessage } from "../../../../../server/protocol.js";
+import type { ServerMessage } from "../../protocol.js";
 import { TerminalManager } from "../../../../../server/terminals.js";
 import type { TransportPort } from "../../contracts/ports.js";
 

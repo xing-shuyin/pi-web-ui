@@ -1,4 +1,4 @@
-import type { PromptAttachment, QueuedPromptItem } from "../../../server/protocol.js";
+import type { PromptAttachment, QueuedPromptItem } from "./protocol.js";
 
 export function removeFirstOccurrence(list: readonly string[], text: string): string[] {
 	const index = list.indexOf(text);

@@ -3,7 +3,7 @@ import type { ClockPort, TransportPort } from "../contracts/ports.js";
 import type { SnapshotConversationView, SnapshotEnvView, SnapshotView } from "../contracts/snapshot-view.js";
 import { createDispatchSurfaceAdapter, type DispatchHandlers } from "../adapters/wire/index.js";
 import type { DispatchSession } from "../engine-service.js";
-import type { PromptAttachment } from "../../../../server/protocol.js";
+import type { PromptAttachment } from "../protocol.js";
 import { Conversation, ConversationRegistry, type ConversationInit } from "../kernel/conversation/index.js";
 import { createSnapshotBuilders, SnapshotPublisher, type SnapshotBuilders } from "../domains/snapshots/index.js";
 import { TurnRunner, type TurnRunnerDeps } from "../domains/turns/index.js";

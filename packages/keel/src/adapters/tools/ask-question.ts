@@ -1,6 +1,6 @@
 import { makeAskUserQuestionTool } from "../../ask-user-question-tool.js";
 import type { QuestionResult } from "../../pending-question.js";
-import type { UiQuestion } from "../../../../../server/protocol.js";
+import type { UiQuestion } from "../../protocol.js";
 
 /**
  * app / adapters 层只认这条窄面：分层守卫不许 `adapters` 依赖 `domains`，所以这里按

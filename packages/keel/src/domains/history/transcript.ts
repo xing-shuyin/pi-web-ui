@@ -1,4 +1,4 @@
-import type { UiMessage } from "../../../../../server/protocol.js";
+import type { UiMessage } from "../../protocol.js";
 import { serializeMessage } from "../../serialize.js";
 import type { AnySessionEntry } from "../../session-branch.js";
 import { buildSessionTranscript, projectSessionText, type SessionTranscript } from "../../session-projection.js";

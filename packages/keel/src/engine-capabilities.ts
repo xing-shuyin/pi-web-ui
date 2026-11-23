@@ -1,4 +1,4 @@
-import type { AgentEngineCapabilities } from "../../../server/protocol.js";
+import type { AgentEngineCapabilities } from "./protocol.js";
 
 export const DEFAULT_PI_CAPABILITIES: Readonly<AgentEngineCapabilities> = Object.freeze({
 	remoteSsh: true,

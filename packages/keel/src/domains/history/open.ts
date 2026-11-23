@@ -1,5 +1,5 @@
 import { readFile as readFileFromDisk } from "node:fs/promises";
-import type { UiMessage } from "../../../../../server/protocol.js";
+import type { UiMessage } from "../../protocol.js";
 import { Conversation, type ConversationRegistry } from "../../kernel/conversation/index.js";
 import { projectTranscriptText } from "./transcript.js";
 

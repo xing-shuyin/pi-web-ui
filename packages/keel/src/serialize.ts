@@ -1,5 +1,5 @@
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import type { TextQuote, UiContentBlock, UiImageBlock, UiMessage } from "../../../server/protocol.js";
+import type { TextQuote, UiContentBlock, UiImageBlock, UiMessage } from "./protocol.js";
 import { classifyModelError, modelErrorReport, type ModelRetryRecord } from "./model-error.js";
 import { splitQuotedPrompt, type QueuedAttachmentMeta } from "./text-quote.js";
 import { saveAttachmentSync } from "./attachment-store.js";

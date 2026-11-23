@@ -7,7 +7,7 @@ import { LEGACY_TERMINAL_TOOL_NAMES } from "../../../server/tool-manager.js";
 import { conversationToolAllowed } from "./conversation-tool-names.js";
 
 export { DEFAULT_APPROVAL_RULES };
-import type { UiApprovalCategory } from "../../../server/protocol.js";
+import type { UiApprovalCategory } from "./protocol.js";
 
 export const SHELL_COMPOUND_OPERATOR_RE = /(?:[;&|`\n]|\$\()/;
 
