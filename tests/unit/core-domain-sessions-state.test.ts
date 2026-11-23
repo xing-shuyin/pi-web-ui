@@ -149,3 +149,27 @@ describe("草稿叶子在 keel 里（P1 式搬迁的连带项）", () => {
 		expect(vi.isMockFunction(vi.fn())).toBe(true);
 	});
 });
+
+describe("终端/项目脚本（B5a）", () => {
+	it("getTerminalCwd：按对话取 cwd，未知对话回落到进程 cwd", () => {
+		const { runtime } = makeRuntime();
+		const conv = runtime.createConversation({ kind: "user", cwd: "/work/a" });
+		expect(runtime.handlers().getTerminalCwd?.(conv.id)).toBe("/work/a");
+		expect(runtime.handlers().getTerminalCwd?.("ghost")).toBe("/work");
+	});
+
+	it("findTerminalManager：不在该管理器里就返回 undefined（不抛）", () => {
+		const { runtime } = makeRuntime();
+		runtime.createConversation({ kind: "user" });
+		expect(runtime.handlers().findTerminalManager?.("t-1")).toBeUndefined();
+	});
+
+	it("listProjectScripts：找不到 package.json 就是空表（叶子兜底不抛）", () => {
+		const { runtime, sent } = makeRuntime();
+		runtime.handlers().listProjectScripts?.("/definitely/not/here");
+		const frame = sent.filter((m) => m.type === "project_scripts").at(-1);
+		// 帧里的 cwd 是叶子归一后的绝对路径：只断言「空表 + 没 error」，不猜盘符样式。
+		expect(frame).toMatchObject({ scripts: {} });
+		expect(frame && "error" in frame ? frame.error : undefined).toBeUndefined();
+	});
+});

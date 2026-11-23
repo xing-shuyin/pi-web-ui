@@ -14,6 +14,7 @@ import { createDispatchSurfaceAdapter, type DispatchHandlers } from "../adapters
 import type { DispatchSession } from "../engine-service.js";
 import type { PromptAttachment, SandboxInfo, WorktreeInfo } from "../protocol.js";
 import { ComposerDraftsStore } from "../composer-drafts.js";
+import { resolveProjectScripts } from "../project-scripts.js";
 import { Conversation, ConversationRegistry, type ConversationInit } from "../kernel/conversation/index.js";
 import { createSnapshotBuilders, SnapshotPublisher, type SnapshotBuilders } from "../domains/snapshots/index.js";
 import { createModelSwitchers, type ModelSwitchers } from "../domains/models/index.js";
@@ -411,6 +412,31 @@ export class ClientRuntime {
 				}
 				this.registry.activate(id);
 				this.publisher.request();
+			},
+			// 终端的持有者是叶子（每对话一份）：这里只回答「谁的 cwd」「哪个 id 落在谁手里」。
+			getTerminalCwd: (conversationId?: string) => {
+				const conv = conversationId ? this.registry.get(conversationId) : this.registry.activeConv();
+				return conv?.meta.cwd ?? this.options.cwd;
+			},
+			findTerminalManager: (terminalId: string, conversationId?: string) => {
+				const manager = this.options.terminalManagerFor?.(conversationId ?? this.registry.activeId());
+				// 没有「客户端级」终端管理器（那是老树的 userTerminals）：找不到就如实返回 undefined。
+				return manager && (manager as { has?: (id: string) => boolean }).has?.(terminalId) ? manager : undefined;
+			},
+			listProjectScripts: (cwd?: string) => {
+				const base =
+					(typeof cwd === "string" && cwd.trim()) || this.registry.activeConv()?.meta.cwd || this.options.cwd;
+				try {
+					const found = resolveProjectScripts(base);
+					this.options.transport.send({ type: "project_scripts", cwd: found.cwd, scripts: found.scripts });
+				} catch (err) {
+					this.options.transport.send({
+						type: "project_scripts",
+						cwd: base,
+						scripts: {},
+						error: err instanceof Error ? err.message : String(err),
+					});
+				}
 			},
 			// 计数口径与老实现逐字一致：只说「在跑几条」「还排着几条」。
 			activeConversations: () => this.registry.list().filter((conv) => conv.phase === "running").length,
