@@ -35,7 +35,7 @@ function delta(convId: string, baseRev: number, appended: UiMessage[]): ServerMe
 
 function makeTap(total: number, windowSize = DEFAULT_HISTORY_WINDOW) {
 	const out: ServerMessage[] = [];
-	const tap = new MessageWindowTap((m) => out.push(m), { windowSize, charBudget: 0, pageSize: 30 });
+	const tap = new MessageWindowTap((m) => void out.push(m), { windowSize, charBudget: 0, pageSize: 30 });
 	const full = Array.from({ length: total }, (_, i) => msg(`m${i}`));
 	return { tap, out, full };
 }
@@ -245,7 +245,7 @@ describe("MessageWindowTap", () => {
 
 	it("keeps character-limited snapshots stable, including appended messages and explicit pages", () => {
 		const out: ServerMessage[] = [];
-		const tap = new MessageWindowTap((m) => out.push(m), { windowSize: 300, charBudget: 15, pageSize: 2 });
+		const tap = new MessageWindowTap((m) => void out.push(m), { windowSize: 300, charBudget: 15, pageSize: 2 });
 		const full = Array.from({ length: 10 }, (_, i) => msg(`message-${i}`));
 		const latest = () => (out.at(-1) as Extract<ServerMessage, { type: "snapshot" }>).state;
 		tap.accept(snapshot("c1", full));
@@ -323,7 +323,7 @@ describe("MessageWindowTap", () => {
 		const { tap, out, full } = makeTap(10, 3);
 		tap.accept(snapshot("c1", full));
 		const generation = (out[0] as Extract<ServerMessage, { type: "snapshot" }>).state.historyGeneration;
-		const restored = new MessageWindowTap((m) => out.push(m), { windowSize: 3, charBudget: 0, pageSize: 2 });
+		const restored = new MessageWindowTap((m) => void out.push(m), { windowSize: 3, charBudget: 0, pageSize: 2 });
 		restored.rehydrate("c1", full, 7);
 		restored.loadEarlier({ conversationId: "c1", historyGeneration: generation, beforeId: "m7", before: 7 });
 		expect(out.at(-1)).toMatchObject({ resyncRequired: true, messages: [] });
@@ -339,5 +339,31 @@ describe("MessageWindowTap", () => {
 		expect(page.messages).toHaveLength(20);
 		expect(page.messages[0].id).toBe("m480");
 		expect(page.messages.at(-1)?.id).toBe("m499");
+	});
+	it("帧没送出去就不提交窗口基线（丢帧后补发不会被重复追加）", () => {
+		const out: ServerMessage[] = [];
+		let deliver = true;
+		const tap = new MessageWindowTap(
+			(m) => {
+				if (!deliver) return false;
+				out.push(m);
+			},
+			{ windowSize: 3, charBudget: 0, pageSize: 2 },
+		);
+		const full = Array.from({ length: 5 }, (_, i) => msg(`m${i}`));
+		tap.accept(snapshot("c1", full));
+		expect((out.at(-1) as Extract<ServerMessage, { type: "snapshot" }>).state.historyTotal).toBe(5);
+
+		// 背压丢掉这一帧：出帧闸会连增量一起补发，若基线提前提交就会重复追加。
+		deliver = false;
+		expect(tap.accept(delta("c1", 1, [msg("m5")]))).toBe(false);
+		deliver = true;
+		tap.accept(delta("c1", 2, [msg("m5")]));
+		const last = out.at(-1) as Extract<ServerMessage, { type: "snapshot_delta" }>;
+		// 重复追加会让 historyTotal 变成 7，翻页锚点跟着错位。
+		expect(last.state.historyTotal).toBe(6);
+		expect(tap.loadEarlier({ conversationId: "c1", count: 10 })).toBe(true);
+		const page = out.at(-1) as Extract<ServerMessage, { type: "earlier_messages" }>;
+		expect(page.historyTotal).toBe(6);
 	});
 });

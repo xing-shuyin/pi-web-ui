@@ -1517,7 +1517,8 @@ export type ClientMessage =
 			conversationId?: string;
 			restoreWorkspace?: boolean;
 	  }
-	| { type: "get_state" }
+	/** `rev`：客户端手上那份快照的 rev。对得上就只补增量，对不上才重发全量（issue #965）。 */
+	| { type: "get_state"; rev?: number }
 	| { type: "get_tool_info"; name: string }
 	| { type: "get_tool_prompt"; name: string }
 	| { type: "list_sessions"; path?: string; limit?: number }

@@ -119,3 +119,18 @@ describe("输入框上方的带子里是消息正文", () => {
 		}
 	});
 });
+
+describe("目标撰写态的用法提示行（issue #962 收尾）", () => {
+	it("是流内的一行，不是绝对定位的浮层", () => {
+		const row = bodyOf(".goal-composer-hint");
+		expect(row).toMatch(/margin:\s*0 0 6px/);
+		expect(row).not.toMatch(/position:\s*absolute/);
+	});
+
+	it("高度计进 --quick-row-h（输入框上方的带子只有一个单源）", () => {
+		const src = readFileSync(join(ROOT, "web/src/components/ChatInput.tsx"), "utf8");
+		const at = src.indexOf('"--quick-row-h"');
+		expect(at, "找不到实测带子高度的地方").toBeGreaterThan(0);
+		expect(src.slice(Math.max(0, at - 1400), at)).toContain("goalHintRef.current");
+	});
+});

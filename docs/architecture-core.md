@@ -25,21 +25,34 @@
 ## 快照驱动
 
 - **服务端是唯一事实源**：每次 SDK 事件后节流 60ms 推快照（`UiState`），浏览器只按快照渲染。重连只需重发 `get_state`。
-- **增量快照（协议 v2）**：持久化消息内容不可变 + 对象引用稳定，`emitSnapshotNow` 用 O(n) 指针等同性遍历检测追加式增长——能追加则发 `snapshot_delta`（轻字段 + `appended` 尾部，baseRev 链），中途变更/截断/切会话/强制 resync 回落全量 `snapshot`。前端 reducer 按 rev 链合并，缺口触发防抖 `get_state`；背压下 delta 与 snapshot 同样可丢弃，丢包靠 rev 链断裂自愈。`get_state` 恒返全量。回归：`snapshot-delta-test`。**测试适配**：等「动作后快照」的测试必须同时接受 snapshot_delta（参照 conv-cwd/vision-bridge 的 rev 链合并写法）；连接后的首个快照恒为全量。
+- **出帧闸单源（issue #965）**：`server/snapshot-channel.ts` 的 `SnapshotChannel` 是唯一决定「这帧发不发 / 发增量还是全量」的地方，**每个 sink（一个 WS 连接、一个共享 viewer）一份基线**。不变式只有一条：
+  1. 内容键（除 `messages` 外的字段 + 消息 id 序列，**剔除 `rev`/`version` 这两个每帧自增的计数**）与本 sink 上一帧相同 → **一帧不发**；
+  2. 与本 sink 上一帧构成纯追加 → `snapshot_delta`，`baseRev` 取**本 sink** 的上一帧 rev；
+  3. 其余（换会话 / 非前缀变化 / 新 sink）→ 全量 `snapshot`；
+  4. `deliver()` 返回 `false`（背压丢弃 / 视图切换过滤）→ 不提交基线，下一次 flush 自动补全量。
+
+  基线挂在 sink 上而不是会话上的原因：`emit()` 是多 sink 扇出，共用一份基线时落后方必然 `baseRev` 失配 → 客户端 `get_state` → 再发一帧全量，同一份内容被连发多遍（首屏实测 4 帧 × 356KB 全量的来源）。**新增出帧路径不要再自己判全量/增量**，接 `SnapshotChannel` 就行。回归：`tests/unit/snapshot-channel.test.ts`、`tests/snapshot-frame-budget-test.mjs`（冷开 1 帧全量 + 空转 5s < 4KB）。
+
+- **`get_state` 是 per-connection 的握手**：客户端可带 `rev`（`{ type: "get_state", rev }`），命中本连接基线且内容未变 → 不回包，落后则回增量，对不上才回全量（`respondWithSnapshot()`）；不带 `rev` 视为「我没有状态」→ 恒回全量。所以**不要**再在 attach / 切会话 / 回滚路径上写 `flushSnapshot(true)`：新 sink 本来就没有基线，第一帧必然是全量。
+- **增量快照（协议 v2）**：前端 reducer 按 rev 链合并，缺口触发防抖 `get_state`；背压下 delta 与 snapshot 同样可丢弃，丢包靠 rev 链断裂自愈。**测试适配**：等「动作后快照」的测试必须同时接受 snapshot_delta（参照 conv-cwd/vision-bridge 的 rev 链合并写法）；连接后的首个快照恒为全量。
+- **计算也只在生产者做一次**：`messagesOf()` 的缓存判据是「`agent.state.messages` 逐条引用未变」而不是「重算签名再比」（后者对 4000 条会话每帧全表 map + 拼几十 KB 字符串，短路发生在工作量之后）；`withHistoricalCompactions()` 用（叶指针, 条数, 数组引用）挡掉每帧一次的 `getBranch()`；`sessionStats()` 用（`getLeafId`, `getEntryCount`）做 O(1) 失效判据，**不按时间窗**猜（时间窗在「遍历多个会话」的调用形状里必然互相踢掉）。
+- **插件状态推送也不重发相同内容**：`host.broadcast()` 在宿主侧按连接记指纹，内容相同的 `plugin_data` 直接跳过（新连接没有记录，首次一定拿得到）。
 - **WS permessage-deflate**：WebSocketServer 开启压缩（threshold 16KB），大会话多 MB snapshot 线上传输降数倍；小消息（notice/心跳）不压省 CPU。
 - **多标签页序列化共享**：emit 把同一消息对象发给客户端的所有 socket，index.ts 用 WeakMap 按对象身份缓存 stringify 结果——N 个标签页共享一次序列化，新 snapshot 即新对象自动失效。
-- 序列化时**对象引用稳定**：`uiMessageCache` + 消息数组签名比对，消息没变就不重建数组，前端 `React.memo` 因此能跳过整条消息——**不要**破坏这个缓存（stable id、引用复用）。
+- 序列化时**对象引用稳定**：`uiMessageCache` + 消息投影缓存（逐条引用比对）命中时复用同一个数组，前端 `React.memo` 因此能跳过整条消息——**不要**破坏这个缓存（stable id、引用复用）。
 - `UiState` 携带 `thinkingLevel`（当前生效）和 `availableThinkingLevels`（当前模型实际支持的级别，SDK 会把集合外的请求静默就近钳制——UI 只能启用这些，否则用户点"低/中"看起来"改不了"）。
 
 ### `message_delta` 实时增量通道
 
-`message_update` 事件 → 只对**活动对话**推 `message_delta`（`conversationId` + 每对话单调 `seq` + `messageId = stream-<ts>`（与 `serializeStreamingMessage` 的稳定 id 一致）+ 实时 usage + 剥离 `partial` 后的 thinking/text delta）。它**不经 snapshot 通道**——`send()` 背压只丢 snapshot，增量永远可达，大会话不再因背压停更。前端 `applyMessageDelta`（`web/src/message-delta.ts` 纯函数、不可变——StrictMode 双调 reducer 会把原地 mutation 加倍）patch `streamingMessage` + `stats.tokens`；seq 缺口触发防抖 `get_state` 重同步；snapshot 权威收敛。
+`message_update` 事件 → 只对**活动对话**推 `message_delta`（`conversationId` + 每对话单调 `seq` + `messageId = stream-<ts>`（与 `serializeStreamingMessage` 的稳定 id 一致）+ 实时 usage + 剥离 `partial` 后的 thinking/text delta）。它**不经 snapshot 通道**——`send()` 背压只丢 snapshot（`tool_delta` 另有一条 1MB 的 socket 积压上限，见下），`message_delta` 永远可达，大会话不再因背压停更。前端 `applyMessageDelta`（`web/src/message-delta.ts` 纯函数、不可变——StrictMode 双调 reducer 会把原地 mutation 加倍）patch `streamingMessage` + `stats.tokens`；seq 缺口触发防抖 `get_state` 重同步；snapshot 权威收敛。
 
 同时：delta 活跃期（1.5s 内有增量）snapshot 降为**事件驱动检查点**——agent_end / tool_execution_end 立即 flush，其余事件走 2s 兜底定时器（增量负责流畅度、快照只做边界校准）。单测：`tests/unit/message-delta.test.ts`。
 
 ### `tool_delta` 同协议
 
 也带 `conversationId` + `seq`，与 message_delta 共享同一每对话单调序列（`conv.deltaSeq`）；前端按对话 Map 追踪 seq，仅活动对话缺口触发重同步（后台对话切回时 snapshot 收敛）。
+
+它是**累积全文 + `mode:"replace"`**（每帧最多 64KB），所以 socket 积压超 `TOOL_DELTA_BACKPRESSURE_BYTES`（1MB）时服务端丢这一帧——慢客户端不控就是无界写内存。丢帧不影响最终一致：工具结束时 `tool_execution_end` 的那次快照带着完整结果。
 
 ### 文件认领的运行生命周期
 
@@ -204,7 +217,7 @@
 - **过户是事务性的（#556）**：`take_over_conversation` 分两步（源会话 `detachTakeoverConversations` 摘除 → 目标会话 `insertTakeoverConvs` 接入），中间那一瞬间对话两头都不挂 —— 只要第二步报错，runtime 还在跑但任何列表都不包含它（「幽灵会话」，刷新页面无敕，只有重启服务才能靠落盘会话恢复）。现在接入失败就把整包原样搬回源会话（`returnTakeoverPayload`：先 `reclaimTakeoverConvs` 摘掉已部分插入的残留，再用同一套 insert 接线接回源页面并切回 active），两边都收到诚实的回执；二次失败时宁可留在目标页面（接入方已给主对话置 `listed`）也不落到无人持有的空档。回归：`tests/takeover-rollback-test.mjs`（测试专用故障注入 `PI_WEB_TEST_TAKEOVER_FAIL_INSERT`）。
 - **驻留对话默认不限数量**，新建、恢复历史、派生及持久化子代理共用 `getMaxOpenConversations()`。仅将 `PI_WEB_MAX_OPEN_CONVERSATIONS` 设为有限正数才启用按项目的数量上限（向下取整，最小 1）；未配置、`0`、负数或非法值均不限。此上限统计持有 runtime 的普通对话，包含已结束但仍驻留的对话及 `persist=true` 的持久化子代理；`isSubagent` 内存子代理和临时会话不占位。显式启用上限时保留并发创建预留和历史对话 LRU 收起；默认无限制时不因数量收起已有对话。它用于可选的资源控制，不能代表正在执行的任务数。
 - 所有对话共享**一个 ModelRuntime**（首个对话创建时播种，`makeRuntimeFactory` 传入复用）——顶栏换模型对全部对话生效。**消息序列化缓存（msgIds/uiMessageCache/签名）按对话隔离**：两个对话可能产生相同的 (role, timestamp) 键，共享会串号。
-- **项目切换记住 {模型, key} + 全局默认模型**：`client-state` 持久化 `projectModels`（cwd→"provider/id"）与 `projectProviderKeys`（cwd→provider→keyName）。**选模型即刻保存**（`setModel` → `rememberProjectModel`，不等一次问答——SDK 只有存在 assistant 消息后才把 `model_change` 落盘，否则新对话选完模型就切走会丢）；**切换项目/会话时恢复**（`restoreProjectModelForCwd` + `restoreProjectProviderKeysForCwd` 于 set_cwd / switch_conversation / switch_session / ClientSession.create），新对话也会套上该项目上次的 {模型, key}。模型/密钥被删时恢复静默跳过。**全局默认**（`defaultModel` + `defaultProviderKeys`，存 `__settings__` 全局键、全客户端共享）：模型下拉底部「☆ 设为全局默认」把当前模型（含当时 key）记成全局默认，行上 ★ 标记；无项目记忆的新项目回落到它（`set_default_model` / `clear_default_model` / `default_model` 推送，attach 即推；pi 引擎专有，DSH 下按钮隐藏）。回落链：项目记忆 > 全局默认 > SDK 默认；key 同理（`restoreKeyForModel` 先项目 pin 再全局 pin）。删 key 时全局引用同步改指（`repointDeletedKeyInDefault`）。回归：`tests/unit/default-model.test.ts`。
+- **项目切换记住 {模型, key} + 全局默认模型**：`client-state` 持久化 `projectModels`（cwd→"provider/id"）与 `projectProviderKeys`（cwd→provider→keyName）。**选模型即刻保存**（`setModel` → `rememberProjectModel`，不等一次问答——SDK 只有存在 assistant 消息后才把 `model_change` 落盘，否则新对话选完模型就切走会丢）；**切换项目/会话时恢复**（`restoreProjectModelForCwd` + `restoreProjectProviderKeysForCwd` 于 set_cwd / switch_conversation / switch_session / ClientSession.create），新对话也会套上该项目上次的 {模型, key}。模型/密钥被删时恢复静默跳过。**全局默认**（`defaultModel` + `defaultProviderKeys`，存 `__settings__` 全局键、全客户端共享）：模型下拉底部「☆ 设为全局默认」把当前模型（含当时 key）记成全局默认，行上 ★ 标记；无项目记忆的新项目回落到它（`set_default_model` / `clear_default_model` / `default_model` 推送，attach 即推；pi / DSH / 通用引擎各自按引擎键存，共用同一套菜单按钮）。菜单的 `defaultModel` **三态别混**：`undefined` = 这本菜单不管默认模型（Bot 模型 / 目标评审模型，不画 ☆）、`null` = 还没有默认（仍要画 ☆ 否则第一台默认永远设不上；`ChatInput.defaultModel` 是必填，禁写成 `?? undefined`）、字符串 = 当前默认。设/清除只走一个出口 `toggleModelDefault()`（`UniversalModelPicker.tsx`），回归：`tests/unit/universal-model-picker.test.ts`。回落链：项目记忆 > 全局默认 > SDK 默认；key 同理（`restoreKeyForModel` 先项目 pin 再全局 pin）。删 key 时全局引用同步改指（`repointDeletedKeyInDefault`）。回归：`tests/unit/default-model.test.ts`。
 - `snapshot` 带 `conversationId`；`conversations`（ServerMessage）推**全部项目已入列的对话 + 当前对话（有内容后，见 `shownInRunningList`）**（前端按 `cwd` 分组显示，当前项目不显示组标题）+ `activeId`（activeId 只在还是个空白对话时才不出现在列表里）；`switch_conversation`（ClientMessage）**可跨项目切换**——切到其他项目的对话时同步切换工作区，补齐 `set_cwd` 的副作用（文件树/会话历史/项目顺序/命令目录/onCwdChanged 钩子）。
 - `switch_session`（恢复持久会话）会为目标会话创建独立 runtime，再按上述生命周期把当前对话移到后台；若目标会话已在运行列表中则直接复用其 conversation，绝不因打开历史记录中断当前生成。回归测试：`tests/switch-session-background-test.mjs`。`edit_message` 在**当前**对话内 fork；`dispose` 遍历销毁全部对话；attachSink 重连时补推 conversations。
 - **服务重启后自动继续**：`resumeInterrupted` 按转录文件定位恢复后的 conversation，直接向它的 SDK session 投递 `restart-resume` 自定义消息（`display:false`、`triggerTurn:true`），保留 SDK 的重试、压缩和完成事件；不追加用户「继续」气泡，实时消息和重新打开历史时均隐藏该内部恢复标记。各对话独立启动，不等待上一条运行结束；并发切换 `activeId` 不改变续跑目标，已关闭或已有任务的对话跳过。回归：`tests/unit/restart-resume.test.ts`。

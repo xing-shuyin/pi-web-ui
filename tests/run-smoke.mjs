@@ -83,6 +83,7 @@ const ALL = [
 	"shutdown-test",
 	"slash-commands-test",
 	"snapshot-delta-test",
+	"snapshot-frame-budget-test",
 	"message-window-test",
 	"ssh-plugin-test",
 	"steer-queue-smoke",

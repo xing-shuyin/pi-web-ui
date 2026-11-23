@@ -55,6 +55,7 @@
 		"minShell": 1, // 内核要求的最低壳能力（与 SHELL_CAPABILITY_VERSION 对表）
 		"lock": "held", // held / disabled（PI_WEB_ALLOW_MULTI_INSTANCE=1）
 	},
+	"web": { "ok": true }, // 界面资源是否齐全；缺入口时是 { ok:false, missing:"web/dist/index.html" }
 }
 ```
 
@@ -64,6 +65,25 @@ pi-web-ui"），公网绑定场景不该把本机路径吐给任何人。要路�
 
 `installKind` 只认结构事实（`app.asar` → `packaged`；`node_modules/pi-web-ui` → `global-npm`；其余 `source`），
 不看环境变量——否则同一份代码在不同启动方式下会报不同的形态。
+
+### 3.1 界面资源缺失
+
+「内核活着」与「内核能提供界面」是两个事实，必须分开报（否则客户端只能把 503 错误页当成界面）。
+判据单源是 `server/web-build.ts` 的 `resolveWebBuild()`：**只认 `web/dist/index.html`**，目录存在不算数。
+装了一半的包（目录在、入口不在——Windows 上内核还在跑时执行 npm 更新就会出现）以前会被当成正常安装：
+进程起得来、`/api/health` 照常 ok，然后每个页面请求都回 503「正在更新 pi-web-ui，请稍后刷新…」。
+那句话是假的：没有人在更新，也永远不会变，壳还把这张错误页当成了「界面已就绪」（实机：白屏 + 无法关窗）。
+
+现在这条路径分三段收口：
+
+| 阶段 | 行为 |
+| --- | --- |
+| 启动 | 缺入口 → 打结构化错误（含修复命令）；受托管重启（`RESTART_CHILD_ENV`）直接 `exit 1`，由壳给修复入口；普通启动仍提供 API（手机 / 设备中心 / CLI 不陪葬） |
+| 页面请求 | 每次现算一次 → 缺就回**自包含诊断页**（缺哪个文件 / 修复命令 / 每 3 秒自动重试，装好后自动进界面，无需重启内核） |
+| 客户端 | `/api/health.web.ok=false` → 桌面壳把覆盖层留着并给「修复内核 / 重试 / 退出」（见 §9.1.3） |
+
+「升级内核」装完之后也走同一个判据验收：装出来的包缺入口就不交棒（`desktop/main.ts` 的 `upgradeKernel`），
+否则壳会高高兴兴接手一个只能白屏的内核。
 
 ## 4. 启动判定（`planKernelBoot`）
 
@@ -256,6 +276,19 @@ pi-web-ui server status                          # 服务装没装、起没起
 
 用全局包当内核时，**内核进程用系统 node 启动**（不是 Electron 的 node）：全局包里的原生模块按系统 node ABI 编译，
 塞进 `ELECTRON_RUN_AS_NODE` 可能加载失败；找不到 node 才退回 Electron 自带运行时并在日志里说清。
+
+### 9.1.3 内核界面起不来时的壳侧口径（白屏 = 不许沉默）
+
+壳判定「界面就绪」不能只看 `did-finish-load`：内核回一张 503 诊断页，它照样成功。所以
+`desktop/browser-host.ts` 在 Agent 页加载完成后再问一次内核（`probeAgentBuild` → `/api/health.web`），
+不齐就把结论写进 `BrowserState.kernelRepair`，此时：
+
+- 启动覆盖层**不收**（`agentReady` 为真只是「文档加载完了」），标题说清「内核在运行，但界面资源缺失」，
+  正文是缺哪个文件 + 修复命令，按钮「修复内核（`kernel.upgrade` 重装）/ 重试（`kernel.restart`）/ 退出」；
+- Agent 模式下本来整条隐藏的壳 chrome **放回来**（窗口按钮由内核界面的标题栏提供，它没了就等于没有），
+  另外失败态必备一个「退出应用」按钮 —— 实机出现过白屏后连关窗都做不到。
+
+`kernelRepair` 与 `kernelMissing` 分开：前者是「连上的内核要修」，后者是「这台机器还没有内核」。
 
 ### 9.2 环境探测 + 一键装 node / 升级内核
 

@@ -703,6 +703,35 @@ import {
 
 export { workspacePath };
 
+/** 一个连接的投递函数；`false` = 这一帧被丢弃（背压 / 视图过滤），不当前送达。 */
+export type SinkDeliver = (msg: ServerMessage) => boolean | void;
+
+interface SessionSink {
+	deliver: SinkDeliver;
+	snapshots: SnapshotChannel;
+}
+
+/** 逐条引用比较（O(n) 指针比较，比重新序列化便宜三个数量级）。 */
+function sameMessageRefs(a: readonly AgentMessage[], b: readonly AgentMessage[]): boolean {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+	return true;
+}
+
+/**
+ * 消息投影缓存（issue #965）：`agent.state.messages` 逐条引用未变时直接复用上次的
+ * UiMessage 数组与 id 序列，不再每次 flush 都全表 map + 拼签名（4000 条会话 × 每秒十几帧）。
+ */
+interface MessageSnapshotCache {
+	refs: readonly AgentMessage[];
+	/** 构建时的条数：同一个数组被就地追加时，单靠引用相等会漏判。 */
+	count: number;
+	/** 重试态标记：`stripTransientRetryErrors` / `withRetrySummary` 的额外输入。 */
+	tag: string;
+	messages: UiMessage[];
+	ids: string[];
+}
+
 export interface Conversation {
 	id: string;
 	/**
@@ -800,8 +829,9 @@ export interface Conversation {
 	nextMsgId: number;
 	userSeqByTs: Map<number, number>;
 	uiMessageCache: Map<string, UiMessage>;
-	lastMessagesSig: string;
-	lastMessagesArray: UiMessage[];
+	messageSnapshot?: MessageSnapshotCache;
+	/** 压缩历史投影缓存：分支叶与消息数组都没动就不重复走 `getBranch()`。 */
+	compactionProjection?: { src: AgentMessage[]; count: number; leafId: string | null; out: AgentMessage[] };
 	queueSteering: string[];
 	queueFollowUp: string[];
 	queuedSteeringEntries: QueuedMessageEntry[];
@@ -920,6 +950,7 @@ import { processTreeKillPlan, resolveCwdTarget } from "./process-utils.js";
 import { runGit } from "./git-run.js";
 import { runProcess } from "./run-process.js";
 import { sleep } from "./async-utils.js";
+import { SnapshotChannel, snapshotContentKey, type SnapshotProduct } from "./snapshot-channel.js";
 export function cleanupOrphanedSessionDirs(agentDir: string, maxAgeMs = 24 * 3600_000): void {
 	const cutoff = Date.now() - maxAgeMs;
 	for (const sub of ["subagent-sessions", "ephemeral-sessions"]) {
@@ -3695,7 +3726,8 @@ export class ClientSession {
 		}
 		if (changed) {
 			this.applyToolGating(session, conv?.agentPreset);
-			this.sessionStatsCache = null;
+			// 统计只依赖会话条目；显式失效仍然写在这里，避免调用方以为它不会变。
+			if (session) this.sessionStatsCache.delete(session);
 			this.cachedBaseTokens = null;
 			this.flushSnapshot();
 		}
@@ -3726,7 +3758,7 @@ export class ClientSession {
 		if (!allowed.has(name)) return;
 		loaded.add(name);
 		this.applyToolGating(session, conv.agentPreset);
-		this.sessionStatsCache = null;
+		this.sessionStatsCache.delete(session);
 		this.cachedBaseTokens = null;
 		this.flushSnapshot();
 	}
@@ -4323,21 +4355,22 @@ export class ClientSession {
 	private widgetsTimer: ReturnType<typeof setInterval> | null = null;
 	private stallTimer: ReturnType<typeof setInterval> | null = null;
 
-	private sinks = new Set<(msg: ServerMessage) => void>();
+	/**
+	 * 一个连接（sink）+ 它的出帧状态（issue #965）。出帧基线必须是每 sink 一份：
+	 * `emit()` 是扇出，多 tab / 多设备各自的进度不同，共用一份基线就会把落后方逼进
+	 * 「baseRev 失配 → get_state → 再发全量」的循环。
+	 */
+	private sinks = new Map<SinkDeliver, SessionSink>();
 	private pendingNotices: ServerMessage[] = [];
 	private snapshotTimer: ReturnType<typeof setTimeout> | null = null;
 	private lastDeltaAt = 0;
-	private sessionStatsCache: {
-		at: number;
-		session: AgentSession;
-		value: ReturnType<AgentSession["getSessionStats"]>;
-	} | null = null;
+	private sessionStatsCache = new WeakMap<
+		AgentSession,
+		{ leafId: string | null; entries: number; value: ReturnType<AgentSession["getSessionStats"]> }
+	>();
 	private sessionsTimer: ReturnType<typeof setTimeout> | null = null;
 	private version = 0;
 	private snapRev = 0;
-	private emittedMessages: UiMessage[] | null = null;
-	private emittedConvId: string | null = null;
-	private emittedRev = 0;
 	private disposed = false;
 	private piCheckCache: { at: number; configured: boolean } | null = null;
 
@@ -5721,29 +5754,12 @@ export class ClientSession {
 		if (!viewers) this.conversationViewers.set(conv, (viewers = new Set()));
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		let closed = false;
-		let previous: UiState | undefined;
+		// 共享 viewer 也是「一个 sink」：出帧策略与本地连接共用同一份实现（issue #965）。
+		const snapshots = new SnapshotChannel();
 		const pushNow = () => {
 			timer = undefined;
 			if (closed || this.convs.get(conv.id) !== conv) return;
-			const state = this.snapshotForConversation(conv);
-			const prior = previous;
-			previous = state;
-			const appendOnly =
-				prior &&
-				state.sessionId === prior.sessionId &&
-				state.messages.length >= prior.messages.length &&
-				prior.messages.every((message, index) => state.messages[index] === message);
-			if (appendOnly) {
-				const { messages, ...light } = state;
-				send({
-					type: "snapshot_delta",
-					conversationId: conv.id,
-					rev: state.rev,
-					baseRev: prior.rev,
-					appended: messages.slice(prior.messages.length),
-					state: light,
-				});
-			} else send({ type: "snapshot", state });
+			snapshots.push(this.viewerProduct(this.snapshotForConversation(conv)), send);
 		};
 		const push = () => {
 			if (!timer && !closed) timer = setTimeout(pushNow, 60);
@@ -5778,13 +5794,48 @@ export class ClientSession {
 	}
 
 	snapshotForConversation(conv: Conversation): UiState {
+		const product = this.snapshotProduct(conv, ++this.snapRev, { viewer: true });
+		return { ...product.light, ...product.fullExtras?.(), messages: product.messages };
+	}
+
+	/**
+	 * 一帧的完整输入（issue #965）：内容只在这里算一次，所有 sink 共用这一份，
+	 * 各自只决定「发不发 / 发增量还是全量」。
+	 *
+	 * `viewer`：共享观众只看本会话的审批（本地连接看全部，用于全局提醒）。
+	 */
+	private snapshotProduct(conv: Conversation, rev: number, options: { viewer?: boolean } = {}): SnapshotProduct {
 		if (this.convs.get(conv.id) !== conv) throw new Error("Conversation is no longer available");
-		const state = this.buildLightState(++this.snapRev, true, conv);
+		const base = this.buildLightState(rev, false, conv);
+		const light = options.viewer
+			? {
+					...base,
+					pendingApprovals: base.pendingApprovals?.filter((entry) => entry.conversationId === conv.id),
+					cwd: conv.cwd,
+				}
+			: base;
+		const snapshot = this.messageSnapshot(conv);
 		return {
-			...state,
-			pendingApprovals: state.pendingApprovals?.filter((entry) => entry.conversationId === conv.id),
-			cwd: conv.cwd,
-			messages: this.messagesOf(conv),
+			conversationId: conv.id,
+			rev,
+			contentKey: snapshotContentKey(light),
+			light,
+			fullExtras: () => ({ draft: this.draftForSnapshot(conv) }),
+			messages: snapshot.messages,
+			ids: snapshot.ids,
+		};
+	}
+
+	/** 共享观众的一帧：内容就是 `snapshotForConversation()` 的整包，出帧策略交给闸。 */
+	private viewerProduct(state: UiState): SnapshotProduct {
+		const { messages, ...light } = state;
+		return {
+			conversationId: state.conversationId,
+			rev: state.rev,
+			contentKey: snapshotContentKey(light),
+			light,
+			messages,
+			ids: messages.map((m) => m.id),
 		};
 	}
 
@@ -5846,8 +5897,6 @@ export class ClientSession {
 			nextMsgId: 1,
 			userSeqByTs: new Map(),
 			uiMessageCache: new Map(),
-			lastMessagesSig: "",
-			lastMessagesArray: [],
 			queueSteering: [],
 			queueFollowUp: [],
 			queuedSteeringEntries: [],
@@ -6093,8 +6142,9 @@ export class ClientSession {
 		}
 	}
 
-	attachSink(send: (msg: ServerMessage) => void): void {
-		this.sinks.add(send);
+	attachSink(send: SinkDeliver): void {
+		// 每个 sink 自带一份出帧基线（issue #965）：新连接没有任何基线，第一帧必然是全量。
+		this.sinks.set(send, { deliver: send, snapshots: new SnapshotChannel() });
 		for (const msg of this.pendingNotices) send(msg);
 		this.pendingNotices = [];
 		const widgets = this.webUi.snapshot();
@@ -6116,7 +6166,7 @@ export class ClientSession {
 		this.pushTerminals();
 	}
 
-	detachSink(send: (msg: ServerMessage) => void): void {
+	detachSink(send: SinkDeliver): void {
 		this.sinks.delete(send);
 		if (this.sinks.size === 0) {
 			this.files.unwatchDir();
@@ -6196,7 +6246,7 @@ export class ClientSession {
 	private emit(msg: ServerMessage): void {
 		if (this.disposed) return;
 		// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: handlers may unsubscribe mid-emit
-		for (const sink of [...this.sinks]) sink(msg);
+		for (const sink of [...this.sinks.values()]) sink.deliver(msg);
 	}
 
 	private makeExtensionErrorReporter(
@@ -7251,17 +7301,32 @@ export class ClientSession {
 	}
 
 	private currentMessages(): UiMessage[] {
-		return this.messagesOf(this.conv);
+		return this.messageSnapshot(this.conv).messages;
 	}
 
 	private messagesOf(conv: Conversation): UiMessage[] {
+		return this.messageSnapshot(conv).messages;
+	}
+
+	/**
+	 * 消息投影：返回与当前分支一致的 UiMessage 数组 + 逐条对齐的 id。
+	 *
+	 * 缓存判据是「逐条引用未变」，不是「重新算一遍签名再比」：后者对 4000 条会话
+	 * 每帧都要全表 map + 拼接几十 KB 字符串，而短路的时机在工作量之后（issue #965）。
+	 */
+	private messageSnapshot(conv: Conversation): MessageSnapshotCache {
+		const agentMessages = this.historicalCompactions(conv);
+		const tag = conv.retryState ? "retrying" : String(conv.lastRetrySummary?.attempt ?? 0);
+		const cached = conv.messageSnapshot;
+		if (
+			cached &&
+			cached.tag === tag &&
+			cached.count === agentMessages.length &&
+			sameMessageRefs(cached.refs, agentMessages)
+		)
+			return cached;
+
 		const live = new Set<string>();
-
-		const agentMessages = this.withHistoricalCompactions(
-			conv.session.agent.state.messages,
-			conv.session.sessionManager,
-		);
-
 		let rawMessages = agentMessages
 			.map((m) => {
 				const k = this.uiMessageKey(conv, m);
@@ -7273,11 +7338,37 @@ export class ClientSession {
 		// 收尾（issue #978）：最终失败的错误气泡带上「已重试 N 次后失败」。
 		rawMessages = withRetrySummary(rawMessages, conv.retryState ? null : conv.lastRetrySummary);
 		this.pruneMessageCache(conv, live);
-		const sig = `${rawMessages.map((m) => m.id).join("\u0001")}\u0002${conv.retryState ? "retrying" : (conv.lastRetrySummary?.attempt ?? 0)}`;
-		const messages = conv.lastMessagesSig === sig ? conv.lastMessagesArray : rawMessages;
-		conv.lastMessagesSig = sig;
-		conv.lastMessagesArray = rawMessages;
-		return messages;
+		conv.messageSnapshot = {
+			refs: agentMessages,
+			count: agentMessages.length,
+			tag,
+			messages: rawMessages,
+			ids: rawMessages.map((m) => m.id),
+		};
+		return conv.messageSnapshot;
+	}
+
+	/**
+	 * 压缩历史的追加投影。`getBranch()` 是 O(分支长度) 的分配，每次都跑等于每帧扫一遍会话；
+	 * 叶指针和消息数组都没动就一定没变。
+	 */
+	private historicalCompactions(conv: Conversation): AgentMessage[] {
+		const src = conv.session.agent.state.messages;
+		const sessionManager = conv.session.sessionManager;
+		const leafId = sessionManager?.getLeafId?.() ?? null;
+		const cached = conv.compactionProjection;
+		// 同一个数组对象不能单靠引用相等下结论：追加可能就地发生。有叶指针时它是权威
+		// （任何追加/分支切换都会移叶）；没叶（假会话）就只能逐条比引用。
+		if (
+			cached &&
+			cached.count === src.length &&
+			cached.leafId === leafId &&
+			(cached.src === src ? leafId !== null : sameMessageRefs(cached.src, src))
+		)
+			return cached.out;
+		const out = this.withHistoricalCompactions(src, sessionManager);
+		conv.compactionProjection = { src, count: src.length, leafId, out };
+		return out;
 	}
 
 	private withHistoricalCompactions(
@@ -7446,45 +7537,29 @@ export class ClientSession {
 		for (const viewers of this.conversationViewers?.values() ?? []) for (const push of viewers) push();
 		if (this.convs.size === 0) {
 			void this.newChat()
-				.then(() => this.flushSnapshot(true))
+				.then(() => this.flushSnapshot())
 				.catch(() => {});
 			return;
 		}
 		this.emitQuestionQueue();
-		const cur = this.currentMessages();
-		const prev = this.emittedMessages;
-		let incremental = !forceFull && prev !== null && this.emittedConvId === this.activeId && prev.length <= cur.length;
-		if (incremental && prev) {
-			for (let i = 0; i < prev.length; i++) {
-				if (prev[i] !== cur[i]) {
-					incremental = false;
-					break;
-				}
-			}
+		const product = this.snapshotProduct(this.conv, ++this.snapRev);
+		for (const sink of this.sinks.values()) {
+			sink.snapshots.push(product, sink.deliver, { force: forceFull });
 		}
-		const rev = ++this.snapRev;
-		if (incremental && prev) {
-			const baseRev = this.emittedRev;
-			this.emittedMessages = cur;
-			this.emittedConvId = this.activeId;
-			this.emittedRev = rev;
-			this.emit({
-				type: "snapshot_delta",
-				conversationId: this.activeId,
-				rev,
-				baseRev,
-				appended: cur.slice(prev.length),
-				state: this.buildLightState(rev, false),
-			});
-		} else {
-			this.emittedMessages = cur;
-			this.emittedConvId = this.activeId;
-			this.emittedRev = rev;
-			this.emit({
-				type: "snapshot",
-				state: { ...this.buildLightState(rev, true), messages: cur },
-			});
+	}
+
+	/**
+	 * 应答一次「把状态给我」的请求（issue #965）：请求是 per-connection 的，
+	 * 所以只对提出请求的那个 sink 出帧，并按它自报的 `since` 决定增量还是全量。
+	 */
+	respondWithSnapshot(send: SinkDeliver, options: { since?: number; force?: boolean } = {}): void {
+		if (this.disposed) return;
+		const sink = this.sinks.get(send);
+		if (!sink || this.convs.size === 0) {
+			this.flushSnapshot(!options.since);
+			return;
 		}
+		sink.snapshots.push(this.snapshotProduct(this.conv, ++this.snapRev), sink.deliver, options);
 	}
 
 	resolveDialog(id: number, value: string | boolean | null): void {
@@ -9195,12 +9270,23 @@ export class ClientSession {
 		this.emitSnapshotNow(forceFull);
 	}
 
+	/**
+	 * `getSessionStats()` 是全量遍历（O(条目数)），但它的输入只有会话条目。
+	 * 用（叶指针, 条目数）做 O(1) 失效判据：不再按 250ms 时间窗猜，也不会在
+	 * 「遍历多个会话」的调用形状里互相踢掉（单槽缓存命中率≈0，issue #965）。
+	 */
 	private sessionStats(session = this.session): ReturnType<AgentSession["getSessionStats"]> {
-		const now = Date.now();
-		const hit = this.sessionStatsCache;
-		if (hit && hit.session === session && now - hit.at < STATS_CACHE_MS) return hit.value;
+		const manager = session.sessionManager;
+		let leafId: string | null = null;
+		let entries = -1;
+		try {
+			leafId = manager?.getLeafId?.() ?? null;
+			entries = manager?.getEntryCount?.() ?? -1;
+		} catch {}
+		const hit = entries >= 0 ? this.sessionStatsCache.get(session) : undefined;
+		if (hit && hit.leafId === leafId && hit.entries === entries) return hit.value;
 		const value = session.getSessionStats();
-		this.sessionStatsCache = { at: now, session, value };
+		if (entries >= 0) this.sessionStatsCache.set(session, { leafId, entries, value });
 		return value;
 	}
 
@@ -10738,7 +10824,7 @@ export class ClientSession {
 				conv?.subagentSecurityMode === "verify",
 		);
 		applyToolPromptOverrides(session as unknown as ToolPromptSessionLike, this.settingsSvc.current.toolPromptOverrides);
-		this.sessionStatsCache = null;
+		this.sessionStatsCache.delete(session);
 		this.cachedBaseTokens = null;
 		const active = this.convs.get(this.activeId);
 		if (active && active.session === session) this.flushSnapshot();
@@ -10791,7 +10877,7 @@ export class ClientSession {
 		}
 		conv.agentPreset = hit.id;
 		this.applyToolGating(conv.session, hit.id);
-		this.sessionStatsCache = null;
+		this.sessionStatsCache.delete(conv.session);
 		this.cachedBaseTokens = null;
 		try {
 			await conv.session.resourceLoader.reload();
@@ -13066,7 +13152,7 @@ export class ClientSession {
 			this.pushTerminals();
 			this.notifyConversationChanged();
 			this.pushSettings();
-			this.flushSnapshot(true);
+			this.flushSnapshot();
 			onReady?.(id);
 			void this.publishNativeCliHistory(targetCwd);
 			return true;
@@ -14384,7 +14470,7 @@ export class ClientSession {
 
 	async switchConversation(id: string): Promise<void> {
 		if (id === this.activeId) {
-			this.flushSnapshot(true);
+			this.flushSnapshot();
 			this.emit({
 				type: "transition_progress",
 				kind: "conversation",
@@ -14513,7 +14599,7 @@ export class ClientSession {
 			let sessionId: string | undefined;
 			let sessionFile: string | undefined;
 			try {
-				messageCount = conv.session.getSessionStats().totalMessages;
+				messageCount = this.sessionStats(conv.session).totalMessages;
 				isStreaming = conv.session.isStreaming;
 				sessionId = conv.session.sessionId;
 				sessionFile = conv.session.sessionFile;
@@ -16364,8 +16450,8 @@ export class ClientSession {
 			targetConv.msgIds.clear();
 			targetConv.userSeqByTs.clear();
 			targetConv.nextMsgId = 1;
-			targetConv.lastMessagesSig = "";
-			targetConv.lastMessagesArray = [];
+			targetConv.messageSnapshot = undefined;
+			targetConv.compactionProjection = undefined;
 			targetConv.queueSteering = [];
 			targetConv.queueFollowUp = [];
 			targetConv.queuedSteeringEntries = [];
@@ -16435,9 +16521,8 @@ export class ClientSession {
 					? "Rolled back to selected message; workspace physical files restored to checkpoint state."
 					: "Rolled back to selected message; subsequent content discarded, ready to continue.",
 			});
-			this.emittedMessages = null;
 			this.emitConversations();
-			this.flushSnapshot(true);
+			this.flushSnapshot();
 		} catch (err) {
 			this.emit({
 				type: "notice",
@@ -16470,8 +16555,8 @@ export class ClientSession {
 				session.agent.state.messages = manager.buildSessionContext().messages;
 				target.uiMessageCache.clear();
 				target.userSeqByTs.clear();
-				target.lastMessagesSig = "";
-				target.lastMessagesArray = [];
+				target.messageSnapshot = undefined;
+				target.compactionProjection = undefined;
 			}
 			this.invalidateSessionInfos();
 			this.scheduleSessionsRefresh();
@@ -16581,8 +16666,8 @@ export class ClientSession {
 			target.msgIds.clear();
 			target.userSeqByTs.clear();
 			target.nextMsgId = 1;
-			target.lastMessagesSig = "";
-			target.lastMessagesArray = [];
+			target.messageSnapshot = undefined;
+			target.compactionProjection = undefined;
 			target.queueSteering = [];
 			target.queueFollowUp = [];
 			target.queuedSteeringEntries = [];

@@ -44,7 +44,7 @@ import { basename, delimiter, join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { registerTtsRoutes } from "./tts-routes.js";
-import express from "express";
+import express, { type Response } from "express";
 import { mobileCors, mobileOriginAuthorized } from "./mobile-origin.js";
 import { createMobilePushService } from "./mobile-push.js";
 import type { MobileNotificationEvent } from "./mobile-notification-events.js";
@@ -135,6 +135,14 @@ import {
 } from "./server-config.js";
 import { renderSetupHtml } from "./setup-page.js";
 import { setupGate } from "./setup-gate.js";
+import {
+	describeWebBuild,
+	resolveWebBuild,
+	WEB_BUILD_REPAIR_COMMAND,
+	WEB_BUILD_RETRY_SECONDS,
+	webBuildDiagnosticHtml,
+	webBuildHealth,
+} from "./web-build.js";
 import { storageIntegritySnapshot } from "./versioned-doc.js";
 import { buildLangCookie, readLangCookie, renderUnauthorizedHtml, resolvePageLang } from "./unauthorized-page.js";
 import { formatStartupBannerLines } from "./startup-banner.js";
@@ -764,6 +772,9 @@ app.get("/api/health", (_req, res) => {
 		// 存储完整性：「文件存在但认不出」与「文件不存在」是两回事，但两者都不该只活在日志里。
 		// 只给文件名与原因（数据目录路径不出免鉴权端点）。见 server/versioned-doc.ts。
 		storage: storageIntegritySnapshot(),
+		// 界面资源完整性：内核活着 ≠ 能提供界面。缺入口时页面只能给诊断页，客户端据此就地弹修复入口，
+		// 而不是把一个 503 错误页当成「界面已就绪」（见 server/web-build.ts）。
+		web: webBuildHealth(resolveWebBuild(webDist)),
 		executors: backgroundExecutors.snapshotLive(),
 		unhealthy: backgroundExecutors.unhealthy(),
 	});
@@ -1254,51 +1265,79 @@ const webDist = join(pkgRoot, "web", "dist");
 function webDistPath(): string {
 	return webDist;
 }
-if (existsSync(webDist)) {
-	app.use(compression());
-	app.use(
-		express.static(webDist, {
-			setHeaders(res, filePath) {
-				if (filePath.includes(`${sep}assets${sep}`)) {
-					res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-				}
-			},
+
+/** 页面打不开时回什么：诊断页（缺什么 / 怎么修 / 每 N 秒自检），绝不再谎报「正在更新」。 */
+function sendWebBuildDiagnostic(res: Response, build: ReturnType<typeof resolveWebBuild>): void {
+	if (res.headersSent) return;
+	res.status(503);
+	res.setHeader("Cache-Control", "no-store");
+	res.setHeader("Retry-After", String(WEB_BUILD_RETRY_SECONDS));
+	res.type("html").send(
+		webBuildDiagnosticHtml(build, {
+			version: appVersion(),
+			installKind: describeKernelInstall(classifyKernelInstall(pkgRoot)),
 		}),
 	);
-	app.use((req, res, next) => {
-		const p = req.path;
-		if (
-			p.startsWith("/assets/") ||
-			p.startsWith("/icons/") ||
-			p === "/favicon.svg" ||
-			p === "/icon.ico" ||
-			p === "/manifest.webmanifest"
-		) {
-			res.status(404).end();
+}
+
+// 装包完整性的唯一判据：看入口文件，不看目录（目录在、入口不在 = 装到一半，见 server/web-build.ts）。
+const WEB_BUILD_AT_BOOT = resolveWebBuild(webDist);
+if (!WEB_BUILD_AT_BOOT.ok) {
+	console.error(`✖ ${describeWebBuild(WEB_BUILD_AT_BOOT)}：这份安装不完整，浏览器界面打不开。`);
+	console.error(`  修复：${WEB_BUILD_REPAIR_COMMAND}（装好后重启内核）。API / 手机 / 设备中心不受影响。`);
+	// 受托管的重启：宁可不起来（由壳给出修复入口），也不要起一份「能连上但没有界面」的内核。
+	if (process.env[RESTART_CHILD_ENV]) process.exit(1);
+}
+if (WEB_BUILD_AT_BOOT.ok) app.use(compression());
+app.use(
+	express.static(webDist, {
+		setHeaders(res, filePath) {
+			if (filePath.includes(`${sep}assets${sep}`)) {
+				res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+			}
+		},
+	}),
+);
+app.use((req, res, next) => {
+	const p = req.path;
+	if (
+		p.startsWith("/assets/") ||
+		p.startsWith("/icons/") ||
+		p === "/favicon.svg" ||
+		p === "/icon.ico" ||
+		p === "/manifest.webmanifest"
+	) {
+		res.status(404).end();
+		return;
+	}
+	next();
+});
+app.get(/^\/(?!api\/|ws).*/, (_req, res) => {
+	// 每个页面请求都现算一次：装包被补好（npm 重装 / 安装包更新完成）后无需重启内核。
+	const build = resolveWebBuild(webDist);
+	if (!build.ok) {
+		sendWebBuildDiagnostic(res, build);
+		return;
+	}
+	const devCache = process.env.PI_WEB_DEV_CACHE;
+	const fromSource = existsSync(join(pkgRoot, ".git"));
+	const envDefault = devCache !== undefined ? devCache !== "0" : fromSource;
+	const stored = readDevNoCacheSetting();
+	const noStore = stored ?? envDefault;
+	res.setHeader("Cache-Control", noStore ? "no-store" : "public, max-age=0");
+	res.sendFile(build.entry, { dotfiles: "allow" }, (err) => {
+		if (!err) return;
+		// 判定与落盘之间被打断（更新正在覆盖）→ 同样给诊断页，不给一句假的「更新中」。
+		const late = resolveWebBuild(webDist);
+		if (!late.ok) {
+			sendWebBuildDiagnostic(res, late);
 			return;
 		}
-		next();
+		console.error(`[web] 首页读取失败：${err.message}`);
+		if (res.headersSent) return;
+		res.status(500).type("text").send("页面读取失败：请查看内核日志并重启内核。");
 	});
-	app.get(/^\/(?!api\/|ws).*/, (_req, res) => {
-		const devCache = process.env.PI_WEB_DEV_CACHE;
-		const fromSource = existsSync(join(pkgRoot, ".git"));
-		const envDefault = devCache !== undefined ? devCache !== "0" : fromSource;
-		const stored = readDevNoCacheSetting();
-		const noStore = stored ?? envDefault;
-		res.setHeader("Cache-Control", noStore ? "no-store" : "public, max-age=0");
-		res.sendFile(join(webDist, "index.html"), { dotfiles: "allow" }, (err) => {
-			if (err && !res.headersSent) {
-				res.status(503).send("正在更新 pi-web-ui，请稍后刷新…");
-			}
-		});
-	});
-} else if (process.env[RESTART_CHILD_ENV]) {
-	// complete (Windows: locked files / rollback can leave the global package
-	console.error(
-		"✖ 更新后的安装不完整（缺少 web/dist/index.html）。\n" + "  请手动执行 npm i -g pi-web-ui@latest 修复后重新启动。",
-	);
-	process.exit(1);
-}
+});
 
 const httpServer = createServer(app);
 const wss = new WebSocketServer({
@@ -2287,6 +2326,8 @@ service.onQuit = scheduleQuit;
 const SNAPSHOT_BACKPRESSURE_FACTOR = 3;
 const SNAPSHOT_BACKPRESSURE_MIN_BYTES = 262_144;
 const SNAPSHOT_RETRY_MS = 250;
+/** `tool_delta` 是累积全文替换帧（≤64KB/次），socket 积压超过这个值就丢弃本次增量。 */
+const TOOL_DELTA_BACKPRESSURE_BYTES = 1_048_576;
 const ATTACH_SLOW_NOTICE_MS = 8_000;
 
 const serializedCache = new WeakMap<ServerMessage, string>();
@@ -2297,6 +2338,19 @@ function serializeShared(msg: ServerMessage): string {
 		serializedCache.set(msg, s);
 	}
 	return s;
+}
+
+/**
+ * 应答一次「把状态给我」（issue #965）：请求是 per-connection 的，所以只给提出请求的连接出帧。
+ * pi 引擎按客户端自报的 `rev` 走增量；其它引擎没有出帧闸，退化为整包。
+ */
+function respondState(
+	cs: DispatchSession,
+	send: (msg: ServerMessage) => void | boolean,
+	options: { since?: number; force?: boolean } = {},
+): void {
+	if (cs.respondWithSnapshot) cs.respondWithSnapshot(send, options);
+	else cs.flushSnapshot(true);
 }
 
 wss.on("connection", (ws) => {
@@ -2327,6 +2381,15 @@ wss.on("connection", (ws) => {
 	let attachDone = false;
 	let attachGen = 0;
 	let snapshotRetryTimer: ReturnType<typeof setTimeout> | null = null;
+	/**
+	 * attach 收尾已经对新 sink 整包推过一次（新 sink 没有基线 → 必然全量），
+	 * 所以握手期间排队进来的裸 `get_state` 其答案已经在同一条有序 socket 上，
+	 * 再答一遍就是同一份状态发两次（issue #965）。带 rev 的请求照常应答：它会走增量。
+	 */
+	const answeredByAttach = (m: ClientMessage): boolean => m.type === "get_state" && m.rev === undefined;
+	const drainPending = (): void => {
+		for (const m of pending.drain()) if (!answeredByAttach(m)) dispatch(m);
+	};
 
 	ws.on("error", (err) => {
 		console.error(`[ws] socket error${clientId ? ` (${clientId})` : ""}:`, err.message);
@@ -2335,8 +2398,9 @@ wss.on("connection", (ws) => {
 		} catch {}
 	});
 
-	const sendRaw = (msg: ServerMessage): void => {
-		if (closed || ws.readyState !== WebSocket.OPEN) return;
+	/** 返回 false = 这一帧没发出去（背压），调用方（出帧闸）不该把它记成已送达。 */
+	const sendRaw = (msg: ServerMessage): boolean => {
+		if (closed || ws.readyState !== WebSocket.OPEN) return false;
 		if (
 			(msg.type === "snapshot" || msg.type === "snapshot_delta") &&
 			lastSnapshotBytes > 0 &&
@@ -2346,27 +2410,33 @@ wss.on("connection", (ws) => {
 			if (!snapshotRetryTimer) {
 				snapshotRetryTimer = setTimeout(() => {
 					snapshotRetryTimer = null;
+					const cs = service.get(clientId ?? "");
 					if (!service.dispatchSharedConversationMessage?.(clientId ?? "", { type: "get_state" })) {
-						service.get(clientId ?? "")?.flushSnapshot(wasFull);
+						if (cs) respondState(cs, send, { force: true });
 					}
 				}, SNAPSHOT_RETRY_MS);
 			}
-			return;
+			return false;
 		}
+		// 工具流式输出也是「累积全文 + mode:replace」，慢客户端不控就等于无界写内存；
+		// 丢掉一帧增量不影响最终一致：工具结束时的那次快照带着完整结果。
+		if (msg.type === "tool_delta" && ws.bufferedAmount > TOOL_DELTA_BACKPRESSURE_BYTES) return false;
 		const wire = serializeShared(msg);
 		if (msg.type === "snapshot") lastSnapshotBytes = wire.length * 2;
-		ws.send(wire);
+		try {
+			ws.send(wire);
+		} catch {
+			return false;
+		}
+		return true;
 	};
 
 	const windowTap = new MessageWindowTap(sendRaw, readMessageWindowConfig(process.env));
-	const sendShared = (msg: ServerMessage): void => {
-		const shared = clientId ? service.sharedConversationTarget?.(clientId) : undefined;
-		windowTap.setScope(
-			shared ? `shared:${JSON.stringify([shared.ownerClientId, shared.conversationId])}` : `local:${clientId}`,
-		);
-		windowTap.accept(msg);
-	};
-	const send = (msg: ServerMessage): void => {
+	/**
+	 * 本连接的投递入口。返回 false = 这一帧没送到（视图切换过滤 / 背压），
+	 * 出帧闸据此不把它记成已送达（issue #965）。
+	 */
+	const send = (msg: ServerMessage): boolean | void => {
 		if (
 			clientId &&
 			service.sharedConversationTarget?.(clientId) &&
@@ -2378,8 +2448,15 @@ wss.on("connection", (ws) => {
 				msg.type === "terminal_list" ||
 				msg.type === "terminal_exit")
 		)
-			return;
+			return false;
 		if (msg.type === "snapshot" || msg.type === "snapshot_delta") windowTap.setScope(`local:${clientId}`);
+		return windowTap.accept(msg);
+	};
+	const sendShared = (msg: ServerMessage): void => {
+		const shared = clientId ? service.sharedConversationTarget?.(clientId) : undefined;
+		windowTap.setScope(
+			shared ? `shared:${JSON.stringify([shared.ownerClientId, shared.conversationId])}` : `local:${clientId}`,
+		);
 		windowTap.accept(msg);
 	};
 
@@ -2476,7 +2553,7 @@ wss.on("connection", (ws) => {
 					return;
 				}
 				nextSvc.applyPluginCommandCatalog();
-				newCs.flushSnapshot(true);
+				newCs.flushSnapshot();
 				newCs.pushSettings();
 				void newCs.refreshSessions();
 				void newCs.pushProjects();
@@ -2490,7 +2567,7 @@ wss.on("connection", (ws) => {
 					})
 					.catch(() => {});
 				attachDone = true;
-				for (const m of pending.drain()) dispatch(m);
+				drainPending();
 				if (targetEngine === "claude") {
 					void probeClaudeCode().then((probe) => {
 						if (!probe.installed) {
@@ -2531,9 +2608,9 @@ wss.on("connection", (ws) => {
 							ensureEngine(prevEngine).detach(cid, send);
 							return;
 						}
-						rollbackCs.flushSnapshot(true);
+						rollbackCs.flushSnapshot();
 						attachDone = true;
-						for (const m of pending.drain()) dispatch(m);
+						drainPending();
 					})
 					.catch(() => {
 						attachDone = true;
@@ -2805,7 +2882,7 @@ wss.on("connection", (ws) => {
 					});
 				}
 				if (!handled && (!msg.conversationId || msg.conversationId === activeId)) {
-					if (!service.dispatchSharedConversationMessage?.(clientId, { type: "get_state" })) cs.flushSnapshot(true);
+					if (!service.dispatchSharedConversationMessage?.(clientId, { type: "get_state" })) respondState(cs, send);
 				}
 			}
 			return;
@@ -2933,7 +3010,7 @@ wss.on("connection", (ws) => {
 					void cs.retryLast();
 					break;
 				case "get_state":
-					cs.flushSnapshot(true);
+					respondState(cs, send, { since: msg.rev });
 					break;
 				case "get_commands":
 					void cs.pushSlashCommands();
@@ -3208,7 +3285,7 @@ wss.on("connection", (ws) => {
 							send({ type: "plugin_grants", grants: pluginMgr.grants.list() });
 							send({ type: "plugin_permissions", grants: pluginMgr.permGrants.list() });
 							service.applyPluginCommandCatalog();
-							cs.flushSnapshot(true);
+							cs.flushSnapshot();
 							void cs.pushProjects();
 							void cs.refreshSessions();
 							try {
@@ -3218,7 +3295,7 @@ wss.on("connection", (ws) => {
 						})
 						.catch(() => {
 							if (closed) return;
-							cs.flushSnapshot(true);
+							cs.flushSnapshot();
 							void cs.pushProjects();
 							void cs.refreshSessions();
 							replayQueued();
@@ -3226,7 +3303,7 @@ wss.on("connection", (ws) => {
 					if (msg.locale) void service.setLocale(cid, msg.locale);
 					const replayQueued = (): void => {
 						attachDone = true;
-						for (const m of pending.drain()) dispatch(m);
+						drainPending();
 					};
 				})
 				.catch((err: unknown) => {

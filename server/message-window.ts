@@ -78,6 +78,25 @@ export function pickWindowStart(
 	return byCount;
 }
 
+/** 一次基线演进的结果：先算出来，帧真送出去了再落盘（见 `accept`）。 */
+interface WindowPlan {
+	start: number;
+	generation: string;
+}
+
+function planWindow(entry: ConvWindow, full: readonly UiMessage[], cfg: MessageWindowConfig): WindowPlan {
+	const rewritten = entry.ids.length > full.length || entry.ids.some((id, i) => full[i]?.id !== id);
+	const start = entry.start < 0 || rewritten ? pickWindowStart(full, cfg) : entry.start;
+	return { start, generation: rewritten ? randomUUID() : entry.generation };
+}
+
+function commitWindow(entry: ConvWindow, full: UiMessage[], plan: WindowPlan): void {
+	entry.generation = plan.generation;
+	entry.start = plan.start;
+	entry.full = full;
+	entry.ids = full.map((m) => m.id);
+}
+
 interface ConvWindow {
 	full: UiMessage[];
 	start: number;
@@ -98,7 +117,7 @@ export class MessageWindowTap {
 	}
 
 	constructor(
-		private readonly send: (msg: ServerMessage) => void,
+		private readonly send: (msg: ServerMessage) => boolean | void,
 		private readonly cfg: MessageWindowConfig,
 	) {}
 
@@ -106,52 +125,58 @@ export class MessageWindowTap {
 		return this.cfg.windowSize > 0;
 	}
 
-	accept(msg: ServerMessage): void {
+	/**
+	 * 返回 false = 这一帧没送到 socket（背压），调用方可据此不更新「已送达」基线。
+	 *
+	 * 窗口基线只在**真正送出去之后**才提交：丢了一帧却不回滚，基线就会跑在客户端前面，
+	 * 下一次补发的 `appended` 会被重复追加进 `entry.full`（historyTotal / 翻页锚点跟着错）。
+	 */
+	accept(msg: ServerMessage): boolean | void {
 		if (!this.enabled) {
-			this.send(msg);
-			return;
+			return this.send(msg);
 		}
 		if (msg.type === "snapshot") {
 			const state = msg.state;
 			const full = state.messages;
 			const entry = this.entry(state.conversationId);
-			this.updateBaseline(entry, full);
-			this.lastConversationId = state.conversationId;
-			this.send({
+			const next = planWindow(entry, full, this.cfg);
+			const delivered = this.send({
 				...msg,
 				state: {
 					...state,
-					messages: entry.start > 0 ? full.slice(entry.start) : full,
+					messages: next.start > 0 ? full.slice(next.start) : full,
+					historyStart: next.start,
+					historyTotal: full.length,
+					historyGeneration: next.generation,
+				},
+			});
+			if (delivered === false) return false;
+			commitWindow(entry, full, next);
+			this.lastConversationId = state.conversationId;
+			return delivered;
+		}
+		if (msg.type === "snapshot_delta") {
+			const entry = this.convs.get(msg.conversationId);
+			if (!entry) return this.send(msg);
+			const full = msg.appended.length > 0 ? entry.full.concat(msg.appended) : entry.full;
+			const delivered = this.send({
+				...msg,
+				state: {
+					...msg.state,
 					historyStart: entry.start,
 					historyTotal: full.length,
 					historyGeneration: entry.generation,
 				},
 			});
-			return;
-		}
-		if (msg.type === "snapshot_delta") {
-			const entry = this.convs.get(msg.conversationId);
-			if (!entry) {
-				this.send(msg);
-				return;
-			}
+			if (delivered === false) return false;
 			if (msg.appended.length > 0) {
-				entry.full = entry.full.concat(msg.appended);
+				entry.full = full;
 				entry.ids.push(...msg.appended.map((m) => m.id));
 			}
 			this.lastConversationId = msg.conversationId;
-			this.send({
-				...msg,
-				state: {
-					...msg.state,
-					historyStart: entry.start,
-					historyTotal: entry.full.length,
-					historyGeneration: entry.generation,
-				},
-			});
-			return;
+			return delivered;
 		}
-		this.send(msg);
+		return this.send(msg);
 	}
 
 	rehydrate(convId: string, full: UiMessage[], start?: number): void {
@@ -225,11 +250,10 @@ export class MessageWindowTap {
 	}
 
 	private updateBaseline(entry: ConvWindow, full: UiMessage[]): void {
-		const rewritten = entry.ids.length > full.length || entry.ids.some((id, i) => full[i]?.id !== id);
-		if (rewritten) entry.generation = randomUUID();
-		if (entry.start < 0 || rewritten) entry.start = pickWindowStart(full, this.cfg);
-		entry.full = full;
-		entry.ids = full.map((m) => m.id);
+		const next = planWindow(entry, full, this.cfg);
+		entry.generation = next.generation;
+		entry.start = next.start;
+		commitWindow(entry, full, next);
 	}
 
 	private entry(convId: string): ConvWindow {

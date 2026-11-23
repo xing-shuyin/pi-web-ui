@@ -93,6 +93,14 @@ export interface DispatchSession {
 	editMessage(messageId: string, text: string, attachments?: PromptAttachment[]): Promise<void>;
 	forkSession?(messageId: string, position?: "before" | "at", targetConvId?: string): Promise<void>;
 	flushSnapshot(forceFull?: boolean): void;
+	/**
+	 * 应答一次「把状态给我」（issue #965）：只对提出请求的那个连接出帧，并按它自报的
+	 * `since` 决定增量还是全量。引擎不实现时调用方退化为 `flushSnapshot(true)`。
+	 */
+	respondWithSnapshot?(
+		send: (msg: import("./protocol.js").ServerMessage) => void | boolean,
+		options?: { since?: number; force?: boolean },
+	): void;
 	activeConversationId?(): string;
 	getMessagesOfConversation?(convId: string): import("./protocol.js").UiMessage[] | undefined;
 	pushSlashCommands(): Promise<void>;

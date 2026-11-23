@@ -1951,12 +1951,18 @@ export function useChat() {
 	const questionSourceRef = useRef<QuestionSource>("live");
 	const serverRunIdRef = useRef<string | null>(null);
 
+	// 带上手上那份快照的 rev：服务端按它补增量，对不上才重发全量（issue #965）。
+	const requestState = (ws: WebSocket | null): void => {
+		if (!isWsOpen(ws)) return;
+		const rev = chatApi.current.chat.state?.rev;
+		ws.send(JSON.stringify({ type: "get_state", ...(rev !== undefined ? { rev } : {}) } satisfies ClientMessage));
+	};
+
 	const scheduleResync = (): void => {
 		if (resyncTimerRef.current) return;
 		resyncTimerRef.current = setTimeout(() => {
 			resyncTimerRef.current = null;
-			const ws = wsRef.current;
-			if (isWsOpen(ws)) ws.send(JSON.stringify({ type: "get_state" } satisfies ClientMessage));
+			requestState(wsRef.current);
 		}, 300);
 	};
 
@@ -2326,7 +2332,7 @@ export function useChat() {
 						dispatch({ type: "question", question: null });
 						resendUnconfirmedAnswers();
 					}
-					ws.send(JSON.stringify({ type: "get_state" } satisfies ClientMessage));
+					requestState(ws);
 					ws.send(JSON.stringify({ type: "list_files" } satisfies ClientMessage));
 					ws.send(JSON.stringify({ type: "list_models" } satisfies ClientMessage));
 					ws.send(JSON.stringify({ type: "list_commands" } satisfies ClientMessage));
@@ -2348,12 +2354,8 @@ export function useChat() {
 					break;
 				case "snapshot_delta": {
 					const cur = chatApi.current.chat.state;
-					if (!cur) {
-						const ws = wsRef.current;
-						if (isWsOpen(ws)) {
-							ws.send(JSON.stringify({ type: "get_state" } satisfies ClientMessage));
-						}
-					} else if (cur.conversationId !== msg.conversationId || cur.rev !== msg.baseRev) {
+					if (!cur) requestState(wsRef.current);
+					else if (cur.conversationId !== msg.conversationId || cur.rev !== msg.baseRev) {
 						scheduleResync();
 					}
 					const activeId = chatApi.current.chat.activeConversationId || cur?.conversationId;
@@ -3195,9 +3197,7 @@ export function useChat() {
 				return;
 			}
 			if (isWsOpen(ws)) {
-				if (Date.now() - lastBeatRef.current > 15_000 || !chatApi.current.chat.state) {
-					ws.send(JSON.stringify({ type: "get_state" } satisfies ClientMessage));
-				}
+				if (Date.now() - lastBeatRef.current > 15_000 || !chatApi.current.chat.state) requestState(ws);
 			}
 		};
 		if (typeof document !== "undefined") {

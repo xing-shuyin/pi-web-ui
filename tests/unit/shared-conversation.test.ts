@@ -159,6 +159,14 @@ describe("shared conversation identity", () => {
 	it("filters deltas by target and coalesces snapshots, including cancellation", () => {
 		vi.useFakeTimers();
 		const { service, owner, conversation, send } = fixture();
+		// 第二帧才多一条消息：纯追加才走增量（内容没变时闸会直接拦掉，见下一个用例）。
+		let snapshotCalls = 0;
+		owner.snapshotForConversation = vi.fn((conv: any) => ({
+			conversationId: conv.id,
+			rev: ++snapshotCalls,
+			sessionId: "stable",
+			messages: snapshotCalls > 1 ? [{ id: "m1", role: "user", content: [] }] : [],
+		}));
 		service.openSharedConversation("viewer", "owner", "c1", send);
 		const sink = [...owner.sinks][0] as (msg: unknown) => void;
 		sink({ type: "message_delta", conversationId: "other" });
@@ -182,6 +190,18 @@ describe("shared conversation identity", () => {
 		vi.runAllTimers();
 		expect(send).toHaveBeenCalledTimes(3);
 	});
+	it("内容没变的重复推送不再发帧（issue #965）", () => {
+		vi.useFakeTimers();
+		const { service, owner, conversation, send } = fixture();
+		service.openSharedConversation("viewer", "owner", "c1", send);
+		const first = send.mock.calls.length;
+		for (const push of owner.conversationViewers.get(conversation)) {
+			push();
+			push();
+		}
+		vi.advanceTimersByTime(60);
+		expect(send.mock.calls.length).toBe(first);
+	});
 	it("excludes private owner approvals from a shared snapshot", () => {
 		const { owner, conversation } = fixture();
 		owner.buildLightState = () => ({
@@ -190,7 +210,8 @@ describe("shared conversation identity", () => {
 				{ id: "private", conversationId: "other" },
 			],
 		});
-		owner.messagesOf = () => [];
+		owner.messageSnapshot = () => ({ messages: [], ids: [], refs: [], count: 0, tag: "" });
+		owner.draftForSnapshot = () => null;
 		const snapshot = ClientSession.prototype.snapshotForConversation.call(owner, conversation as any);
 		expect(snapshot.pendingApprovals).toEqual([{ id: "shared", conversationId: "c1" }]);
 	});
