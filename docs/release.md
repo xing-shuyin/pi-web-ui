@@ -125,6 +125,22 @@ git ls-remote --tags origin       # 应能看到 vX.Y.Z
 ## 注意事项
 
 - 版本号**必须**高于 npm registry 上已有的（用 `npm view pi-web-ui version` 查当前值）。
+- **手机签名密钥是升级信任根，必须离线备份**：APK 能覆盖升级的前提是「同一张证书」，所以 `MOBILE_KEYSTORE_BASE64` / `MOBILE_KEYSTORE_PASSWORD` / `MOBILE_KEY_ALIAS` / `MOBILE_KEY_PASSWORD` 这四条 secrets 一旦丢失或更换，用户就得卸载重装（本地引擎数据一起清）。备份的是**密钥文件本体 + 口令**，不是 secrets 本身（secrets 只能覆盖写、读不出来）。
+  换钥 / 首次生成（PKCS12，JDK 21 与 apksigner 都认；本机没有 keytool 时 openssl 就够）：
+
+  ```bash
+  PASS=$(openssl rand -hex 16)
+  openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 10950 -nodes -subj '/CN=pi-web-ui Mobile/O=<你的组织>'
+  openssl pkcs12 -export -inkey key.pem -in cert.pem -name pi-mobile -out pi-mobile.p12 -passout pass:"$PASS"
+  base64 -w0 pi-mobile.p12 > pi-mobile.p12.b64
+  gh secret set MOBILE_KEYSTORE_BASE64 < pi-mobile.p12.b64
+  gh secret set MOBILE_KEYSTORE_PASSWORD --body "$PASS"
+  gh secret set MOBILE_KEY_ALIAS --body pi-mobile
+  gh secret set MOBILE_KEY_PASSWORD --body "$PASS"
+  ```
+
+  密钥与口令请存进密码管理器/离线介质；仓库、Release 资产、issue 里都不许出现（守卫只看 CI，不会替你防泄露）。
+
 - **发完 npm 必须看得见（issue #949）**：第 8 步是整条流程里唯一必须本地带 OTP 手动跑的步骤（tag 推送会自动出 Release / 桌面包 / 扩展 / 手机 APK，全部有 `release:check` 盯着） —— 唯独 npm 落后时全绿，用户 `npm i -g` 拿到几周前的旧包（#949 报的就是这个：registry 停在 0.120.0，仓库已经 0.121.3）。所以：
   - `npm run release:check` 现在**先核 npm**（`scripts/check-npm-version.mjs`，纯读 registry，不需要登录态），缺版本 / `latest` 指向旧版 / registry 比本地新都直接 exit 1；只差 npm 时先跑 `npm run release:check:npm` 就能确认。
   - `.github/workflows/npm-drift.yml` 每天 03:17 UTC 跑一次同样的校验，漂移就红（红叉 + GitHub 通知），不需要任何人想起来手查。
