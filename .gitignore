@@ -103,6 +103,9 @@ capsule-palettes.html
 /pi-web-ui-mobile-debug.apk
 /pi-web-ui-mobile-*.apk
 
+# 本地签名材料（APK 更新信任根）：只住本机、永不入库 —— 一旦进 git 历史，任何人都能签出同身份的包。
+# 备份与恢复步骤见 docs/release.md「手机签名密钥是升级信任根」。
+/.signing/
 # 临时草稿的唯一合法落点（细则见 docs/agent-rules.md §八，守卫 tests/unit/repo-hygiene.test.ts）
 /.scratch/
 # 根级一次性产物：日志 / 备份 / 对比页 / 安装包

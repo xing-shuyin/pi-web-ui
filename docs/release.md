@@ -140,6 +140,20 @@ git ls-remote --tags origin       # 应能看到 vX.Y.Z
   ```
 
   密钥与口令请存进密码管理器/离线介质；仓库、Release 资产、issue 里都不许出现（守卫只看 CI，不会替你防泄露）。
+  **密钥住哪**：本机固定放 `/.signing/`（已被 `.gitignore` 忽略、根级白名单登记，见该目录里的 `README.md`）。
+  它**不是**可提交的内容——公开仓库一旦收了私钥，任何人都能签出同身份的 APK，且 git 历史删不掉；所以即便「只想存本地」也必须是忽略状态，别 `git add -f`。
+  同一块盘挡不住重装系统 / 磁盘损坏，务必再存一份到仓库之外。
+
+  当前在用密钥（新钥生成后请同步更新这里）：
+
+  ```text
+  subject  CN=pi-web-ui Mobile, O=xing-shuyin
+  sha256   F3:3A:96:A9:60:1A:55:16:CA:49:4E:38:E8:8A:DA:13:B2:28:A4:E5:67:84:54:A7:55:C8:97:96:AF:C2:9B:8A
+  valid    2026-11-23 → 2056-11-15
+  ```
+
+  自检两条：`openssl pkcs12 -in pi-mobile.p12 -nokeys -passin pass:<口令> | openssl x509 -noout -fingerprint -sha256`（对得上上面的指纹），
+  以及 `apksigner verify --print-certs <刚发的 apk>`（发出的包确实是这把钥签的）。
 
 - **发完 npm 必须看得见（issue #949）**：第 8 步是整条流程里唯一必须本地带 OTP 手动跑的步骤（tag 推送会自动出 Release / 桌面包 / 扩展 / 手机 APK，全部有 `release:check` 盯着） —— 唯独 npm 落后时全绿，用户 `npm i -g` 拿到几周前的旧包（#949 报的就是这个：registry 停在 0.120.0，仓库已经 0.121.3）。所以：
   - `npm run release:check` 现在**先核 npm**（`scripts/check-npm-version.mjs`，纯读 registry，不需要登录态），缺版本 / `latest` 指向旧版 / registry 比本地新都直接 exit 1；只差 npm 时先跑 `npm run release:check:npm` 就能确认。

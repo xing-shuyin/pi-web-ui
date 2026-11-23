@@ -76,6 +76,7 @@ const ROOT_ALLOWLIST = new Set([
 	".worktrees",
 	".safe-exec",
 	".scratch",
+	".signing",
 	".theme-audit",
 	".artifacts",
 	"artifacts",
