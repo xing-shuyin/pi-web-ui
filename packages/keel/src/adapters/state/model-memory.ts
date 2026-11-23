@@ -1,13 +1,12 @@
-import type { ClientStateStore } from "../../../../../server/client-state.js";
 import type { ModelMemoryPort } from "../../contracts/model-admin.js";
+import type { SettingsStorePort } from "../../contracts/settings-store.js";
 
 /**
- * 项目/全局模型记忆的落盘适配器：只把 `ModelMemoryPort` 的九格转给 `ClientStateStore`。
+ * 项目/全局模型记忆的落盘适配器：只把 `ModelMemoryPort` 的九格转给 `SettingsStorePort`。
  *
- * 这里不做任何归一/缓存：`client-state` 才是唯一写入者（P2 之后它会被收进 `SettingsStorePort`，
- * 届时只换这一处实现，域层不用动）。
+ * 这里不做任何归一/缓存：宿主设置存储才是唯一写入者（`server/core-state-adapter.ts` 注入端口实例）。
  */
-export function createModelMemory(store: ClientStateStore): ModelMemoryPort {
+export function createModelMemory(store: SettingsStorePort): ModelMemoryPort {
 	return {
 		getProjectModel: (clientId, cwd, engine) => store.getProjectModel(clientId, cwd, engine),
 		saveProjectModel: (clientId, cwd, modelId, engine) => store.saveProjectModel(clientId, cwd, modelId, engine),

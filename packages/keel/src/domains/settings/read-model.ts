@@ -1,11 +1,10 @@
+import type { ClientSettings } from "../../settings-schema.js";
 import {
 	normalizeBgCleanupMinutes,
 	normalizeCodemodeInlineBudget,
 	normalizeCodemodeMode,
 	normalizeDisabledPluginTools,
 	normalizeKeepRecentMessages,
-	normalizePromptDisabled,
-	normalizePromptOverrides,
 	normalizeQueueMode,
 	normalizeRetryMaxAttempts,
 	normalizeSkillList,
@@ -15,12 +14,23 @@ import {
 	normalizeSkillsMaxFileBytes,
 	normalizeSubagentAutoWakeMaxTurns,
 	normalizeToolWatchdogTimeoutMs,
-	normalizeUiLayout,
-} from "../../../../../server/client-state.js";
-import type { ClientSettings } from "../../../../../server/client-state.js";
+} from "../../settings-normalize.js";
+import { normalizeUiLayout } from "../../ui-layout.js";
 
 /**
- * 下发视图只投影 `client-state.ts` 已有 `normalize*` 单源的字段，键名与 `ClientSettings` 逐字一致。
+ * 提示词来源的归一规则：**单源在宿主**（`server/client-state.ts` 的 `normalizePromptOverrides` /
+ * `normalizePromptDisabled`，它们依赖 `server/prompt-composer.ts` 的 token 表）。提示词域还没进内核，
+ * 所以这里只按注入的两个纯函数收口——不在内核里复制一份 token 表，也不在这里改判定。
+ */
+export interface SettingsPromptNormalizers {
+	normalizePromptOverrides(overrides?: Record<string, string> | null): Record<string, string>;
+	normalizePromptDisabled(
+		stored?: { promptDisabled?: string[]; _promptPluginDevConfigured?: boolean } | null,
+	): string[];
+}
+
+/**
+ * 下发视图只投影 schema 侧已有 `normalize*` 单源的字段，键名与 `ClientSettings` 逐字一致。
  * 补丁值类型不符（`string` 撞 `number`、数组撞对象…）→ 回落当前值；类型相符但越界 / 不在枚举内 →
  * 由单源 `normalize*` 收敛（可能收敛到它自己的默认值，域里不做第二套裁定）。
  */
@@ -51,6 +61,8 @@ export interface SettingsViewInput {
 	current: Partial<ClientSettings>;
 	/** 按到达顺序排列的补丁序列；后面的覆盖前面的。 */
 	patches?: readonly (Partial<ClientSettings> | null | undefined)[] | null;
+	/** 提示词来源的归一（宿主注入，见 `SettingsPromptNormalizers`）。 */
+	prompt: SettingsPromptNormalizers;
 }
 
 export function buildSettingsView(input: SettingsViewInput): SettingsView {
@@ -59,8 +71,8 @@ export function buildSettingsView(input: SettingsViewInput): SettingsView {
 	const pick = <T>(key: keyof ClientSettings, coerce: (value: unknown) => T | undefined): T | undefined =>
 		lastAccepted(key, coerce, current, patches);
 	return {
-		promptOverrides: normalizePromptOverrides(pick("promptOverrides", asStringRecord)),
-		promptDisabled: normalizePromptDisabled({
+		promptOverrides: input.prompt.normalizePromptOverrides(pick("promptOverrides", asStringRecord)),
+		promptDisabled: input.prompt.normalizePromptDisabled({
 			promptDisabled: pick("promptDisabled", asStringList),
 			_promptPluginDevConfigured: pick("_promptPluginDevConfigured", asBoolean),
 		}),

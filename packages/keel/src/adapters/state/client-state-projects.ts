@@ -1,5 +1,5 @@
-import { dirname, join, resolve } from "node:path";
-import { ClientStateStore } from "../../../../../server/client-state.js";
+import { resolve } from "node:path";
+import type { SettingsStorePort } from "../../contracts/settings-store.js";
 import { discoverRecentProjectsFromDisk } from "../../session-parser.js";
 import { piSessionsRoot } from "../../session-search.js";
 
@@ -14,10 +14,10 @@ export interface ProjectEntry {
 }
 
 export interface ProjectSourceOptions {
-	/** `client-state.json` 的路径；持久化仍是 `ClientStateStore` 的事，这里只做窄面转发。 */
-	file: string;
+	/** 设置存储端口（宿主 `ClientStateStore`）：最近列表 / 墓碑 / 移除都在它手里。 */
+	store: SettingsStorePort;
 	/**
-	 * 扫盘发现项目用的会话根目录。默认是 `file` 所在目录的 `sessions/` 加 `PI_CODING_AGENT_SESSION_DIR`：
+	 * 扫盘发现项目用的会话根目录。默认是 `store.dataDir/sessions` 加 `PI_CODING_AGENT_SESSION_DIR`：
 	 * 默认布局下 client-state 就住在 agent 目录（`~/.pi`），两处一致；分目录部署时显式传。
 	 */
 	sessionRoots?: readonly string[];
@@ -35,22 +35,22 @@ export interface ProjectSource {
 	close(): void;
 }
 
-function defaultSessionRoots(file: string): string[] {
-	const roots = [join(dirname(resolve(file)), "sessions")];
+function defaultSessionRoots(dataDir: string): string[] {
+	const roots = [resolve(dataDir, "sessions")];
 	const extra = piSessionsRoot();
 	if (extra) roots.push(resolve(extra));
 	return roots;
 }
 
 /**
- * 项目来源的适配器：`ClientStateStore`（最近列表 / 墓碑 / 移除）+ 扫盘发现。
+ * 项目来源的适配器：设置存储端口（最近列表 / 墓碑 / 移除）+ 扫盘发现。
  *
- * 写回、排序、墓碑规则全在 store 里，这里只负责「把盘上新发现的项目灌进 store，再读最近列表」。
+ * 写回、排序、墓碑规则全在宿主 store 里，这里只负责「把盘上新发现的项目灌进 store，再读最近列表」。
  * 扫盘失败（权限 / 已断连的网络盘）不算失败：最近列表仍以 client-state 为准。
  */
 export function createProjectSource(options: ProjectSourceOptions): ProjectSource {
-	const store = new ClientStateStore(options.file);
-	const roots = options.sessionRoots ? [...options.sessionRoots] : defaultSessionRoots(options.file);
+	const store = options.store;
+	const roots = options.sessionRoots ? [...options.sessionRoots] : defaultSessionRoots(store.dataDir);
 	const ttl = options.discoveryTtlMs ?? DISCOVERY_TTL_MS;
 	const limit = options.discoveryLimit ?? DISCOVERY_LIMIT;
 	let scannedAt: number | null = null;

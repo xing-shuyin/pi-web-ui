@@ -1616,13 +1616,14 @@ function ensureEngine(engine: EngineId): EngineService {
 				? // 新引擎（keel）实现 EngineService 但仍有 AgentService 专属调用点待清零，类型面暂借 legacy。
 					(new CoreEngine(CWD, {
 						version: VERSION,
-						dataDir: DATA_DIR,
 						agentDir: getAgentDir(),
+						// 设置/项目/模型记忆的唯一写者：进程里共用这一份（两套实例写同一个文件会互相覆盖）。
+						stateStore: sharedStateStore,
 						modelAdmin: (sinks) => createCoreModelAdmin({ agentDir: getAgentDir(), ...sinks }),
 						// 远程工作区里的内置写/编辑工具要用 SFTP：只有宿主知道怎么建这些操作。
 						terminalManager: ({ emit, cwd, lang }) => new TerminalManager(emit, cwd, lang),
 						remoteOpsOf: (cwd) => (isRemoteWorkspaceUri(cwd) ? createRemoteSdkOperations(cwd) : undefined),
-						settingsFrame: (sinks) => createCoreSettingsAdapter(sinks),
+						settingsFrame: (sinks) => createCoreSettingsAdapter({ ...sinks, stateStore: sharedStateStore }),
 						slashCommands: (sinks) => createCoreSlashCommands(sinks),
 						files: (sinks) => createCoreFiles(sinks),
 						workspace: () => createCoreWorkspaceUnavailable(),

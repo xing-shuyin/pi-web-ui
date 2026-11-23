@@ -11,15 +11,20 @@ const serverDir = join(root, "server");
 
 /**
  * P1 之后 keel 仍允许 import 的 app 模块。两桶都**只许变短**：
- * - `PENDING_PORT`：这是被搬进来的老叶子的首跳宿主依赖（端口反转在 P2/P4 销账）；
- * - `PORTS`：P2 要反转成端口的四个宿主模块。
- * 除这三桶以外的任何 `server/*` 依赖都会红——这是「新增耦合」的唯一门禁。
+ * - `PENDING_PORT`：被搬进来的老叶子的首跳宿主依赖（端口反转在 P2/P4 销账）；
+ * - `PORTS`：P2 要反转成端口的宿主模块。
+ * 除这两桶以外的任何 `server/*` 依赖都会红——这是「新增耦合」的唯一门禁。
+ *
+ * **P2 已落地：两桶都空，内核引宿主模块 = 0。** 设置面靠 `SettingsStorePort`（存储）与
+ * `SettingsFramePort`（设置帧/预设/审批规则）两个端口反转；`client-state` 的纯数据/纯函数
+ * 已搬进 `settings-schema` / `settings-normalize` / `ui-layout` / `projects-schema`。
+ * 这条棘轮保留：谁再往 keel 里 import 一个 `server/*`，下面第一个用例就红。
  */
 /** 已清零：approval-default-rules / plugins / quick-ask-context 都改成 keel 内的单源或窄类型。 */
 const PENDING_PORT: string[] = [];
 
-/** P2 的端口反转清单：反完一个就删一行（terminals 与 tool-manager 已销账）。 */
-const PORTS = ["client-state", "settings-service"];
+/** P2 端口反转清单：client-state / settings-service 已销账，清单清空。 */
+const PORTS: string[] = [];
 
 /** 宿主实现只许 type-only 引用（运行时拿到插件实例 = keel 又绑回了面板与生态）。 */
 const TYPE_ONLY_HOST = new Set(["plugins"]);
@@ -95,8 +100,10 @@ describe("keel · 依赖清单（只许变短）", () => {
 		expect(PENDING_PORT.filter((d) => !deps.has(d))).toEqual([]);
 	});
 
-	it("四个端口候选在 P2 落地前仍被引用", () => {
-		expect(PORTS.filter((d) => !deps.has(d))).toEqual([]);
+	it("P2 完成：三桶全空 —— 内核不再依赖任何宿主模块", () => {
+		expect(PORTS).toEqual([]);
+		expect(PENDING_PORT).toEqual([]);
+		expect([...deps]).toEqual([]);
 	});
 
 	it("宿主实现只许 type-only 引用", () => {

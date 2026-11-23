@@ -96,7 +96,7 @@
 | 批次   | 域                       | 数量 | 先做理由                                | 复用/新建                                                                                                                                 |
 | ------ | ------------------------ | ---- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | **B1** | 模型 / 供应商            | 28   | 选不了模型、切不了思考档 → 大面积不可用 | `domains/models`（已有 catalog/push）+ 新建 `domains/providers`（密钥/OAuth）                                                             |
-| **B2** | 设置 / 预设 / 审批规则   | 28   | 改任何设置都要                          | `domains/settings`（已有 read-model/patch/store）+ `adapters/settings`                                                                    |
+| **B2** | 设置 / 预设 / 审批规则   | 28   | 改任何设置都要                          | `domains/settings`（已有 read-model/patch/store）+ 宿主 `server/core-settings-adapter.ts`（`SettingsFramePort`）                          |
 | **B3** | 文件 / 目录              | 25   | 左栏文件面板                            | 新建 `domains/files`（复用 `files-service` 叶子）+ `contracts/files.ts`                                                                   |
 | **B4** | 会话 / 消息              | 17   | 切会话 / 分叉 / 回滚 / 编辑             | 扩 `domains/history` + `domains/sessions`；`getMessagesOfConversation` 走 transcript 投影                                                 |
 | **B5** | 终端 / CLI / 后台任务    | 18   | 终端面板与 bash 接管                    | 扩 `domains/terminals`（`TerminalManager` 已有）+ 新建 `domains/background`（`bg-servers`/`job-runner` 叶子）                             |

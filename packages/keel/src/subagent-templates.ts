@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { writeJsonAtomic } from "./atomic-file.js";
 import { createSerializedJsonWriter, type SerializedJsonWriter } from "./serialized-json-writer.js";
-import type { PromptMode } from "../../../server/client-state.js";
+import type { PromptMode } from "./settings-schema.js";
 import { isTraditionalLocale, type ServerLang } from "./i18n.js";
 import { BUILTIN_TEMPLATES_HANT } from "./subagent-templates-hant.js";
 import type { SubagentSecurityMode } from "./subagent-security-gate.js";

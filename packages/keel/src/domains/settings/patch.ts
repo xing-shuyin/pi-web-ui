@@ -1,5 +1,4 @@
-import { DEFAULT_CLIENT_SETTINGS } from "../../../../../server/client-state.js";
-import type { ClientSettings } from "../../../../../server/client-state.js";
+import { DEFAULT_CLIENT_SETTINGS, type ClientSettings } from "../../settings-schema.js";
 
 /** `ClientSettings` 里没进默认对象的可选键：新增可选键要在这里登记，否则补丁会被当未知键丢掉。 */
 const OPTIONAL_ONLY_KEYS = [

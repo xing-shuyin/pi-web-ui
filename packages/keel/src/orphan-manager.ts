@@ -1,4 +1,4 @@
-import { normalizePathKey } from "../../../server/client-state.js";
+import { normalizePathKey } from "./projects-schema.js";
 
 export interface OrphanCandidate {
 	id: string;

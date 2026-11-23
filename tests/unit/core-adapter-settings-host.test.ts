@@ -3,18 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ClientStateStore } from "../../server/client-state.js";
-import { SettingsService, type SettingsHost } from "../../server/settings-service.js";
+import {
+	createCoreSettingsAdapter,
+	createCoreSettingsHost,
+	createCoreSettingsService,
+	type CoreSettingsAdapterOptions,
+} from "../../server/core-settings-adapter.js";
+import { SettingsService } from "../../server/settings-service.js";
 import type { ServerMessage, UiSettingsState } from "../../server/protocol.js";
-import {
-	createSettingsHost,
-	createSettingsHost as createSettingsHostFromBarrel,
-	type SettingsHostInput,
-} from "../../packages/keel/src/adapters/settings/index.js";
-import {
-	createSettingsPusher,
-	createSettingsPusher as createSettingsPusherFromBarrel,
-} from "../../packages/keel/src/domains/settings/index.js";
-import type { TransportPort } from "../../packages/keel/src/contracts/ports.js";
 
 const CLIENT_ID = "core-settings-client";
 
@@ -28,14 +24,14 @@ function fakeSession(): unknown {
 	};
 }
 
-describe("设置适配器（adapters/settings + domains/settings/push）", () => {
+describe("宿主设置适配器（core-settings-adapter）", () => {
 	let dir: string;
 	let store: ClientStateStore;
 	let emitted: ServerMessage[];
 	let closed: boolean;
 
 	beforeEach(() => {
-		dir = mkdtempSync(join(tmpdir(), "core-adapter-settings-host-"));
+		dir = mkdtempSync(join(tmpdir(), "core-settings-adapter-"));
 		store = new ClientStateStore(join(dir, "client-state.json"));
 		emitted = [];
 		closed = false;
@@ -47,30 +43,29 @@ describe("设置适配器（adapters/settings + domains/settings/push）", () =>
 
 	const emitFrame = (msg: ServerMessage): void => void emitted.push(msg);
 
-	function transport(): TransportPort {
-		return { send: emitFrame, isClosed: () => closed };
-	}
-
-	function makeHost(overrides: Partial<SettingsHostInput> = {}): SettingsHost {
-		return createSettingsHost({
+	function options(overrides: Partial<CoreSettingsAdapterOptions> = {}): CoreSettingsAdapterOptions {
+		return {
 			clientId: CLIENT_ID,
 			stateStore: store,
 			emit: emitFrame,
+			isClosed: () => closed,
 			cwd: dir,
 			agentDir: join(dir, "agent"),
-			isDisposed: false,
-			isStreaming: false,
+			isDisposed: () => false,
+			isStreaming: () => false,
 			getSession: fakeSession,
+			getApprovalPolicy: () => ({ allowAll: false, categories: [] }),
+			lang: { get: () => "en", set: () => {} },
 			...overrides,
-		});
+		};
 	}
 
 	function settingsFrames(): UiSettingsState[] {
 		return emitted.flatMap((msg) => (msg.type === "settings_state" ? [msg.settings] : []));
 	}
 
-	it("host 如实投影输入的 clientId / stateStore / emit / cwd / agentDir", () => {
-		const host = makeHost();
+	it("host 如实投影注入的 clientId / stateStore / emit / cwd / agentDir", () => {
+		const host = createCoreSettingsHost(options());
 		expect(host.clientId).toBe(CLIENT_ID);
 		expect(host.stateStore).toBe(store);
 		expect(host.emit).toBe(emitFrame);
@@ -80,14 +75,16 @@ describe("设置适配器（adapters/settings + domains/settings/push）", () =>
 
 	it("host 的 isDisposed / isStreaming / getSession 回注入值，不是写死的常量", () => {
 		const session = fakeSession();
-		const host = makeHost({ isDisposed: true, isStreaming: true, getSession: () => session });
+		const host = createCoreSettingsHost(
+			options({ isDisposed: () => true, isStreaming: () => true, getSession: () => session }),
+		);
 		expect(host.isDisposed()).toBe(true);
 		expect(host.isStreaming()).toBe(true);
 		expect(host.getSession()).toBe(session);
 	});
 
 	it("host 的每个必需成员都被赋值且类型正确", () => {
-		const host = makeHost();
+		const host = createCoreSettingsHost(options());
 		const functions = [
 			"emit",
 			"flushSnapshot",
@@ -111,15 +108,15 @@ describe("设置适配器（adapters/settings + domains/settings/push）", () =>
 
 	it("flushSnapshot 只转发注入的回调，没注入时是空实现", () => {
 		let flushes = 0;
-		const host = makeHost({ flushSnapshot: () => void (flushes += 1) });
+		const host = createCoreSettingsHost(options({ flushSnapshot: () => void (flushes += 1) }));
 		expect(() => host.flushSnapshot()).not.toThrow();
 		expect(flushes).toBe(1);
-		expect(() => makeHost().flushSnapshot()).not.toThrow();
+		expect(() => createCoreSettingsHost(options()).flushSnapshot()).not.toThrow();
 		expect(flushes).toBe(1);
 	});
 
 	it("apply* / onX 空实现与 reloadSession 都不抛（否则 push() 会被连带炸掉）", async () => {
-		const host = makeHost();
+		const host = createCoreSettingsHost(options());
 		const noops = [
 			"applyRetryOverrides",
 			"applyQueueModes",
@@ -135,8 +132,8 @@ describe("设置适配器（adapters/settings + domains/settings/push）", () =>
 	});
 
 	it("push() 发出一帧 settings_state，settings 含关键键", () => {
-		const pusher = createSettingsPusher({ host: makeHost(), transport: transport() });
-		pusher.push();
+		const frame = createCoreSettingsAdapter(options());
+		frame.push();
 		const frames = settingsFrames();
 		expect(frames).toHaveLength(1);
 		const settings = frames[0];
@@ -166,39 +163,37 @@ describe("设置适配器（adapters/settings + domains/settings/push）", () =>
 	});
 
 	it("重复 push() 不抛异常，每次都重算一帧", () => {
-		const pusher = createSettingsPusher({ host: makeHost(), transport: transport() });
+		const frame = createCoreSettingsAdapter(options());
 		expect(() => {
-			pusher.push();
-			pusher.push();
+			frame.push();
+			frame.push();
 		}).not.toThrow();
 		expect(settingsFrames()).toHaveLength(2);
 	});
 
 	it("push() 读的是状态存储的当前值，不是构造时的快照", () => {
 		store.saveSettings(CLIENT_ID, { promptMode: "replace", keepRecentMessages: 42 });
-		const pusher = createSettingsPusher({ host: makeHost(), transport: transport() });
-		pusher.push();
+		const frame = createCoreSettingsAdapter(options());
+		frame.push();
 		expect(settingsFrames()[0].promptMode).toBe("replace");
 		expect(settingsFrames()[0].keepRecentMessages).toBe(42);
 	});
 
 	it("isDisposed 为 true 时不出帧也不抛（与 SettingsService 的现状一致）", () => {
-		const pusher = createSettingsPusher({ host: makeHost({ isDisposed: true }), transport: transport() });
-		expect(() => pusher.push()).not.toThrow();
-		expect(() => pusher.service.push()).not.toThrow();
+		const frame = createCoreSettingsAdapter(options({ isDisposed: () => true }));
+		expect(() => frame.push()).not.toThrow();
 		expect(emitted).toHaveLength(0);
 	});
 
 	it("getSession 抛错时 push() 不把异常传给调用方（SettingsService 内部已 try/catch）", () => {
-		const pusher = createSettingsPusher({
-			host: makeHost({
+		const frame = createCoreSettingsAdapter(
+			options({
 				getSession: () => {
 					throw new Error("session boom");
 				},
 			}),
-			transport: transport(),
-		});
-		expect(() => pusher.push()).not.toThrow();
+		);
+		expect(() => frame.push()).not.toThrow();
 		const frames = settingsFrames();
 		expect(frames).toHaveLength(1);
 		expect(frames[0].skills).toEqual([]);
@@ -206,26 +201,25 @@ describe("设置适配器（adapters/settings + domains/settings/push）", () =>
 	});
 
 	it("通道关闭后不再出帧，重新打开后恢复", () => {
-		const pusher = createSettingsPusher({ host: makeHost(), transport: transport() });
+		const frame = createCoreSettingsAdapter(options());
 		closed = true;
-		expect(() => pusher.push()).not.toThrow();
+		expect(() => frame.push()).not.toThrow();
 		expect(emitted).toHaveLength(0);
 		closed = false;
-		pusher.push();
+		frame.push();
 		expect(settingsFrames()).toHaveLength(1);
 	});
 
-	it("pusher 暴露的就是老叶子 SettingsService，模板存储走 dataDir 默认路径", () => {
-		const pusher = createSettingsPusher({ host: makeHost(), transport: transport() });
-		expect(pusher.service).toBeInstanceOf(SettingsService);
-		expect(pusher.service.current).toMatchObject({ promptMode: store.getSettings(CLIENT_ID).promptMode });
-		// 默认模板存储 = stateStore.dataDir/subagent-templates.json：list() 能读到内置模板，帧里因此非空。
-		pusher.push();
-		expect(settingsFrames()[0].subagentTemplates.length).toBeGreaterThan(0);
+	it("SettingsService 由宿主构造：current 与状态存储一致", () => {
+		const { service } = createCoreSettingsService(options());
+		expect(service).toBeInstanceOf(SettingsService);
+		expect(service.current.promptMode).toBe(store.getSettings(CLIENT_ID).promptMode);
 	});
 
-	it("两个目录的 barrel 导出的是同一份实现", () => {
-		expect(createSettingsHostFromBarrel).toBe(createSettingsHost);
-		expect(createSettingsPusherFromBarrel).toBe(createSettingsPusher);
+	it("适配器背后就是老叶子 SettingsService，模板存储走 dataDir 默认路径", () => {
+		const frame = createCoreSettingsAdapter(options());
+		frame.push();
+		// 默认模板存储 = stateStore.dataDir/subagent-templates.json：帧里因此非空。
+		expect(settingsFrames()[0].subagentTemplates.length).toBeGreaterThan(0);
 	});
 });

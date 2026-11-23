@@ -5,7 +5,7 @@ import * as fsPromises from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { SessionManager, type SessionInfo } from "@earendil-works/pi-coding-agent";
 import type { ProjectSummary } from "./protocol.js";
-import { normalizePathKey } from "../../../server/client-state.js";
+import { normalizePathKey } from "./projects-schema.js";
 import { MAX_SEARCH_TEXT_CHARS, readCwdFromSessionHeader, piSessionsRoot } from "./session-search.js";
 
 /** 近 10 分钟内确认不存在的 cwd：避免每次跨项目切换都重新 access 一遍已删目录（issue #946）。 */

@@ -255,7 +255,7 @@ describe("项目来源适配器（adapters/state）", () => {
 		seed.remember("client-1", alpha);
 		seed.remember("client-1", beta);
 
-		const source = open({ file, sessionRoots: [] });
+		const source = open({ store: new ClientStateStore(file), sessionRoots: [] });
 		const recent = await source.recent("client-1");
 		expect(recent.map((p) => p.path).sort()).toEqual([alpha, beta].sort());
 		expect(recent.every((p) => p.lastUsed > 0)).toBe(true);
@@ -277,11 +277,11 @@ describe("项目来源适配器（adapters/state）", () => {
 		mkdirSync(alpha);
 		new ClientStateStore(file).remember("client-1", alpha);
 
-		const source = open({ file, sessionRoots: [join(dir, "missing-sessions")] });
+		const source = open({ store: new ClientStateStore(file), sessionRoots: [join(dir, "missing-sessions")] });
 		expect((await source.recent("client-1")).map((p) => p.path)).toEqual([alpha]);
 	});
 
-	it("只给 file：默认会话根目录不存在时同样不抛、不扫出东西", async () => {
+	it("只给 store：默认会话根目录不存在时同样不抛、不扫出东西", async () => {
 		vi.stubEnv("PI_CODING_AGENT_SESSION_DIR", "");
 		const dir = tempDir();
 		const file = join(dir, "client-state.json");
@@ -289,7 +289,7 @@ describe("项目来源适配器（adapters/state）", () => {
 		mkdirSync(alpha);
 		new ClientStateStore(file).remember("client-1", alpha);
 
-		const source = open({ file });
+		const source = open({ store: new ClientStateStore(file) });
 		expect((await source.recent("client-1")).map((p) => p.path)).toEqual([alpha]);
 	});
 
@@ -300,7 +300,7 @@ describe("项目来源适配器（adapters/state）", () => {
 		mkdirSync(alpha);
 		new ClientStateStore(file).remember("client-1", alpha);
 
-		const source = open({ file, sessionRoots: [] });
+		const source = open({ store: new ClientStateStore(file), sessionRoots: [] });
 		source.close();
 		expect((await source.recent("client-1")).map((p) => p.path)).toEqual([alpha]);
 	});

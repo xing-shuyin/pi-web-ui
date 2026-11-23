@@ -133,7 +133,7 @@
 		"desktop:portable:full": "npm run build && npm run build:desktop && node scripts/make-portable.mjs --with-git",
 		"format": "prettier --write server/ web/src/ extensions/ scripts/ bin/ desktop/ tests/*.mjs tests/unit/",
 		"format:check": "prettier --check server/ web/src/ extensions/ scripts/ bin/ desktop/ tests/*.mjs tests/unit/",
-		"lint": "oxlint server/ web/src/ extensions/ scripts/ bin/ desktop/",
+		"lint": "oxlint server/ web/src/ extensions/ scripts/ bin/ desktop/ packages/keel/src",
 		"lint:fix": "oxlint --fix server/ web/src/ extensions/ scripts/ bin/ desktop/",
 		"audit:themes": "node scripts/theme-audit.mjs --out .theme-audit/current",
 		"audit:diff": "node scripts/theme-diff.mjs .theme-audit/baseline .theme-audit/current",

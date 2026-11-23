@@ -1,10 +1,9 @@
-import { DEFAULT_CLIENT_SETTINGS } from "../../../../../server/client-state.js";
-import type { ClientSettings } from "../../../../../server/client-state.js";
+import { DEFAULT_CLIENT_SETTINGS, type ClientSettings } from "../../settings-schema.js";
 import type { ClientId } from "../../contracts/ids.js";
 import type { StatePort } from "../../contracts/ports.js";
 import { applySettingsPatch, writeSetting } from "./patch.js";
 import { buildSettingsView } from "./read-model.js";
-import type { SettingsView } from "./read-model.js";
+import type { SettingsPromptNormalizers, SettingsView } from "./read-model.js";
 
 /** 每个 clientId 一份落盘键：`StatePort` 只认字符串键，命名在这里收口。 */
 export function settingsStateKey(clientId: ClientId): string {
@@ -30,7 +29,10 @@ export interface SettingsSaveResult extends SettingsLoadResult {
 export class SettingsStore {
 	private revision = 0;
 
-	constructor(private readonly state: StatePort) {}
+	constructor(
+		private readonly state: StatePort,
+		private readonly prompt: SettingsPromptNormalizers,
+	) {}
 
 	version(): number {
 		return this.revision;
@@ -38,7 +40,7 @@ export class SettingsStore {
 
 	load(clientId: ClientId): SettingsLoadResult {
 		const settings = this.effective(clientId);
-		return { settings, view: buildSettingsView({ current: settings }) };
+		return { settings, view: buildSettingsView({ current: settings, prompt: this.prompt }) };
 	}
 
 	save(clientId: ClientId, patch: Partial<ClientSettings> | null | undefined): SettingsSaveResult {
@@ -47,7 +49,7 @@ export class SettingsStore {
 		if (result.changed.length === 0) {
 			return {
 				settings: before,
-				view: buildSettingsView({ current: before }),
+				view: buildSettingsView({ current: before, prompt: this.prompt }),
 				changed: result.changed,
 				ignored: result.ignored,
 				version: this.revision,
@@ -58,7 +60,7 @@ export class SettingsStore {
 		const settings = this.effective(clientId);
 		return {
 			settings,
-			view: buildSettingsView({ current: settings }),
+			view: buildSettingsView({ current: settings, prompt: this.prompt }),
 			changed: result.changed,
 			ignored: result.ignored,
 			version: this.revision,
@@ -78,7 +80,7 @@ export class SettingsStore {
 			if (value === undefined) continue;
 			writeSetting(settings, rawKey as keyof ClientSettings, value);
 		}
-		return { ...settings, ...buildSettingsView({ current: settings }) };
+		return { ...settings, ...buildSettingsView({ current: settings, prompt: this.prompt }) };
 	}
 
 	/** 只写变更键，别把默认值整份抄进用户数据目录。 */

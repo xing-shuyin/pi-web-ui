@@ -2,22 +2,18 @@ import type { DispatchSession, EngineService, TerminalManagerLike } from "../eng
 import type { ServerMessage, UiApprovalPolicyState, UiServiceInfo } from "../protocol.js";
 import type { Conversation } from "../kernel/conversation/index.js";
 import { toServiceInfo, launchOrigin } from "../launch-origin.js";
-import { join } from "node:path";
 import { join as joinPath, resolve as resolveFsPath } from "node:path";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
 import type { ModelAdminPort, ModelAdminSinks } from "../contracts/model-admin.js";
 import type { SettingsFramePort } from "../contracts/settings.js";
+import type { SettingsStorePort } from "../contracts/settings-store.js";
 import type { SlashCommandSinks, SlashCommandsPort } from "../contracts/commands.js";
 import type { FilesPort, WorkspacePort } from "../contracts/files.js";
 import type { WorktreePort } from "../contracts/worktree.js";
 import type { RemoteSdkOperationsFactory } from "../contracts/remote-ops.js";
-import type { SettingsService } from "../../../../server/settings-service.js";
 import { isInsideRoots } from "../path-boundary.js";
-import { ClientStateStore } from "../../../../server/client-state.js";
 import { createProjectSource } from "../adapters/state/index.js";
 import { createModelMemory } from "../adapters/state/model-memory.js";
-import { createSettingsHost } from "../adapters/settings/index.js";
-import { createSettingsPusher } from "../domains/settings/index.js";
 import { conversationViewFromSession, subscribeSession } from "../adapters/sdk/view.js";
 import { pushProjects } from "../domains/projects/index.js";
 import { refreshSessions } from "../domains/history/index.js";
@@ -45,8 +41,9 @@ export { CoreEngineNotReadyError };
 export interface CoreEngineOptions {
 	version: string;
 	attach?: boolean;
-	dataDir?: string;
 	agentDir?: string;
+	/** 设置存储端口实例（宿主 `server/core-state-adapter.ts`）；引擎的设置/项目/模型记忆全读它。 */
+	stateStore: SettingsStorePort;
 	/** 模型/供应商管理面工厂（宿主实现：`server/core-model-adapter.ts`）；缺省 = 能力未接。 */
 	modelAdmin?: (sinks: ModelAdminSinks) => ModelAdminPort;
 	/** 设置帧/预设/审批规则库面工厂（宿主实现：`server/core-settings-adapter.ts`）；缺省 = 能力未接。 */
@@ -93,12 +90,29 @@ export interface CoreFilesSinks {
 	getUploadMaxBytes?: () => number;
 }
 
-/** 宿主实现 `SettingsFramePort` 时要拼的几块现成东西（都是宿主端口桶里的模块，P2 会收成端口）。 */
+/**
+ * 宿主实现 `SettingsFramePort` 时要拼的几块现成东西：本客户端的帧出口、会话、语言与审批策略投影。
+ * 设置叶子（`SettingsService`）与设置落盘（`ClientStateStore`）都归宿主，内核只交这些值。
+ */
 export interface CoreSettingsSinks {
-	service: SettingsService;
-	stateStore: ClientStateStore;
 	clientId: string;
+	/** 本客户端帧出口。 */
+	emit(msg: ServerMessage): void;
+	/** 通道已关：设置适配器据此不再出帧。 */
+	isClosed(): boolean;
+	isDisposed(): boolean;
+	/** 当前对话的会话句柄；没有就绪会话时由内核抛 `CoreEngineNotReadyError`。 */
+	getSession(): unknown;
+	cwd: string;
+	agentDir: string;
+	/** 设置是否需要等回复结束再应用（宿主按实时值回答，不取构造时的快照）。 */
+	isStreaming(): boolean;
+	/** 设置帧里的 `approvalPolicy`：内核聚合根是唯一所有者，适配器只读投影。 */
+	getApprovalPolicy(): UiApprovalPolicyState;
+	/** 语言由引擎持有（`SettingsService` 只管读，写口在这里）。 */
 	lang: { get(): ServerLang; set(next: ServerLang): void };
+	/** 设置变更后要刷新的对话帧；新树的快照域在 W5 接上，缺省不发。 */
+	flushSnapshot?(): void;
 }
 
 const systemClock: ClockPort = {
@@ -121,7 +135,7 @@ export class CoreEngine implements EngineService {
 	private socketCount = 0;
 	private quiescedSince: number | undefined;
 
-	private readonly stateStore: ClientStateStore;
+	private readonly stateStore: SettingsStorePort;
 	private readonly projectSource: ReturnType<typeof createProjectSource>;
 	/** 进程级模型/供应商管理面：一次引擎一份（老实现也是进程级），所有客户端共用。 */
 	private modelAdmin: ModelAdminPort | undefined;
@@ -132,9 +146,8 @@ export class CoreEngine implements EngineService {
 		private readonly cwd: string,
 		private readonly options: CoreEngineOptions,
 	) {
-		const dataDir = options.dataDir ?? process.cwd();
-		this.stateStore = new ClientStateStore(join(dataDir, "client-state.json"));
-		this.projectSource = createProjectSource({ file: join(dataDir, "client-state.json") });
+		this.stateStore = options.stateStore;
+		this.projectSource = createProjectSource({ store: options.stateStore });
 	}
 
 	/** 模型管理面由宿主建（结构性适配器），内核只按窄面调用；没装配就当能力未接。 */ private modelAdminPort():
@@ -261,30 +274,22 @@ export class CoreEngine implements EngineService {
 				capabilities: DEFAULT_PI_CAPABILITIES,
 			},
 		});
-		const pusher = createSettingsPusher({
-			host: createSettingsHost({
-				clientId,
-				stateStore: this.stateStore,
-				emit: (msg) => transport.send(msg),
-				cwd: this.cwd,
-				agentDir: this.options.agentDir ?? this.cwd,
-				isDisposed: false,
-				isStreaming: runtime.streamingCount() > 0,
-				getSession: () => {
-					const conv = runtime.registry.activeConv();
-					const opened = conv ? sessions.get(conv.id) : undefined;
-					if (!opened) throw new CoreEngineNotReadyError("settings session");
-					return opened.session;
-				},
-				// 审批策略的唯一所有者在对话聚合根：这里只把它投影成协议形状。
-				getApprovalPolicy: () => approvalPolicyState(runtime.registry.activeConv()),
-			}),
-			transport,
-		});
 		const settingsFrame = this.options.settingsFrame?.({
-			service: pusher.service,
-			stateStore: this.stateStore,
 			clientId,
+			emit: (msg) => transport.send(msg),
+			isClosed: () => transport.isClosed(),
+			isDisposed: () => this.runtimes.get(clientId) !== runtime,
+			getSession: () => {
+				const conv = runtime.registry.activeConv();
+				const opened = conv ? sessions.get(conv.id) : undefined;
+				if (!opened) throw new CoreEngineNotReadyError("settings session");
+				return opened.session;
+			},
+			cwd: this.cwd,
+			agentDir: this.options.agentDir ?? this.cwd,
+			isStreaming: () => runtime.streamingCount() > 0,
+			// 审批策略的唯一所有者在对话聚合根：这里只把它投影成协议形状。
+			getApprovalPolicy: () => approvalPolicyState(runtime.registry.activeConv()),
 			lang: { get: () => this.langOf(clientId), set: (next) => this.langs.set(clientId, next) },
 		});
 		const slashCommands = this.options.slashCommands?.({
@@ -315,7 +320,8 @@ export class CoreEngine implements EngineService {
 		});
 		subagents = createSubagentRuntime({ runtime, sessions, now: () => Date.now() });
 		const frames: ClientFrames = {
-			pushSettings: () => pusher.push(),
+			// 设置面没注入 = 能力未接（不再由内核自建 SettingsService）。
+			pushSettings: () => settingsFrame?.push(),
 			pushDefaultModel: () => {
 				const modelId = this.stateStore.getDefaultModel("pi") ?? null;
 				if (!transport.isClosed()) transport.send({ type: "default_model", modelId });

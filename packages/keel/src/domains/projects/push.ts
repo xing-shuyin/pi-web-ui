@@ -1,4 +1,4 @@
-import { normalizePathKey, RECENT_PROJECTS_MAX } from "../../../../../server/client-state.js";
+import { normalizePathKey, RECENT_PROJECTS_MAX } from "../../projects-schema.js";
 import type { ProjectSummary, ServerMessage } from "../../protocol.js";
 import type { TransportPort } from "../../contracts/ports.js";
 

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { CoreEngine, CoreEngineNotReadyError } from "../../packages/keel/src/app/core-engine.js";
 import { PI_ENGINE_ENV, resolvePiEngineMode } from "../../packages/keel/src/app/engine-mode.js";
+import { createFakeSettingsStore } from "../helpers/fake-settings-store.js";
+
+/** 装配参数里唯一必需的能力：设置存储端口（宿主在 core 模式下注入真 store）。 */
+function options(extra: { attach?: boolean } = {}) {
+	return { version: "test-version", stateStore: createFakeSettingsStore(), ...extra };
+}
 
 describe("core/app · 引擎开关", () => {
 	it("只认 core，其余一律 legacy（未知值不能把用户带到未完成的实现上）", () => {
@@ -14,7 +20,7 @@ describe("core/app · 引擎开关", () => {
 
 describe("core/app · CoreEngine 生命周期", () => {
 	it("quiesce / unquiesce 与 serviceStatus 自洽", async () => {
-		const engine = new CoreEngine("/work", { version: "test-version" });
+		const engine = new CoreEngine("/work", options());
 		expect(engine.isQuiesced()).toBe(false);
 		engine.quiesce();
 		expect(engine.isQuiesced()).toBe(true);
@@ -31,7 +37,7 @@ describe("core/app · CoreEngine 生命周期", () => {
 	});
 
 	it("socket 计数不为负", () => {
-		const engine = new CoreEngine("/work", { version: "test-version" });
+		const engine = new CoreEngine("/work", options());
 		engine.noteSocketClose();
 		expect(engine.serviceStatus().connectedClients).toBe(0);
 		engine.noteSocketOpen();
@@ -42,13 +48,13 @@ describe("core/app · CoreEngine 生命周期", () => {
 	});
 
 	it("attach 默认关闭：明确报「尚未接入」，不静默降级", async () => {
-		const engine = new CoreEngine("/work", { version: "test-version", attach: false });
+		const engine = new CoreEngine("/work", options({ attach: false }));
 		await expect(engine.attach("c1", () => {})).rejects.toBeInstanceOf(CoreEngineNotReadyError);
 		expect(engine.get("c1")).toBeUndefined();
 	});
 
 	it("显式打开 attach：接客户端并保持同一份运行时", async () => {
-		const engine = new CoreEngine("/work", { version: "test-version", attach: true });
+		const engine = new CoreEngine("/work", options({ attach: true }));
 		const sent: unknown[] = [];
 		const cs = await engine.attach("c1", (msg) => void sent.push(msg));
 		expect(cs.cwd).toBe("/work");
@@ -59,7 +65,7 @@ describe("core/app · CoreEngine 生命周期", () => {
 	});
 
 	it("activeConversations / pendingMessages 汇总各客户端运行时", async () => {
-		const engine = new CoreEngine("/work", { version: "test-version", attach: true });
+		const engine = new CoreEngine("/work", options({ attach: true }));
 		const a = await engine.attach("a", () => {});
 		await engine.attach("b", () => {});
 		expect(engine.activeConversations()).toBe(0);

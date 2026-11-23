@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_KEEP_RECENT_MESSAGES,
 	DEFAULT_RETRY_MAX_ATTEMPTS,
+	normalizePromptDisabled,
+	normalizePromptOverrides,
 	normalizeUiLayout,
 } from "../../server/client-state.js";
 import type { ClientSettings } from "../../server/client-state.js";
@@ -12,7 +14,16 @@ import {
 	CLIENT_SETTINGS_KEYS,
 	SettingsStore,
 	settingsStateKey,
+	type SettingsViewInput,
 } from "../../packages/keel/src/domains/settings/index.js";
+
+/** 宿主注入的提示词归一规则：单源在 `server/client-state.ts`（token 表仍归 prompt-composer）。 */
+const PROMPT = { normalizePromptOverrides, normalizePromptDisabled };
+
+/** 补上宿主注入的那一格，其余入参照旧。 */
+function buildView(input: Omit<SettingsViewInput, "prompt">) {
+	return buildSettingsView({ ...input, prompt: PROMPT });
+}
 
 const VIEW_KEYS = [
 	"bgAutoCleanupMin",
@@ -60,18 +71,18 @@ class FakeState implements StatePort {
 
 describe("domains/settings · buildSettingsView", () => {
 	it("视图键名与 ClientSettings 逐字一致，且只包含声明过的字段", () => {
-		const view = buildSettingsView({ current: {} });
+		const view = buildView({ current: {} });
 		expect(Object.keys(view).sort()).toEqual(VIEW_KEYS);
 	});
 
 	it("无补丁时按当前生效值投影", () => {
-		const view = buildSettingsView({ current: { keepRecentMessages: 42, retryMaxAttempts: 3 } });
+		const view = buildView({ current: { keepRecentMessages: 42, retryMaxAttempts: 3 } });
 		expect(view.keepRecentMessages).toBe(42);
 		expect(view.retryMaxAttempts).toBe(3);
 	});
 
 	it("后一个补丁覆盖前一个", () => {
-		const view = buildSettingsView({
+		const view = buildView({
 			current: { keepRecentMessages: 10 },
 			patches: [{ keepRecentMessages: 20 }, { keepRecentMessages: 30 }],
 		});
@@ -79,7 +90,7 @@ describe("domains/settings · buildSettingsView", () => {
 	});
 
 	it("undefined 的补丁值不覆盖已有值", () => {
-		const view = buildSettingsView({
+		const view = buildView({
 			current: { keepRecentMessages: 42 },
 			patches: [{ keepRecentMessages: 30 }, { keepRecentMessages: undefined }],
 		});
@@ -87,7 +98,7 @@ describe("domains/settings · buildSettingsView", () => {
 	});
 
 	it("补丁值类型不符时回落当前值，不抛", () => {
-		const view = buildSettingsView({
+		const view = buildView({
 			current: { keepRecentMessages: 42 },
 			patches: [rawPatch({ keepRecentMessages: "abc" })],
 		});
@@ -95,7 +106,7 @@ describe("domains/settings · buildSettingsView", () => {
 	});
 
 	it("类型相符但越界：交给单源 normalize* 收敛", () => {
-		const view = buildSettingsView({
+		const view = buildView({
 			current: {},
 			patches: [{ keepRecentMessages: 999, retryMaxAttempts: -5 }],
 		});
@@ -104,13 +115,13 @@ describe("domains/settings · buildSettingsView", () => {
 	});
 
 	it("当前值本身是脏数据时同样归一化，不抛", () => {
-		const view = buildSettingsView({ current: rawPatch({ keepRecentMessages: "abc", retryMaxAttempts: null }) });
+		const view = buildView({ current: rawPatch({ keepRecentMessages: "abc", retryMaxAttempts: null }) });
 		expect(view.keepRecentMessages).toBe(DEFAULT_KEEP_RECENT_MESSAGES);
 		expect(view.retryMaxAttempts).toBe(DEFAULT_RETRY_MAX_ATTEMPTS);
 	});
 
 	it("promptOverrides 的非法 token 由单源剔掉", () => {
-		const view = buildSettingsView({
+		const view = buildView({
 			current: {},
 			patches: [{ promptOverrides: { tools: "工具段", bogus: "不存在" } }],
 		});
@@ -118,7 +129,7 @@ describe("domains/settings · buildSettingsView", () => {
 	});
 
 	it("promptOverrides 不是字符串字典时回落当前值", () => {
-		const view = buildSettingsView({
+		const view = buildView({
 			current: { promptOverrides: { append: "保留" } },
 			patches: [rawPatch({ promptOverrides: ["tools"] })],
 		});
@@ -126,7 +137,7 @@ describe("domains/settings · buildSettingsView", () => {
 	});
 
 	it("promptDisabled 走单源：非法 token 被剔掉并补回 plugin_dev", () => {
-		const view = buildSettingsView({
+		const view = buildView({
 			current: { promptDisabled: [] },
 			patches: [{ promptDisabled: ["tools", "bogus"] }],
 		});
@@ -135,20 +146,20 @@ describe("domains/settings · buildSettingsView", () => {
 
 	it("枚举字段类型不符回落当前值，合法值照常生效", () => {
 		const current = { steeringMode: "one-at-a-time" as const };
-		expect(buildSettingsView({ current, patches: [rawPatch({ steeringMode: 5 })] }).steeringMode).toBe("one-at-a-time");
-		expect(buildSettingsView({ current, patches: [{ steeringMode: "all" }] }).steeringMode).toBe("all");
+		expect(buildView({ current, patches: [rawPatch({ steeringMode: 5 })] }).steeringMode).toBe("one-at-a-time");
+		expect(buildView({ current, patches: [{ steeringMode: "all" }] }).steeringMode).toBe("all");
 	});
 
 	it("uiLayout 非对象时回落当前值，并交给单源归一化", () => {
 		const current = { uiLayout: { hidden: ["host:x"] } };
-		expect(buildSettingsView({ current, patches: [rawPatch({ uiLayout: [] })] }).uiLayout).toEqual(
+		expect(buildView({ current, patches: [rawPatch({ uiLayout: [] })] }).uiLayout).toEqual(
 			normalizeUiLayout(current.uiLayout),
 		);
 	});
 
 	it("空补丁序列 = 当前值归一化后的结果", () => {
 		const current = { keepRecentMessages: 42 };
-		expect(buildSettingsView({ current, patches: [] })).toEqual(buildSettingsView({ current }));
+		expect(buildView({ current, patches: [] })).toEqual(buildView({ current }));
 	});
 });
 
@@ -218,7 +229,7 @@ describe("domains/settings · SettingsStore", () => {
 	it("load 经注入的 StatePort 读取已落盘值，并剔掉未知键", () => {
 		const state = new FakeState();
 		state.seed(settingsStateKey("c1"), { keepRecentMessages: 42, nope: 1 });
-		const { settings, view } = new SettingsStore(state).load("c1");
+		const { settings, view } = new SettingsStore(state, PROMPT).load("c1");
 		expect(settings.keepRecentMessages).toBe(42);
 		expect("nope" in settings).toBe(false);
 		expect(view.keepRecentMessages).toBe(42);
@@ -226,14 +237,14 @@ describe("domains/settings · SettingsStore", () => {
 
 	it("save 只把变更键写进注入的 StatePort", () => {
 		const state = new FakeState();
-		new SettingsStore(state).save("c1", { keepRecentMessages: 42 });
+		new SettingsStore(state, PROMPT).save("c1", { keepRecentMessages: 42 });
 		expect(state.writes).toEqual([{ key: settingsStateKey("c1"), value: { keepRecentMessages: 42 } }]);
 		expect(state.read(settingsStateKey("c1"))).toEqual({ keepRecentMessages: 42 });
 	});
 
 	it("多次 save 累积落盘，不把默认值整份抄进去", () => {
 		const state = new FakeState();
-		const store = new SettingsStore(state);
+		const store = new SettingsStore(state, PROMPT);
 		store.save("c1", { keepRecentMessages: 42 });
 		store.save("c1", { steeringMode: "one-at-a-time" });
 		expect(state.read(settingsStateKey("c1"))).toEqual({ keepRecentMessages: 42, steeringMode: "one-at-a-time" });
@@ -241,7 +252,7 @@ describe("domains/settings · SettingsStore", () => {
 
 	it("version 随真实变更单调递增，值未变 / 空补丁不升", () => {
 		const state = new FakeState();
-		const store = new SettingsStore(state);
+		const store = new SettingsStore(state, PROMPT);
 		expect(store.version()).toBe(0);
 		store.save("c1", { keepRecentMessages: 42 });
 		expect(store.version()).toBe(1);
@@ -255,7 +266,7 @@ describe("domains/settings · SettingsStore", () => {
 
 	it("空补丁与全未知键都不写盘", () => {
 		const state = new FakeState();
-		const store = new SettingsStore(state);
+		const store = new SettingsStore(state, PROMPT);
 		expect(store.save("c1", {}).changed).toEqual([]);
 		const ignored = store.save("c1", rawPatch({ nope: 1 }));
 		expect(ignored.ignored).toEqual(["nope"]);
@@ -264,7 +275,7 @@ describe("domains/settings · SettingsStore", () => {
 
 	it("load 不动版本号", () => {
 		const state = new FakeState();
-		const store = new SettingsStore(state);
+		const store = new SettingsStore(state, PROMPT);
 		store.load("c1");
 		store.load("c2");
 		expect(store.version()).toBe(0);
@@ -272,7 +283,7 @@ describe("domains/settings · SettingsStore", () => {
 
 	it("不同 clientId 落盘键互相隔离", () => {
 		const state = new FakeState();
-		const store = new SettingsStore(state);
+		const store = new SettingsStore(state, PROMPT);
 		store.save("c1", { keepRecentMessages: 42 });
 		store.save("c2", { keepRecentMessages: 60 });
 		expect(store.load("c1").settings.keepRecentMessages).toBe(42);
@@ -281,7 +292,7 @@ describe("domains/settings · SettingsStore", () => {
 
 	it("落盘原值、读时归一化：非法值不外泄到视图", () => {
 		const state = new FakeState();
-		const store = new SettingsStore(state);
+		const store = new SettingsStore(state, PROMPT);
 		const saved = store.save("c1", rawPatch({ keepRecentMessages: "abc" }));
 		expect(state.read(settingsStateKey("c1"))).toEqual({ keepRecentMessages: "abc" });
 		expect(saved.view.keepRecentMessages).toBe(DEFAULT_KEEP_RECENT_MESSAGES);

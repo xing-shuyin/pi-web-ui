@@ -16,7 +16,7 @@
 | ------ | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | **P0** | 包骨架 + 依赖清单守卫（本目录）                                                     | ✅                                                                      |
 | P1     | 把 30 个随包模块物理搬进 `src/`，`src/index.ts` 的桥删掉                            | ✅ 63 个（29 + `protocol` + 33 个连带叶子），老位置留 shim              |
-| P2     | 剩下 4 个（settings / terminals / tool-manager / client-state）反转成端口，宿主注入 | 未开始                                                                  |
+| P2     | 剩下 4 个（settings / terminals / tool-manager / client-state）反转成端口，宿主注入 | ✅ 依赖 10 → **0**（`SettingsStorePort` / `SettingsFramePort` 落地）    |
 | P3     | 补齐 165 个 handler（B1~B8）                                                        | 🚧 已真实现 99 / 163（B1~B5 前四批）；另有 8 个「接线就绪」等宿主适配器 |
 | P5     | 发布 `@earendil-works/keel`，主应用改成版本依赖；启用 npm workspaces                | 未开始                                                                  |
 
@@ -58,33 +58,28 @@ workspaces 要求 lockfile 里登记 workspace 包，`npm ci` 会因此校验失
 等于给 CI 埋一颗「锁文件不同步」的雷。P0 用 **tsconfig paths + 依赖清单守卫**拿到同样的边界，
 等 P3 真正发布时再启用 workspaces（那时 lockfile 会随发布一起更新）。
 
-## 依赖清单（P1 后：三桶棘轮，只许变短）
+## 依赖清单（P2 后：棘轮只剩“禁止新增”，只许变短）
 
-`src/` 当前允许 import 的 app 模块（守卫：`tests/unit/keel-package.test.ts`）。**除下面两桶以外的任何
-`server/*` 依赖都会红**——这是「新增耦合」的唯一门禁。
+`src/` 当前允许 import 的 app 模块（守卫：`tests/unit/keel-package.test.ts`）。**P2 后两桶都已清空：
+任何 `server/*` 依赖都会红**——这是「新增耦合」的唯一门禁。
 
-**PENDING_PORT（6 个，P2/P4 端口反转销账）**
-被搬进来的老叶子的首跳宿主依赖。它们不是「新树要的耦合」，而是叶子本来就有的边；销账方式是把宿主能力反转成端口：
+**PENDING_PORT（0 个）**
+被搬进来的老叶子的首跳宿主依赖已全部销账（端口反转或改 keel 内单源/窄类型）：
+`plugins` / `remote-ssh-service` / `conversation-read-tool` / `quick-ask-context` / `native-cli` /
+`approval-default-rules` / `terminals` / `tool-manager` / `client-state` / `settings-service`。
 
-| 模块                     | 谁在用                                                | 销账方式                                                                |
-| ------------------------ | ----------------------------------------------------- | ----------------------------------------------------------------------- |
-| `plugins`                | `engine-service` / `agent-formatters`（均 type-only） | P4 插件 host 适配器 + 窄类型进 `contracts/`                             |
-| `remote-ssh-service`     | `tool-guards`                                         | P4 远程工作区端口                                                       |
-| `conversation-read-tool` | `session-projection`                                  | P4 宿主工具注入                                                         |
-| `quick-ask-context`      | `engine-service`                                      | P4 随手问端口                                                           |
-| `native-cli`             | `session-list-scan`                                   | P4/B5 终端端口                                                          |
-| `approval-default-rules` | `approval-rules`                                      | 内置规则表随 `phone-tool` 一起端口化（`phone-tool` 直连 SDK，不进内核） |
+**PORTS（0 个，P2 已反完）**
+`client-state` → `SettingsStorePort` · `settings-service` → `SettingsFramePort`（本就在的端口）·
+`terminals` → `createManager` 工厂注入 · `tool-manager` → 整份搬入（纯数据，不需要端口）
 
-**PORTS（4 个，P2 反转成端口）**
-`client-state`（设置存储）· `settings-service`（设置帧）· `terminals`（PTY）· `tool-manager`（工具目录）
-
-**已经搬进来的（62 个）**
+**已经搬进来的（62 个 + P2 的 5 个）**
 30 个原计划模块（除 `protocol`，它单独一轮）+ 33 个「纯叶子」连带项：
 `atomic-file` `text-quote` `attachment-store` `model-error` `engine-catalog` `transcript-scan`
 `serialized-json-writer` `client-id-utils` `conversation-tool-names` `question-params` `approval-audit`
 `tool-overrides` `mobile-notification-events` `quick-ask-settings` `delegate-mode` `plugin-tool-guard`
 `browser-page-tool` `subagent-evidence` `subagent-ledger` `subagent-templates-hant` `goal-review-gate`
 `conversation-communication` `dangling-tools` `compaction-markers` `plan-mode` `hashline-engine`
+P2 略进的：`settings-schema` `settings-normalize` `ui-layout` `projects-schema` `plugin-ui-slots`
 
 - `markers/`（`index` `registry` `marker` `store` `builtins/{notify,rename,action}`）
 
@@ -100,16 +95,17 @@ workspaces 要求 lockfile 里登记 workspace 包，`npm ci` 会因此校验失
 判据：`tests/unit/keel-package.test.ts` 的 `appDepsOf`（静态 import 与动态 `import()` 都算）。
 **目标是 0**；每批只许变小。
 
-| 批次  | 剩    | 这一步做了什么                                                                                                                                                                                        |
-| ----- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P2 前 | 10    | client-state / settings-service / terminals / tool-manager / plugins / quick-ask-context / remote-ssh-service / conversation-read-tool / native-cli / approval-default-rules                          |
-| 1     | 7     | 工具**名字**表进 `tool-names.ts`；`native-cli-meta` / `transcript-input` 纯函数搬入（连带 `conversation-touches`）；远程 URI 层进 `remote-workspace.ts`，SSH 操作改 `RemoteSdkOperationsFactory` 注入 |
-| 2     | 6     | `terminals` 销账：命令文件进 `commands-file.ts`（路径解析注入）、PTY 改 `createManager` 工厂注入                                                                                                      |
-| 3     | 4     | `tool-manager` 整份搬入（纯数据 748 行，**不需要端口**）；`plugins` / `quick-ask-context` 改窄类型；`approval-default-rules` + 手机分档搬入                                                           |
-| 当前  | **2** | 余 `client-state`、`settings-service` —— 都是「设置」面，P2 的最后两个端口                                                                                                                            |
+| 批次  | 剩    | 这一步做了什么                                                                                                                                                                                                                                                                                                                                           |
+| ----- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P2 前 | 10    | client-state / settings-service / terminals / tool-manager / plugins / quick-ask-context / remote-ssh-service / conversation-read-tool / native-cli / approval-default-rules                                                                                                                                                                             |
+| 1     | 7     | 工具**名字**表进 `tool-names.ts`；`native-cli-meta` / `transcript-input` 纯函数搬入（连带 `conversation-touches`）；远程 URI 层进 `remote-workspace.ts`，SSH 操作改 `RemoteSdkOperationsFactory` 注入                                                                                                                                                    |
+| 2     | 6     | `terminals` 销账：命令文件进 `commands-file.ts`（路径解析注入）、PTY 改 `createManager` 工厂注入                                                                                                                                                                                                                                                         |
+| 3     | 4     | `tool-manager` 整份搬入（纯数据 748 行，**不需要端口**）；`plugins` / `quick-ask-context` 改窄类型；`approval-default-rules` + 手机分档搬入                                                                                                                                                                                                              |
+| 4     | 2     | 收尾：余 `client-state`、`settings-service` —— 都是「设置」面，见下一行                                                                                                                                                                                                                                                                                  |
+| 完成  | **0** | 设置 schema（`ClientSettings` / 各 `normalize*` / `normalizePathKey` / 纯形状）搬进 `settings-schema` + `settings-normalize` + `ui-layout` + `projects-schema`；存储走 `SettingsStorePort`（宿主 `server/core-state-adapter.ts` 结构直通），设置帧/预设/审批规则走 `SettingsFramePort`（`SettingsService` 的构造搬回 `server/core-settings-adapter.ts`） |
 
-判据之外的收益：`ToolCatalogPort` **不再需要**（目录是纯数据，搬比开端口干净）；
-`TerminalPort` / `FilesPort` 都是「宿主实现直通」，没有第二套逻辑。
+判据之外的收益：`SettingsStorePort` 与 `SettingsFramePort` 已落地；`ToolCatalogPort` / `TerminalPort`
+不需要单独端口（纯数据 / 工厂注入）。
 
 ## 契约
 
