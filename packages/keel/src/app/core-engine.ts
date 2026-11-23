@@ -123,6 +123,12 @@ export class CoreEngine implements EngineService {
 				},
 			},
 			// 只会删自己会话目录里的文件：根 = agentDir/sessions（与 SDK 落盘位置一致）。
+			resolveToolApproval: (id, decision, editedParams, reason) =>
+				approvalWaiter.resolve(id, decision, editedParams, reason),
+			resolveQuestion: (id, answers, cancelled, cancelReason) => askWaiter.answer(id, answers, cancelled, cancelReason),
+			answerQuestion: async (id, answers, cancelled, cancelReason) => {
+				askWaiter.answer(id, answers, cancelled, cancelReason);
+			},
 			persistSessionTitle: async (sessionFile, title) => {
 				await renameSessionFile({ sessionFile, title });
 			},

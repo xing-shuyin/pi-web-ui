@@ -350,3 +350,44 @@ describe("app · 会话管理 handler", () => {
 		expect(runtime.registry.bySessionFile("/agent/sessions/x.jsonl")?.id).toBe("c1");
 	});
 });
+
+describe("app · 前端回包 handler", () => {
+	it("审批 / 问卷回包转给注入的回调，缺省返回 false 而不是抛", async () => {
+		const calls: string[] = [];
+		const clock = fakeClock();
+		const transport = fakeTransport();
+		const runtime = new ClientRuntime({
+			clientId: "c1",
+			cwd: "/work",
+			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: false },
+			clock,
+			transport: transport.port,
+			resolveToolApproval: (id) => {
+				calls.push(`approval:${id}`);
+				return true;
+			},
+			resolveQuestion: (id) => {
+				calls.push(`question:${id}`);
+				return true;
+			},
+			answerQuestion: async (id) => {
+				calls.push(`answer:${id}`);
+			},
+		});
+		const cs = runtime.handlers();
+		expect(cs.resolveToolApproval?.("a1", "approve")).toBe(true);
+		expect(cs.resolveQuestion?.("q1", [])).toBe(true);
+		await cs.answerQuestion?.("q2", []);
+		expect(calls).toEqual(["approval:a1", "question:q1", "answer:q2"]);
+
+		const bare = new ClientRuntime({
+			clientId: "c2",
+			cwd: "/work",
+			env: { settingsVersion: 1, piConfigured: false, piAgentInstalled: false },
+			clock,
+			transport: transport.port,
+		}).handlers();
+		expect(bare.resolveToolApproval?.("x", "deny")).toBe(false);
+		expect(bare.resolveQuestion?.("x", [])).toBe(false);
+	});
+});

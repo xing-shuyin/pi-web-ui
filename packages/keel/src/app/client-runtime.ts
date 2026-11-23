@@ -43,6 +43,27 @@ export interface ClientRuntimeOptions {
 	persistSessionTitle?(sessionFile: string, title: string): Promise<void> | void;
 	/** 终端管理器来源（缺省 = 终端能力未接）。 */
 	terminalManagerFor?(conversationId: string): unknown;
+	/** 前端回包：审批。返回 true = 真的结算了这一条。 */
+	resolveToolApproval?(
+		id: string,
+		decision: "approve" | "deny" | "edit",
+		editedParams?: unknown,
+		reason?: string,
+		scope?: "once" | "category" | "all",
+	): boolean;
+	/** 前端回包：问卷（accepted 与 answerQuestion 两条协议分支共用）。 */
+	resolveQuestion?(
+		id: string,
+		answers: { id: string; selected: string[]; custom?: string }[],
+		cancelled?: boolean,
+		cancelReason?: string,
+	): boolean;
+	answerQuestion?(
+		id: string,
+		answers: { id: string; selected: string[]; custom?: string }[],
+		cancelled?: boolean,
+		cancelReason?: string,
+	): Promise<void>;
 	builders?: SnapshotBuilders;
 	sessions?: SessionRegistry;
 	turnEvents?: TurnRunnerDeps["events"];
@@ -161,6 +182,13 @@ export class ClientRuntime {
 				return true;
 			},
 			prompt: (text: string, _attachments?: PromptAttachment[], queue?: boolean) => this.prompt(text, queue),
+			resolveToolApproval: (id, decision, editedParams, reason, scope) =>
+				this.options.resolveToolApproval?.(id, decision, editedParams, reason, scope) ?? false,
+			resolveQuestion: (id, answers, cancelled, cancelReason) =>
+				this.options.resolveQuestion?.(id, answers, cancelled, cancelReason) ?? false,
+			answerQuestion: async (id, answers, cancelled, cancelReason) => {
+				await this.options.answerQuestion?.(id, answers, cancelled, cancelReason);
+			},
 			pushSettings: () => frames().pushSettings(),
 			refreshSessions: () => frames().refreshSessions(),
 			pushProjects: () => frames().pushProjects(),
