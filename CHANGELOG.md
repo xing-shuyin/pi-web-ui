@@ -12,13 +12,15 @@
 
 ### Changed
 
+- **目标撰写态先说清这一发会怎么走（#962 收尾）**：输入框上方新增一行用法提示——「执行对话开工 / 本对话审查 · 图片文件＝材料随目标带走 ·「提炼」先调研再收敛 ·「?」看完整用法」，不必先发一次踩坑。目标条的 `?` 也从原来那句「附件暂不支持」改写成完整用法说明（材料能带什么带不了什么、调研模型留空跟随、轮数 0＝不限、锁定范围、执行期消息会同步给执行者）；「不能作为目标材料」的提示改成按「缺地址」报，不再提内联图片要先存文件。提示行是流内一行、高度计进 `--quick-row-h`（`--composer-strip` 一条单源，不能写成 absolute）。
+
 - **手机 APK 改为跟随 tag 自动发布（签名固定，能覆盖升级）**：`mobile-release.yml` 此前只留 `workflow_dispatch`，理由是「CI 每次新生成 debug keystore，新包装不上旧包、还会连引擎数据一起清」。v0.122.0 起签名密钥已固定入库（secrets `MOBILE_KEYSTORE_BASE64` / `MOBILE_KEYSTORE_PASSWORD` / `MOBILE_KEY_ALIAS` / `MOBILE_KEY_PASSWORD`，产物证书已核验），于是手机包和桌面三平台、浏览器扩展、Release 说明一样，推 `v*` tag 就自动出；工作流新增「tag 与 `package.json` 版本必须一致」的出包守卫，本地 `npm run release:local` 降级为云端兜底。整条发版流程里唯一仍要本地手动的是 npm 发布（2FA/OTP）（文档：`docs/release.md` §8.6、`docs/mobile.md`）。
 
 - **手机包 CI 链路打通**（此前在干净 checkout 上必红）：Android SDK 改用 runner 自带的 `sdkmanager`（`setup-android` 会去装已下架的 `tools` 包）；qemu-user-static 三级兜底（自带 → apt → multiarch 镜像取静态解释器）并补 binfmt_misc 注册；`build-runtime.sh` 与 `android/gradlew` 补上可执行位；打包前先跑 `mobile/scripts/gen-app-icon.mjs` 生成 `splash` / `ic_launcher`（png 是生成物，不入库）。
 
-## [0.122.0] — 2026-11-23
-
 ### Added
+
+- **目标模式可以带附件了（材料规格统一，#962）**：目标的规格以前只收一段文字，附件能加不能发（一按发送就被 warning 拦下）。现在统一成「规格只收字符串，要材料就给指针」：图片、文件、网页、画布、终端引用随目标一起作为材料带走，执行者与审查者看到同一份清单（`server/material.ts` 单源：校验 / 清单渲染 / 降级决策；`docs/proposals/material-spec-unified.md`、`docs/proposals/material-spec-contract.md`）。没有路径的粘贴图/剪贴板文件随消息瞬态上传，服务端落盘成内容寻址路径后再进规格；跨 cwd 的材料先 stage 到执行侧。同一条规格层也接到了定时任务与画布节点上。原来那条「目标发送暂不支持附件，请先移除附件」的拦截随之删除。
 
 - **内置「PR 评审」提示词模板**：模板库新增第 9 个内置模板（命令 `/pr-review`，参数跟编号或链接），先回到问题本质与系统结构判断根因、边界与依赖，把原方案当作假设，再以高内聚低耦合为结构判据给出结论：说明依据、关键假设和代价（`web/src/components/PromptTemplates.tsx`，12 个语言包已同步）。
 
