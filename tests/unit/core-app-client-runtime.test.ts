@@ -155,3 +155,80 @@ describe("app · ClientRuntime 组合根", () => {
 		expect(sub.meta.cwd).toBe("/work/branch");
 	});
 });
+
+describe("app · 默认快照帧", () => {
+	function bareRuntime() {
+		const clock = fakeClock();
+		const transport = fakeTransport();
+		const runtime = new ClientRuntime({
+			clientId: "c1",
+			cwd: "/work",
+			workspaceRoots: ["/work"],
+			env: { settingsVersion: 7, piConfigured: true, piAgentInstalled: false },
+			clock,
+			transport: transport.port,
+		});
+		return { runtime, transport, clock };
+	}
+
+	it("空对话也能出协议合法的 snapshot 帧", () => {
+		const { runtime, transport } = bareRuntime();
+		const conv = runtime.createConversation({ id: "c1", kind: "user", createdAt: 1 });
+		runtime.handlers().flushSnapshot(true);
+		expect(transport.sent).toHaveLength(1);
+		const frame = transport.sent[0] as unknown as { type: string; state: Record<string, unknown> };
+		expect(frame.type).toBe("snapshot");
+		expect(frame.state.clientId).toBe("c1");
+		expect(frame.state.cwd).toBe("/work");
+		expect(frame.state.conversationId).toBe(conv.id);
+		expect(frame.state.sessionId).toBe(conv.id);
+		expect(frame.state.messages).toEqual([]);
+		expect(frame.state.isStreaming).toBe(false);
+		expect(frame.state.version).toBe(7);
+		expect(frame.state.piConfigured).toBe(true);
+		expect(frame.state.queue).toEqual({ steering: [], followUp: [] });
+	});
+
+	it("没有活动对话时给空字段而不是省字段", () => {
+		const { runtime, transport } = bareRuntime();
+		runtime.handlers().flushSnapshot(true);
+		const frame = transport.sent[0] as unknown as { state: Record<string, unknown> };
+		expect(frame.state.conversationId).toBe("");
+		expect(frame.state.sessionId).toBe("");
+		expect(frame.state.messages).toEqual([]);
+	});
+
+	it("视图注入后帧带上消息与排队的字符串副本", () => {
+		const clock = fakeClock();
+		const transport = fakeTransport();
+		const runtime = new ClientRuntime({
+			clientId: "c1",
+			cwd: "/work",
+			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+			clock,
+			transport: transport.port,
+			viewOf: (conv) => ({
+				conversationId: conv.id,
+				sessionId: "s1",
+				messages: [{ id: "m1", role: "user", content: [] }],
+				streamingMessage: null,
+				isStreaming: true,
+				model: { id: "m", name: "M", provider: "p", vision: false },
+				thinkingLevel: "high",
+				availableThinkingLevels: ["off", "high"],
+				tools: ["read", "bash"],
+				steering: ["排队一"],
+				followUp: [],
+			}),
+		});
+		runtime.createConversation({ id: "c1", kind: "user", createdAt: 1 });
+		runtime.handlers().flushSnapshot(true);
+		const frame = transport.sent[0] as unknown as { state: Record<string, unknown> };
+		expect(frame.state.sessionId).toBe("s1");
+		expect((frame.state.messages as unknown[]).length).toBe(1);
+		expect(frame.state.isStreaming).toBe(true);
+		expect(frame.state.thinkingLevel).toBe("high");
+		expect(frame.state.tools).toEqual(["read", "bash"]);
+		expect(frame.state.queue).toMatchObject({ steering: ["排队一"], followUp: [] });
+	});
+});

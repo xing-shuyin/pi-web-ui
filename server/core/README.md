@@ -22,14 +22,15 @@ app        门面（EngineService）与装配    ← 唯一允许 import 全部�
 
 ## 进度
 
-| 波次  | 内容                                                                                             | 状态                                                                          |
-| ----- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| W0    | 骨架：ports / kernel（对话聚合 + 注册表 + 相位 + 排队）/ 门面壳 / 引擎开关 / 边界守卫 / 所有权表 | ✅                                                                            |
-| W1    | 对话内核：TurnRunner（唯一碰 SDK）、snapshots、history、生命周期                                 | 进行中（turns / snapshots / history / ClientRuntime 已落；SDK 会话创建在 W2） |
-| W2~W6 | 生命周期退役 / 工具审批 / 子代理 / 插件终端 / 设置模型                                           | 未开始                                                                        |
-| W7    | 删老树（`agent-service.ts` 不存在）                                                              | 未开始                                                                        |
+| 波次  | 内容                                                                                             | 状态                                           |
+| ----- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
+| W0    | 骨架：ports / kernel（对话聚合 + 注册表 + 相位 + 排队）/ 门面壳 / 引擎开关 / 边界守卫 / 所有权表 | ✅                                             |
+| W1    | 对话内核：TurnRunner（唯一碰 SDK）、snapshots、history、生命周期                                 | ✅ turns / snapshots / history / ClientRuntime |
+| W2    | 快照投影、设置读模型、转录投影                                                                   | 进行中（已落；SDK 会话创建在 W3）              |
+| W3~W6 | SDK 会话适配 / 生命周期退役 / 工具审批 / 子代理 / 插件终端                                       | 未开始                                         |
+| W7    | 删老树（`agent-service.ts` 不存在）                                                              | 未开始                                         |
 
-W0 的 `CoreEngine.attach()` 会抛 `CoreEngineNotReadyError`：骨架能实例化、能过契约测试，但**还不接生产流量**。
+W1 之后 `CoreEngine.attach()` 仍默认关闭（`CoreEngineNotReadyError`）：骨架能实例化、能过契约测试、能给空对话出合法帧，但**会话实体还没接 SDK**，不接生产流量。
 
 ## 复用而不是重写
 
@@ -47,7 +48,10 @@ W0 的 `CoreEngine.attach()` 会抛 `CoreEngineNotReadyError`：骨架能实例�
 - **错误类**：`CoreEngineNotReadyError` 住在 `contracts/`（否则 `adapters` 要依赖 `app`，违反分层）。
 - **轮次**：`deliverAs` 只在 `running` 相位可用；`running` 却不传 `deliverAs` 直接拒（不静默叠轮）；退役错误不做 `instanceof` 分支，靠「全程无 catch」结构性透传。
 - **历史行**：`openIds` 只参与去重（不参与归属）；`cwd` 只筛磁盘历史行；纯磁盘历史行不带 `kind`。
-- **attach**：`CoreEngine.attach` 需 `PI_WEB_PI_ENGINE_ATTACH=1`；快照投影未接前 `builders` 会抛 `CoreEngineNotReadyError`。
+- **attach**：`CoreEngine.attach` 需 `PI_WEB_PI_ENGINE_ATTACH=1`；默认关闭，原因是会话实体（SDK）还没接。
+- **快照**：全量帧永远可出；增量帧拿不到 `appended` 之前降级为全量 `snapshot`（不假装增量）。
+- **设置**：域只投影已有 `normalize*` 单源的 18 个键，其余键留给后续波次，避免在域里复制归一化。
+- **转录**：`skippedLines` 合并三种口径（坏行 / 序列化为 null / 整份不可用）；`seq` 对 null 消息不占位。
 
 ## 源码约定
 

@@ -2,6 +2,8 @@ import type { DispatchSession, EngineService } from "../../engine-service.js";
 import type { ServerMessage, UiServiceInfo } from "../../protocol.js";
 import { toServiceInfo, launchOrigin } from "../../launch-origin.js";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
+import { DEFAULT_PI_CAPABILITIES } from "../../engine-capabilities.js";
+import type { AgentEngineCapabilities } from "../../protocol.js";
 import { ClientRuntime } from "./client-runtime.js";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
 import { resolvePiEngineAttach } from "./engine-mode.js";
@@ -41,13 +43,11 @@ export class CoreEngine implements EngineService {
 			cwd: this.cwd,
 			clock: systemClock,
 			transport,
-			builders: {
-				full: () => {
-					throw new CoreEngineNotReadyError("snapshot projection");
-				},
-				delta: () => {
-					throw new CoreEngineNotReadyError("snapshot delta projection");
-				},
+			env: {
+				settingsVersion: 0,
+				piConfigured: false,
+				piAgentInstalled: false,
+				capabilities: DEFAULT_PI_CAPABILITIES,
 			},
 		});
 		this.runtimes.set(clientId, runtime);
@@ -142,4 +142,8 @@ export class CoreEngine implements EngineService {
 	refreshBackgroundServers(): void {}
 
 	async setLocale(_clientId: string, _locale: string): Promise<void> {}
+
+	getCapabilities(): AgentEngineCapabilities {
+		return DEFAULT_PI_CAPABILITIES;
+	}
 }

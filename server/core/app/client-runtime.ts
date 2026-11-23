@@ -1,17 +1,24 @@
 import type { ClientId } from "../contracts/ids.js";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
+import type { SnapshotConversationView, SnapshotEnvView, SnapshotView } from "../contracts/snapshot-view.js";
+import type { ConversationId } from "../contracts/ids.js";
 import { createDispatchSurfaceAdapter, type DispatchHandlers } from "../adapters/wire/index.js";
 import type { DispatchSession } from "../../engine-service.js";
 import { Conversation, ConversationRegistry, type ConversationInit } from "../kernel/conversation/index.js";
-import { SnapshotPublisher, type SnapshotBuilders } from "../domains/snapshots/index.js";
+import { createSnapshotBuilders, SnapshotPublisher, type SnapshotBuilders } from "../domains/snapshots/index.js";
+
+export type ClientEnvView = Omit<SnapshotEnvView, "clientId" | "cwd" | "workspaceRoots">;
 
 export interface ClientRuntimeOptions {
 	clientId: ClientId;
 	cwd: string;
 	workspaceRoots?: readonly string[];
+	env: ClientEnvView;
 	clock: ClockPort;
 	transport: TransportPort;
-	builders: SnapshotBuilders;
+	/** 对话可见面的来源；缺省用注册表里的空视图（域接上后注入）。 */
+	viewOf?: (conversation: Conversation) => SnapshotConversationView;
+	builders?: SnapshotBuilders;
 }
 
 /**
@@ -30,7 +37,7 @@ export class ClientRuntime {
 		this.publisher = new SnapshotPublisher({
 			transport: options.transport,
 			clock: options.clock,
-			build: options.builders,
+			build: options.builders ?? createSnapshotBuilders(() => this.snapshotView()),
 		});
 	}
 
@@ -50,6 +57,7 @@ export class ClientRuntime {
 		});
 		this.registry.add(conv);
 		this.registry.activate(conv.id);
+		this.publisher.switchConversation(conv.id);
 		return conv;
 	}
 
@@ -64,6 +72,19 @@ export class ClientRuntime {
 
 	pendingCount(): number {
 		return this.registry.list().reduce((sum, conv) => sum + conv.queues.total(), 0);
+	}
+
+	snapshotView(): SnapshotView {
+		const conv = this.registry.activeConv();
+		return {
+			env: {
+				...this.options.env,
+				clientId: this.options.clientId,
+				cwd: this.options.cwd,
+				workspaceRoots: this.options.workspaceRoots,
+			},
+			conversation: conv ? (this.options.viewOf?.(conv) ?? emptyView(conv)) : null,
+		};
 	}
 
 	handlers(): DispatchSession {
@@ -92,3 +113,23 @@ export class ClientRuntime {
 		this.registry.clearActive();
 	}
 }
+
+/** 会话实体还没接上 SDK 时的空视图：协议字段齐全，消息为空。 */
+function emptyView(conv: Conversation): SnapshotConversationView {
+	return {
+		conversationId: conv.id,
+		sessionId: conv.id,
+		...(conv.meta.sessionFile ? { sessionFile: conv.meta.sessionFile } : {}),
+		messages: [],
+		streamingMessage: null,
+		isStreaming: conv.phase === "running",
+		model: null,
+		thinkingLevel: "off",
+		availableThinkingLevels: [],
+		tools: [],
+		steering: conv.queues.texts("steer"),
+		followUp: conv.queues.texts("followUp"),
+	};
+}
+
+export type { ConversationId };
