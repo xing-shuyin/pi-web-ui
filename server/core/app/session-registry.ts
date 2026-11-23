@@ -3,6 +3,8 @@ import { openTurnSession, type OpenedSession } from "../adapters/sdk/index.js";
 
 export interface SessionRegistryOptions {
 	agentDir: string;
+	/** 开会话时注册哪些工具；由装载域算出，注册表不做默认值。 */
+	toolsFor?(conversation: Conversation): readonly string[] | undefined;
 	onOpened?(conversation: Conversation, opened: OpenedSession): void;
 	onClosed?(conversationId: string): void;
 }
@@ -44,6 +46,7 @@ export class SessionRegistry {
 			cwd: conv.meta.cwd,
 			agentDir: this.options.agentDir,
 			sessionFile: conv.meta.sessionFile,
+			tools: this.options.toolsFor?.(conv),
 		});
 		if (opened.sessionFile && opened.sessionFile !== conv.meta.sessionFile) conv.setSessionFile(opened.sessionFile);
 		this.byConversation.set(conv.id, opened);

@@ -9,3 +9,4 @@ export {
 	type InteractionSettleFn,
 } from "./inbox.js";
 export { shouldAutoApprove, type AutoApproveRequest } from "./policy.js";
+export { createApprovalWaiter, type ApprovalRequestInput, type ApprovalWaiter } from "./wire.js";

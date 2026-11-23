@@ -5,3 +5,4 @@ export {
 	type AppendRejectedTool,
 	type AppendRejectionReason,
 } from "./lazy.js";
+export { resolveToolLoadout, type ToolLoadout, type ToolLoadoutInput } from "./loadout.js";

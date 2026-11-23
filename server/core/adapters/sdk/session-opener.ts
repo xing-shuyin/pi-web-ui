@@ -16,6 +16,8 @@ export interface OpenSessionOptions {
 	agentDir: string;
 	/** 要接着写的那份转录；缺省 = 在 `cwd` 下新建会话。 */
 	sessionFile?: string;
+	/** 本次要注册的工具名（由 `domains/tools` 的装载域给出）；缺省 = SDK 自己的默认集。 */
+	tools?: readonly string[];
 }
 
 export interface OpenedSession {
@@ -92,7 +94,13 @@ export async function openTurnSession(opts: OpenSessionOptions): Promise<OpenedS
 	let session: AgentSession;
 	try {
 		const services = await createAgentSessionServices({ cwd, agentDir });
-		session = (await createAgentSessionFromServices({ services, sessionManager: manager })).session;
+		session = (
+			await createAgentSessionFromServices({
+				services,
+				sessionManager: manager,
+				...(opts.tools ? { tools: [...opts.tools] } : {}),
+			})
+		).session;
 	} catch (error) {
 		throw new OpenSessionError("create-session", cwd, sessionFile, error);
 	}

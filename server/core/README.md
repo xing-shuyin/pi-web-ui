@@ -22,16 +22,17 @@ app        门面（EngineService）与装配    ← 唯一允许 import 全部�
 
 ## 进度
 
-| 波次  | 内容                                                                                             | 状态                                           |
-| ----- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
-| W0    | 骨架：ports / kernel（对话聚合 + 注册表 + 相位 + 排队）/ 门面壳 / 引擎开关 / 边界守卫 / 所有权表 | ✅                                             |
-| W1    | 对话内核：TurnRunner（唯一碰 SDK）、snapshots、history、生命周期                                 | ✅ turns / snapshots / history / ClientRuntime |
-| W2    | 快照投影、设置读模型、转录投影                                                                   | ✅                                             |
-| W3    | 适配器：SDK 开会话 / 版本化状态落盘                                                              | ✅（能开会话；喂轮与接线在 W4）                |
-| W4    | 连接期帧：settings_state / sessions / projects / models + 会话持有（SessionRegistry）            | ✅（models 先给空表，模型域在 W5）             |
-| W5    | 模型目录帧 / 会话可见面投影 / 打开历史会话                                                       | ✅（工具审批与流式增量在 W6）                  |
-| W6~W7 | 工具门控+审批 / 子代理 / 插件终端 / 删老树                                                       | 未开始                                         |
-| W7    | 删老树（`agent-service.ts` 不存在）                                                              | 未开始                                         |
+| 波次  | 内容                                                                                             | 状态                                                       |
+| ----- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| W0    | 骨架：ports / kernel（对话聚合 + 注册表 + 相位 + 排队）/ 门面壳 / 引擎开关 / 边界守卫 / 所有权表 | ✅                                                         |
+| W1    | 对话内核：TurnRunner（唯一碰 SDK）、snapshots、history、生命周期                                 | ✅ turns / snapshots / history / ClientRuntime             |
+| W2    | 快照投影、设置读模型、转录投影                                                                   | ✅                                                         |
+| W3    | 适配器：SDK 开会话 / 版本化状态落盘                                                              | ✅（能开会话；喂轮与接线在 W4）                            |
+| W4    | 连接期帧：settings_state / sessions / projects / models + 会话持有（SessionRegistry）            | ✅（models 先给空表，模型域在 W5）                         |
+| W5    | 模型目录帧 / 会话可见面投影 / 打开历史会话                                                       | ✅（工具审批与流式增量在 W6）                              |
+| W6    | 工具装载 + 审批协议面                                                                            | ✅（装载已生效；审批等待方已就位，调用方在 W7 自定义工具） |
+| W7~W8 | 自定义工具（审批真正触发）/ 子代理 / 插件终端 / 删老树                                           | 未开始                                                     |
+| W7    | 删老树（`agent-service.ts` 不存在）                                                              | 未开始                                                     |
 
 W3 之后 `CoreEngine.attach()` 仍默认关闭（`CoreEngineNotReadyError`）：能实例化、能过契约测试、能给空对话出合法帧、能真开一份 SDK 会话，但**连接期帧（settings_state / sessions / models / projects）还没接**，所以还不接生产流量。
 
@@ -64,6 +65,8 @@ W3 之后 `CoreEngine.attach()` 仍默认关闭（`CoreEngineNotReadyError`）�
 - **模型帧**：域只认注入的 `runtimeFactory`（SDK 的 `ModelRuntime` 只在 `adapters/models/` 里建），失败发空表；`enabled` 高亮留给 app 层叠加。
 - **会话可见面**：`adapters/sdk/view.ts` 把会话消息经 `serialize.ts` 投影成 `UiMessage`（id 稳定），并在开会话时订阅事件触发重帧；流式增量仍是「整段重投影」，细粒度 delta 待消息窗口域。
 - **打开历史**：`openHistoryConversation` 先按 `sessionFile` 去重再建，读盘/投影失败不抛（空消息 + 计数）。
+- **工具装载**：开会话前由装载域算 `resolveToolLoadout(...).tools` 传给 SDK；活动集只经 `resolveActiveToolNames` 这一个漏斗，装载域只备料（禁用集/平台支持/按需未加载）。
+- **审批**：SDK 没有审批钩子——审批只能长在自定义工具里（`tool-guards.ts` 的 `askApproval`）。所以 `createApprovalWaiter` 现在只是协议面就绪（登记 → 发 `tool_approval_pending` → 结算 → 发 `tool_approval_resolved`），**内置工具仍绕过审批**，真正触发要等 W7 自定义工具。
 
 ## 源码约定
 

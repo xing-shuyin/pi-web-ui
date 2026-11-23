@@ -1,4 +1,10 @@
-import type { AgentEngineCapabilities, QueuedPromptItem, UiMessage, UiModelInfo } from "../../protocol.js";
+import type {
+	AgentEngineCapabilities,
+	QueuedPromptItem,
+	UiMessage,
+	UiModelInfo,
+	UiToolApproval,
+} from "../../protocol.js";
 
 /** 出帧时与「当前对话」无关的进程级信息。 */
 export interface SnapshotEnvView {
@@ -34,6 +40,7 @@ export interface SnapshotConversationView {
 	delegateMode?: boolean;
 	delegateConvId?: string | null;
 	draft?: { text: string; ts: number } | null;
+	pendingApprovals?: UiToolApproval[];
 }
 
 export interface SnapshotView {

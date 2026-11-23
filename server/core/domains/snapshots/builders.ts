@@ -55,6 +55,7 @@ export function buildSnapshotState(rev: number, env: SnapshotEnvView, conv: Snap
 		delegateMode: conv.delegateMode === true,
 		delegateConvId: conv.delegateConvId ?? null,
 		...(conv.draft ? { draft: conv.draft } : {}),
+		...(conv.pendingApprovals && conv.pendingApprovals.length > 0 ? { pendingApprovals: conv.pendingApprovals } : {}),
 		tools: [...conv.tools],
 	};
 }

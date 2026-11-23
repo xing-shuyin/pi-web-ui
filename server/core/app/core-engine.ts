@@ -12,6 +12,9 @@ import { pushProjects } from "../domains/projects/index.js";
 import { refreshSessions } from "../domains/history/index.js";
 import { createModelPusher } from "../domains/models/index.js";
 import { createModelRuntimeFactory } from "../adapters/models/index.js";
+import { resolveToolLoadout } from "../domains/tools/index.js";
+import { InteractionInbox } from "../domains/interactions/index.js";
+import { createApprovalWaiter } from "../domains/interactions/index.js";
 import { DEFAULT_PI_CAPABILITIES } from "../../engine-capabilities.js";
 import type { AgentEngineCapabilities } from "../../protocol.js";
 import { ClientRuntime, type ClientFrames } from "./client-runtime.js";
@@ -57,8 +60,14 @@ export class CoreEngine implements EngineService {
 		if (existing) return existing.handlers();
 		const transport: TransportPort = { send, isClosed: () => !this.runtimes.has(clientId) };
 		const unsubscribers = new Map<string, () => void>();
+		const approvalWaiter = createApprovalWaiter({
+			inbox: new InteractionInbox(() => {}),
+			transport,
+		});
 		const sessions = new SessionRegistry({
 			agentDir: this.options.agentDir ?? this.cwd,
+			// 工具装载域决定注册哪些工具；注册表只转发，不给默认值。
+			toolsFor: () => resolveToolLoadout({ switches: this.stateStore.getSettingsSnapshot(clientId) }).tools,
 			onOpened: (conv, opened) => {
 				runtime.noteSessionFile(opened.sessionFile);
 				unsubscribers.set(
@@ -77,7 +86,10 @@ export class CoreEngine implements EngineService {
 			clock: systemClock,
 			transport,
 			sessions,
-			viewOf: (conv) => conversationViewFromSession(conv, sessions.get(conv.id)?.session),
+			viewOf: (conv) => ({
+				...conversationViewFromSession(conv, sessions.get(conv.id)?.session),
+				pendingApprovals: approvalWaiter.pendingForSnapshot(conv.id),
+			}),
 			env: {
 				settingsVersion: 0,
 				piConfigured: false,
