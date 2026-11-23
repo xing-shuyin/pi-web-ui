@@ -53,6 +53,23 @@ describe("安静模式折叠判定 (Quiet Mode fold)", () => {
 		expect(ids(items.slice(2))).toEqual(["a2"]);
 	});
 
+	it("尾部活动并入本轮折叠行，仍排在最终回复之前", () => {
+		const items = fold([
+			user("u1"),
+			assistant("a1", [tool("tc1")]),
+			assistant("a2", [text("结论")]),
+			assistant("a3", [tool("tc2")]),
+		]);
+		expect(ids(items)).toEqual(["u1", "fold(2)", "a2"]);
+		const foldItem = items[1];
+		expect(foldItem.type === "quiet_fold" && foldItem.messages.map((m) => m.id)).toEqual(["a1", "a3"]);
+	});
+
+	it("整轮只有「最终回复 + 尾部活动」时，折叠行插到本轮开头", () => {
+		const items = fold([user("u1"), assistant("a1", [text("结论")]), assistant("a2", [tool("tc1")])]);
+		expect(ids(items)).toEqual(["u1", "fold(1)", "a1"]);
+	});
+
 	it("纯对话轮不产生折叠", () => {
 		const items = fold([user("u1"), assistant("a1", [text("他摆摆手。")])]);
 		expect(ids(items)).toEqual(["u1", "a1"]);

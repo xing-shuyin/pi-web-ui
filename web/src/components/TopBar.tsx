@@ -14,6 +14,7 @@ import {
 	FiBox,
 	FiDownload,
 	FiEdit2,
+	FiEye,
 	FiFeather,
 	FiFolder,
 	FiFolderPlus,
@@ -50,6 +51,7 @@ import { PluginIcon } from "../plugin-icon";
 import { pluginDisplayName } from "../plugin-name";
 import { formatCostDisplay } from "../cost-format";
 import { isZhLocale, useI18n, localeShort } from "../i18n";
+import { useQuietMode, saveQuietModeSettings } from "../quiet-mode";
 import {
 	isPluginViewItem,
 	REQUIRED_TOPBAR_ITEM_IDS,
@@ -233,6 +235,8 @@ export function TopBar({
 	onCreateCli,
 }: TopBarProps) {
 	const { locale, setLocale, t, packs } = useI18n();
+	// 安静模式的快捷开关（issue #956）：与 zen mode 同形的一键 flip-flop，偏好走 quiet-mode.ts 单源。
+	const quietMode = useQuietMode();
 	const [topbarMenuOpen, setTopbarMenuOpen] = useState(false);
 	const [browserPanelOpen, setBrowserPanelOpen] = useState(false);
 	const [pluginMenuAnchor, setPluginMenuAnchor] = useState<{ rect: DOMRect; el: HTMLElement } | null>(null);
@@ -287,6 +291,7 @@ export function TopBar({
 		"host:search",
 		"host:browser",
 		"host:tasks",
+		"host:quiet-mode",
 		"host:zen-mode",
 		"host:device-center",
 		"host:settings",
@@ -354,6 +359,9 @@ export function TopBar({
 				return true;
 			case "host:zen-mode":
 				onToggleZenMode?.();
+				return true;
+			case "host:quiet-mode":
+				saveQuietModeSettings({ ...quietMode, enabled: !quietMode.enabled });
 				return true;
 			case "host:worktrees":
 				onViewChange("worktrees");
@@ -1016,6 +1024,19 @@ export function TopBar({
 				<FiLayers />
 				<span className="chip-sub">{t("bgTasks")}</span>
 				{chat.bgServers.length > 0 && <span className="bg-task-badge">{chat.bgServers.length}</span>}
+			</button>
+		),
+		"host:quiet-mode": (
+			<button
+				type="button"
+				className={`chip${quietMode.enabled ? " active" : ""}`}
+				data-tip={t("quietModeDesc")}
+				onClick={() => saveQuietModeSettings({ ...quietMode, enabled: !quietMode.enabled })}
+				aria-label={t("quietMode")}
+				aria-pressed={quietMode.enabled}
+			>
+				<FiEye />
+				<span className="chip-sub">{t("quietMode")}</span>
 			</button>
 		),
 		"host:zen-mode": (

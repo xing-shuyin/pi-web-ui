@@ -111,11 +111,15 @@ function appendTurnQuiet(out: QuietItem[], items: readonly MessageClusterItem[],
 	}
 	if (all.length === 0) return;
 	const keep = turnKeepSet(all, opts);
+	const turnStart = out.length;
 
 	let pending: UiMessage[] = [];
+	/** 本轮已产出的折叠行下标：尾部活动并进这一行，而不是自成一行落在最终回复之后。 */
+	let foldIdx = -1;
 	const flushPending = () => {
 		if (pending.length === 0) return;
 		out.push({ type: "quiet_fold", id: `quiet-${pending[0].id}`, messages: pending });
+		foldIdx = out.length - 1;
 		pending = [];
 	};
 
@@ -139,7 +143,19 @@ function appendTurnQuiet(out: QuietItem[], items: readonly MessageClusterItem[],
 				: { type: "tool_cluster", id: `quiet-cluster-${keptMsgs[0].id}`, messages: keptMsgs },
 		);
 	}
-	flushPending();
+
+	// 收尾：本轮在「最终回复」之后还可能有无文本活动（裸工具簇等）。它不能单独占一行排在回复
+	// 后面（与「折叠行永远排在保留内容之前」冲突，读起来像回复之后又冒出活动），所以
+	// ① 本轮已有折叠行 → 并进去；② 整轮只有「回复 + 尾部活动」→ 插到本轮开头。
+	if (pending.length > 0) {
+		const existing = foldIdx >= 0 ? out[foldIdx] : null;
+		if (existing && existing.type === "quiet_fold") {
+			existing.messages.push(...pending);
+		} else {
+			out.splice(turnStart, 0, { type: "quiet_fold", id: `quiet-${pending[0].id}`, messages: pending });
+		}
+		pending = [];
+	}
 }
 
 /**

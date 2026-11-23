@@ -352,6 +352,16 @@ export const BUILTIN_UI_ITEMS: BuiltinUiItem[] = [
 		align: "end",
 	},
 	{
+		id: "host:quiet-mode",
+		slot: "topbar.primary",
+		labelKey: "quietMode",
+		icon: "eye",
+		kind: "action",
+		order: 44,
+		group: "tools",
+		align: "end",
+	},
+	{
 		id: "host:device-center",
 		slot: "topbar.primary",
 		labelKey: "deviceCenter",

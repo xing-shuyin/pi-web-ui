@@ -5,6 +5,7 @@ import {
 	FiCpu,
 	FiDatabase,
 	FiDownload,
+	FiEye,
 	FiFeather,
 	FiFolder,
 	FiFolderPlus,
@@ -33,6 +34,7 @@ import { REQUIRED_TOPBAR_ITEM_IDS, restoreUiItem, type UiSlotEntry, type UiSlotI
 import type { ChatState } from "../use-chat";
 import { useFormattedCost } from "../cost-format";
 import { isZhLocale, useT, useI18n } from "../i18n";
+import { useQuietMode, saveQuietModeSettings } from "../quiet-mode";
 import { useAppGlobals, appSend } from "../app-globals";
 import { PluginIcon } from "../plugin-icon";
 import { BrandDeviceMenu } from "./BrandDeviceMenu";
@@ -151,6 +153,8 @@ export function BarItem({
 	const { locale, packs, setLocale } = useI18n();
 	const { engine } = useAppGlobals();
 	const isDsh = engine === "dsh";
+	// 安静模式的快捷开关（issue #956）：偏好单源在 quiet-mode.ts，这里只订阅 + 翻转。
+	const quietMode = useQuietMode();
 
 	const [langOpen, setLangOpen] = useState(false);
 	const [themeOpen, setThemeOpen] = useState(false);
@@ -1000,6 +1004,14 @@ export function BarItem({
 			isActive = Boolean(zenMode);
 			tipOverride = t("zenModeTip");
 			onClick = () => onToggleZenMode?.();
+			break;
+		case "host:quiet-mode":
+			iconNode = <FiEye className="bar-item-icon" />;
+			labelText = named(t("quietMode"));
+			extraClasses = "chip";
+			isActive = quietMode.enabled;
+			tipOverride = t("quietModeDesc");
+			onClick = () => saveQuietModeSettings({ ...quietMode, enabled: !quietMode.enabled });
 			break;
 		case "host:device-center":
 			iconNode = <LuMonitorSmartphone className="bar-item-icon" />;

@@ -113,14 +113,15 @@ pi 的 `schedule` 创建任务时单独持久化创建来源（稳定 SDK 会话
 
 **事实源**：判定单源 `web/src/quiet-fold.ts`（纯函数，无 React / DOM / 协议）、偏好单源 `web/src/quiet-mode.ts`（localStorage，仿 `chat-width-settings.ts` 的 `useSyncExternalStore` 形态）、渲染接入 `web/src/components/MessageList.tsx`、设置入口 `web/src/components/SettingsModal.tsx`。
 
-- 语义：每个 turn 只保留最后一条有文本的助手消息，其余压成一条 `quiet_fold` 条目；折叠行永远排在保留内容之前。turn 边界只认真实用户消息——子代理的派发 / 进度 / 完成通知在协议里是 `role: "user"` + 协作信封（`parseCollabMessage`），当成边界会把真正的最终回复判成中间消息并藏掉。
+- 语义：每个 turn 只保留最后一条有文本的助手消息，其余压成一条 `quiet_fold` 条目；折叠行永远排在保留内容之前。turn 边界只认真实用户消息——子代理的派发 / 进度 / 完成通知在协议里是 `role: "user"` + 协作信封（`parseCollabMessage`），当成边界会把真正的最终回复判成中间消息并藏掉。轮末在最终回复之后的无文本活动（裸工具簇等）并进本轮已有折叠行；整轮只有「回复 + 尾部活动」时折叠行插到本轮开头——两处都为了守住「折叠行在前」这条不变量。
+- 快捷开关：`host:quiet-mode` 在顶栏是一枚与 zen mode 同形的 flip-flop chip（`web/src/ui-slots.ts` 登记 → `BarItem.tsx` 四栏通用渲染 → `TopBar.tsx` 兜底清单 / 溢出分发 / chip 三处），点击直接翻转 `quietMode.enabled` 并落盘；设置页里的开关和两档呈现是同一份偏好的另一个入口。
 - 永远保留：协作信封正文（子代理结果）、带 `errorMessage` 的消息、自定义卡片（附件 / 插件 / goal 审阅，自带 `reviewFoldKind` 语义）、`streamingId` 指向的消息（否则首字出现前打字机消失）、外部传入的 `keepIds`。
 - 两种呈现共用同一份判定：`fold` 复用既有 `.msg-collapsed` 规格（角色标 + 计数 chips + 展开），`zero` 用 `.quiet-gap` 一行 12px 留白，只在 hover / focus 时露出入口。展开态 `quietExpanded` 是组件内瞬时状态，不持久化——每次进会话默认干净。
 - 不变量：纯展示层开关，`UiMessage` / 协议 / `use-chat` / 服务端一条不动；被折叠的消息**不渲染**，绝不用 `display:none` 隐藏（否则主题的 `.msg-*` 结构改写、复制与搜索、滚动定位都会看到幽灵节点）。搜索与导出图片自动退出安静视图（与 `needsFullHistory` 同一条约定），保证命中项可见。
 - 安静视图极小，因此 `virtualOn` 直接关掉窗口化，让 `hidden` / `pinned` / 测量 / 锚定那一整套机制整体绕过，而不是去和它协调。
 - 主题零适配：折叠行与留白只用既有 class 家族（`.msg-*` / `.msg-collapsed`）和既有令牌，不新增主题变量——38 个主题（含改写 `.msg-*` 的 `aetheris` 等）一份都不用改。
 
-验证：`tests/unit/quiet-mode-fold.test.ts`（turn 边界、协作信封、错误与流式保留、多轮独立折叠、计数与偏好归一化）。
+验证：`tests/unit/quiet-mode-fold.test.ts`（turn 边界、协作信封、错误与流式保留、多轮独立折叠、轮末活动并入、计数与偏好归一化）、`tests/unit/quiet-mode-toggle.test.ts`（顶栏条目登记 + 两处渲染点接线 + 翻转落盘）。
 
 ## HTTP 请求（`web/src/api-client.ts` 单源）
 
