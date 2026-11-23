@@ -2,6 +2,7 @@ import {
 	Fragment,
 	useEffect,
 	useLayoutEffect,
+	useMemo,
 	useRef,
 	useState,
 	type MouseEvent as ReactMouseEvent,
@@ -70,20 +71,13 @@ import { LocaleModal } from "./LocaleModal";
 import { focusComposer } from "../composer-bridge";
 import { useFloatingPanel } from "../use-floating-panel";
 import { isDesktopShell } from "../desktop";
-import { hasPendingUpdate, useDesktopUpdater } from "../desktop-updater";
-import { DesktopUpdatePanel } from "./DesktopUpdatePanel";
+import { useDesktopUpdater } from "../desktop-updater";
+import { UpdateModal } from "./UpdateModal";
+import { resolveUpdateCenter } from "../update-verdict";
 import { BarItem } from "./BarItem";
 import { EnginePicker } from "./EnginePicker";
 import { WindowControls } from "./WindowControls";
 import { NativeCliCreateEntry } from "./NativeCliCreateModal";
-
-const PI_CORE_ITEM: UpdateAllItem = {
-	name: "@earendil-works/pi-coding-agent",
-	kind: "pi-core",
-	current: "",
-	latest: null,
-	upToDate: false,
-};
 
 function TopbarOverflowMenu({
 	anchorRef,
@@ -502,17 +496,29 @@ export function TopBar({
 	const [updateOpen, setUpdateOpen] = useState(false);
 	const inDesktopShell = isDesktopShell();
 	const desktopUpdater = useDesktopUpdater();
-	// 桌面版走应用内更新（desktop/updater.ts 的快照），网页/CLI 走 npm 那条：两者的「当前/最新」
-	// 不能混着显示，否则会出现「npm 说有新版、安装包其实已经是最新」的错位。
+	const [localeModalOpen, setLocaleModalOpen] = useState(false);
+
+	// 更新中心的**唯一判定**：顶栏版本号 / badge / 小黄点 / 弹窗结论全部读这一份，
+	// 不再让 chip 用一套计数、面板用另一套（那正是「说有 1 个更新、面板说已是最新」的根源）。
+	const updateCenter = useMemo(
+		() =>
+			resolveUpdateCenter({
+				inDesktopShell,
+				desktop: desktopUpdater.state,
+				desktopActionError: desktopUpdater.actionError,
+				update: chat.update,
+				updatesAll: chat.updatesAll,
+				updatesSdk: chat.updatesSdk,
+			}),
+		[inDesktopShell, desktopUpdater.state, desktopUpdater.actionError, chat.update, chat.updatesAll, chat.updatesSdk],
+	);
+	// 版本号只显示「当前跑着的那个」：桌面壳是壳版本，网页/CLI 是 npm 包版本。
 	const shownVersion = inDesktopShell
 		? (desktopUpdater.state?.currentVersion ?? chat.update?.current)
 		: chat.update?.current;
-	const pendingDesktopUpdate = inDesktopShell && hasPendingUpdate(desktopUpdater.state);
-	const updateWaiting = inDesktopShell
-		? pendingDesktopUpdate
-		: Boolean(chat.update && !chat.update.upToDate && chat.update.latest);
+	const updateWaiting = updateCenter.hasPending;
 	const waitingVersion = inDesktopShell ? (desktopUpdater.state?.targetVersion ?? null) : (chat.update?.latest ?? null);
-	const [localeModalOpen, setLocaleModalOpen] = useState(false);
+	const updatesCount = updateCenter.pendingCount;
 
 	const updateTermIdsRef = useRef<Set<string>>(new Set());
 
@@ -531,46 +537,6 @@ export function TopBar({
 			appSend({ type: "check_updates_all", force: true });
 		}
 	}, [chat.terminals, chat.ready]);
-
-	const runUpdate = () => {
-		if (!chat.ready) return;
-		const title = t("updateTabTitle");
-		const cmd: CommandDef = {
-			name: title,
-			command: "npm i -g pi-web-ui@latest",
-			cwd: "${pwd}",
-		};
-		const existing = chat.terminals.find((tm) => tm.title === title);
-		const targetId = existing ? existing.id : randomUuid();
-		if (existing) {
-			updateTermIdsRef.current.add(existing.id);
-			terminal.restart(existing.id);
-			appSend({
-				type: "run_command",
-				terminalId: existing.id,
-				conversationId: existing.conversationId,
-				command: cmd,
-				cols: 80,
-				rows: 24,
-			});
-		} else {
-			updateTermIdsRef.current.add(targetId);
-			terminal.create({
-				id: targetId,
-				conversationId: chat.activeConversationId || chat.state?.conversationId || "",
-				title,
-				cwd: chat.state?.cwd ?? "",
-				cols: 80,
-				rows: 24,
-				running: true,
-				exitCode: null,
-				command: cmd,
-			});
-		}
-		setUpdateOpen(false);
-		terminal.select?.(targetId);
-		onViewChange("terminal", { skipAutoCreate: true });
-	};
 
 	const runPkgUpdate = (items: UpdateAllItem[], title: string) => {
 		if (!chat.ready || items.length === 0) return;
@@ -611,245 +577,13 @@ export function TopBar({
 		onViewChange("terminal", { skipAutoCreate: true });
 	};
 
-	const allUpdates = chat.updatesAll ?? [];
-	const sdkInfo = chat.updatesSdk;
-	const sdkSplit =
-		sdkInfo && sdkInfo.newerInstalled ? { running: sdkInfo.running, installed: sdkInfo.newerInstalled } : null;
-	const bundledInUse = sdkInfo?.bundledInUse === true;
-	const coreRow = allUpdates.find((i) => i.kind === "pi-core" && !i.error);
-	const bundledRelevant = bundledInUse && (!coreRow || !coreRow.upToDate);
-	const bundledButton = bundledRelevant && !coreRow;
-	const updatesCount = allUpdates.filter((i) => !i.upToDate && !i.error).length;
-	const updatable = allUpdates.filter((i) => !i.upToDate && !i.error && i.kind !== "webui");
-	const gitDisplayName = (item: UpdateAllItem) =>
-		item.kind === "git-extension" && item.source ? item.source : item.name;
-	const gitNameTitle = (item: UpdateAllItem) =>
-		item.kind === "git-extension" && item.source && item.source !== item.name
-			? `${item.source} (${item.name})`
-			: item.name;
-	const stripGitSha = (v: string) => {
-		const s = v.replace(/ \([0-9a-f]{7}\)$/, "");
-		return /^[0-9a-f]{7}$/.test(s) ? "" : s;
+	const openUpdateCenter = () => {
+		setUpdateOpen(true);
+		// 桌面壳只回主进程快照（不重复打网络）；网页 / CLI 才去查 npm。
+		if (inDesktopShell) desktopUpdater.refresh();
+		else appSend({ type: "check_update" });
+		appSend({ type: "check_updates_all" });
 	};
-	const extractGitSha = (v: string) => {
-		const m = v.match(/\(([0-9a-f]{7})\)$/) ?? v.match(/^([0-9a-f]{7})$/);
-		return m?.[1] ?? null;
-	};
-	const shortGitRange = (current: string, latest: string | null) => {
-		if (!latest) return stripGitSha(current);
-		const c = stripGitSha(current);
-		const l = stripGitSha(latest);
-		if (c !== l) return `${c} → ${l}`;
-		const cSha = extractGitSha(current);
-		const lSha = extractGitSha(latest);
-		if (cSha && lSha && cSha !== lSha) {
-			return c ? `${c} (${cSha} → ${lSha})` : `${cSha} → ${lSha}`;
-		}
-		return c;
-	};
-	const renderAllUpdatesBody = () => (
-		<div className="dd-updates-all">
-			<div className="dd-header">{t("updatesAllTitle")}</div>
-			{chat.updatesAll === null ? (
-				<div className="dd-note">{t("checkingUpdate")}</div>
-			) : allUpdates.length === 0 ? (
-				<div className="dd-note">{t("updatesAllUpToDate")}</div>
-			) : (
-				<ul className="dd-all-list">
-					{allUpdates.map((item) => {
-						const splitRow = sdkSplit != null && item.kind === "pi-core";
-						const warn = !item.error && (!item.upToDate || splitRow);
-						return (
-							<li
-								key={`${item.kind}:${item.name}`}
-								className={`dd-all-item${item.error ? " err" : warn ? " warn" : ""}`}
-							>
-								{item.kind !== "webui" && !item.upToDate && !item.error && (
-									<button
-										type="button"
-										className="dd-update-btn"
-										onClick={() => runPkgUpdate([item], t("updatePkgTabTitle", { name: item.name }))}
-									>
-										{t("updateBtn")}
-									</button>
-								)}
-								<span className="dd-all-name" title={gitNameTitle(item)}>
-									{gitDisplayName(item)}
-								</span>
-								<span className="dd-all-meta">
-									<span className="dd-all-kind">
-										{item.kind === "webui"
-											? t("kindWebUi")
-											: item.kind === "pi-core"
-												? t("kindPiCore")
-												: item.kind === "engine"
-													? t("kindEngine")
-													: item.kind === "git-extension"
-														? t("kindGitExtension")
-														: item.kind === "plugin"
-															? t("kindPlugin")
-															: t("kindPackage")}
-									</span>
-									<span
-										className="dd-all-vers"
-										title={
-											item.error
-												? item.error
-												: item.kind === "git-extension"
-													? item.upToDate
-														? item.current
-														: `${item.current} → ${item.latest}`
-													: undefined
-										}
-									>
-										{item.error ? (
-											item.kind === "pi-core" && item.current === "unknown" ? (
-												t("piCoreUndetected")
-											) : (
-												t("updateCheckFailed")
-											)
-										) : item.kind === "git-extension" ? (
-											item.upToDate ? (
-												stripGitSha(item.current)
-											) : (
-												shortGitRange(item.current, item.latest)
-											)
-										) : item.kind === "plugin" ? (
-											item.upToDate ? (
-												item.current.startsWith("v") ? (
-													item.current
-												) : (
-													stripGitSha(item.current)
-												)
-											) : (
-												shortGitRange(item.current, item.latest)
-											)
-										) : item.upToDate ? (
-											`v${item.current}`
-										) : (
-											<>
-												v{item.current} → v{item.latest}
-											</>
-										)}
-									</span>
-									{splitRow && !item.error && (
-										<span className="dd-split-run">{t("piCoreSplitRun", { running: sdkSplit.running })}</span>
-									)}
-								</span>
-							</li>
-						);
-					})}
-				</ul>
-			)}
-			{sdkSplit && (
-				<div className="dd-note warn">
-					{t("piSdkSplitNote", { running: sdkSplit.running, installed: sdkSplit.installed })}
-				</div>
-			)}
-			{bundledRelevant && <div className="dd-note">{t("piSdkBundledNote", { running: sdkInfo!.running })}</div>}
-			<div className="dd-actions">
-				{bundledButton && (
-					<button
-						type="button"
-						className="dd-refresh accent"
-						style={{ flex: 1 }}
-						onClick={() => runPkgUpdate([PI_CORE_ITEM], t("installGlobalEngineTabTitle"))}
-					>
-						{t("installGlobalEngineBtn")}
-					</button>
-				)}
-				{updatable.length > 0 && (
-					<button
-						type="button"
-						className="dd-refresh accent"
-						style={{ flex: 1 }}
-						onClick={() => runPkgUpdate(updatable, t("updateAllTabTitle"))}
-					>
-						{t("updateAllBtn")}
-					</button>
-				)}
-				<button
-					type="button"
-					className="dd-refresh"
-					style={updatable.length > 0 ? { flex: 1 } : undefined}
-					onClick={() => appSend({ type: "check_updates_all", force: true })}
-				>
-					{t("updatesAllRefresh")}
-				</button>
-			</div>
-		</div>
-	);
-	const renderUpdateBody = () => (
-		<>
-			<div className="dd-update">
-				{inDesktopShell ? (
-					<DesktopUpdatePanel updater={desktopUpdater} busy={chat.status === "open"} />
-				) : (
-					<>
-						<div className="dd-row">
-							<span>{t("currentVersion")}</span>
-							<b>v{chat.update?.current ?? "…"}</b>
-						</div>
-						<div className="dd-row">
-							<span>{t("latestVersion")}</span>
-							<b>
-								{chat.update === null
-									? t("checkingUpdate")
-									: chat.update.error
-										? chat.update.error
-										: chat.update.latest
-											? `v${chat.update.latest}`
-											: t("checkingUpdate")}
-							</b>
-						</div>
-						{chat.update && chat.update.upToDate && <div className="dd-note ok">{t("upToDate")}</div>}
-						{chat.update && !chat.update.upToDate && chat.update.latest && (
-							<div className="dd-note warn">{t("updateAvailable", { version: chat.update.latest })}</div>
-						)}
-						{chat.update?.latestPublishedAt &&
-							Date.now() - new Date(chat.update.latestPublishedAt).getTime() < 30 * 60_000 && (
-								<div className="dd-note warn">
-									{t("updateJustPublished", {
-										version: chat.update.latest ?? "",
-									})}
-								</div>
-							)}
-						{chat.update && !chat.update.upToDate && chat.update.latest && (
-							<div className="dd-note">{t("updateTerminalHint")}</div>
-						)}
-					</>
-				)}
-			</div>
-			<div className="dd-actions">
-				{/* 桌面版的检查 / 下载 / 安装都在 DesktopUpdatePanel 里按状态出现，这里不再放重复按钮。 */}
-				{!inDesktopShell && (
-					<button type="button" className="dd-refresh" onClick={() => appSend({ type: "check_update" })}>
-						{chat.update === null ? t("checkingUpdate") : t("checkUpdate")}
-					</button>
-				)}
-				{chat.update && !chat.update.upToDate && chat.update.latest && !inDesktopShell && (
-					<button type="button" className="dd-refresh accent" onClick={runUpdate}>
-						{t("updateNow")}
-					</button>
-				)}
-				{service && (
-					<button
-						type="button"
-						className="dd-refresh accent"
-						disabled={restarting}
-						title={t("restartServiceTip", { name: service.name })}
-						onClick={() => {
-							if (restarting) return;
-							setRestarting(true);
-							appSend({ type: "restart_service" });
-						}}
-					>
-						{restarting ? t("restartingService") : t("restartService")}
-					</button>
-				)}
-			</div>
-		</>
-	);
 
 	const isMobile = useIsMobileTopbar();
 	const hostNodes: Record<string, ReactNode> = {
@@ -1183,40 +917,29 @@ export function TopBar({
 				<span className="chip-sub">v{appVersion ?? chat.update?.current ?? "…"}</span>
 			</span>
 		) : (
-			<Dropdown
-				trigger={
-					<>
-						<FiDownload />
-						<span className="chip-sub">v{shownVersion ?? "…"}</span>
-						{updateWaiting && (
-							<span
-								className="update-dot"
-								title={t("updateAvailable", {
-									version: waitingVersion ?? "",
-								})}
-							/>
-						)}
-						{updatesCount > 0 && <span className="update-badge">{t("updatesAllBadge", { n: updatesCount })}</span>}
-					</>
-				}
-				tip={t("update")}
-				open={updateOpen}
-				caret={false}
-				onOpenChange={(v) => {
-					setUpdateOpen(v);
-					if (v) {
-						// 桌面版只回到主进程的快照（不重复打网络），网页/CLI 才去查 npm。
-						if (inDesktopShell) desktopUpdater.refresh();
-						else appSend({ type: "check_update" });
-						appSend({ type: "check_updates_all" });
-					}
-				}}
-				fit
-			>
-				<div className="dd-header">{t("update")}</div>
-				{renderUpdateBody()}
-				{renderAllUpdatesBody()}
-			</Dropdown>
+			// 弹窗只渲染一次（在本组件末尾）；这里只负责 chip 与 badge，且两者与弹窗同源。
+			<div className="dropdown right fit">
+				<button
+					type="button"
+					className="chip"
+					onClick={openUpdateCenter}
+					aria-haspopup="dialog"
+					aria-expanded={updateOpen}
+					data-tip={t("update")}
+				>
+					<FiDownload />
+					<span className="chip-sub">v{shownVersion ?? "…"}</span>
+					{updateWaiting && (
+						<span
+							className="update-dot"
+							title={t("updateAvailable", {
+								version: waitingVersion ?? "",
+							})}
+						/>
+					)}
+					{updatesCount > 0 && <span className="update-badge">{t("updatesAllBadge", { n: updatesCount })}</span>}
+				</button>
+			</div>
 		),
 		"host:github": (
 			<a
@@ -1388,8 +1111,10 @@ export function TopBar({
 						onThemeChange,
 						reloadThemes,
 						onLocaleModalOpen: () => setLocaleModalOpen(true),
-						renderUpdateBody,
-						renderAllUpdatesBody,
+						onOpenUpdateCenter: openUpdateCenter,
+						updateVersion: shownVersion ?? null,
+						updatePending: updateWaiting,
+						updateTargetVersion: waitingVersion,
 						updatesCount,
 						managed,
 						appVersion,
@@ -1828,6 +1553,32 @@ export function TopBar({
 			<WindowControls />
 
 			{localeModalOpen && <LocaleModal onClose={() => setLocaleModalOpen(false)} />}
+			{!managed && (
+				<UpdateModal
+					open={updateOpen}
+					onClose={() => setUpdateOpen(false)}
+					center={updateCenter}
+					inDesktopShell={inDesktopShell}
+					updater={desktopUpdater}
+					updatesAll={chat.updatesAll}
+					updatesSdk={chat.updatesSdk}
+					latestPublishedAt={chat.update?.latestPublishedAt ?? null}
+					busy={chat.status === "open"}
+					serviceName={service?.name ?? null}
+					restarting={restarting}
+					onRestartService={() => {
+						if (restarting) return;
+						setRestarting(true);
+						appSend({ type: "restart_service" });
+					}}
+					onRunNpmUpdate={(items, titleKey, titleVars) => {
+						runPkgUpdate(items, t(titleKey, titleVars));
+						setUpdateOpen(false);
+					}}
+					onCheckNpm={() => appSend({ type: "check_update" })}
+					onCheckAll={() => appSend({ type: "check_updates_all", force: true })}
+				/>
+			)}
 			{browserPanelOpen &&
 				createPortal(<BrowserControlModal onClose={() => setBrowserPanelOpen(false)} />, document.body)}
 			{pluginMenuAnchor && (

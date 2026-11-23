@@ -1,0 +1,593 @@
+/* 更新中心弹窗（web/src/components/UpdateModal.tsx）。
+   独立文件而不是继续堆进 styles.css：这块是新布局，和旧 .dd-* 下拉没有任何共享规则。
+   红线：不写死 z-index（组件用 useOverlayZIndex 内联）；长文本三件套；独立浮层才 overscroll-behavior。 */
+
+.uc-backdrop {
+	position: fixed;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+	background: rgba(4, 5, 8, 0.62);
+	backdrop-filter: blur(2px);
+	overscroll-behavior: contain;
+}
+
+.uc-sheet {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	width: min(720px, 100%);
+	max-height: min(86vh, 760px);
+	min-height: 0;
+	overflow: hidden;
+	background: var(--bg-elev);
+	border: 1px solid var(--border);
+	border-radius: 14px;
+	box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+	color: var(--text);
+	transform: translateZ(0);
+}
+
+.uc-grab {
+	display: none;
+}
+
+.uc-head {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	padding: 16px 18px 12px;
+	border-bottom: 1px solid var(--border-soft);
+}
+
+.uc-head-main {
+	flex: 1;
+	min-width: 0;
+}
+
+.uc-title {
+	margin: 0;
+	font-size: 15px;
+	font-weight: 600;
+	letter-spacing: 0.2px;
+}
+
+.uc-sub {
+	margin: 3px 0 0;
+	font-size: 11.5px;
+	line-height: 1.5;
+	color: var(--text-faint);
+}
+
+.uc-icon-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	flex: none;
+	padding: 0;
+	border: 1px solid transparent;
+	border-radius: 8px;
+	background: transparent;
+	color: var(--text-dim);
+	font-size: 13px;
+	line-height: 1;
+	cursor: pointer;
+}
+
+.uc-icon-btn:hover {
+	background: var(--bg-elev2);
+	color: var(--text);
+}
+
+.uc-icon-btn:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+
+.uc-body {
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+	overscroll-behavior: contain;
+	padding: 14px 18px;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+/* ── 结论条：整个弹窗只有这一处说「该怎么办」 ───────────────────────────── */
+.uc-verdict {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 13px 14px;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	background: var(--bg-elev2);
+}
+
+.uc-verdict.tone-warn {
+	border-color: rgba(245, 158, 11, 0.34);
+	background: rgba(245, 158, 11, 0.1);
+}
+
+.uc-verdict.tone-ok {
+	border-color: rgba(52, 211, 153, 0.3);
+	background: rgba(52, 211, 153, 0.09);
+}
+
+.uc-verdict.tone-err {
+	border-color: rgba(248, 113, 113, 0.32);
+	background: rgba(248, 113, 113, 0.09);
+}
+
+.uc-verdict-ico {
+	display: grid;
+	place-items: center;
+	width: 34px;
+	height: 34px;
+	flex: none;
+	border-radius: 10px;
+	border: 1px solid var(--border);
+	background: var(--bg-elev);
+	font-size: 15px;
+}
+
+.uc-verdict-text {
+	flex: 1;
+	min-width: 0;
+}
+
+.uc-verdict-title {
+	display: block;
+	font-size: 13.5px;
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.uc-verdict-detail {
+	display: block;
+	margin-top: 2px;
+	font-size: 11.5px;
+	line-height: 1.5;
+	color: var(--text-dim);
+	overflow-wrap: anywhere;
+}
+
+.uc-verdict-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: none;
+}
+
+/* ── 通道轴 ─────────────────────────────────────────────────────────────── */
+.uc-axes {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.uc-axis {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 4px 14px;
+	align-items: center;
+	padding: 11px 13px;
+	border: 1px solid var(--border-soft);
+	border-radius: 11px;
+	background: var(--bg-elev2);
+	position: relative;
+}
+
+.uc-axis::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	top: 10px;
+	bottom: 10px;
+	width: 3px;
+	border-radius: 0 3px 3px 0;
+	background: transparent;
+}
+
+.uc-axis.tone-warn::before {
+	background: var(--amber);
+}
+
+.uc-axis.tone-err::before {
+	background: var(--red);
+}
+
+.uc-axis-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+	min-width: 0;
+}
+
+.uc-axis-name {
+	font-size: 13px;
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.uc-axis-note {
+	font-size: 11.5px;
+	line-height: 1.45;
+	color: var(--text-faint);
+	overflow-wrap: anywhere;
+}
+
+.uc-axis-act {
+	grid-row: 1 / span 2;
+	grid-column: 2;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.uc-vers {
+	font-family: var(--mono);
+	font-size: 12px;
+	color: var(--text-dim);
+	white-space: nowrap;
+}
+
+.uc-vers-target {
+	color: var(--amber);
+}
+
+/* 这些块横跨两列：错误/提示/更多选项都不应被挤在左半边 */
+.uc-axis > .uc-hint,
+.uc-axis > .uc-error,
+.uc-axis > .uc-fold {
+	grid-column: 1 / -1;
+}
+
+.uc-axis-progress {
+	grid-column: 1 / -1;
+	margin-top: 8px;
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+}
+
+.uc-bar {
+	height: 6px;
+	border-radius: 999px;
+	background: var(--bg-elev);
+	overflow: hidden;
+}
+
+.uc-bar > i {
+	display: block;
+	height: 100%;
+	border-radius: inherit;
+	background: var(--accent);
+}
+
+.uc-bar-meta {
+	display: flex;
+	justify-content: space-between;
+	gap: 10px;
+	font-size: 11px;
+	color: var(--text-faint);
+}
+
+/* ── 组件 / 发布说明 ─────────────────────────────────────────────────────── */
+.uc-fold {
+	border: 1px solid var(--border);
+	border-radius: 11px;
+	background: transparent;
+}
+
+.uc-fold > summary {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 9px 13px;
+	font-size: 12px;
+	color: var(--text-dim);
+	cursor: pointer;
+	list-style: none;
+}
+
+.uc-fold > summary::-webkit-details-marker {
+	display: none;
+}
+
+.uc-fold > summary::before {
+	content: "▸";
+	font-size: 10px;
+	color: var(--text-faint);
+}
+
+.uc-fold[open] > summary::before {
+	content: "▾";
+}
+
+.uc-rows {
+	display: flex;
+	flex-direction: column;
+	gap: 7px;
+	padding: 0 13px 11px;
+}
+
+.uc-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 3px 0;
+	border-top: 1px dashed var(--border-soft);
+	font-size: 12px;
+	color: var(--text-dim);
+}
+
+.uc-row:first-child {
+	border-top: 0;
+}
+
+.uc-row-name {
+	flex: 1;
+	min-width: 0;
+	color: var(--text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.uc-row-vers {
+	font-family: var(--mono);
+	font-size: 11.5px;
+	white-space: nowrap;
+}
+
+.uc-empty {
+	padding: 2px 0 6px;
+	font-size: 12px;
+	color: var(--text-faint);
+}
+
+.uc-notes-body {
+	padding: 0 14px 12px;
+	font-size: 12.5px;
+	line-height: 1.55;
+	color: var(--text-dim);
+	overflow-wrap: anywhere;
+}
+
+.uc-notes-body h4 {
+	margin: 8px 0 4px;
+	font-size: 12.5px;
+	color: var(--text);
+}
+
+.uc-notes-body h4:first-child {
+	margin-top: 0;
+}
+
+.uc-notes-body ul,
+.uc-notes-body ol {
+	margin: 4px 0;
+	padding-left: 18px;
+}
+
+.uc-notes-body p {
+	margin: 4px 0;
+}
+
+.uc-error {
+	font-size: 11.5px;
+	line-height: 1.5;
+	color: var(--red);
+	overflow-wrap: anywhere;
+}
+
+.uc-hint {
+	font-size: 11.5px;
+	line-height: 1.5;
+	color: var(--text-faint);
+	overflow-wrap: anywhere;
+}
+
+/* ── 状态 pill ──────────────────────────────────────────────────────────── */
+.uc-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 2px 9px;
+	border-radius: 999px;
+	font-size: 11.5px;
+	font-weight: 500;
+	line-height: 1.7;
+	white-space: nowrap;
+}
+
+.uc-pill::before {
+	content: "";
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: currentColor;
+}
+
+.uc-pill.tone-ok {
+	color: var(--green);
+	background: rgba(52, 211, 153, 0.12);
+}
+
+.uc-pill.tone-warn {
+	color: var(--amber);
+	background: rgba(245, 158, 11, 0.13);
+}
+
+.uc-pill.tone-err {
+	color: var(--red);
+	background: rgba(248, 113, 113, 0.12);
+}
+
+.uc-pill.tone-muted {
+	color: var(--text-faint);
+	background: var(--bg-elev);
+}
+
+.uc-pill.plain {
+	color: var(--text-dim);
+	background: var(--bg-elev);
+}
+
+.uc-pill.plain::before {
+	display: none;
+}
+
+/* ── 按钮 ───────────────────────────────────────────────────────────────── */
+.uc-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	padding: 7px 14px;
+	border: 1px solid var(--border);
+	border-radius: 9px;
+	background: var(--bg-elev);
+	color: var(--text);
+	font: inherit;
+	font-size: 13px;
+	font-weight: 500;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+.uc-btn:hover {
+	background: var(--bg-elev2);
+}
+
+.uc-btn:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+.uc-btn.primary {
+	border-color: transparent;
+	background: var(--accent);
+	color: var(--accent-contrast, #fff);
+}
+
+.uc-btn.primary:hover {
+	filter: brightness(1.08);
+}
+
+.uc-btn.ghost {
+	border-color: transparent;
+	background: transparent;
+	color: var(--text-dim);
+}
+
+.uc-btn.ghost:hover {
+	background: var(--bg-elev2);
+	color: var(--text);
+}
+
+.uc-btn.sm {
+	padding: 5px 10px;
+	border-radius: 8px;
+	font-size: 12px;
+}
+
+.uc-foot {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 11px 18px;
+	border-top: 1px solid var(--border-soft);
+	background: var(--bg-elev);
+	font-size: 11.5px;
+	color: var(--text-faint);
+}
+
+.uc-foot-spacer {
+	flex: 1;
+}
+
+.uc-link {
+	border: 0;
+	background: none;
+	padding: 0;
+	color: var(--accent);
+	font: inherit;
+	font-size: 11.5px;
+	cursor: pointer;
+}
+
+.uc-link:hover {
+	text-decoration: underline;
+}
+
+/* ── 窄屏：底部抽屉（现在的移动端主流） ─────────────────────────────────── */
+@media (max-width: 640px) {
+	.uc-backdrop {
+		align-items: flex-end;
+		padding: 0;
+	}
+
+	.uc-sheet {
+		width: 100%;
+		max-height: 92vh;
+		max-height: 92dvh;
+		border-radius: 16px 16px 0 0;
+		border-bottom: none;
+	}
+
+	.uc-grab {
+		display: block;
+		width: 38px;
+		height: 4px;
+		margin: 8px auto 0;
+		border-radius: 999px;
+		background: var(--border);
+	}
+
+	.uc-head {
+		padding: 12px 16px 10px;
+	}
+
+	.uc-body {
+		padding: 12px 16px;
+	}
+
+	.uc-axis {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.uc-axis-act {
+		grid-row: auto;
+		grid-column: 1;
+		justify-content: space-between;
+	}
+
+	.uc-verdict {
+		flex-wrap: wrap;
+	}
+
+	.uc-verdict-actions {
+		width: 100%;
+		justify-content: flex-end;
+	}
+
+	.uc-verdict-actions .uc-btn.primary {
+		flex: 1;
+	}
+
+	.uc-foot {
+		padding: 10px 16px;
+	}
+}

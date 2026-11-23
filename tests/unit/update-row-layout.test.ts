@@ -10,8 +10,17 @@ import { TopBar } from "../../web/src/components/TopBar.js";
 import { LanguageProvider } from "../../web/src/i18n.js";
 import type { ChatState } from "../../web/src/use-chat.js";
 
+/**
+ * 更新中心的布局与 issue #321 的 SDK 分叉提示。
+ *
+ * 旧版这些断言绑在 `.dd-all-item` 下拉上；面板改成居中模态后（`web/src/components/UpdateModal.tsx`），
+ * 语义一样、DOM 变了，所以断言跟着 DOM 走：
+ * - 组件行的信息顺序（名称 → 类型 → 版本 → 动作）
+ * - 窄屏下通道卡从两列变一列（动作换行，不再和版本号抢宽度）
+ * - 「装了更新的全局 pi」只提示、不给假按钮；「随包自带」才给安装入口
+ */
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const CSS = readFileSync(join(ROOT, "web", "src", "styles.css"), "utf8");
+const UPDATE_CSS = readFileSync(join(ROOT, "web", "src", "components", "update-center.css"), "utf8");
 
 const chatStub = {
 	status: "open",
@@ -67,10 +76,8 @@ const bundledStaleStub = {
 	],
 } as unknown as ChatState;
 
-const findInstallBtn = (container: HTMLElement) =>
-	Array.from(container.querySelectorAll("button.dd-refresh")).find((b) =>
-		b.textContent?.includes("Install global engine"),
-	);
+const findInstallBtn = (scope: ParentNode = document) =>
+	Array.from(scope.querySelectorAll("button.uc-btn")).find((b) => b.textContent?.includes("Install global engine"));
 
 let root: Root | null = null;
 
@@ -110,14 +117,16 @@ function mount(chat: ChatState = chatStub) {
 			),
 		);
 	});
-	act(() => {
-		for (const chip of Array.from(
-			container.querySelectorAll<HTMLButtonElement>('button.chip[aria-expanded="false"]'),
-		)) {
-			chip.click();
-		}
-	});
+	openCenter();
 	return container;
+}
+
+/** 点顶栏的更新 chip，弹出更新中心（portal 到 body，所以断言用 document 查）。 */
+function openCenter() {
+	const chip = document.querySelector<HTMLButtonElement>('button.chip[aria-haspopup="dialog"]');
+	expect(chip, "顶栏应有更新 chip").toBeTruthy();
+	act(() => chip!.click());
+	expect(document.querySelector(".uc-sheet"), "应打开更新中心").toBeTruthy();
 }
 
 afterEach(() => {
@@ -126,131 +135,77 @@ afterEach(() => {
 	document.body.innerHTML = "";
 });
 
-describe("w10 update row layout", () => {
-	it("outdated row: update button is the leftmost (first) DOM child", () => {
-		const container = mount();
-		const rows = Array.from(container.querySelectorAll("li.dd-all-item.warn")).filter((li) =>
-			li.querySelector("button.dd-update-btn"),
-		);
-		expect(rows.length).toBeGreaterThan(0);
-		for (const li of rows) {
-			expect(li.firstElementChild?.tagName).toBe("BUTTON");
-			expect(li.firstElementChild?.classList.contains("dd-update-btn")).toBe(true);
-		}
+describe("更新中心：组件行布局", () => {
+	it("可更新行给出动作按钮，且信息顺序是 名称 → 类型 → 版本 → 按钮", () => {
+		mount();
+		const row = Array.from(document.querySelectorAll(".uc-row")).find((li) => li.querySelector("button.uc-btn"))!;
+		const flat = Array.from(row.querySelectorAll("button.uc-btn, .uc-row-name, .uc-pill, .uc-row-vers"));
+		const order = flat.map((el) => (el.tagName === "BUTTON" ? "button" : (el.className.split(" ")[0] ?? "")));
+		expect(order[0]).toBe("uc-row-name");
+		expect(order[order.length - 1]).toBe("button");
 	});
 
-	it("outdated row child order: button, name, meta(kind, version)", () => {
-		const container = mount();
-		const row = Array.from(container.querySelectorAll("li.dd-all-item.warn")).find((li) =>
-			li.querySelector("button.dd-update-btn"),
-		)!;
-		const order = Array.from(row.children).map((el) =>
-			el.classList.contains("dd-update-btn") ? "button" : el.className.split(" ").find((c) => c.startsWith("dd-all-")),
-		);
-		expect(order).toEqual(["button", "dd-all-name", "dd-all-meta"]);
-		const meta = row.querySelector(":scope > .dd-all-meta")!;
-		const metaOrder = Array.from(meta.children).map((el) =>
-			el.className.split(" ").find((c) => c.startsWith("dd-all-")),
-		);
-		expect(metaOrder).toEqual(["dd-all-kind", "dd-all-vers"]);
+	it("名称有最小宽度 + 省略号（长包名不把按钮挤出屏幕）", () => {
+		const nameBlock = UPDATE_CSS.match(/\.uc-row-name\s*\{[^}]*\}/s)?.[0] ?? "";
+		expect(nameBlock).toMatch(/min-width\s*:\s*0/);
+		expect(nameBlock).toMatch(/text-overflow\s*:\s*ellipsis/);
 	});
 
-	it("accessible DOM order stays button, name, kind, version", () => {
-		const container = mount();
-		const row = Array.from(container.querySelectorAll("li.dd-all-item.warn")).find((li) =>
-			li.querySelector("button.dd-update-btn"),
-		)!;
-		const flat = Array.from(row.querySelectorAll("button.dd-update-btn, .dd-all-name, .dd-all-kind, .dd-all-vers"));
-		expect(
-			flat.map((el) =>
-				el.tagName === "BUTTON"
-					? "button"
-					: (el as HTMLElement).className.split(" ").find((c) => c.startsWith("dd-all-")),
-			),
-		).toEqual(["button", "dd-all-name", "dd-all-kind", "dd-all-vers"]);
-	});
-
-	it("no CSS pushes the row button right (order / margin-left / float / absolute)", () => {
-		const btnBlock = CSS.match(/\.dd-update-btn\s*\{[^}]*\}/s)?.[0] ?? "";
-		expect(btnBlock).not.toMatch(/^\s*order\s*:/m);
-		expect(btnBlock).not.toMatch(/margin-left\s*:\s*auto/);
-		expect(btnBlock).not.toMatch(/float\s*:/);
-		expect(btnBlock).not.toMatch(/position\s*:\s*(absolute|fixed)/);
-	});
-
-	it("warn rows wrap so the meta drops to a second line, name keeps a floor width", () => {
-		const warnBlock = CSS.match(/\.dd-all-item\.warn\s*\{[^}]*\}/s)?.[0] ?? "";
-		expect(warnBlock).toMatch(/flex-wrap\s*:\s*wrap/);
-		const nameBlock = CSS.match(/\.dd-all-item\.warn\s+\.dd-all-name\s*\{[^}]*\}/s)?.[0] ?? "";
-		expect(nameBlock).toMatch(/min-width\s*:/);
-	});
-
-	it("wrapped second line: kind first, kind + version right-aligned via meta", () => {
-		const metaBlock = CSS.match(/\.dd-all-meta\s*\{[^}]*\}/s)?.[0] ?? "";
-		expect(metaBlock).toMatch(/display\s*:\s*flex/);
-		expect(metaBlock).toMatch(/flex-shrink\s*:\s*0/);
-		expect(metaBlock).not.toMatch(/position\s*:\s*(absolute|fixed)/);
-		expect(metaBlock).not.toMatch(/^\s*order\s*:/m);
-		const warnMetaBlock = CSS.match(/\.dd-all-item\.warn\s+\.dd-all-meta\s*\{[^}]*\}/s)?.[0] ?? "";
-		expect(warnMetaBlock).toMatch(/margin-left\s*:\s*auto/);
-		expect(warnMetaBlock).not.toMatch(/position\s*:\s*(absolute|fixed)/);
+	it("窄屏：通道卡从两列变一列，动作换行而不是绝对定位", () => {
+		const mobile = UPDATE_CSS.slice(UPDATE_CSS.indexOf("@media (max-width: 640px)"));
+		expect(mobile).toMatch(/\.uc-axis\s*\{[^}]*grid-template-columns\s*:\s*minmax\(0,\s*1fr\)/s);
+		expect(mobile).toMatch(/\.uc-axis-act\s*\{[^}]*grid-column\s*:\s*1/s);
+		expect(mobile).not.toMatch(/position\s*:\s*absolute/);
 	});
 });
 
 describe("issue #321 pi SDK split surfacing", () => {
-	it("up-to-date pi-core row still reads warn when the service runs an older bundled SDK", () => {
-		const container = mount(splitChatStub);
-		const row = container.querySelector("li.dd-all-item")!;
-		expect(row.classList.contains("warn")).toBe(true);
-		expect(row.querySelector(".dd-split-run")?.textContent).toContain(SPLIT.running);
+	it("服务跑的比机器上装的旧：引擎轴标 warn 并写出两个版本", () => {
+		mount(splitChatStub);
+		const axis = Array.from(document.querySelectorAll(".uc-axis")).find((li) => li.textContent?.includes("pi engine"))!;
+		expect(axis.classList.contains("tone-warn")).toBe(true);
+		expect(axis.textContent).toContain(SPLIT.running);
+		expect(axis.textContent).toContain(SPLIT.newerInstalled);
+		expect(axis.textContent).toContain("PI_WEB_SDK=bundled");
 	});
 
-	it("no update button on that row: `npm i -g pi@latest` would not fix the service", () => {
-		const container = mount(splitChatStub);
-		const row = container.querySelector("li.dd-all-item")!;
-		expect(row.querySelector("button.dd-update-btn")).toBeNull();
+	it("这条轴不给更新按钮（npm i -g pi@latest 修不了正在跑的那份）", () => {
+		mount(splitChatStub);
+		const axis = Array.from(document.querySelectorAll(".uc-axis")).find((li) => li.textContent?.includes("pi engine"))!;
+		expect(axis.querySelector("button.uc-btn")).toBeNull();
 	});
 
-	it("the panel explains the split (versions + both ways out) in a warn note", () => {
-		const container = mount(splitChatStub);
-		const note = container.querySelector(".dd-note.warn")!;
-		expect(note.textContent).toContain(SPLIT.running);
-		expect(note.textContent).toContain(SPLIT.newerInstalled);
-		expect(note.textContent).toContain("PI_WEB_SDK=bundled");
-	});
-
-	it("no split → no note, no suffix (normal panel stays untouched)", () => {
-		const container = mount();
-		expect(container.querySelector(".dd-note.warn")).toBeNull();
-		expect(container.querySelector(".dd-split-run")).toBeNull();
+	it("没有分叉 → 不出现 PI_WEB_SDK 说明", () => {
+		mount();
+		expect(document.querySelector(".uc-sheet")!.textContent).not.toContain("PI_WEB_SDK");
 	});
 });
 
 describe("issue #321 bundled engine surfacing", () => {
-	it("bundled engine → info note with the running version + install button", () => {
-		const container = mount(bundledChatStub);
-		const note = container.querySelector(".dd-note:not(.warn)")!;
-		expect(note.textContent).toContain("0.87.1");
-		expect(findInstallBtn(container)).toBeTruthy();
+	it("随包自带（清单里没有引擎行）→ 说明 + 安装入口", () => {
+		mount(bundledChatStub);
+		expect(document.querySelector(".uc-sheet")!.textContent).toContain("0.87.1");
+		expect(findInstallBtn()).toBeTruthy();
 	});
 
-	it("bundled + global same version and both latest → fully quiet (no note, no button)", () => {
-		const container = mount(bundledCurrentStub);
-		expect(container.querySelector(".dd-note:not(.warn)")).toBeNull();
-		expect(findInstallBtn(container)).toBeUndefined();
+	it("自带 + 全局同版本且都是最新 → 安静（不提示、不按钮）", () => {
+		mount(bundledCurrentStub);
+		const axis = Array.from(document.querySelectorAll(".uc-axis")).find((li) => li.textContent?.includes("pi engine"))!;
+		expect(axis.querySelector(".uc-hint")).toBeNull();
+		expect(findInstallBtn()).toBeUndefined();
 	});
 
-	it("bundled + global older than npm latest → note for context, no duplicate button", () => {
-		const container = mount(bundledStaleStub);
-		const note = container.querySelector(".dd-note:not(.warn)")!;
-		expect(note.textContent).toContain("0.87.1");
-		expect(findInstallBtn(container)).toBeUndefined();
-		expect(container.querySelector("button.dd-update-btn")).toBeTruthy();
+	it("自带 + 全局比 npm 最新旧 → 有更新入口，不重复给安装按钮", () => {
+		mount(bundledStaleStub);
+		const sheet = document.querySelector(".uc-sheet")!;
+		expect(sheet.textContent).toContain("0.87.1");
+		expect(findInstallBtn()).toBeUndefined();
+		const axis = Array.from(document.querySelectorAll(".uc-axis")).find((li) => li.textContent?.includes("pi engine"))!;
+		expect(axis.querySelector("button.uc-btn")).toBeTruthy();
 	});
 
-	it("not bundled (following a global copy) → no install entry", () => {
-		const container = mount(followingChatStub);
-		expect(findInstallBtn(container)).toBeUndefined();
-		expect(container.querySelector(".dd-note:not(.warn)")).toBeNull();
+	it("跟随全局副本（非 bundled）→ 没有安装入口", () => {
+		mount(followingChatStub);
+		expect(findInstallBtn()).toBeUndefined();
 	});
 });

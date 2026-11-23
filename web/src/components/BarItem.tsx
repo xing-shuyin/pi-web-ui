@@ -94,8 +94,12 @@ export interface BarItemProps {
 		onThemeChange?: (themeId: string | null) => void;
 		reloadThemes?: () => void;
 		onLocaleModalOpen?: () => void;
-		renderUpdateBody?: () => ReactNode;
-		renderAllUpdatesBody?: () => ReactNode;
+		/** 打开更新中心弹窗（弹窗本体只由 TopBar 渲染一次，这里只负责入口）。 */
+		onOpenUpdateCenter?: () => void;
+		/** 与弹窗同源的展示值：当前版本 / 是否有待处理更新 / 待更新到的版本。 */
+		updateVersion?: string | null;
+		updatePending?: boolean;
+		updateTargetVersion?: string | null;
 		updatesCount?: number;
 		managed?: boolean;
 		appVersion?: string;
@@ -158,7 +162,6 @@ export function BarItem({
 
 	const [langOpen, setLangOpen] = useState(false);
 	const [themeOpen, setThemeOpen] = useState(false);
-	const [updateOpen, setUpdateOpen] = useState(false);
 
 	const layout = chat.settings?.uiLayout;
 	const state = chat.state;
@@ -689,7 +692,6 @@ export function BarItem({
 
 	const dropdownDirection: "down" | "up" | "left" | "right" =
 		bar === "bottom" ? "up" : bar === "left" ? "right" : bar === "right" ? "left" : "down";
-	const shouldPortalDropdown = true;
 
 	if (id === "host:language") {
 		return (
@@ -836,37 +838,32 @@ export function BarItem({
 				</span>
 			</span>
 		) : (
-			<Dropdown
-				direction={dropdownDirection}
-				align={bar === "right" ? "right" : "left"}
-				portal={shouldPortalDropdown}
-				open={updateOpen}
-				onOpenChange={(v) => {
-					setUpdateOpen(v);
-					if (v) {
-						appSend({ type: "check_update" });
-						appSend({ type: "check_updates_all" });
-					}
-				}}
-				tip={named(t("update"))}
-				fit
-				caret={false}
-				triggerClassName="bar-item chip"
-				onContextMenu={handleContextMenu}
-				dataBarItem={id}
-				trigger={
-					<>
-						<FiDownload className="bar-item-icon" />
-						<span className="chip-sub bar-item-text">{withName(`v${chat.update?.current ?? "…"}`)}</span>
-						{chat.update && !chat.update.upToDate && <span className="update-dot" />}
-						{updatesCount > 0 && <span className="update-badge">{updatesCount}</span>}
-					</>
-				}
-			>
-				<div className="dd-header">{t("update")}</div>
-				{dropdownProps?.renderUpdateBody?.()}
-				{dropdownProps?.renderAllUpdatesBody?.()}
-			</Dropdown>
+			// 与 TopBar 的 chip 同一个形态：只开弹窗，不再在这里堆一整块更新面板。
+			// `.dropdown` 外壳保留：顶栏的提示气泡与对齐规则都按这一层选。
+			<div className="dropdown right fit">
+				<button
+					type="button"
+					className="bar-item chip"
+					onClick={() => dropdownProps?.onOpenUpdateCenter?.()}
+					onContextMenu={handleContextMenu}
+					data-bar-item={id}
+					title={named(t("update"))}
+					data-tip={named(t("update"))}
+					aria-haspopup="dialog"
+				>
+					<FiDownload className="bar-item-icon" />
+					<span className="chip-sub bar-item-text">
+						{withName(`v${dropdownProps?.updateVersion ?? chat.update?.current ?? "…"}`)}
+					</span>
+					{dropdownProps?.updatePending ? (
+						<span
+							className="update-dot"
+							title={t("updateAvailable", { version: dropdownProps?.updateTargetVersion ?? "" })}
+						/>
+					) : null}
+					{updatesCount > 0 && <span className="update-badge">{updatesCount}</span>}
+				</button>
+			</div>
 		);
 	}
 

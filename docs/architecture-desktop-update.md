@@ -1,7 +1,7 @@
 # 桌面应用内更新（状态机 / IPC / 发布说明）
 
-> 事实源：`desktop/updater.ts`★（状态机与能力判定）· `desktop/main.ts`（接线与落盘）· `desktop/preload.cts`（桥）· `web/src/desktop-updater.ts`★（渲染层快照）· `web/src/components/DesktopUpdatePanel.tsx`（面板）。
-> 守卫：`tests/unit/desktop-update-state.test.ts` · `tests/unit/desktop-updater.test.ts` · `tests/unit/desktop-updater-bridge.test.ts`。
+> 事实源：`desktop/updater.ts`★（状态机与能力判定）· `desktop/main.ts`（接线与落盘）· `desktop/preload.cts`（桥）· `web/src/desktop-updater.ts`★（渲染层快照）· `web/src/update-verdict.ts`★（通道 → 单一结论）· `web/src/components/UpdateModal.tsx`（更新中心弹窗）。
+> 守卫：`tests/unit/desktop-update-state.test.ts` · `tests/unit/desktop-updater.test.ts` · `tests/unit/desktop-updater-bridge.test.ts` · `tests/unit/update-verdict.test.ts` · `tests/unit/update-row-layout.test.ts`。
 
 参考模型来自 [yetone/magpie](https://github.com/yetone/magpie) 的自更新实现（`internal/update/`）：**先判断这份拷贝能不能换掉自己，再谈下载**；失败要分得出「网络不行 / 还没发布 / 没有写权限 / 系统不收这个包」，而不是一句英文错误；发布说明是更新体验的一部分。桌面壳跑的是 Electron，替换动作仍交给 `electron-updater`（NSIS / dmg+zip / AppImage），这里补齐的是它不管的那一层。
 
@@ -113,12 +113,18 @@ downloading ──cancel──▶ available（不落 error）
 
 桌面壳里有两条互不相干的路：
 
-| 通道       | 覆盖对象                              | 入口                                 |
-| ---------- | ------------------------------------- | ------------------------------------ |
-| npm        | 全局 `pi-web-ui`、pi core、插件等组件 | `check_update` / `check_updates_all` |
-| 桌面自更新 | 应用本体（含包内的 `dist/server`）    | `pi-desktop-updater:*`               |
+| 通道       | 覆盖对象                                       | 入口                                 |
+| ---------- | ---------------------------------------------- | ------------------------------------ |
+| npm        | 引擎、插件、全局包、Git 扩展（网页 / CLI 下还有 pi-web-ui 本体） | `check_update` / `check_updates_all` |
+| 桌面自更新 | 应用本体 + **运行时**（含服务端与前端）        | `pi-desktop-updater:*`               |
 
-面板在桌面壳里只显示自更新这一段（版本号、进度、说明），并把 npm 那段留给挂件更新列表；网页 / CLI 里反过来。混着显示会出现「npm 说有新版、安装包其实已经是最新」的错位，所以 `TopBar` 用 `inDesktopShell` 二选一。
+**怎么不混**：只由 `web/src/update-verdict.ts` 的 `resolveUpdateCenter()` 判定一次，顶栏 chip、badge、小黄点与弹窗标题/主按钮全读这份结果。
+
+- 桌面壳：轴 = 「应用（壳）」+「运行时」，**运行时就是 pi-web-ui 本体**，所以 `updatesAll` 里那条 `kind: "webui"` 只作为版本兜底输入，不进入组件列表（组件的口径是插件 / 全局包 / Git 扩展）。
+- 网页 / CLI：没有壳也没有运行时通道，第一条轴换成「Web 界面（npm 全局包）」，同样不会在组件里再出现一次。
+- 引擎（`@earendil-works/pi-coding-agent`）单独成轴：清单里有新版才给按钮；「机器上装了更新的全局 pi」只提示不按钮（`npm i -g pi@latest` 修不了服务正在跑的那份）。
+
+旧实现按 `inDesktopShell` 在两套 DOM 之间二选一，结果顶栏统计了 webui 行、面板又说「已是最新」，同屏自相矛盾（`updatesCount` 与面板结论不同源）。现在只留一个入口：顶栏 chip 打开 `UpdateModal`，其余位置不再各画一份。
 
 ## 九、对着本地 feed 实机测更新
 
@@ -155,7 +161,7 @@ MSI（WiX）安装器不会主动关闭正在运行的旧版应用，用户手�
 
 - 看门狗 ps1：循环 `Get-Process -Id <pid>`（500ms 一次，最多 120 秒）→ 进程消失后 `Start-Process msiexec.exe -ArgumentList '/i', <msi>, '/passive'` → 结尾自删 ps1（`try/catch` 包住，删不掉不报错）。PowerShell 单引号转义为双写（`'` → `''`）。
 - 主进程：先过 `assertTrustedDesktopRequest`；`dialog.showOpenDialog`（filters 限 `msi`，取消返回 `{ok:false, cancelled:true}`）；`validateMsiPath` 拒绝空 / 超长（>4096）/ 控制字符 / 非 `.msi` 后缀 / 不存在的文件；ps1 原子写（`os.tmpdir()` 下 tmp+rename）；`spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1], {detached:true, stdio:"ignore", windowsHide:true})` 后 `unref()`，成功才 `app.quit()`；任何一步失败只返回 `{ok:false, error}` 且不退出；非 win32 直接返回 `{ok:false, error:"unsupported-platform"}`。
-- 三面对齐（与 §六 同一守卫思路）：`desktop/main.ts` 的通道名 `pi-desktop:update-install-local-msi` ＝ `desktop/preload.cts` 的 `updater.installLocalMsi` ＝ `web/src/desktop-updater.ts` 的桥方法（旧壳缺失时为 `undefined`，面板不显示按钮）。面板在 `web/src/components/DesktopUpdatePanel.tsx`（仅 win32 + 桌面壳）：`window.confirm` 二次确认 → 调用 → ok 即显示「正在退出并安装…」（应用随即退出，无需处理返回后的状态）。
+- 三面对齐（与 §六 同一守卫思路）：`desktop/main.ts` 的通道名 `pi-desktop:update-install-local-msi` ＝ `desktop/preload.cts` 的 `updater.installLocalMsi` ＝ `web/src/desktop-updater.ts` 的桥方法（旧壳缺失时为 `undefined`，面板不显示按钮）。面板在 `web/src/components/UpdateModal.tsx` 的壳轴「更多选项」里（仅 win32 + 桌面壳）：`window.confirm` 二次确认 → 调用 → ok 即显示「正在退出并安装…」（应用随即退出，无需处理返回后的状态）。
 
 ## 十二、NSIS 覆盖安装（FilesInUse 绕行：关不掉的 helper/CLI 孤儿）
 
