@@ -80,13 +80,19 @@ try {
 		"full snapshot carries messages array + numeric rev",
 		Array.isArray(full1?.state?.messages) && typeof full1?.state?.rev === "number",
 	);
+	// 原生 slash（/model）不改消息序列：按 issue #965 的闸口，内容键没变就**一帧都不发**。
+	// 这里断言的就是这条：以前每次 flush 都发，落后连接被迫重发全量，同一份内容连发多遍。
 	const idxBeforePrompt = stream.length;
-	let lastRev = stream.length > 0 ? lastRevOf(stream[stream.length - 1]) : 1;
+	const lastRev = stream.length > 0 ? lastRevOf(stream[stream.length - 1]) : 1;
 	ws.send(JSON.stringify({ type: "prompt", text: "/model" }));
-	for (let i = 0; i < 100 && stream.length <= idxBeforePrompt; i++) await sleep(50);
-	const newMsgs = stream.slice(idxBeforePrompt);
-	const d = newMsgs.find((m) => m.type === "snapshot_delta");
-	check("emission after native slash prompt arrived as delta", !!d, `${newMsgs.length} new msg(s)`);
+	for (let i = 0; i < 40 && stream.length <= idxBeforePrompt; i++) await sleep(50);
+	const quietMsgs = stream.slice(idxBeforePrompt).filter((m) => m.type === "snapshot" || m.type === "snapshot_delta");
+	check(
+		"unchanged content after native slash emits no snapshot frame (#965)",
+		quietMsgs.length === 0,
+		`${quietMsgs.length} frame(s)`,
+	);
+	const d = quietMsgs.find((m) => m.type === "snapshot_delta");
 	if (d) {
 		const di = stream.indexOf(d);
 		const prevRev = di > 0 ? lastRevOf(stream[di - 1]) : lastRev;

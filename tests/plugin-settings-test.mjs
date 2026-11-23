@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, realpathSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, realpathSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import WebSocket from "ws";
@@ -133,7 +133,11 @@ try {
 		}),
 	);
 	await waitFor(sock, (m) => m.type === "notice" && m.text === "插件设置已保存", "save notice");
-	const raw = JSON.parse(readFileSync(join(plugStateDir, "storage.json"), "utf8"));
+	// 设置保存是「先返回、后台落盘」（savePluginSettings 的 commit 是异步的），
+	// 所以这里要等文件出现，不能假定 notice 到达时已经写完。
+	const storageFile = join(plugStateDir, "storage.json");
+	for (let i = 0; i < 40 && !existsSync(storageFile); i++) await new Promise((r) => setTimeout(r, 100));
+	const raw = JSON.parse(readFileSync(storageFile, "utf8"));
 	if (
 		raw.settings?.pollSec !== 120 ||
 		raw.settings?.notify !== false ||
@@ -153,7 +157,8 @@ try {
 	sock.send(JSON.stringify({ type: "plugin_settings", pluginId: "opts", values: { pollSec: 5 } }));
 	const err = await waitFor(sock, (m) => m.type === "notice" && m.text.includes("插件设置保存失败"), "reject notice");
 	if (!err.text.includes("超出范围")) fail(`拒绝文案不对：${err.text}`);
-	const raw2 = JSON.parse(readFileSync(join(plugStateDir, "storage.json"), "utf8"));
+	await new Promise((r) => setTimeout(r, 300));
+	const raw2 = JSON.parse(readFileSync(storageFile, "utf8"));
 	if (raw2.settings?.pollSec !== 120) fail("非法保存不应改动已存值");
 	else console.log("✓ 越界值被拒（notice 报错）且已存值不变");
 

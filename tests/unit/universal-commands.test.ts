@@ -16,6 +16,15 @@ import {
 } from "../../server/universal/universal-attachments.js";
 import type { ServerMessage } from "../../server/protocol.js";
 
+/** 等到 predicate 成立或超时：并行压满时固定 sleep 会假红（见 vitest.config 的负载注释）。 */
+async function waitUntil(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
+	const started = Date.now();
+	while (!predicate()) {
+		if (Date.now() - started > timeoutMs) throw new Error("waitUntil timed out");
+		await new Promise((r) => setTimeout(r, 5));
+	}
+}
+
 describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 	let tempDir: string;
 	let workspaceDir: string;
@@ -377,7 +386,7 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 			});
 
 			const p1 = session.prompt("首个问题");
-			await new Promise((r) => setTimeout(r, 10));
+			await waitUntil(() => session.isStreaming && executedPrompts.length === 1);
 			expect(session.isStreaming).toBe(true);
 			expect(executedPrompts).toEqual(["首个问题"]);
 
@@ -393,8 +402,7 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 			if (turnResolve) turnResolve();
 			await p1;
 
-			await new Promise((r) => setTimeout(r, 15));
-
+			await waitUntil(() => executedPrompts.length === 2);
 			expect(executedPrompts).toEqual(["首个问题", "排队的问题"]);
 			session.dispose();
 		});
@@ -430,7 +438,9 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 			});
 
 			const p1 = session.prompt("长耗时问题");
-			await new Promise((r) => setTimeout(r, 10));
+			// 这条要靠「第一轮已进 driver.sendPrompt 并挂住」的时序：等 isStreaming 不够，
+			// 必须等到 abortResolve 被挂上（= sendPrompt 已经执行到 return new Promise）。
+			await waitUntil(() => abortResolve !== null);
 			expect(session.isStreaming).toBe(true);
 
 			await session.prompt("紧急插队问题", undefined, false);

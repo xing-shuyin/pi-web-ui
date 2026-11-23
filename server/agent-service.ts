@@ -7559,7 +7559,12 @@ export class ClientSession {
 			this.flushSnapshot(!options.since);
 			return;
 		}
-		sink.snapshots.push(this.snapshotProduct(this.conv, ++this.snapRev), sink.deliver, options);
+		// 没报 `since` = 客户端声明「我手上没有状态」：这一帧必须真发全量。
+		// 只按内容键判「没变就不发」会把裸 `get_state` 的应答吞掉（smoke: snapshot-delta-test）。
+		sink.snapshots.push(this.snapshotProduct(this.conv, ++this.snapRev), sink.deliver, {
+			...options,
+			force: options.force ?? options.since === undefined,
+		});
 	}
 
 	resolveDialog(id: number, value: string | boolean | null): void {
