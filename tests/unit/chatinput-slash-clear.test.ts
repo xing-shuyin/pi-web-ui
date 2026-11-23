@@ -34,6 +34,7 @@ function mount() {
 						modelState: null,
 						models: [],
 						modelsLoading: false,
+						defaultModel: null,
 						attachments: [],
 						onRemoveAttachment: () => {},
 						onAddImageFiles: () => {},

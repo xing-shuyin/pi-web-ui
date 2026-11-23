@@ -37,6 +37,7 @@ function mount(props: Record<string, unknown> = {}) {
 						modelState: null,
 						models: [],
 						modelsLoading: false,
+						defaultModel: null,
 						attachments: [],
 						onRemoveAttachment: () => {},
 						onAddImageFiles: () => {},

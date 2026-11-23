@@ -147,6 +147,7 @@ describe("ChatInput 回车语义与文案联动（issue #664）", () => {
 							modelState: null,
 							models: [],
 							modelsLoading: false,
+							defaultModel: null,
 							attachments: [],
 							onRemoveAttachment: () => {},
 							onAddImageFiles: () => {},

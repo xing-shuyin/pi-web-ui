@@ -3992,6 +3992,31 @@
 		gap: 6px;
 		align-items: center;
 	}
+	/* 目标撰写态的用法提示：流量里的普通一行（不是 absolute），高度计进 `--quick-row-h`。 */
+	.goal-composer-hint {
+		margin: 0 0 6px;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 2px 7px;
+		font-size: 11.5px;
+		line-height: 1.5;
+		color: var(--text-faint);
+	}
+	.goal-composer-hint svg {
+		flex: none;
+		color: var(--accent, #38bdf8);
+	}
+	.goal-composer-hint .gch-lead {
+		color: var(--text-dim);
+	}
+	.goal-composer-hint .gch-tip,
+	.goal-composer-hint .gch-lead {
+		overflow-wrap: anywhere;
+	}
+	.goal-composer-hint .gch-sep {
+		opacity: 0.45;
+	}
 	.quick-chip {
 		display: inline-flex;
 		align-items: center;

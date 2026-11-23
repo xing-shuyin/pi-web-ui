@@ -57,6 +57,7 @@ function mount(opts: {
 						modelState: null,
 						models: [],
 						modelsLoading: false,
+						defaultModel: null,
 						attachments: opts.attachments ?? [],
 						onRemoveAttachment: opts.onRemoveAttachment ?? (() => {}),
 						onAddImageFiles: () => {},
@@ -313,5 +314,38 @@ describe("ChatInput 目标撰写态 × 附件（issue #962：不再拦截，改�
 
 		expect(sent.map((m) => (m as { type: string }).type)).toEqual(["set_goal", "set_plan_mode"]);
 		expect(localStorage.getItem("pi-web-ui:goal-plan")).toBe("0");
+	});
+});
+
+describe("目标撰写态的用法提示（issue #962 收尾）", () => {
+	it("没开目标模式就没有提示行；开了以后占位符保持简短，用法提示另起一行", () => {
+		const c = mount({ ready: true, sendResult: true, onNotice: vi.fn(), onSent: vi.fn() });
+		expect(c.querySelector(".goal-composer-hint")).toBeNull();
+		expect((c.querySelector("textarea") as HTMLTextAreaElement).placeholder).not.toBe(zh.goalBarPlaceholder);
+
+		act(() => setGoalCompose(true));
+
+		// 简短提示仍在占位符里（不把一整段帮助塞进输入框）
+		expect((c.querySelector("textarea") as HTMLTextAreaElement).placeholder).toBe(zh.goalBarPlaceholder);
+	});
+
+	it("提示行只说简短用法，完整说明挂在 aria-label（也就是「?」那份文案）", () => {
+		const c = mount({ ready: true, sendResult: true, onNotice: vi.fn(), onSent: vi.fn() });
+		act(() => setGoalCompose(true));
+
+		const row = c.querySelector(".goal-composer-hint");
+		expect(row, "目标撰写态必须有用法提示行").not.toBeNull();
+		const text = row!.textContent ?? "";
+		for (const key of [
+			"goalComposerLead",
+			"goalComposerMaterials",
+			"goalComposerRefine",
+			"goalComposerHelp",
+		] as const) {
+			expect(text, `提示行缺 ${key}`).toContain(zh[key]);
+		}
+		// 提示行不复制帮助全文：一段话留在「?」的气泡里，读屏通过 aria-label 拿到同一份
+		expect(text).not.toContain(zh.goalBarHelp);
+		expect(row!.getAttribute("aria-label")).toBe(zh.goalBarHelp);
 	});
 });

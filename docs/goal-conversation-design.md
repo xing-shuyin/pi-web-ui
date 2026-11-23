@@ -514,3 +514,11 @@ export interface GoalStatus {
 3. **服务重启**：goal 状态是内存态（重启即丢）；执行对话**已落盘**，转录可在历史里回看，但循环不会自动续跑。
 4. **计划联动（#389 Phase 1）**：已完成（见 B8，审查契约带 `describePlan`、向导产出带步骤看板）。
 5. **DSH 引擎**：仍是它自己那套目标实现（模型自判定 + round-driver），未接入执行对话模式；设置里的 `reviewPrompt` 对它仍然有效。
+
+### 11.7 输入框用法提示（#962 收尾）
+
+目标撰写态（`goalMode`）下，输入框上方多一行用法提示：执行对话开工、本对话审查 · 图片/文件＝材料随目标带走 ·「提炼」先调研再收敛 ·「?」看完整用法。
+
+- **完整说明只住一处**（`goalBarHelp`），由目标条的 `?` 气泡逐行展示（`.set-tip-bubble` 是 `white-space: pre-line`）；提示行只通过 `aria-label` 引用同一份文案，不复制正文。
+- 提示行是**流内一行**（`.goal-composer-hint`），高度计进 `--quick-row-h` —— 输入框上方的带子仍只有 `--composer-strip` 一个单源；写成 `absolute` 会让浮标/提问导航条算错底缘（守卫：`tests/unit/messages-behind-composer.test.ts`、`tests/unit/chatinput-send-notice.test.ts`）。
+- 附件不再被拦（#962 主体，见 §11.6「材料规格统一」）：目标态的图片/文件/网页/画布/终端引用投影成材料指针；纯文字引用与对话引用不进材料，由 `goalMaterialUnaddressable` 按「缺地址」报一次，**不拦发送**。

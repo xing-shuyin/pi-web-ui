@@ -155,7 +155,8 @@ interface ChatInputProps {
 	recallDrafts?: { text: string; seq: number }[];
 	providerKeys: Record<string, ProviderKeyInfo[]>;
 	providers?: ProviderStatus[];
-	defaultModel?: string | null;
+	/** 必有（可为 null）：`null` = 还没设默认模型，模型菜单仍要能 ☆ 指定第一台；不要传 undefined。 */
+	defaultModel: string | null;
 	quickPhrases: string[];
 	quickPhrasesEnabled: boolean;
 	dshPermCurrent?: string | null;
@@ -1077,29 +1078,30 @@ export const ChatInput = memo(function ChatInput({
 
 	const attachRowRef = useRef<HTMLDivElement>(null);
 	const quickRowRef = useRef<HTMLDivElement>(null);
+	const goalHintRef = useRef<HTMLDivElement>(null);
 	useEffect(() => {
-		const attachEl = attachRowRef.current;
-		const quickEl = quickRowRef.current;
+		// 输入框上方的带子只有一个单源：附件行 / 快捷短语行 / 目标用法提示行，谁在就量谁，
+		// 相邻间距 6px 与 CSS 的 margin-bottom 对齐（`--composer-strip` 由它算出来）。
+		const rows = [attachRowRef.current, quickRowRef.current, goalHintRef.current].filter(
+			(el): el is HTMLDivElement => el !== null,
+		);
 		const root = document.documentElement;
-		if (!attachEl && !quickEl) {
+		if (rows.length === 0) {
 			root.style.removeProperty("--quick-row-h");
 			return;
 		}
 		const apply = () => {
-			const ah = attachEl ? attachEl.offsetHeight : 0;
-			const qh = quickEl ? quickEl.offsetHeight : 0;
-			const gap = attachEl && quickEl ? 6 : 0;
-			root.style.setProperty("--quick-row-h", `${ah + gap + qh}px`);
+			const total = rows.reduce((n, el) => n + el.offsetHeight, 0) + Math.max(0, rows.length - 1) * 6;
+			root.style.setProperty("--quick-row-h", `${total}px`);
 		};
 		apply();
 		const ro = new ResizeObserver(apply);
-		if (attachEl) ro.observe(attachEl);
-		if (quickEl) ro.observe(quickEl);
+		for (const el of rows) ro.observe(el);
 		return () => {
 			ro.disconnect();
 			root.style.removeProperty("--quick-row-h");
 		};
-	}, [attachments.length, quickPhrasesEnabled, quickPhrases.length]);
+	}, [attachments.length, quickPhrasesEnabled, quickPhrases.length, goalMode]);
 
 	const buildPromptAttachments = () =>
 		attachments.map((a) => {
@@ -1960,6 +1962,24 @@ export const ChatInput = memo(function ChatInput({
 							{p}
 						</button>
 					))}
+				</div>
+			)}
+			{goalMode && (
+				<div className="goal-composer-hint" ref={goalHintRef} aria-label={t("goalBarHelp")}>
+					<FiTarget />
+					<span className="gch-lead">{t("goalComposerLead")}</span>
+					<span className="gch-sep" aria-hidden="true">
+						·
+					</span>
+					<span className="gch-tip">{t("goalComposerMaterials")}</span>
+					<span className="gch-sep" aria-hidden="true">
+						·
+					</span>
+					<span className="gch-tip">{t("goalComposerRefine")}</span>
+					<span className="gch-sep" aria-hidden="true">
+						·
+					</span>
+					<span className="gch-tip">{t("goalComposerHelp")}</span>
 				</div>
 			)}
 			<div className="inputbox" data-pi-anchor="composer">
