@@ -170,6 +170,7 @@ import {
 } from "./dispatch-domain-handlers.js";
 import {
 	RemoteSshService,
+	createRemoteSdkOperations,
 	isRemoteWorkspaceUri,
 	serveRemoteWorkspaceFile,
 	setGlobalRemoteSshService,
@@ -1617,6 +1618,8 @@ function ensureEngine(engine: EngineId): EngineService {
 						dataDir: DATA_DIR,
 						agentDir: getAgentDir(),
 						modelAdmin: (sinks) => createCoreModelAdmin({ agentDir: getAgentDir(), ...sinks }),
+						// 远程工作区里的内置写/编辑工具要用 SFTP：只有宿主知道怎么建这些操作。
+						remoteOpsOf: (cwd) => (isRemoteWorkspaceUri(cwd) ? createRemoteSdkOperations(cwd) : undefined),
 						settingsFrame: (sinks) => createCoreSettingsAdapter(sinks),
 						slashCommands: (sinks) => createCoreSlashCommands(sinks),
 						files: (sinks) => createCoreFiles(sinks),

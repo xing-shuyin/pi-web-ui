@@ -1,91 +1,8 @@
 import type { UiAgentPreset, DshPermissionOption } from "./protocol.js";
+import * as toolNames from "../packages/keel/src/tool-names.js";
 
-export const CANVAS_TOOL_NAME = "canvas";
-export const TERMINAL_TOOL_NAME = "terminal";
-export const TERMINAL_TOOL_NAMES = [TERMINAL_TOOL_NAME] as const;
-export const LEGACY_TERMINAL_TOOL_NAMES = [
-	"terminal_create",
-	"terminal_list",
-	"terminal_close",
-	"terminal_input",
-	"terminal_key",
-	"terminal_read",
-	"terminal_wait",
-] as const;
-
-export const CONVERSATION_TOOL_NAME = "conversation";
-export const COMMUNICATE_TOOL_NAME = "communicate";
-
-/** Tool names that fold into `conversation`: the pre-rename subagent_* family plus the retired `subagent` alias. */
-export const LEGACY_SUBAGENT_TOOL_NAMES = [
-	"subagent",
-	"subagent_spawn",
-	"subagent_get_result",
-	"subagent_steer",
-	"subagent_list",
-	"subagent_stop",
-	"subagent_wait_all",
-	"subagent_templates",
-	"subagent_handoff",
-] as const;
-
-export const DELEGATE_TASK_TOOL_NAME = "delegate_task";
-export const ASK_USER_QUESTION_TOOL_NAME = "ask_user_question";
-export const BROWSER_PAGE_TOOL_NAME = "browser_page";
-export const BROWSER_SCRIPT_TOOL_NAME = "browser_script";
-export const BROWSER_DESIGN_TOOL_NAME = "browser_design";
-export const PHONE_TOOL_NAME = "phone";
-export const CONVERSATION_READ_TOOL_NAME = CONVERSATION_TOOL_NAME;
-export const SKILL_TOOL_NAME = "skill";
-export const SCHEDULE_TOOL_NAME = "schedule";
-export const LEGACY_SCHEDULE_TOOL_NAMES = ["schedule_task", "schedule_list", "schedule_cancel"] as const;
-export const EVAL_TOOL_NAME = "eval";
-export const PRESENT_FILES_TOOL_NAME = "present_files";
-export const CLAIM_FILES_TOOL_NAME = "claim_files";
-export const PLAN_UPDATE_TOOL_NAME = "plan_update";
-export const COMPACT_CONTEXT_TOOL_NAME = "compact_context";
-export const PATCH_TOOL_NAME = "patch";
-export const LSP_TOOL_NAME = "lsp";
-export const MCP_MANAGE_TOOL_NAME = "mcp_manage";
-export const SANDBOX_TOOL_NAME = "sandbox";
-export const WORKTREE_TOOL_NAME = "worktree";
-export const DEVICE_COLLAB_TOOL_NAME = "device_collab";
-/** Bot 个人记忆（独立 memory 目录）。只对"有记忆目录的 Bot 执行"注册，不进普通设置目录。 */
-export const BOT_MEMORY_TOOL_NAME = "memory";
-/** 一句话创建 Bot：只写待确认草案，不直接建 Bot。 */
-export const AGENT_BOT_TOOL_NAME = "agent_bot";
-export const CODEMODE_TOOL_NAME = "codemode";
-export const TOOL_SEARCH_TOOL_NAME = "tool_search";
-export const LOAD_TOOLS_TOOL_NAME = "load_tools";
-export const LAZY_CORE_TOOL_NAMES = ["bash", "read", "edit", "write"] as const;
-
-/**
- * 工具名统一规则（架构单源）：内置 + 插件 + MCP + 未来工具共用。
- * 内置在 `ALL_KNOWN_SET` 里；插件/MCP/未来工具按此正则收，不写死名单，自动包含插件。
- * 与 `normalizeDisabledPluginTools`（client-state.ts）的 128/256 上限对齐。
- */
-export const TOOL_NAME_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
-export const TOOL_NAME_MAX_LENGTH = 128;
-export const TOOL_LIST_MAX_ENTRIES = 256;
-
-export function isValidToolName(name: string): boolean {
-	if (!name || name.length > TOOL_NAME_MAX_LENGTH) return false;
-	return TOOL_NAME_PATTERN.test(name);
-}
-
-/** 旧别名统一折叠（禁用列表与按需名单共用，免得旧存档丢项）。 */
-export function foldLegacyToolName(name: string): string {
-	if ((LEGACY_TERMINAL_TOOL_NAMES as readonly string[]).includes(name)) return TERMINAL_TOOL_NAME;
-	if ((LEGACY_SUBAGENT_TOOL_NAMES as readonly string[]).includes(name)) return CONVERSATION_TOOL_NAME;
-	if (name === "conversation_read") return CONVERSATION_TOOL_NAME;
-	if ((LEGACY_SCHEDULE_TOOL_NAMES as readonly string[]).includes(name)) return SCHEDULE_TOOL_NAME;
-	return name;
-}
-
-/** 永不延迟：核心 4 件套 + load_tools 本体。前端置灰与后端过滤共用此语义（前端见 LAZY_CORE 注）。 */
-export function isNeverLazyTool(name: string): boolean {
-	return name === LOAD_TOOLS_TOOL_NAME || (LAZY_CORE_TOOL_NAMES as readonly string[]).includes(name);
-}
+/** 工具命名单源在 keel（`packages/keel/src/tool-names.ts`）：这里只再导出一遍，老 import 路径不动。 */
+export * from "../packages/keel/src/tool-names.js";
 
 export type AgentToolGroup = "core" | "terminal" | "subagent" | "other";
 
@@ -101,20 +18,20 @@ export interface AgentToolEntry {
 }
 
 export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
-	...TERMINAL_TOOL_NAMES.map((name): AgentToolEntry => ({
+	...toolNames.TERMINAL_TOOL_NAMES.map((name): AgentToolEntry => ({
 		name,
 		group: "terminal",
 		defaultOn: false,
 		dshVisible: true,
 	})),
 	{
-		name: CONVERSATION_TOOL_NAME,
+		name: toolNames.CONVERSATION_TOOL_NAME,
 		group: "subagent",
 		defaultOn: true,
 		dshVisible: false,
 	},
 	{
-		name: COMMUNICATE_TOOL_NAME,
+		name: toolNames.COMMUNICATE_TOOL_NAME,
 		group: "subagent",
 		defaultOn: true,
 		dshVisible: false,
@@ -122,7 +39,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "communicateOffHint",
 	},
 	{
-		name: DELEGATE_TASK_TOOL_NAME,
+		name: toolNames.DELEGATE_TASK_TOOL_NAME,
 		group: "other",
 		defaultOn: false,
 		dshVisible: false,
@@ -130,7 +47,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "delegateTaskOffHint",
 	},
 	{
-		name: ASK_USER_QUESTION_TOOL_NAME,
+		name: toolNames.ASK_USER_QUESTION_TOOL_NAME,
 		group: "other",
 		defaultOn: true,
 		dshVisible: true,
@@ -138,7 +55,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "questionnaireOffHint",
 	},
 	{
-		name: BROWSER_PAGE_TOOL_NAME,
+		name: toolNames.BROWSER_PAGE_TOOL_NAME,
 		group: "other",
 		defaultOn: false,
 		dshVisible: false,
@@ -146,7 +63,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "browserPageOffHint",
 	},
 	{
-		name: BROWSER_SCRIPT_TOOL_NAME,
+		name: toolNames.BROWSER_SCRIPT_TOOL_NAME,
 		group: "other",
 		defaultOn: false,
 		dshVisible: false,
@@ -155,7 +72,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 	},
 	{
 		// 改浏览器自己的新标签页 / 主题。默认关：等于允许模型重写一个和内部页同权的本地页面。
-		name: BROWSER_DESIGN_TOOL_NAME,
+		name: toolNames.BROWSER_DESIGN_TOOL_NAME,
 		group: "other",
 		defaultOn: false,
 		dshVisible: false,
@@ -164,7 +81,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 	},
 	{
 		// 让智能体操作手机（无障碍服务）。默认关：等于把整台手机交给模型，必须用户显式打开。
-		name: PHONE_TOOL_NAME,
+		name: toolNames.PHONE_TOOL_NAME,
 		group: "other",
 		defaultOn: false,
 		dshVisible: false,
@@ -172,7 +89,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "phoneOffHint",
 	},
 	{
-		name: CLAIM_FILES_TOOL_NAME,
+		name: toolNames.CLAIM_FILES_TOOL_NAME,
 		group: "other",
 		defaultOn: true,
 		dshVisible: false,
@@ -180,7 +97,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "claimFilesOffHint",
 	},
 	{
-		name: PLAN_UPDATE_TOOL_NAME,
+		name: toolNames.PLAN_UPDATE_TOOL_NAME,
 		group: "other",
 		defaultOn: true,
 		dshVisible: true,
@@ -189,7 +106,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 	},
 	{
 		// 一句话创建智能体：默认常驻（轻量），但只会产出"待确认草案"，不能自建自授权。
-		name: AGENT_BOT_TOOL_NAME,
+		name: toolNames.AGENT_BOT_TOOL_NAME,
 		group: "other",
 		defaultOn: true,
 		dshVisible: false,
@@ -197,7 +114,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "agentBotToolOffHint",
 	},
 	{
-		name: PATCH_TOOL_NAME,
+		name: toolNames.PATCH_TOOL_NAME,
 		group: "other",
 		defaultOn: false,
 		dshVisible: false,
@@ -205,7 +122,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "patchToolOffHint",
 	},
 	{
-		name: LSP_TOOL_NAME,
+		name: toolNames.LSP_TOOL_NAME,
 		group: "other",
 		defaultOn: false,
 		dshVisible: false,
@@ -213,7 +130,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "lspToolOffHint",
 	},
 	{
-		name: PRESENT_FILES_TOOL_NAME,
+		name: toolNames.PRESENT_FILES_TOOL_NAME,
 		group: "other",
 		defaultOn: true,
 		dshVisible: false,
@@ -221,7 +138,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "presentFilesOffHint",
 	},
 	{
-		name: SKILL_TOOL_NAME,
+		name: toolNames.SKILL_TOOL_NAME,
 		group: "other",
 		defaultOn: true,
 		dshVisible: false,
@@ -229,7 +146,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "skillOffHint",
 	},
 	{
-		name: EVAL_TOOL_NAME,
+		name: toolNames.EVAL_TOOL_NAME,
 		group: "other",
 		defaultOn: false,
 		dshVisible: false,
@@ -237,7 +154,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "evalOffHint",
 	},
 	{
-		name: CODEMODE_TOOL_NAME,
+		name: toolNames.CODEMODE_TOOL_NAME,
 		group: "other",
 		defaultOn: false,
 		dshVisible: false,
@@ -245,7 +162,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "codemodeOffHint",
 	},
 	{
-		name: TOOL_SEARCH_TOOL_NAME,
+		name: toolNames.TOOL_SEARCH_TOOL_NAME,
 		group: "other",
 		defaultOn: false,
 		dshVisible: false,
@@ -253,7 +170,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "toolSearchOffHint",
 	},
 	{
-		name: SCHEDULE_TOOL_NAME,
+		name: toolNames.SCHEDULE_TOOL_NAME,
 		group: "other",
 		defaultOn: true,
 		dshVisible: false,
@@ -261,7 +178,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "scheduleTaskOffHint",
 	},
 	{
-		name: COMPACT_CONTEXT_TOOL_NAME,
+		name: toolNames.COMPACT_CONTEXT_TOOL_NAME,
 		group: "other",
 		defaultOn: true,
 		dshVisible: false,
@@ -269,7 +186,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "compactContextOffHint",
 	},
 	{
-		name: MCP_MANAGE_TOOL_NAME,
+		name: toolNames.MCP_MANAGE_TOOL_NAME,
 		group: "other",
 		defaultOn: false,
 		dshVisible: false,
@@ -277,7 +194,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "mcpManageOffHint",
 	},
 	{
-		name: SANDBOX_TOOL_NAME,
+		name: toolNames.SANDBOX_TOOL_NAME,
 		group: "other",
 		defaultOn: false,
 		dshVisible: false,
@@ -285,7 +202,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "sandboxOffHint",
 	},
 	{
-		name: WORKTREE_TOOL_NAME,
+		name: toolNames.WORKTREE_TOOL_NAME,
 		group: "other",
 		defaultOn: false,
 		dshVisible: false,
@@ -293,7 +210,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "toolsWorktreeOffHint",
 	},
 	{
-		name: CANVAS_TOOL_NAME,
+		name: toolNames.CANVAS_TOOL_NAME,
 		group: "other",
 		defaultOn: false,
 		dshVisible: false,
@@ -304,7 +221,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 
 export const GROUP_BOT_TOOL_CATALOG: readonly AgentToolEntry[] = [
 	{
-		name: DEVICE_COLLAB_TOOL_NAME,
+		name: toolNames.DEVICE_COLLAB_TOOL_NAME,
 		group: "other",
 		defaultOn: false,
 		allowAgentToggle: false,
@@ -314,7 +231,7 @@ export const GROUP_BOT_TOOL_CATALOG: readonly AgentToolEntry[] = [
 	},
 	{
 		// 记忆是 Bot 私产：开关由 Bot 的工具白名单决定，不在用户 Web 设置里出现。
-		name: BOT_MEMORY_TOOL_NAME,
+		name: toolNames.BOT_MEMORY_TOOL_NAME,
 		group: "other",
 		defaultOn: false,
 		allowAgentToggle: false,
@@ -409,7 +326,8 @@ export function resolveEnabledAgentTools(disabled: readonly string[]): string[] 
 
 export function resolveDisabledAgentToolsFromEnabled(enabled: readonly string[]): string[] {
 	const enabledSet = new Set(enabled);
-	if (LEGACY_TERMINAL_TOOL_NAMES.every((name) => enabledSet.has(name))) enabledSet.add(TERMINAL_TOOL_NAME);
+	if (toolNames.LEGACY_TERMINAL_TOOL_NAMES.every((name) => enabledSet.has(name)))
+		enabledSet.add(toolNames.TERMINAL_TOOL_NAME);
 	return ALL_KNOWN_AGENT_TOOL_NAMES.filter((name) => !enabledSet.has(name));
 }
 
@@ -418,15 +336,15 @@ export function normalizeDisabledAgentTools(v: unknown): string[] {
 	const out: string[] = [];
 	for (const x of v) {
 		let name = x;
-		if (typeof name === "string" && (LEGACY_TERMINAL_TOOL_NAMES as readonly string[]).includes(name)) {
-			name = TERMINAL_TOOL_NAME;
+		if (typeof name === "string" && (toolNames.LEGACY_TERMINAL_TOOL_NAMES as readonly string[]).includes(name)) {
+			name = toolNames.TERMINAL_TOOL_NAME;
 		}
-		if (typeof name === "string" && (LEGACY_SUBAGENT_TOOL_NAMES as readonly string[]).includes(name)) {
-			name = CONVERSATION_TOOL_NAME;
+		if (typeof name === "string" && (toolNames.LEGACY_SUBAGENT_TOOL_NAMES as readonly string[]).includes(name)) {
+			name = toolNames.CONVERSATION_TOOL_NAME;
 		}
-		if (name === "conversation_read") name = CONVERSATION_TOOL_NAME;
-		if (typeof name === "string" && (LEGACY_SCHEDULE_TOOL_NAMES as readonly string[]).includes(name)) {
-			name = SCHEDULE_TOOL_NAME;
+		if (name === "conversation_read") name = toolNames.CONVERSATION_TOOL_NAME;
+		if (typeof name === "string" && (toolNames.LEGACY_SCHEDULE_TOOL_NAMES as readonly string[]).includes(name)) {
+			name = toolNames.SCHEDULE_TOOL_NAME;
 		}
 		if (typeof name === "string" && ALL_KNOWN_SET.has(name) && !out.includes(name)) {
 			out.push(name);
@@ -506,7 +424,7 @@ export function applyAgentToolsGating(
 
 		for (const t of AGENT_TOOL_CATALOG) {
 			if (off.has(t.name)) {
-				const isShadowedCustomTool = t.name === CONVERSATION_TOOL_NAME;
+				const isShadowedCustomTool = t.name === toolNames.CONVERSATION_TOOL_NAME;
 				const hasExtensionTool =
 					isShadowedCustomTool &&
 					Boolean(
@@ -529,7 +447,7 @@ export function applyAgentToolsGating(
 			if (off.has(core)) names.delete(core);
 			else if (allNames.includes(core)) names.add(core);
 		}
-		names.delete(LOAD_TOOLS_TOOL_NAME);
+		names.delete(toolNames.LOAD_TOOLS_TOOL_NAME);
 		const allToolsSnapshot = session.getAllTools?.() ?? [];
 		let hasDeferredMcp = false;
 		for (const t of allToolsSnapshot) {
@@ -556,13 +474,13 @@ export function normalizeToolOnDemandList(v: unknown): string[] {
 	const out: string[] = [];
 	for (const x of v) {
 		if (typeof x !== "string") continue;
-		const name = foldLegacyToolName(x.trim());
+		const name = toolNames.foldLegacyToolName(x.trim());
 		if (!name || out.includes(name)) continue;
 		// 内置直接收；插件 / MCP / 未来工具按统一命名规则收，不写死名单，自动包含插件。
 		// 孤儿项（插件已卸载、跨设备同步）同样保留，UI 兜底展示， gating 按 live 库存解析。
-		if (ALL_KNOWN_SET.has(name) || isValidToolName(name)) {
+		if (ALL_KNOWN_SET.has(name) || toolNames.isValidToolName(name)) {
 			out.push(name);
-			if (out.length >= TOOL_LIST_MAX_ENTRIES) break;
+			if (out.length >= toolNames.TOOL_LIST_MAX_ENTRIES) break;
 		}
 	}
 	return out;
@@ -570,17 +488,17 @@ export function normalizeToolOnDemandList(v: unknown): string[] {
 
 export function normalizeLazyOnDemandList(v: unknown): string[] {
 	return normalizeToolOnDemandList(v).filter(
-		(n) => n !== LOAD_TOOLS_TOOL_NAME && !(LAZY_CORE_TOOL_NAMES as readonly string[]).includes(n),
+		(n) => n !== toolNames.LOAD_TOOLS_TOOL_NAME && !(toolNames.LAZY_CORE_TOOL_NAMES as readonly string[]).includes(n),
 	);
 }
 
 export function lazyLoadingDisabledTools(
 	allNames: readonly string[],
 	loaded: Iterable<string>,
-	core: readonly string[] = LAZY_CORE_TOOL_NAMES,
+	core: readonly string[] = toolNames.LAZY_CORE_TOOL_NAMES,
 	only?: Iterable<string>,
 ): string[] {
-	const keep = new Set<string>([...core, LOAD_TOOLS_TOOL_NAME, ...loaded]);
+	const keep = new Set<string>([...core, toolNames.LOAD_TOOLS_TOOL_NAME, ...loaded]);
 	const onlySet = only ? new Set(only) : undefined;
 	return allNames.filter((n) => {
 		if (keep.has(n)) return false;
@@ -614,7 +532,7 @@ export function partitionLazyTools(args: {
 	const onDemandSet = args.onDemand instanceof Set ? args.onDemand : new Set(args.onDemand);
 	const loadedSet = args.loaded instanceof Set ? args.loaded : new Set(args.loaded);
 	// 名单里永不延迟的（核心/load）直接视为常驻，不进入 pending。
-	const lazyable = new Set([...onDemandSet].filter((n) => !isNeverLazyTool(n)));
+	const lazyable = new Set([...onDemandSet].filter((n) => !toolNames.isNeverLazyTool(n)));
 	const resident: string[] = [];
 	const pending: string[] = [];
 	const loadedLazy: string[] = [];
@@ -760,11 +678,13 @@ export function presetAllowsPluginTools(preset?: string): boolean {
 }
 
 export function presetShowsSkillCatalog(preset?: string): boolean {
-	return filterToolsByPreset([SKILL_TOOL_NAME], preset).includes(SKILL_TOOL_NAME);
+	return filterToolsByPreset([toolNames.SKILL_TOOL_NAME], preset).includes(toolNames.SKILL_TOOL_NAME);
 }
 
 export function presetHasQuestionnaire(preset?: string): boolean {
-	return filterToolsByPreset([ASK_USER_QUESTION_TOOL_NAME], preset).includes(ASK_USER_QUESTION_TOOL_NAME);
+	return filterToolsByPreset([toolNames.ASK_USER_QUESTION_TOOL_NAME], preset).includes(
+		toolNames.ASK_USER_QUESTION_TOOL_NAME,
+	);
 }
 
 export interface LegacyToolSwitches {
@@ -779,9 +699,9 @@ export function legacyToDisabled(s: LegacyToolSwitches): string[] {
 	if (Array.isArray(s.disabledAgentTools)) return normalizeDisabledAgentTools(s.disabledAgentTools);
 	const off = new Set(defaultDisabledAgentTools());
 	if (s.terminalToolsEnabled === true) {
-		for (const n of TERMINAL_TOOL_NAMES) off.delete(n);
+		for (const n of toolNames.TERMINAL_TOOL_NAMES) off.delete(n);
 	}
-	if (s.questionnaireEnabled === false) off.add(ASK_USER_QUESTION_TOOL_NAME);
+	if (s.questionnaireEnabled === false) off.add(toolNames.ASK_USER_QUESTION_TOOL_NAME);
 	return normalizeDisabledAgentTools([...off]);
 }
 
@@ -791,8 +711,8 @@ export function deriveLegacy(disabled: readonly string[]): {
 } {
 	const off = new Set(disabled);
 	return {
-		terminalToolsEnabled: TERMINAL_TOOL_NAMES.every((n) => !off.has(n)),
-		questionnaireEnabled: !off.has(ASK_USER_QUESTION_TOOL_NAME),
+		terminalToolsEnabled: toolNames.TERMINAL_TOOL_NAMES.every((n) => !off.has(n)),
+		questionnaireEnabled: !off.has(toolNames.ASK_USER_QUESTION_TOOL_NAME),
 	};
 }
 
@@ -808,14 +728,14 @@ export function foldLegacyIntoDisabled(
 			else next.add(n);
 		}
 	};
-	applyGroup(TERMINAL_TOOL_NAMES, legacy.terminalToolsEnabled);
-	applyGroup([ASK_USER_QUESTION_TOOL_NAME], legacy.questionnaireEnabled);
+	applyGroup(toolNames.TERMINAL_TOOL_NAMES, legacy.terminalToolsEnabled);
+	applyGroup([toolNames.ASK_USER_QUESTION_TOOL_NAME], legacy.questionnaireEnabled);
 	return [...next];
 }
 
 export function effectiveDisabledAgentTools(s: LegacyToolSwitches): string[] {
 	const next = new Set(legacyToDisabled({ ...s, disabledAgentTools: s.disabledAgentTools }));
-	if (s.questionnaireEnabled === false) next.add(ASK_USER_QUESTION_TOOL_NAME);
+	if (s.questionnaireEnabled === false) next.add(toolNames.ASK_USER_QUESTION_TOOL_NAME);
 	// 按需名单不再是硬关闭：它只在 `toolLazyLoading` 开启时决定哪些工具延迟，
 	// 常驻/禁用只由 `disabledAgentTools`、预设与模式闸门决定。这里不并入名单。
 	return [...next];

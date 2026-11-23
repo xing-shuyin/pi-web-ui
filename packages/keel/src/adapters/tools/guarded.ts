@@ -6,6 +6,7 @@ import {
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { withToolGuard, type AskApprovalFn } from "../../tool-guards.js";
 import type { ServerLang } from "../../i18n.js";
+import type { RemoteSdkOperationsFactory } from "../../contracts/remote-ops.js";
 
 export interface GuardedToolOptions {
 	cwd: string;
@@ -20,10 +21,21 @@ export interface GuardedToolOptions {
  * 这里用 SDK 自己的定义工厂重建同名工具，再过 `withToolGuard` 的审批闸，
  * 由 `customTools` 覆盖内置同名项（SDK 的 definitionRegistry 是 `set(name, …)`，自定义后写覆盖内置）。
  */
-export function createGuardedBuiltinTools(options: GuardedToolOptions): ToolDefinition[] {
+/**
+ * 远程工作区的 SSH/SFTP 操作由宿主注入：非远程 cwd 或没注入时，三个工具都走本地实现
+ * （老树同口径）。内核不认识 SSH，也不该认识。
+ */
+export function createGuardedBuiltinTools(
+	options: GuardedToolOptions & { remoteOpsOf?: RemoteSdkOperationsFactory },
+): ToolDefinition[] {
+	// 远程工作区要用 SSH/SFTP 的文件操作（宿主注入）；非远程或没注入就走本地实现（老树同口径）。
+	const remoteOps = options.remoteOpsOf?.(options.cwd);
 	const bash = createBashToolDefinition(options.cwd);
-	const write = createWriteToolDefinition(options.cwd);
-	const edit = createEditToolDefinition(options.cwd);
+	const write = createWriteToolDefinition(
+		options.cwd,
+		remoteOps ? { operations: remoteOps.write as never } : undefined,
+	);
+	const edit = createEditToolDefinition(options.cwd, remoteOps ? { operations: remoteOps.edit as never } : undefined);
 	const common = {
 		guard: undefined,
 		conversationId: options.conversationId,

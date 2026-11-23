@@ -10,6 +10,7 @@ import type { SettingsFramePort } from "../contracts/settings.js";
 import type { SlashCommandSinks, SlashCommandsPort } from "../contracts/commands.js";
 import type { FilesPort, WorkspacePort } from "../contracts/files.js";
 import type { WorktreePort } from "../contracts/worktree.js";
+import type { RemoteSdkOperationsFactory } from "../contracts/remote-ops.js";
 import type { SettingsService } from "../../../../server/settings-service.js";
 import { isInsideRoots } from "../path-boundary.js";
 import { ClientStateStore } from "../../../../server/client-state.js";
@@ -58,6 +59,8 @@ export interface CoreEngineOptions {
 	workspace?: () => WorkspacePort;
 	/** Git 工作树面工厂（宿主实现：`server/core-worktree-adapter.ts`）；缺省 = 能力未接。 */
 	worktree?: () => WorktreePort;
+	/** 远程工作区的 SDK 文件操作（宿主实现）；缺省 = 全是本地工具。 */
+	remoteOpsOf?: RemoteSdkOperationsFactory;
 	/** 换完模型后的宿主收尾（压缩预留重算 / 插件通知）：C 类能力一律留在宿主。 */
 	onSessionModelChanged?: (clientId: string, conversationId: string) => void;
 }
@@ -170,6 +173,7 @@ export class CoreEngine implements EngineService {
 				...(subagents ? [subagents.toolFor(conv.id)] : []),
 				...createGuardedBuiltinTools({
 					cwd: this.cwd,
+					...(this.options.remoteOpsOf ? { remoteOpsOf: this.options.remoteOpsOf } : {}),
 					getLang: () => this.langOf(clientId),
 					conversationId: () => conv.id,
 					askApproval: (_toolCallId, toolName, params, reason, reasonEn) =>

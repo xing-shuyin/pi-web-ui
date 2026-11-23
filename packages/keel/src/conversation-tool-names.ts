@@ -1,4 +1,4 @@
-import { CONVERSATION_TOOL_NAME } from "../../../server/tool-manager.js";
+import { CONVERSATION_TOOL_NAME } from "./tool-names.js";
 
 export const CONVERSATION_TOOL_NAMES = [CONVERSATION_TOOL_NAME] as const;
 

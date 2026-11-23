@@ -2,7 +2,7 @@ import { promises as fsPromises } from "node:fs";
 import { setImmediate } from "node:timers/promises";
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import type { NativeCliConfig } from "./protocol.js";
-import { NATIVE_CLI_ENTRY, parseNativeCliMetadata } from "../../../server/native-cli.js";
+import { NATIVE_CLI_ENTRY, parseNativeCliMetadata } from "./native-cli-meta.js";
 
 export interface SessionListInfo extends SessionInfo {
 	nativeCli?: NativeCliConfig;

@@ -20,7 +20,7 @@ import {
 	type SessionEntry,
 	type ProjectedSessionEntry,
 } from "@earendil-works/pi-coding-agent";
-import { toTranscriptInput, type TranscriptInputMessage } from "../../../server/conversation-read-tool.js";
+import { toTranscriptInput, type TranscriptInputMessage } from "./transcript-input.js";
 import { selectBestSessionLeaf, type AnySessionEntry } from "./session-branch.js";
 
 export type { ProjectedSessionEntry };

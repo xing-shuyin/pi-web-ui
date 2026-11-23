@@ -15,11 +15,11 @@ import {
 import type { SettleWakeReason } from "./subagent-settle.js";
 import type { LedgerEvent, LedgerRunRecord, LedgerRunState } from "./subagent-ledger.js";
 import { classifyModelError, formatModelErrorBrief } from "./model-error.js";
-import { CONVERSATION_TOOL_NAME } from "../../../server/tool-manager.js";
+import { CONVERSATION_TOOL_NAME } from "./tool-names.js";
 import { richQuestionsSchema } from "./question-params.js";
 import { questionsFromMessage } from "./conversation-communication.js";
 import { Value } from "typebox/value";
-export { CONVERSATION_TOOL_NAME } from "../../../server/tool-manager.js";
+export { CONVERSATION_TOOL_NAME } from "./tool-names.js";
 
 export type SubagentState = "running" | "queued" | "done" | "canceled";
 

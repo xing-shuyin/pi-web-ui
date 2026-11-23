@@ -8,6 +8,9 @@ import {
 	formatTouchesCompact,
 	toolCallRefsOfContent,
 } from "./conversation-touches.js";
+import { toTranscriptInput, type TranscriptInputMessage } from "../packages/keel/src/transcript-input.js";
+
+export { toTranscriptInput, type TranscriptInputMessage };
 import type { ClaimView } from "./claim-store.js";
 
 export interface ConversationListEntry {
@@ -29,19 +32,6 @@ export interface HistorySessionEntry {
 	cwd: string;
 }
 
-export interface TranscriptInputMessage {
-	role: string;
-	content?: unknown;
-	toolName?: string;
-	isError?: boolean;
-	command?: string;
-	output?: string;
-	summary?: string;
-	details?: unknown;
-	timestamp?: number;
-	toolCalls?: { name: string; args?: unknown }[];
-}
-
 export interface ConversationReadHost {
 	listRunningConversations(): ConversationListEntry[];
 	readRunningConversation(
@@ -57,30 +47,6 @@ export interface ConversationReadHost {
 		  }
 		| undefined
 	>;
-}
-
-function fillToolCalls(target: TranscriptInputMessage, content: unknown): void {
-	const refs = toolCallRefsOfContent(content);
-	if (refs.length > 0) target.toolCalls = refs;
-}
-
-export function toTranscriptInput(m: AgentMessage): TranscriptInputMessage {
-	const role = (m as { role?: unknown }).role;
-	const r = typeof role === "string" ? role : "unknown";
-	const base: TranscriptInputMessage = { role: r };
-	const anyM = m as unknown as Record<string, unknown>;
-	if (typeof anyM.content !== "undefined") {
-		base.content = anyM.content;
-		fillToolCalls(base, anyM.content);
-	}
-	if (typeof anyM.toolName === "string") base.toolName = anyM.toolName;
-	if (typeof anyM.isError === "boolean") base.isError = anyM.isError;
-	if (typeof anyM.command === "string") base.command = anyM.command;
-	if (typeof anyM.output === "string") base.output = anyM.output;
-	if (typeof anyM.summary === "string") base.summary = anyM.summary;
-	if (typeof anyM.details !== "undefined") base.details = anyM.details;
-	if (typeof anyM.timestamp === "number") base.timestamp = anyM.timestamp;
-	return base;
 }
 
 function textOfContent(content: unknown): string {

@@ -17,11 +17,8 @@ const serverDir = join(root, "server");
  */
 const PENDING_PORT = [
 	"approval-default-rules",
-	"conversation-read-tool",
-	"native-cli",
 	"plugins",
 	"quick-ask-context",
-	"remote-ssh-service",
 ];
 
 const PORTS = ["client-state", "settings-service", "terminals", "tool-manager"];

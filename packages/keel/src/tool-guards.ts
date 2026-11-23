@@ -22,11 +22,11 @@ import type { UiApprovalCategory, UiApprovalHit } from "./protocol.js";
 import type { AnyToolDefinition } from "./tool-overrides.js";
 import type { ToolAuditRecordFn } from "./approval-audit.js";
 import {
-	createRemoteSdkOperations,
 	isRemoteWorkspaceUri,
 	parseRemoteWorkspaceUri,
 	restoreWorkspaceUriFromSessionDir,
-} from "../../../server/remote-ssh-service.js";
+} from "./remote-workspace.js";
+import type { RemoteSdkOperationsFactory } from "./contracts/remote-ops.js";
 
 export interface ToolGuardHook {
 	pre: (
@@ -436,10 +436,11 @@ export function wrapWriteToolWithPermission(
 	getConversationId?: () => string | undefined,
 	getRules?: () => ApprovalRule[],
 	base?: AnyToolDefinition,
+	remoteOpsOf?: RemoteSdkOperationsFactory, // 远程工作区的 SSH/SFTP 操作归宿主；缺省走本地
 ): ToolDefinition {
-	const remoteOps = !base ? createRemoteSdkOperations(cwd) : null;
 	const effectiveBase: AnyToolDefinition =
-		base ?? createWriteToolDefinition(cwd, remoteOps ? { operations: remoteOps.write } : undefined);
+		base ??
+		createWriteToolDefinition(cwd, remoteOpsOf?.(cwd) ? { operations: remoteOpsOf(cwd)!.write as never } : undefined);
 	return {
 		...effectiveBase,
 		execute: async (toolCallId, params, signal, onUpdate, ctx) => {
@@ -578,10 +579,11 @@ export function wrapEditToolWithPermission(
 	getConversationId?: () => string | undefined,
 	getRules?: () => ApprovalRule[],
 	base?: AnyToolDefinition,
+	remoteOpsOf?: RemoteSdkOperationsFactory,
 ): ToolDefinition {
-	const remoteOps = !base ? createRemoteSdkOperations(cwd) : null;
 	const effectiveBase: AnyToolDefinition =
-		base ?? createEditToolDefinition(cwd, remoteOps ? { operations: remoteOps.edit } : undefined);
+		base ??
+		createEditToolDefinition(cwd, remoteOpsOf?.(cwd) ? { operations: remoteOpsOf(cwd)!.edit as never } : undefined);
 	return {
 		...effectiveBase,
 		execute: async (toolCallId, params, signal, onUpdate, ctx) => {
