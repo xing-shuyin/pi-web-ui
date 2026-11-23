@@ -71,6 +71,9 @@ describe("提示词只走结构化槽位（issue #999）", () => {
 		expect(service).toMatch(/appendConstraints\(rendered, constraints\)/);
 		// 设置预览也走同一个生产函数（否则预览与真实请求两张皮）。
 		expect(service).toMatch(/appendConstraints\(rendered, this\.platformConstraintsFor\(conv, cwd, sandbox\)\)/);
+		// 预览与真实 run 用同一条组装：组合模板产生不了正文时，模型收到的是 SDK 自己渲染的那份。
+		expect(service).toMatch(/const rendered = this\.renderMainCompose\(src\);/);
+		expect(service).toMatch(/\? appendConstraints\([\s\S]{0,120}?: sess\.systemPrompt;/);
 		// 文本生产只允许在 platform-constraints.ts（加上各自的定义处）。
 		const allowed = ["platform-constraints.ts", "delegate-mode.ts", "plan-mode.ts", "remote-ssh-service.ts"];
 		const producers = sources()

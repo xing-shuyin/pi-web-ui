@@ -480,9 +480,7 @@ import {
 } from "./context-usage.js";
 import {
 	BUILTIN_SOUL,
-	DEFAULT_PROMPT_TEMPLATE,
 	buildToolsSchemaText,
-	renderPromptTemplate,
 	resolveSectionTexts,
 	type PromptComposerInputs,
 } from "./prompt-composer.js";
@@ -3912,38 +3910,33 @@ export class ClientSession {
 					snippets[name] = eff.promptSnippet.trim();
 				}
 			}
-			const texts = resolveSectionTexts(
-				this.composeInputs({
-					cwd,
-					selectedTools: baseNames,
-					toolSnippets: snippets,
-					toolSignatures: signatures,
-					...(lazyOn ? { lazy: true, catalogTools: catalog.names } : {}),
-					contextFiles: loader.getAgentsFiles().agentsFiles,
-					skills: loader.getSkills().skills.map((s) => ({
-						name: s.name,
-						description: s.description ?? "",
-						filePath: (s as { filePath?: string }).filePath ?? "",
-					})),
-					preset,
-					session: sess,
-				}),
-			);
-			const tpl = (this.settingsSvc.current.promptTemplate ?? "").trim();
-			const ovs = this.settingsSvc.current.promptOverrides ?? {};
-			const hasOverride = Object.values(ovs).some((v) => typeof v === "string" && v.trim());
-			const rendered = renderPromptTemplate(
-				tpl || DEFAULT_PROMPT_TEMPLATE,
-				texts,
-				hasOverride ? ovs : undefined,
-				new Set(this.settingsSvc.current.promptDisabled ?? []),
-			);
-			// 预览必须与真实请求同口径：平台/模式约束也在出口追加（沙盒身份查不到就不显示）。
+			const src = {
+				cwd,
+				selectedTools: baseNames,
+				toolSnippets: snippets,
+				toolSignatures: signatures,
+				...(lazyOn ? { lazy: true, catalogTools: catalog.names } : {}),
+				contextFiles: loader.getAgentsFiles().agentsFiles,
+				skills: loader.getSkills().skills.map((s) => ({
+					name: s.name,
+					description: s.description ?? "",
+					filePath: (s as { filePath?: string }).filePath ?? "",
+				})),
+				preset,
+				session: sess,
+			};
+			const texts = resolveSectionTexts(this.composeInputs(src));
+			// 预览与真实 run 走同一个组装函数（组合模板判定也在里面）：
+			// 组合关闭时模型收到的是 SDK 渲染的那份，此时约束已在 loader 的 append 段里，不重复追加。
+			const rendered = this.renderMainCompose(src);
+			// 沙盒身份查不到就不显示（预览不负责 identity 校验）。
 			let sandbox: { name: string; path: string; sourcePath?: string } | undefined;
 			try {
 				sandbox = this.sandboxes.getExecutionIdentity(cwd);
 			} catch {}
-			const full = appendConstraints(rendered, this.platformConstraintsFor(conv, cwd, sandbox));
+			const full = rendered
+				? appendConstraints(rendered, this.platformConstraintsFor(conv, cwd, sandbox))
+				: sess.systemPrompt;
 			return { texts, full, toolsSchema: buildToolsSchemaText(schemaEntries) };
 		} catch {
 			return undefined;
