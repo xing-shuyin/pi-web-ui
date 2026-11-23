@@ -13,6 +13,7 @@ import { isInsideRoots } from "./path-boundary.js";
 import { runProcess } from "./run-process.js";
 import { commitJsonQueued, readQueuedView, SETTINGS_SECRETS_KEY } from "./plugin-secrets.js";
 import { createRequire } from "node:module";
+import { compareVersions } from "./plugin-updater.js";
 
 const rmwChains = new Map<string, Promise<unknown>>();
 
@@ -173,14 +174,107 @@ function depOnDisk(fromDir: string, name: string): boolean {
 	}
 }
 
+/** spec 里 `name@` 之后的部分；裸包名返回空串（不审计版本）。 */
+export function depRange(spec: string): string {
+	const raw = str(spec);
+	const name = depName(raw);
+	if (!raw.startsWith(name)) return "";
+	return raw.slice(name.length).replace(/^@/, "").trim();
+}
+
+/**
+ * spec 的 range 上下界。只认仓库里实际在用的写法（`1.2.3` / `^1.2.3` / `~1.2.3` / `>=1.2.3`），
+ * 其余返回 null —— 宿主不实现完整 semver，认不出就按「在位」放行。
+ */
+function depRangeBounds(range: string): { low: string; high: string | null; exact: boolean } | null {
+	const m = /^(\^|~|>=)?\s*v?(\d+\.\d+\.\d+(?:-[\w.]+)?)$/.exec(str(range));
+	if (!m) return null;
+	const base = m[2]!;
+	const core = base
+		.split("-")[0]!
+		.split(".")
+		.map((n) => parseInt(n, 10) || 0);
+	const [major, minor, patch] = [core[0] ?? 0, core[1] ?? 0, core[2] ?? 0];
+	switch (m[1]) {
+		case ">=":
+			return { low: base, high: null, exact: false };
+		case "~":
+			return { low: base, high: `${major}.${minor + 1}.0`, exact: false };
+		case "^": {
+			// caret 对 0.x 的特殊语义：^0.4.0 → <0.5.0、^0.0.3 → <0.0.4。
+			const high = major > 0 ? `${major + 1}.0.0` : minor > 0 ? `0.${minor + 1}.0` : `0.0.${patch + 1}`;
+			return { low: base, high, exact: false };
+		}
+		default:
+			return { low: base, high: null, exact: true };
+	}
+}
+
+/**
+ * 已装版本是否满足 spec 的 range：`true` / `false`；读不到版本或认不出 range 时返回 `null`（在位处理）。
+ * 认不出就放行的理由：宁可不动，也不要因为解析不出语义就每次请求都跑一遍 `npm install`。
+ */
+export function depRangeSatisfied(version: string, range: string): boolean | null {
+	const v = str(version).replace(/^[vV]/, "");
+	const raw = str(range);
+	if (!v) return null;
+	if (!raw || raw === "*" || raw === "x" || raw === "latest" || raw === "next") return true;
+	const bounds = depRangeBounds(raw);
+	if (!bounds) return null;
+	if (compareVersions(v, bounds.low) < 0) return false;
+	if (bounds.exact) return compareVersions(v, bounds.low) === 0;
+	return bounds.high === null || compareVersions(v, bounds.high) < 0;
+}
+
+/** 依赖 package.json 里写的版本：先按 Node 入口往上找，再按 node_modules 逐级目录找（非常规布局读不到就返回 null）。 */
+function depVersion(fromDir: string, name: string): string | null {
+	const versionOf = (file: string): string | null => {
+		try {
+			const raw = JSON.parse(readFileSync(file, "utf8")) as { name?: unknown; version?: unknown };
+			if (raw?.name !== name || typeof raw?.version !== "string") return null;
+			return raw.version;
+		} catch {
+			return null;
+		}
+	};
+	try {
+		let dir = dirname(createRequire(join(fromDir, "index.mjs")).resolve(name));
+		for (;;) {
+			const hit = versionOf(join(dir, "package.json"));
+			if (hit) return hit;
+			const up = dirname(dir);
+			if (!up || up === dir) break;
+			dir = up;
+		}
+	} catch {}
+	let dir = fromDir;
+	for (;;) {
+		const hit = versionOf(join(dir, "node_modules", ...name.split("/"), "package.json"));
+		if (hit) return hit;
+		const up = dirname(dir);
+		if (!up || up === dir) return null;
+		dir = up;
+	}
+}
+
+/**
+ * 依赖是否在位且满足 spec 的 range。带版本号的 spec（`pkg@~1.4.0`）装了旧版也判不在位，
+ * 于是 `ensurePluginDeps` 会把插件目录里的依赖升级到 range 内 —— 插件修好依赖后，
+ * 已装过老版本的用户才会真的换上新依赖，而不是只对全新安装生效。
+ */
 export function isDepAvailable(pluginDir: string, spec: string): boolean {
 	const name = depName(spec);
+	let present: boolean;
 	try {
 		createRequire(join(pluginDir, "index.mjs")).resolve(name);
-		return true;
+		present = true;
 	} catch {
-		return isPlainPackageName(name) && depOnDisk(pluginDir, name);
+		present = isPlainPackageName(name) && depOnDisk(pluginDir, name);
 	}
+	if (!present) return false;
+	const range = depRange(spec);
+	if (!range) return true;
+	return depRangeSatisfied(depVersion(pluginDir, name) ?? "", range) !== false;
 }
 
 const depInstallLocks = new Map<string, Promise<boolean>>();
@@ -226,7 +320,8 @@ export function ensurePluginDeps(
 		}
 		const stillMissing = specs.filter((s) => !isDepAvailable(pluginDir, s));
 		if (stillMissing.length) {
-			console.error(`[plugin-deps] 安装完成但仍缺：${stillMissing.join(", ")}`);
+			// 也可能是装上了但版本不在 spec 的 range 内（npm 解析到了老版本）。
+			console.error(`[plugin-deps] 安装完成但仍不满足：${stillMissing.join(", ")}`);
 			return false;
 		}
 		onProgress?.("依赖安装完成");

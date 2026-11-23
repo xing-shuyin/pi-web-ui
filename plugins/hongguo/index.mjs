@@ -16,6 +16,14 @@ import { byteRange, cdnUrl, dramaRow, rewriteManifest, safeId } from "./lib/medi
 // Plugin reload cache-busts this entry, while relative imports stay cached.
 export const PLAYBACK_FORMAT = "h264-aac-v1";
 
+/**
+ * 匿名 SDK 的版本范围，必须与 package.json 的 dependencies 一致（tests/unit/hongguo-sdk-version.test.ts 守卫）。
+ * 写 `~` 而不是 `^`：0.x 上两者等价（`>=0.4.0 <0.5.0`），而宿主把 spec 原样交给 `cmd.exe`，
+ * 夹具里的 `^` 会被当转义符吃掉（变成精确 `0.4.0`）。0.3.1 起才有 V5 播放取址协议，
+ * 旧接口对匿名设备返回空流（issue #995）；宿主 `ensureDeps` 现在会按版本判在位，已装老版也会被升级。
+ */
+export const SDK_SPEC = "openhongguo@~0.4.0";
+
 function playbackArgs(input, output, key) {
 	return [
 		"-v",
@@ -64,6 +72,7 @@ const ERROR_TEXT = {
 	TRANSPORT: "短剧服务连接失败，请稍后重试",
 	CONTENT_UNAVAILABLE: "这部短剧已下架",
 	DEVICE_REJECTED: "匿名设备暂时不可用，请稍后重试",
+	CHALLENGE_REQUIRED: "短剧服务要求人机校验，匿名播放暂时不可用",
 	FFMPEG_MISSING: "需要 FFmpeg 才能播放此视频，请安装后在插件设置中填写路径",
 };
 
@@ -157,7 +166,8 @@ export function createHongguo(host, overrides = {}) {
 		if (!sdkPromise)
 			sdkPromise = (async () => {
 				if (overrides.client) return overrides.client;
-				if (!(await host.ensureDeps(["openhongguo@0.1.0"]))) throw new Error("短剧组件安装失败，请检查网络后重试");
+				if (!(await host.ensureDeps([SDK_SPEC], { onProgress: log })))
+					throw new Error("短剧组件安装失败，请检查网络后重试");
 				const { createClient } = await import("openhongguo");
 				return createClient({ profile: profileStore(join(dir, "anonymous.json")), retryAttempts: 2 });
 			})().catch((error) => {
@@ -237,6 +247,8 @@ export function createHongguo(host, overrides = {}) {
 					result = await sdk.resolvePlayback(id);
 				} catch (error) {
 					if (error.code !== "ANONYMOUS_LIMITED") throw error;
+					// SDK 0.3+ 自己会换设备重试（deviceResets 默认 2）；这次换号是最后的兜底，
+					// 只在 SDK 把召回的机会用完、仍报空流时再试一次。
 					await sdk.resetDevice();
 					result = await sdk.resolvePlayback(id);
 				}

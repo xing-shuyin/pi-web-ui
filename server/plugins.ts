@@ -719,6 +719,24 @@ interface Sender {
 	send: (msg: ServerMessage) => void;
 }
 
+/** 超过这个体积的 payload 不记指纹（不值得为它长期占内存，宁可直接发）。 */
+const PLUGIN_DATA_DEDUPE_MAX_BYTES = 256 * 1024;
+/** 每个连接最多跟踪多少个插件的上一次 payload。 */
+const PLUGIN_DATA_DEDUPE_TRACKED = 64;
+
+/**
+ * 状态推送的内容指纹；`null` = 不参与抑制（循环引用 / 过大）。
+ * 直接存序列化结果：比再算一层哈希便宜，字符串比较本身是原生实现的。
+ */
+function pluginDataFingerprint(payload: unknown): string | null {
+	try {
+		const json = JSON.stringify(payload) ?? "";
+		return json.length > PLUGIN_DATA_DEDUPE_MAX_BYTES ? null : json;
+	} catch {
+		return null;
+	}
+}
+
 const SETTING_TYPES = new Set(["text", "password", "number", "boolean", "select", "secret"]);
 
 const SETTING_OPTIONS_FROM = new Set(["models", "thinkingLevels"]);
@@ -1404,6 +1422,14 @@ export class PluginManager {
 	private loaded = new Map<string, LoadedPlugin>();
 	private attempted = new Set<string>();
 	private senders = new Set<Sender>();
+	/**
+	 * `plugin_data` 的重复推送抑制（issue #965）：同一连接连续收到内容相同的状态推送就不再发。
+	 *
+	 * 插件把 `broadcast` 当状态通道用（首屏实测 12 帧 524KB、空转仍然 85KB/帧）；宿主无条件
+	 * 全量扇出等于让每个插件自己再实现一遍「变了才推」。指纹按连接记：新连接没有记录，
+	 * 首次推送永远拿得到，不需要额外的 attach 回放。
+	 */
+	private lastPluginData = new WeakMap<Sender, Map<string, string>>();
 	private messageHandlers = new Map<string, Set<(payload: unknown, from?: string) => void>>();
 	private agentTools = new Map<string, AgentToolTable>();
 	onAgentToolsChanged: (() => void) | undefined = undefined;
@@ -1885,7 +1911,30 @@ export class PluginManager {
 	}
 
 	broadcast(pluginId: string, payload: unknown): void {
-		this.deliverAll({ type: "plugin_data", pluginId, payload });
+		const message: ServerMessage = { type: "plugin_data", pluginId, payload };
+		const fingerprint = pluginDataFingerprint(payload);
+		for (const s of this.senders) {
+			if (fingerprint === null) {
+				try {
+					s.send(message);
+				} catch {}
+				continue;
+			}
+			let seen = this.lastPluginData.get(s);
+			if (!seen) this.lastPluginData.set(s, (seen = new Map()));
+			if (seen.get(pluginId) === fingerprint) continue;
+			try {
+				s.send(message);
+			} catch {
+				continue;
+			}
+			seen.set(pluginId, fingerprint);
+			// 插件数量多但活跃的少：只保留最近推过的几个，别让「每连接 × 每插件」无限长。
+			if (seen.size > PLUGIN_DATA_DEDUPE_TRACKED) {
+				const oldest = seen.keys().next().value;
+				if (oldest !== undefined && oldest !== pluginId) seen.delete(oldest);
+			}
+		}
 	}
 
 	notifyAll(level: "info" | "warning" | "error", text: string, textEn?: string): void {

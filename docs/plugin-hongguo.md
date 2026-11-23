@@ -1,6 +1,6 @@
 # hongguo 插件
 
-`plugins/hongguo/` 是 [frostming/dsh-hongguo](https://github.com/frostming/dsh-hongguo) 的 pi-web-ui 移植，使用 [openhongguo](https://github.com/beilunyang/openhongguo) `0.1.0` 访问匿名短剧接口。通过顶栏「hongguo」打开，支持剧名搜索、演员搜索与参演作品、选集、续播、观看记录、播放速度、自动下一集、下一集预加载和浏览器画中画。
+`plugins/hongguo/` 是 [frostming/dsh-hongguo](https://github.com/frostming/dsh-hongguo) 的 pi-web-ui 移植，使用 [openhongguo](https://github.com/beilunyang/openhongguo) `~0.4.0` 访问匿名短剧接口。通过顶栏「hongguo」打开，支持剧名搜索、演员搜索与参演作品、选集、续播、观看记录、播放速度、自动下一集、下一集预加载和浏览器画中画。
 
 ## 安装与使用
 
@@ -10,7 +10,7 @@
 node scripts/link-plugins.mjs hongguo
 ```
 
-在设置中重新加载插件，然后点击顶栏「hongguo」。发布到远端目录后，也可从插件市场安装。运行时首次访问会通过宿主 `ensureDeps` 安装插件独立的 `openhongguo@0.1.0`，根项目依赖不变。
+在设置中重新加载插件，然后点击顶栏「hongguo」。发布到远端目录后，也可从插件市场安装。运行时首次访问会通过宿主 `ensureDeps` 安装插件独立的 `openhongguo@~0.4.0`，根项目依赖不变。带 range 的 spec 由宿主按版本判在位，已装老版（如 0.1.0）会被补装升级，无需手动清目录。
 
 播放器提供两种模式，点击顶部按钮即时切换：
 
@@ -30,6 +30,10 @@ MP4 统一由服务端调用 FFmpeg 输出为 **H.264 Main / yuv420p + AAC-LC**�
 播放器打开时检测 FFmpeg，有缺失时显示提示。处理任务延迟到实际视频请求发生，首次播放需要等待下载和转码，完成后复用缓存。MP4 播放不再依赖客户端的 HEVC 解码能力。匿名服务的限流、地区可用性、内容下架和网络问题由上游决定。
 
 原生 MP4 由浏览器播放，HLS 使用浏览器原生支持或随附 mpegts.js，DASH 使用随附 dash.js。DASH 的 BaseURL / SegmentBase 格式走同源代理；SegmentTemplate 格式会明确返回不支持，避免生成无效的地址。
+
+## 匿名 SDK 版本
+
+播放取址走 openhongguo 的 **V5** 接口（`multi_video_model/player/v1`）：0.1.0 只有旧接口 `video_model/v1`，红果服务端切 V5 后对匿名设备返回空流，插件只能报「匿名播放暂时受限」（issue #995）。插件因此声明 `openhongguo: ~0.4.0` 而不是钉死单个版本，SDK 声明 `SDK_SPEC` 与之一致，由 `tests/unit/hongguo-sdk-version.test.ts` 守卫两边不漂移。range 写 `~` 而不是 `^`：0.x 上两者等价（`>=0.4.0 <0.5.0`），而宿主把 spec 原样交给 `cmd.exe`，`^` 会被当转义符吃掉。已装 0.1.0 的环境不需要手动清 `node_modules`：宿主 `ensureDeps` 会按 range 判在位并补装升级。V5 是否真的给流由上游服务端按设备 / 网络裁定，空流时插件仍保留「重置匿名设备后重试一次」的兜底。
 
 ## 数据与生命周期
 
@@ -63,7 +67,7 @@ MP4 统一由服务端调用 FFmpeg 输出为 **H.264 Main / yuv420p + AAC-LC**�
 
 ```bash
 npm run typecheck
-npx vitest run tests/unit/hongguo-server.test.ts tests/unit/hongguo-client.test.ts tests/unit/plugin-preload-dispose.test.ts tests/unit/plugin-loader-scope.test.ts
+npx vitest run tests/unit/hongguo-server.test.ts tests/unit/hongguo-client.test.ts tests/unit/hongguo-sdk-version.test.ts tests/unit/plugin-preload-dispose.test.ts tests/unit/plugin-loader-scope.test.ts
 ```
 
 测试覆盖 CDN / 重定向边界、播放密钥隔离、MP4 缓存与 Range、搜索与选集、布局切换保留视频、观看进度、自动下一集、销毁后的异步结果，以及禁用 / 重载常驻模块的清理。

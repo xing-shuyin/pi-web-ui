@@ -90,10 +90,10 @@ const bodies = () => document.querySelectorAll(".ip-body");
 const openTitle = () => document.querySelector(".ip-item.open .ip-titles b")?.textContent ?? "";
 
 describe("插件 → 安装的插件（单列折叠列表）", () => {
-	it("界面插件 + Pi 扩展 + SDK 内置同列表，默认展开一项且不是左右分栏", async () => {
+	it("界面插件 + Pi 扩展 + SDK 内置同列表，默认全部收起且不是左右分栏", async () => {
 		await mountPanel();
 		expect(document.querySelectorAll(".ip-item")).toHaveLength(3);
-		expect(bodies()).toHaveLength(1);
+		expect(bodies()).toHaveLength(0);
 		expect(document.querySelector(".ip-panel .ip-list")).toBeTruthy();
 		expect(document.body.textContent).toContain("图片 OCR");
 		expect(document.body.textContent).toContain("my-tools");
@@ -103,7 +103,7 @@ describe("插件 → 安装的插件（单列折叠列表）", () => {
 		expect(builtinRow?.querySelector<HTMLButtonElement>(".ip-switch")?.disabled).toBe(true);
 	});
 
-	it("点行展开另一项，同时最多一项；再点收起", async () => {
+	it("点行展开一项，同时最多一项；再点收起", async () => {
 		await mountPanel();
 		const pi = rows().find((r) => r.textContent?.includes("my-tools"))!;
 		await act(async () => pi.click());
@@ -115,11 +115,13 @@ describe("插件 → 安装的插件（单列折叠列表）", () => {
 
 	it("切换详情 Tab 不折叠", async () => {
 		await mountPanel();
-		const configTab = document.querySelector<HTMLButtonElement>('[data-ip-tab="config"]');
+		const pi = rows().find((r) => r.textContent?.includes("my-tools"))!;
+		await act(async () => pi.click());
+		const configTab = document.querySelector<HTMLButtonElement>('[data-ip-tab="load"]');
 		expect(configTab).toBeTruthy();
 		await act(async () => configTab!.click());
 		expect(bodies()).toHaveLength(1);
-		expect(document.querySelector(".ip-tab.active")?.getAttribute("data-ip-tab")).toBe("config");
+		expect(document.querySelector(".ip-tab.active")?.getAttribute("data-ip-tab")).toBe("load");
 	});
 
 	it("启停按类别分别写回，SDK 内置不触发回调", async () => {

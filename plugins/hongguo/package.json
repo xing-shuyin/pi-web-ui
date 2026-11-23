@@ -1,10 +1,10 @@
 {
 	"name": "pi-web-ui-hongguo",
-	"version": "0.1.7",
+	"version": "0.1.8",
 	"private": true,
 	"type": "module",
 	"description": "短剧观看",
 	"dependencies": {
-		"openhongguo": "0.1.0"
+		"openhongguo": "~0.4.0"
 	}
 }

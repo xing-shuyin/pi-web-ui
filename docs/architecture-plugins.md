@@ -222,7 +222,9 @@ HTTP MCP 卡片的 OAuth 登录通过 `mcp_oauth_start {reqId,name,scope}` 发�
 | ------------ | -------------------------------------------------------------------- |
 | `storage`    | `<dataDir>/plugin-data/<id>/storage.json` 原子 KV                    |
 | `secrets`    | AES-256-GCM 加密机密，密钥 `<dataDir>/secrets.key`，拷机 fail closed |
-| `ensureDeps` | npm 自动补装单飞                                                     |
+| `ensureDeps` | npm 自动补装单飞；带 range 的 spec 按版本判在位（见下条）            |
+
+- 依赖版本：`host.ensureDeps(["pkg@~1.4.0"])` 里的 range 会真的比较已装版本（认 `1.2.3` / `^1.2.3` / `~1.2.3` / `>=1.2.3`，认不出的写法放行，避免每次请求都跑 `npm install`）。装了 range 外的旧版会被补装升级 —— 插件换依赖后，已装过老版本的用户才会真的换上新依赖（issue #995）；裸包名仍只判在位。
 
 ### 声明式设置（`secret` 类型 / `optionsFrom` 动态候选值）与插件 SDK（plugin-sdk/）
 

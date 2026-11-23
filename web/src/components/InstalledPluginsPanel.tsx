@@ -184,7 +184,8 @@ export function InstalledPluginsPanel({
 		locale,
 	]);
 
-	const [expandedUid, setExpandedUid] = useState<string | null>(() => rows[0]?.uid ?? null);
+	// 默认不展开任何一项：进页面先看列表，点行才展开详情。
+	const [expandedUid, setExpandedUid] = useState<string | null>(null);
 	const [detailTab, setDetailTab] = useState<DetailTab>("overview");
 	const [filter, setFilter] = useState<KindFilter>("all");
 	const [query, setQuery] = useState("");
@@ -243,9 +244,7 @@ export function InstalledPluginsPanel({
 					["load", t("pluginsTabLoad")],
 				];
 
-	const activeTab: DetailTab = tabsFor(expanded ?? rows[0] ?? ({} as Row)).some((x) => x[0] === detailTab)
-		? detailTab
-		: "overview";
+	const activeTab: DetailTab = expanded && tabsFor(expanded).some((x) => x[0] === detailTab) ? detailTab : "overview";
 
 	const renderOverview = (r: Row): JSX.Element => {
 		const p = r.plugin;

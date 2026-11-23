@@ -11,6 +11,8 @@ import {
 	PluginSecrets,
 	PluginStorage,
 	depName,
+	depRange,
+	depRangeSatisfied,
 	globToRegExp,
 	isDepAvailable,
 	withFileRmwLock,
@@ -257,10 +259,55 @@ describe("deps 探测", () => {
 		expect(depName("https://example.com/x.tgz")).toBe("https://example.com/x.tgz");
 	});
 
-	it("isDepAvailable 认带版本的 spec（只判存在，不审计版本）", () => {
+	it("depRange 取 name@ 之后的部分，裸包名不审计版本", () => {
+		expect(depRange("openhongguo@~0.4.0")).toBe("~0.4.0");
+		expect(depRange("lodash@^4.17.21")).toBe("^4.17.21");
+		expect(depRange("lodash")).toBe("");
+		expect(depRange("node:path")).toBe("");
+	});
+
+	it("depRangeSatisfied 只认仓库在用的写法，认不出就放行", () => {
+		expect(depRangeSatisfied("0.4.0", "~0.4.0")).toBe(true);
+		expect(depRangeSatisfied("0.1.0", "~0.4.0")).toBe(false);
+		expect(depRangeSatisfied("0.5.0", "~0.4.0")).toBe(false);
+		expect(depRangeSatisfied("0.4.0", "^0.4.0")).toBe(true);
+		expect(depRangeSatisfied("0.5.0", "^0.4.0")).toBe(false);
+		expect(depRangeSatisfied("1.9.0", "^1.2.0")).toBe(true);
+		expect(depRangeSatisfied("2.0.0", "^1.2.0")).toBe(false);
+		expect(depRangeSatisfied("0.0.3", "^0.0.3")).toBe(true);
+		expect(depRangeSatisfied("0.0.4", "^0.0.3")).toBe(false);
+		expect(depRangeSatisfied("3.7.1", "3.7.1")).toBe(true);
+		expect(depRangeSatisfied("3.7.2", "3.7.1")).toBe(false);
+		expect(depRangeSatisfied("9.9.9", ">=1.0.0")).toBe(true);
+		expect(depRangeSatisfied("0.4.0", "")).toBe(true);
+		expect(depRangeSatisfied("0.4.0", "latest")).toBe(true);
+		expect(depRangeSatisfied("0.4.0", "||不认得的写法")).toBeNull();
+		expect(depRangeSatisfied("", "~0.4.0")).toBeNull();
+	});
+
+	it("isDepAvailable 装了旧版且 spec 带 range 时判不在位（让宿主升级）", () => {
+		const pluginDir = join(dir, "plugins", "versioned");
+		const pkgDir = join(pluginDir, "node_modules", "probe-sdk");
+		mkdirSync(pkgDir, { recursive: true });
+		writeFileSync(join(pkgDir, "index.js"), "module.exports = {};\n");
+		writeFileSync(
+			join(pkgDir, "package.json"),
+			JSON.stringify({ name: "probe-sdk", version: "0.1.0", main: "index.js" }),
+		);
+		expect(isDepAvailable(pluginDir, "probe-sdk")).toBe(true);
+		expect(isDepAvailable(pluginDir, "probe-sdk@~0.4.0")).toBe(false);
+		writeFileSync(
+			join(pkgDir, "package.json"),
+			JSON.stringify({ name: "probe-sdk", version: "0.4.0", main: "index.js" }),
+		);
+		expect(isDepAvailable(pluginDir, "probe-sdk@~0.4.0")).toBe(true);
+	});
+
+	it("isDepAvailable 认带版本的 spec（版本满足或读不到版本都在位）", () => {
 		const probe = join(repoRoot, "tests", "scratch");
 		expect(isDepAvailable(probe, "vitest")).toBe(true);
-		expect(isDepAvailable(probe, "vitest@9.9.9")).toBe(true);
+		expect(isDepAvailable(probe, "vitest@9.9.9")).toBe(false);
+		expect(isDepAvailable(probe, "vitest@>=0.0.1")).toBe(true);
 		expect(isDepAvailable(probe, "definitely-not-a-module-xyz@1.0.0")).toBe(false);
 	});
 
