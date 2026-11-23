@@ -3335,7 +3335,7 @@ export function App() {
 													modelsLoading={chat.modelsLoading}
 													providerKeys={chat.providerKeys}
 													providers={chat.providers}
-													defaultModel={chat.defaultModel ?? undefined}
+													defaultModel={chat.defaultModel}
 													attachments={attachments}
 													onRemoveAttachment={removeAttachmentCb}
 													onAnnotateImage={annotateImageCb}

@@ -10,6 +10,7 @@ import {
 	matchesModelId,
 	providerLabel,
 	resolveCurrentModelRef,
+	toggleModelDefault,
 } from "../../web/src/components/UniversalModelPicker.js";
 import type { ModelInfo } from "../../web/src/types.js";
 
@@ -186,6 +187,37 @@ describe("UniversalModelPicker 通用模型菜单", () => {
 		expect(onPickModel).toHaveBeenCalledTimes(1);
 		expect(onPickModel.mock.calls[0][0]).toEqual(models[1]);
 		expect(onPickModel.mock.calls[0][1]).toEqual({ name: "keyA", active: true });
+	});
+
+	it("没有默认模型（null）时星标仍在且可点：否则第一批默认模型永远设不上", () => {
+		const send = vi.fn((_msg: { type: string }) => true);
+		setAppSend(send);
+		const onToggleDefault = vi.fn();
+		renderPicker({ defaultModel: null, onToggleDefault });
+		// 头部不显示默认模型胶囊（确实没有），但行内 ☆ 必须存在且是按钮
+		expect(document.body.querySelector(".dd-header-default")).toBeNull();
+		const stars = Array.from(document.body.querySelectorAll(".dd-star-btn"));
+		expect(stars.length).toBe(2);
+		expect(stars.every((s) => s.tagName === "BUTTON")).toBe(true);
+		expect(stars.every((s) => s.textContent === "☆")).toBe(true);
+		act(() => {
+			(stars[0] as HTMLButtonElement).click();
+		});
+		expect(onToggleDefault).toHaveBeenCalledWith(models[0], false);
+	});
+
+	it("不传 defaultModel（undefined）= 这本菜单不管默认模型，干脆不显示星标", () => {
+		renderPicker({ onToggleDefault: vi.fn() });
+		expect(document.body.querySelectorAll(".dd-star-btn").length).toBe(0);
+	});
+
+	it("toggleModelDefault 是设/清除默认模型的唯一出口", () => {
+		const send = vi.fn((_msg: { type: string }) => true);
+		setAppSend(send);
+		toggleModelDefault(models[0], false);
+		toggleModelDefault(models[0], true);
+		expect(send.mock.calls[0][0]).toEqual({ type: "set_default_model", modelId: "anthropic/claude-sonnet" });
+		expect(send.mock.calls[1][0]).toEqual({ type: "clear_default_model" });
 	});
 
 	it("无 onToggleDefault 时星标只展示；关闭弹窗重置过滤态", () => {

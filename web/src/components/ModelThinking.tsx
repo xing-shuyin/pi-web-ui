@@ -5,7 +5,7 @@ import { Dropdown, DropdownItem } from "./Dropdown";
 import { useT } from "../i18n";
 import { THINKING_VALUES, formatThinkingLevelText } from "../thinking-levels";
 import { appSend } from "../app-globals";
-import { UniversalModelPicker } from "./UniversalModelPicker";
+import { UniversalModelPicker, toggleModelDefault } from "./UniversalModelPicker";
 
 interface Props {
 	state: Pick<UiState, "model" | "thinkingLevel" | "availableThinkingLevels"> | null;
@@ -188,11 +188,7 @@ export const ModelThinking = memo(function ModelThinking({
 				setModelOpen(false);
 			}}
 			onToggleDefault={(m, isDefault) => {
-				if (isDefault) {
-					appSend({ type: "clear_default_model" });
-				} else {
-					appSend({ type: "set_default_model", modelId: m.id });
-				}
+				toggleModelDefault(m, isDefault);
 			}}
 			isRowActive={(m, key) =>
 				(currentModelId === m.id || model?.id === m.id || `${m.provider}/${m.id}` === currentModelId) &&

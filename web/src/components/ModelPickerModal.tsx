@@ -3,7 +3,7 @@ import { FiX } from "react-icons/fi";
 import type { ModelInfo, ProviderKeyInfo, ProviderStatus } from "../types";
 import { useT } from "../i18n";
 import { appSend } from "../app-globals";
-import { UniversalModelPicker, matchesModelId } from "./UniversalModelPicker";
+import { UniversalModelPicker, matchesModelId, toggleModelDefault } from "./UniversalModelPicker";
 
 export interface ModelPickerModalProps {
 	open?: boolean;
@@ -115,6 +115,8 @@ export const ModelPickerModal = memo(function ModelPickerModal({
 					}}
 					onRefresh={() => appSend({ type: "list_models" })}
 					onManageModels={onManageModels}
+					// 头部已经能「清除默认」，行内就得能「设为默认」；少了这行星标只是个点不动的装饰。
+					onToggleDefault={toggleModelDefault}
 					onPickModel={(m) => {
 						onSelect(m.id, m);
 						onClose();

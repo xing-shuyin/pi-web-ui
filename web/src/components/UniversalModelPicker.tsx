@@ -33,6 +33,16 @@ export function providerLabel(
 	return name || provider;
 }
 
+/**
+ * 「设为 / 取消全局默认模型」的唯一出口：模型菜单都从这里发消息，别在各处手抄一遍。
+ * @returns 是否投递成功（未连上后端时为 false）
+ */
+export function toggleModelDefault(model: Pick<ModelInfo, "id">, isDefault: boolean): boolean {
+	return isDefault
+		? appSend({ type: "clear_default_model" })
+		: appSend({ type: "set_default_model", modelId: model.id });
+}
+
 export interface CurrentModelRef {
 	modelName: string;
 	modelId: string;
@@ -75,6 +85,11 @@ export interface UniversalModelPickerProps {
 	modelsLoading?: boolean;
 	providerKeys?: Record<string, ProviderKeyInfo[]>;
 	providers?: ReadonlyArray<{ id: string; name?: string | null }>;
+	/**
+	 * 全局默认模型（"provider/id"）。两个值含义不同，不能混：
+	 * - `undefined`：这个选择器不管默认模型（Bot 模型、目标评审模型等），不显示 ☆；
+	 * - `null`：还没有默认模型 —— 仍然要显示 ☆，否则「没有任何默认模型时无法指定默认模型」。
+	 */
 	defaultModel?: string | null;
 	currentModelId?: string | null;
 	active: boolean;
@@ -218,6 +233,9 @@ export function UniversalModelPicker({
 		}
 		return rows;
 	}, [filteredModels, providerKeys, providerFilter, isRowActive, currentModelId]);
+
+	/** 能力跟值分开看：没设默认（null）也得有 ☆；不传（undefined）才是「这本菜单不管默认模型」。 */
+	const canToggleDefault = defaultModel !== undefined;
 
 	return (
 		<>
@@ -391,7 +409,7 @@ export function UniversalModelPicker({
 										)}
 									</span>
 								</span>
-								{defaultModel !== undefined &&
+								{canToggleDefault &&
 									(onToggleDefault ? (
 										<button
 											type="button"
