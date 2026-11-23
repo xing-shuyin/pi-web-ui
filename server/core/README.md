@@ -95,3 +95,21 @@ W3 之后 `CoreEngine.attach()` 仍默认关闭（`CoreEngineNotReadyError`）�
    一个域一个域搬（对应老树 580 方法里的 `subagent*` / `terminal*` / `plugin*` / `files` 几簇）。
 5. **W9 删老树**：`agent-service.ts` 退场 + 18 个守卫重定向 + 71 个白盒测试按域重写
    （`tests/helpers/fake-session.ts` 会随之删除——它存在的唯一目的是给上帝对象造假体）。
+
+## 插件子系统：不搬（建议）
+
+盘完 `server/plugins.ts` 的 `PluginHost`：**60 个顶层成员**，分三类：
+
+| 类别                              | 成员                                                                                                                                                                                                                                                                              | 结论                                                                                         |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| **A · 新树已有对应能力**（约 30） | `broadcast` `notify` `sendTo` `onMessage` `onClientMessage` `onAttach` `getActiveConversation` `conversations` `fs` `dir` `dataDir` `project` `resolveInWorkspace` `storage` `state` `log` `events` `effect` `route` `registerProxy` `llm` `tts` `inbox` `delivery` `workItems` … | 能如实实现：`TransportPort` / 会话投影 / `files-service` / `plugin-paths` / `StatePort` 都在 |
+| **B · 只能降级**（约 20）         | `chat` `chatWait` `prompt` `steer` `abortRun` `onToolEvent` `onToolPre` `onToolPost` `scm` `bash` `models` `mcp` `registerTool` `registerAgentTool` `schedule`                                                                                                                    | 语义要重新裁定（插件发起的对话 = 谁持有？工具钩子在新树里只有审批闸一个拦截点）              |
+| **C · 依赖未搬的子系统**（约 10） | `leftPanel` `ui` `registerCommand` `getPluginCommands` `registerBackgroundTask` `secrets` `requestPermission` `net` `fetch` `ensureDeps` `services` `getSettings` `onSettingsChanged` `onStats` `onStreaming` `onCwdChange`                                                       | 面板/后台执行者/权限网都还没搬                                                               |
+
+**建议：插件子系统整体复用，不重写。** 理由：
+
+1. `PluginManager`（`server/plugins.ts`）**本身不是上帝对象**——它有明确 API（`activate`/`host`/`pushCatalog`/`panelGroups`…），只是宿主面很宽；
+2. 重写它要动 60 个成员的语义，收益是"代码在新树里"，成本是几周 + 插件生态全量回归；
+3. 正确做法是给新树加一个 **`adapters/plugins/host.ts`**：实现 A 类成员、B 类按裁定降级、C 类返回带名字的 unsupported（与子代理 host 同款），然后把现成的 `PluginManager` 实例喂进去。
+
+也就是说：**重写的边界应该是"上帝对象"，不是"所有老代码"**。这条判断已经比 W0 提案更收敛——提案里"插件运行态搬进 domains/plugins"可以降级为"接 host 适配器"。
