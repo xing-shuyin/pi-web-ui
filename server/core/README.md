@@ -26,11 +26,12 @@ app        门面（EngineService）与装配    ← 唯一允许 import 全部�
 | ----- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
 | W0    | 骨架：ports / kernel（对话聚合 + 注册表 + 相位 + 排队）/ 门面壳 / 引擎开关 / 边界守卫 / 所有权表 | ✅                                             |
 | W1    | 对话内核：TurnRunner（唯一碰 SDK）、snapshots、history、生命周期                                 | ✅ turns / snapshots / history / ClientRuntime |
-| W2    | 快照投影、设置读模型、转录投影                                                                   | 进行中（已落；SDK 会话创建在 W3）              |
-| W3~W6 | SDK 会话适配 / 生命周期退役 / 工具审批 / 子代理 / 插件终端                                       | 未开始                                         |
+| W2    | 快照投影、设置读模型、转录投影                                                                   | ✅                                             |
+| W3    | 适配器：SDK 开会话 / 版本化状态落盘                                                              | ✅（能开会话；喂轮与接线在 W4）                |
+| W4~W6 | 接线（设置/模型/项目/会话帧）/ 生命周期退役 / 工具审批 / 子代理 / 插件终端                       | 未开始                                         |
 | W7    | 删老树（`agent-service.ts` 不存在）                                                              | 未开始                                         |
 
-W1 之后 `CoreEngine.attach()` 仍默认关闭（`CoreEngineNotReadyError`）：骨架能实例化、能过契约测试、能给空对话出合法帧，但**会话实体还没接 SDK**，不接生产流量。
+W3 之后 `CoreEngine.attach()` 仍默认关闭（`CoreEngineNotReadyError`）：能实例化、能过契约测试、能给空对话出合法帧、能真开一份 SDK 会话，但**连接期帧（settings_state / sessions / models / projects）还没接**，所以还不接生产流量。
 
 ## 复用而不是重写
 
@@ -52,6 +53,8 @@ W1 之后 `CoreEngine.attach()` 仍默认关闭（`CoreEngineNotReadyError`）�
 - **快照**：全量帧永远可出；增量帧拿不到 `appended` 之前降级为全量 `snapshot`（不假装增量）。
 - **设置**：域只投影已有 `normalize*` 单源的 18 个键，其余键留给后续波次，避免在域里复制归一化。
 - **转录**：`skippedLines` 合并三种口径（坏行 / 序列化为 null / 整份不可用）；`seq` 对 null 消息不占位。
+- **状态落盘**：`StatePort.write` 保持同步签名，适配器**派发**一次异步落盘并另给 `flush()` 等待点（versioned-doc 只提供 async 写，不另开写入路径）。
+- **开会话**：`openTurnSession` 有 `sessionFile` 只续开、不偷偷新建；结果必过 `guardSession`；`dispose` 不发 `session_shutdown`（留给生命周期波次裁定）。
 
 ## 源码约定
 
