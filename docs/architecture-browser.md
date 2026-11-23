@@ -18,7 +18,7 @@
 
 ## 模块与边界
 
-- `browser/contracts.ts`：浏览器公共状态和宿主接口；页面请求类型从 `server/protocol.ts` 派生。
+- `browser/contracts.ts`：浏览器公共状态和宿主接口；页面请求类型从 `packages/keel/src/protocol.ts` 派生。
 - `browser/runtime/manager.ts`：唯一标签状态源，管理 WebContentsView、导航、恢复、持久 session、下载和释放。
 - `browser/storage/index.ts`：书签树、历史、设置、加密凭据和旧数据导入。
 - `browser/renderer/`：独立浏览器外壳、新标签页、书签/历史/设置/下载面板、文档与媒体页面，使用既有主题基线。
@@ -183,7 +183,7 @@ Agent 可以给网页注入脚本：`browser_script` 工具（`server/browser-sc
 
   **落成 chip，不落成文字**：与「浏览器面板里的引用 / @页面」完全同一种——页面 chip（`mode: "page"`，`pageCitation()`，`path` = 原生 tabId（模型就是拿它当 `browser_page` 的 target）/ `name` = 标题）；页面里选中了文字时再补一条 `mode: "quote"` 的引用 chip（`role: "page"`，卡片显示「网页」），页面 chip 仍跟着走，否则模型不知道这段话出自哪个页面。选段去行尾空白、去首尾空行，超 6000 字按行边界截断并标注（主进程 `QUOTE_MAX_CHARS` 同一量级）。
 
-  标题只留到能认出来为止（`BROWSER_REFERENCE_TITLE_MAX_CHARS` = 10，超了按字符边界加 `…`，再长的部分靠 chip 的单行省略号兜底），别把整条 PR 标题铺满输入框。只带地址、标题与选段，不带整页正文：模型要内容自己调 `browser_page`（`server/browser-page-tool.ts` 的 target 接受原生 tabId 或 origin）。同一页重复引用靠 chip 自己去重（`page:<tabId|origin>`），不会堆出两枚。Agent 未就绪时降级成「已复制到剪贴板」，不假装成功；纯浏览器模式下引用成功会自动切成分栏，用户能直接看到那一枚 chip。
+  标题只留到能认出来为止（`BROWSER_REFERENCE_TITLE_MAX_CHARS` = 10，超了按字符边界加 `…`，再长的部分靠 chip 的单行省略号兜底），别把整条 PR 标题铺满输入框。只带地址、标题与选段，不带整页正文：模型要内容自己调 `browser_page`（`packages/keel/src/browser-page-tool.ts` 的 target 接受原生 tabId 或 origin）。同一页重复引用靠 chip 自己去重（`page:<tabId|origin>`），不会堆出两枚。Agent 未就绪时降级成「已复制到剪贴板」，不假装成功；纯浏览器模式下引用成功会自动切成分栏，用户能直接看到那一枚 chip。
 
 - **这条通道要握手（壳与界面各自更新）**：界面（`web/dist`）由**内核**提供，壳（`desktop/`）与内核是两份可以互不同步的代码——壳升了、内核还是老版本时，老界面根本没有订阅口，`send` 过去只会被丢掉，而 `agentReady`（页面加载完了）照样是 `true`。所以：界面订阅成功时调 `piDesktop.browserReferenceReady()`（IPC `pi-desktop:browser-reference-ready`，主进程只认 Agent 视图自己的主帧）把自己「能收」报上去，壳用 `agentReferenceReady` 记账，**没报到就按不支持处理**：写剪贴板 + 回执「当前内核界面不支持引用（请升级内核后再试）」。每次**开始加载**（`did-start-loading`）就清零重报，别让刷新前的旧声明生效；不能在 `did-finish-load` 里清——界面报到早于 load 事件结束，那样会把刚到的声明抹掉。这类「壳与界面两侧都得改」的能力不能只靠 `SHELL_CAPABILITY_VERSION`（那条只管壳自己的能力）。
 

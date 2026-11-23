@@ -59,7 +59,7 @@
 - 前端：`quote-selection.ts` 校验选区范围，排除操作按钮、输入框和跨消息选区；`SelectionQuoteButton` 定位浮动按钮；`TextQuoteCard` 在输入框、已发送消息和编辑重问中展示引用。
 - 标准 pi 引擎：空闲时 `buildAttachmentMessages` 将引用编码为独立的 `customType: "file"` 上下文消息，`details.mode = "quote"`，`details.quote` 用于历史展示和编辑恢复。生成期间将引用编码在对应排队或插队问题的末尾，避免引用滞留到下一条问题；序列化时还原为用户消息的 `details.quotes`。
 - 标准 pi 引擎队列：展示时拆出引用卡片；撤回时恢复提问草稿和引用附件；移除时连同引用一起删除。输入框和编辑重问均允许仅发送引用。
-- DeepSeek Harness 引擎：引用作为独立文字块发送，`dsh-serialize.ts` 在历史回放时还原为用户消息的 `details.quotes`；续聊、编辑和分支上下文重新编码这些引用。编码和校验共用 `server/text-quote.ts`。
+- DeepSeek Harness 引擎：引用作为独立文字块发送，`dsh-serialize.ts` 在历史回放时还原为用户消息的 `details.quotes`；续聊、编辑和分支上下文重新编码这些引用。编码和校验共用 `packages/keel/src/text-quote.ts`。
 - 回归：`tests/unit/quote-selection.test.ts`、`text-quote.test.ts` 和附件/草稿相关单元测试；构建后运行 `node tests/quote-selection-ui-test.mjs`，使用真实 Chrome 和本地模拟模型服务验证发送、刷新和编辑恢复，不访问真实模型。
 
 ## 图片问答（无工作区路径）

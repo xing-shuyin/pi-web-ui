@@ -14,13 +14,13 @@
 
 ## 事实源
 
-| 关注点                                                                                                                                      | 文件                                                                             |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| 桥接实现（`createRemoteSdkOperations`：给 SDK 的 read/write/edit/ls/find ops，`grepExecute`，终端与命令）                                   | `server/remote-ssh-service.ts` ★                                                 |
-| 本地会话目录 ↔ `ssh://…` URI 的映射与还原（`resolveWorkspaceSessionDir` / `mapResolvedPathToRemote` / `restoreWorkspaceUriFromSessionDir`） | `server/remote-ssh-service.ts` ★                                                 |
-| 图片判定（`imageMimeOfExt` / `sniffImageMime`）与嗅探字节数（`IMAGE_SNIFF_BYTES`）                                                          | `server/text-sniff.ts` ★                                                         |
-| ops 注入口（把 `remoteOps.*` 传给 `create*ToolDefinition`）                                                                                 | `server/read-tool.ts` · `server/tool-guards.ts` · `server/agent-service.ts`      |
-| 契约锚点守卫                                                                                                                                | `tests/unit/remote-ops-contract.test.ts` · `tests/unit/remote-workspace.test.ts` |
+| 关注点                                                                                                                                      | 文件                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 桥接实现（`createRemoteSdkOperations`：给 SDK 的 read/write/edit/ls/find ops，`grepExecute`，终端与命令）                                   | `server/remote-ssh-service.ts` ★                                                       |
+| 本地会话目录 ↔ `ssh://…` URI 的映射与还原（`resolveWorkspaceSessionDir` / `mapResolvedPathToRemote` / `restoreWorkspaceUriFromSessionDir`） | `server/remote-ssh-service.ts` ★                                                       |
+| 图片判定（`imageMimeOfExt` / `sniffImageMime`）与嗅探字节数（`IMAGE_SNIFF_BYTES`）                                                          | `server/text-sniff.ts` ★                                                               |
+| ops 注入口（把 `remoteOps.*` 传给 `create*ToolDefinition`）                                                                                 | `server/read-tool.ts` · `packages/keel/src/tool-guards.ts` · `server/agent-service.ts` |
+| 契约锚点守卫                                                                                                                                | `tests/unit/remote-ops-contract.test.ts` · `tests/unit/remote-workspace.test.ts`       |
 
 ## 为什么需要桥接层
 

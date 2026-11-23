@@ -194,7 +194,7 @@ GitHub Actions ubuntu-latest（`.github/workflows/ci.yml`，push/PR → main 触
 - **lint（oxlint）**：`npm run lint` 必须零警告；`lint:fix` 只修机械项。`.oxlintrc.json` 关掉的三条是故意：`no-control-regex`（文件名清洗正则）、`unicorn/no-new-array` 与 `typescript/no-this-alias`（oxlint 忽略行内 disable 注释，改写法反而伤可读性）。广播循环的 `[...set]` 拷贝是故意的（处理器可能在 emit 中途退订），行内有注释，别“优化”掉。
 - **工具提示词（发给模型的工具定义）三处职责严格分开**：`description` = 做什么 + 副作用/边界；`promptSnippet` = 触发条件（进系统提示词 `Available tools` 列表，渲染为 `- name: snippet`，所以不写工具名前缀，≤80c）；`promptGuidelines` = 何时用 / 顺序 / 禁止 / 跨工具路由。**同一条信息只说一遍**：snippet 不复述 description、guideline 不复述 description、参数说明不复述主描述；同一个 schema 块（如 SSH 凭据、连接/库参数）被多个工具用时抽共享常量（所有工具 schema 同时在上下文里，重复就是纯浪费）。操作语法参考类工具（`patch-tool`）的 op 表是唯一文档位，不拆。守卫 `tests/unit/tool-prompt-hygiene.test.ts`（CI 必跑）：纯英文 + 长度上限 + snippet 前缀/复述检测 + 同文件同义重复检测。
 - **两种实现共用一套提示词时必须单源**：同一个工具有多条执行路径（如 bash 的原生/终端/分流）时，模型看的定义只应来自一个模块（`server/tool-prompts.ts`），分流器只覆盖 `execute`。被覆盖的那份仍会被无意识地维护——它永远不发送，只会漂移。
-- 新增协议消息 → 只改 server/protocol.ts（见 `docs/architecture-core.md`「协议单源」），再在两端 dispatch/onmessage switch 各加分支。
+- 新增协议消息 → 只改 packages/keel/src/protocol.ts（见 `docs/architecture-core.md`「协议单源」），再在两端 dispatch/onmessage switch 各加分支。
 - **宿主提供的包只能声明在 `peerDependencies`（`"*"`）**：pi 扩展加载器（`resource-loader.js` 的 `collectExtensionPackageWarnings`）只扫 `dependencies` —— 命中 `@earendil-works/pi-coding-agent` / `typebox` 就警告「装下的嵌套副本会绕开扩展加载器、搞出重复运行时模块」。本包同时是「pi 扩展」与「独立服务端/CLI」，服务端子进程真的要这两个包（`server/` 下 typebox 20+ 处引用、SDK 遍布全仓），`PI_WEB_SDK=bundled` 也需要自带副本 → 它们落在 `optionalDependencies`（npm 默认照装，加载器不看这个字段；见 `package.json`）。守卫：`tests/unit/extension-host-packages.test.ts`（谁搬回 `dependencies` 就红）。
 
 ## 文档约定：AGENTS.md 只做索引

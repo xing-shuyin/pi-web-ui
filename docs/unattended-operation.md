@@ -119,12 +119,12 @@ backgroundExecutors.register({
 ### 4.1 提问与审批不再永久挂起
 
 无人值守会话 = 伪客户端会话：`plugin:<id>:<account>`、`scheduler:<id>`、`canvas*`（判定唯一来源是
-`server/client-id-utils.ts` 的 `isPseudoClientId`）。这类会话没有人在看 UI，所以：
+`packages/keel/src/client-id-utils.ts` 的 `isPseudoClientId`）。这类会话没有人在看 UI，所以：
 
-| 场景                | 行为                                                                                                                  | 事实源                                              |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `ask_user_question` | 按 `questionTimeoutSeconds`（默认 240s，设置面板可调）超时，返回 `{status:"timed_out"}`                               | `server/pending-question.ts` · `askUser()`          |
-| 工具审批            | `unattendedApprovalTimeoutMs()` 返回超时（默认 120s，`PI_WEB_UNATTENDED_APPROVAL_TIMEOUT` 可覆盖，上限 1h）→ **拒绝** | `server/tool-approval.ts` · `requestToolApproval()` |
+| 场景                | 行为                                                                                                                  | 事实源                                                         |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `ask_user_question` | 按 `questionTimeoutSeconds`（默认 240s，设置面板可调）超时，返回 `{status:"timed_out"}`                               | `packages/keel/src/pending-question.ts` · `askUser()`          |
+| 工具审批            | `unattendedApprovalTimeoutMs()` 返回超时（默认 120s，`PI_WEB_UNATTENDED_APPROVAL_TIMEOUT` 可覆盖，上限 1h）→ **拒绝** | `packages/keel/src/tool-approval.ts` · `requestToolApproval()` |
 
 两条硬约定：
 

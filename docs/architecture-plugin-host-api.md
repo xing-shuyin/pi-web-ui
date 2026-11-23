@@ -191,7 +191,7 @@ const res = await host.openSession({ roots: ["/repo/a", "/repo/b"], prompt: "先
 
 ## 注册面目录（机器可读，P2-7）
 
-类型唯一事实源 `server/protocol.ts#PluginApiCatalog`，装配 `server/plugin-api-catalog.ts`（静态 slot 例子+宿主方法表，单测锁住与源码同口径），占用者由 `PluginManager.getApiCatalog()` 现算（manifest 基线+运行时注册合并计数，只含条目数不含内容）。下发走 WS 只读查询 `plugin_api_catalog` → `plugin_api_catalog_result`（`requestId` 回显，不进快照/清单，按需拉）。给将来「AI 写插件」铺路（能力发现与执行分离，先查真实 API 再写码）；当前消费方是插件作者与后面的设置面板目录页。回归：`tests/unit/plugin-api-catalog.test.ts` + `tests/plugin-api-catalog-test.mjs`（已进 run-smoke）。
+类型唯一事实源 `packages/keel/src/protocol.ts#PluginApiCatalog`，装配 `server/plugin-api-catalog.ts`（静态 slot 例子+宿主方法表，单测锁住与源码同口径），占用者由 `PluginManager.getApiCatalog()` 现算（manifest 基线+运行时注册合并计数，只含条目数不含内容）。下发走 WS 只读查询 `plugin_api_catalog` → `plugin_api_catalog_result`（`requestId` 回显，不进快照/清单，按需拉）。给将来「AI 写插件」铺路（能力发现与执行分离，先查真实 API 再写码）；当前消费方是插件作者与后面的设置面板目录页。回归：`tests/unit/plugin-api-catalog.test.ts` + `tests/plugin-api-catalog-test.mjs`（已进 run-smoke）。
 
 
 

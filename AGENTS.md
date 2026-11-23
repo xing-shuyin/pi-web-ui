@@ -3,7 +3,7 @@
 
 > **本文件只做映射与索引，不写细则**：想知道某块能力怎么改、有哪些禁令，按下表去读 `docs/` 对应文档。
 > 新规则请写进对应 `docs/`（红线细则执行 [`docs/agent-rules.md`](docs/agent-rules.md)），**不要再往本文件堆段落**——体积与死链由 `tests/unit/agents-md.test.ts` 守卫。
-> 修改本文件后在 pi 里 `/reload`。精简前的全文备份：`AGENTS.md.bak`。
+> 修改本文件后在 pi 里 `/reload`。
 
 ## 0. 是什么
 
@@ -15,20 +15,20 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | 功能 | 事实源文件（★=唯一单源） | 文档 |
 | --- | --- | --- |
 | **文档总索引**（主题 / 权重 / 按场景阅读路线） | — | [`docs/README.md`](docs/README.md) |
-| 快照驱动 / 出帧闸 / 协议单源 / 多对话并发 | `server/snapshot-channel.ts`★ · `server/protocol.ts`★ · `server/engine-service.ts`★ · `server/agent-service.ts` · `web/src/app-globals.ts` · `web/src/types.ts`（shim） | [`architecture-core.md`](docs/architecture-core.md) |
-| 侧栏会话排序 / 用户发送置顶 / 对话↔历史行归属与身份 | `web/src/conversation-order.ts`★ · `server/conversation-rows.ts`★ · `web/src/session-identity.ts`★ · `web/src/components/LeftPanel.tsx` · `web/src/use-chat.ts` | [`architecture-ui.md`](docs/architecture-ui.md#侧栏历史会话加载) |
+| 快照驱动 / 出帧闸 / 协议单源 / 多对话并发 | `server/snapshot-channel.ts`★ · `packages/keel/src/protocol.ts`★ · `packages/keel/src/engine-service.ts`★ · `server/agent-service.ts` · `web/src/app-globals.ts` · `web/src/types.ts`（shim） | [`architecture-core.md`](docs/architecture-core.md) |
+| 侧栏会话排序 / 用户发送置顶 / 对话↔历史行归属与身份 | `web/src/conversation-order.ts`★ · `packages/keel/src/conversation-rows.ts`★ · `web/src/session-identity.ts`★ · `web/src/components/LeftPanel.tsx` · `web/src/use-chat.ts` | [`architecture-ui.md`](docs/architecture-ui.md#侧栏历史会话加载) |
 | 安全边界（loopback/Origin/Cookie/appUrl/口令落盘与限速） | `server/index.ts` · `server/auth-cookie.ts` · `server/server-config.ts` · `server/auth-throttle.ts`★ | [`architecture-core.md`](docs/architecture-core.md) · [`agent-rules.md`](docs/agent-rules.md#一通信协议与数据安全) |
-| 单源判定（路径/回包/投影/错误） | `server/path-boundary.ts`★ · `server/ws-refusal.ts`★ · `server/session-projection.ts`★ · `server/model-error.ts`★ | [`agent-rules.md`](docs/agent-rules.md#四架构与运行态约束) |
+| 单源判定（路径/回包/投影/错误） | `packages/keel/src/path-boundary.ts`★ · `server/ws-refusal.ts`★ · `packages/keel/src/session-projection.ts`★ · `packages/keel/src/model-error.ts`★ | [`agent-rules.md`](docs/agent-rules.md#四架构与运行态约束) |
 | 前端 HTTP 请求（URL + 口令 + 失败回执） | `web/src/api-client.ts`★（`requestJson` / `apiFetch` / `readApiFailure`） · `web/src/base-url.ts` · `web/src/auth-token.ts` | [`architecture-ui.md`](docs/architecture-ui.md#http-请求websrcapi-clientts-单源) |
 | 安静模式（只显示每轮最终回复 / 折叠与零痕迹） | `web/src/quiet-fold.ts`★ · `web/src/quiet-mode.ts`★ · `web/src/components/MessageList.tsx` · `web/src/components/SettingsModal.tsx` | [`architecture-ui.md`](docs/architecture-ui.md#安静模式issue-956) |
 | 随手问 / 选中文字解释 | `server/quick-ask.ts` · `web/src/quick-ask.ts` · `web/src/components/QuickAskPopover.tsx` | [`architecture-ui.md`](docs/architecture-ui.md#随手问独立小窗) |
 | 系统提示词组装 / 设置保存回执 | `server/prompt-composer.ts`★ · `web/src/settings-sync.ts`★ | [`architecture-system-prompt.md`](docs/architecture-system-prompt.md) |
-| 工具开关 / 工具提示词 / 内置工具覆盖 | `server/tool-manager.ts`★ · `server/tool-prompts.ts`★ · `server/tool-overrides.ts` · `server/bash-timeout.ts`（默认超时单源） | [`agent-rules.md`](docs/agent-rules.md#二工具定义与提示词规范) · [`tool-context-budget.md`](docs/tool-context-budget.md) |
+| 工具开关 / 工具提示词 / 内置工具覆盖 | `server/tool-manager.ts`★ · `server/tool-prompts.ts`★ · `packages/keel/src/tool-overrides.ts` · `server/bash-timeout.ts`（默认超时单源） | [`agent-rules.md`](docs/agent-rules.md#二工具定义与提示词规范) · [`tool-context-budget.md`](docs/tool-context-budget.md) |
 | 上下文预算 / 延迟加载 / 证据外置 | `server/soft-cap.ts` · `server/request-context.ts` · `server/evidence-tool-hooks.ts` · `server/context-recovery.ts` | [`tool-context-budget.md`](docs/tool-context-budget.md) |
-| **完整性单源** | `server/versioned-doc.ts`★ · `server/web-build.ts`★ | [`agent-rules.md`](docs/agent-rules.md#四架构与运行态约束) · [`architecture-kernel.md`](docs/architecture-kernel.md#31-界面资源缺失) |
-| **会话退役 / 唯一喂轮出口** | `server/session-turns.ts`★ · `server/patch-extension-runner.ts`★ · `server/extension-guards.ts`★ · `server/agent-service.ts`（按会话去重计数） | [`architecture-core.md`](docs/architecture-core.md#会话退役与扩展运行态958) |
+| **完整性单源** | `packages/keel/src/versioned-doc.ts`★ · `server/web-build.ts`★ | [`agent-rules.md`](docs/agent-rules.md#四架构与运行态约束) · [`architecture-kernel.md`](docs/architecture-kernel.md#31-界面资源缺失) |
+| **会话退役 / 唯一喂轮出口** | `packages/keel/src/session-turns.ts`★ · `server/patch-extension-runner.ts`★ · `server/extension-guards.ts`★ · `server/agent-service.ts`（按会话去重计数） | [`architecture-core.md`](docs/architecture-core.md#会话退役与扩展运行态958) |
 | **压缩期入站投递** | `server/conversation-delivery.ts`★ · `server/agent-service.ts` | [`architecture-runtime.md`](docs/architecture-runtime.md#压缩期的入站投递一个门一个队列一个排空点issues929) |
-| 工具审批门禁与规则库 | `server/tool-approval.ts` | [`architecture-runtime.md`](docs/architecture-runtime.md#审批队列与共享展示) |
+| 工具审批门禁与规则库 | `packages/keel/src/tool-approval.ts` | [`architecture-runtime.md`](docs/architecture-runtime.md#审批队列与共享展示) |
 | 桌面更新（状态机 / 单源结论） | `desktop/updater.ts`★ · `desktop/main.ts` · `desktop/preload.cts` · `web/src/desktop-updater.ts` · `web/src/update-verdict.ts`★ · `web/src/components/UpdateModal.tsx` | [`architecture-desktop-update.md`](docs/architecture-desktop-update.md) |
 | 桌面更新演进（壳/运行时双层 · 自有密钥 · 回滚） | 设计稿（P0 未落地），现有落点 `desktop/updater.ts` · `desktop/main.ts` | [`architecture-desktop-runtime.md`](docs/architecture-desktop-runtime.md) |
 | Windows 系统集成（默认浏览器 / 文件关联 / 双击打开） | `desktop/system-integration.ts`★ · `desktop/main.ts` · `desktop/preload.cts` · `web/src/components/DesktopAppSettings.tsx` · `plugins/office/index.mjs`（工作区外/远程文档） | [`architecture-system-integration.md`](docs/architecture-system-integration.md) |
@@ -38,15 +38,15 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | 自定义新标签页 / 主题覆盖（`browser_design`） | `browser/runtime/customize.ts`★ · `browser/runtime/manager.ts` · `desktop/browser-host.ts` · `server/browser-design-tool.ts` | [`architecture-browser.md`](docs/architecture-browser.md#自定义新标签页与主题覆盖用户改--agent-设计) |
 | 左上角设备浮层（列表 / 手机抽屉） | `web/src/components/DevicePanel.tsx`★ · `BrandDeviceMenu.tsx` · `DeviceDirectory.tsx` · `use-coarse-pointer.ts` · `styles.css`（`.dp-*`） | [`device-center.md`](docs/device-center.md#左上角设备浮层桌面浮层--手机抽屉) |
 | 手机 App / 多设备切换 / 原生通知 | `mobile/` · `web/src/mobile-runtime.ts` · `server/mobile-push.ts` · `server/device-center/hub-mobile.ts` | [`mobile.md`](docs/mobile.md) |
-| 终端 PTY / 原生 CLI / bash 接管 / SCM | `server/terminals.ts` · `server/terminal-query.ts`（终端查询/回话单源） · `server/native-cli.ts` · `server/engine-catalog.ts`★ · `server/engine-cli.ts` · `web/src/components/NativeCliPanel.tsx` · `web/src/components/BottomDock.tsx` · `web/src/components/TerminalPanel.tsx` · `web/src/components/SCMPanel.tsx` | [`architecture-terminal.md`](docs/architecture-terminal.md) |
+| 终端 PTY / 原生 CLI / bash 接管 / SCM | `server/terminals.ts` · `server/terminal-query.ts`（终端查询/回话单源） · `server/native-cli.ts` · `packages/keel/src/engine-catalog.ts`★ · `server/engine-cli.ts` · `web/src/components/NativeCliPanel.tsx` · `web/src/components/BottomDock.tsx` · `web/src/components/TerminalPanel.tsx` · `web/src/components/SCMPanel.tsx` | [`architecture-terminal.md`](docs/architecture-terminal.md) |
 | 终端右键引用（终端 / 输出文字） | `web/src/terminal-quote.ts`★ · `web/src/components/TerminalPanel.tsx`（标签/输出两处右键） · `web/src/components/TerminalContextMenu.tsx` · `server/attachments.ts`（`mode: "terminal"` → `<terminal-ref>`） · `server/terminals.ts`（`resolveExternal` 只读读用户标签） | [`architecture-terminal.md`](docs/architecture-terminal.md#终端右键引用终端对象与引用输出文字) |
-| 命令执行防卡死 / 硬超时 / 后台托管 / Windows 批处理 shim 解析 | `server/job-runner.ts`★（`bash({background:true})` job）· `scripts/safe-exec.mjs`（源码仓库 / CI 执行器）· `server/process-utils.ts`（`killPidTree`）· `server/command-spawn.ts`（用户给的命令 + 参数 → 可 spawn 的 `{file,args}`，npm `.cmd` shim 还原成 `node <entry>`） | [`development.md`](docs/development.md#命令执行防卡死) · [`agent-rules.md`](docs/agent-rules.md#七终端命令执行防卡死) |
+| 命令执行防卡死 / 硬超时 / 后台托管 / Windows 批处理 shim 解析 | `server/job-runner.ts`★（`bash({background:true})` job）· `scripts/safe-exec.mjs`（源码仓库 / CI 执行器）· `server/process-utils.ts` · `server/command-spawn.ts` | [`development.md`](docs/development.md#命令执行防卡死) · [`agent-rules.md`](docs/agent-rules.md#七终端命令执行防卡死) |
 | 附件 / 图片预览 / OCR / 标注 / 系统截图 | `server/file-save.ts` · `web/src/components/ImageLightbox.tsx` · `plugins/image-ocr/` · `server/system-screenshot.ts` · `server/system-screenshot-macos.ts` | [`architecture-attachments.md`](docs/architecture-attachments.md) |
-| 插件体系 / UI 插槽 / MCP 项目运行态 | `server/plugins.ts` · `web/src/ui-slots.ts`★ · `server/mcp-project-runtime.ts` · `server/command-spawn.ts`（MCP command 解析） | [`architecture-plugins.md`](docs/architecture-plugins.md) · [`architecture-plugin-ui.md`](docs/architecture-plugin-ui.md) · [`architecture-plugin-host-api.md`](docs/architecture-plugin-host-api.md) |
+| 插件体系 / UI 插槽 / MCP 项目运行态 | `server/plugins.ts` · `web/src/ui-slots.ts`★ · `server/mcp-project-runtime.ts` · `server/command-spawn.ts` | [`architecture-plugins.md`](docs/architecture-plugins.md) · [`architecture-plugin-ui.md`](docs/architecture-plugin-ui.md) · [`architecture-plugin-host-api.md`](docs/architecture-plugin-host-api.md) |
 | 插件物化 / 状态目录 | `server/plugin-paths.ts`★ · `server/plugin-materialize.ts`★ · `server/fs-copy.ts`★ | [`architecture-plugins.md`](docs/architecture-plugins.md#插件目录代码是纯缓存状态独立存放plugin-pathsts--plugin-materializets) |
 | 统一 TTS / 系统语音 / 插件音色 / QQ 语音回复 | `server/tts-service.ts`★ · `server/tts-system.ts` · `server/tts-routes.ts` · `web/src/tts-client.ts` · `plugins/qq/voice.mjs` | [`architecture-tts.md`](docs/architecture-tts.md) |
-| 子代理 / 对话通信 / 工作树 / 过户 | `server/subagents.ts` · `server/conversation-identity.ts` · `#take_over_conversation` | [`architecture-runtime.md`](docs/architecture-runtime.md) · [`architecture-core.md`](docs/architecture-core.md) · [`root-cause-boundaries.md`](docs/root-cause-boundaries.md) |
-| 目标模式 2.0 / 委派 / 计划模式 | `server/goal-service.ts` · `server/delegate-mode.ts` · `server/plan-mode.ts` | [`goal-conversation-design.md`](docs/goal-conversation-design.md) · [`agent-rules.md`](docs/agent-rules.md#四架构与运行态约束) |
+| 子代理 / 对话通信 / 工作树 / 过户 | `packages/keel/src/subagents.ts` · `server/conversation-identity.ts` · `#take_over_conversation` | [`architecture-runtime.md`](docs/architecture-runtime.md) · [`architecture-core.md`](docs/architecture-core.md) · [`root-cause-boundaries.md`](docs/root-cause-boundaries.md) |
+| 目标模式 2.0 / 委派 / 计划模式 | `server/goal-service.ts` · `packages/keel/src/delegate-mode.ts` · `packages/keel/src/plan-mode.ts` | [`goal-conversation-design.md`](docs/goal-conversation-design.md) · [`agent-rules.md`](docs/agent-rules.md#四架构与运行态约束) |
 | 无人值守 / 常驻执行者 / `alwaysOn` 插件 | `server/background-executors.ts`★ · `server/plugins.ts` · `manifest.alwaysOn` | [`unattended-operation.md`](docs/unattended-operation.md) |
 | DSH 预设 / 问卷 / 底栏统计 | `server/dsh-*.ts` · `server/dsh/dsh-usage.ts` | [`dsh-engine.md`](docs/dsh-engine.md) |
 | 沙盒工作区 | `docs/architecture-sandbox.md` 列出的执行会话身份链 | [`architecture-sandbox.md`](docs/architecture-sandbox.md) |
@@ -87,13 +87,13 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | **服务端/运行态** | 会话过户必须事务性回滚；跨 await 用稳定身份，禁读 active | `takeover-rollback-test` |
 | **服务端/运行态** | 工作区命令（set_cwd/new_chat/switch_*/沙盒）一律走 `server/workspace-queue.ts` 队列；`new_chat.cwd` 切不过去就不建会话 | `workspace-queue` · `pending-workspace` |
 | **服务端/运行态** | 服务端禁同步子进程（`spawnSync`/`execSync`/`execFileSync`），热路径改异步 spawn 或静态推导 | `sync-child-process-guard` |
-| **服务端/运行态** | 版本化存储读写只走 `server/versioned-doc.ts`（认不出就拒写、不写回） | `versioned-doc-single-source` |
+| **服务端/运行态** | 版本化存储读写只走 `packages/keel/src/versioned-doc.ts`（认不出就拒写、不写回） | `versioned-doc-single-source` |
 | **服务端/运行态** | 远期定时器 >6h 必须 `armDelay` 分片；预设分享必须白名单净化 + dryRun | `plugin-cron-overflow-test` · `preset-share` |
 | **前端/样式** | 强调色/语义色实底文字走 `--accent-contrast` / `--on-*`；主题文字令牌有对比度下限 | `accent-contrast` · `semantic-contrast` · `theme-text-contrast` |
 | **前端/样式** | 长文本/路径防溢出三件套；独立浮层才可 `overscroll-behavior: contain`；卡头只放自身复制键 | `text-wrap` · `messages-behind-composer` |
 | **前端/样式** | 叠栈浮层禁写死 z-index，一律 `useOverlayZIndex()`；输入框上带子单源 `--composer-strip`，禁把短语行改回 `absolute` | `overlay-stack` · `messages-behind-composer` |
-| **服务端/运行态** | 喂一轮只有 `server/session-turns.ts` 一个出口：禁直连 `sendUserMessage` / `session.steer` / `session.prompt`；退役会话必须 fail-closed | `session-turn-single-source` |
-| **前端/状态** | 左栏「运行中对话 / 历史会话」行归属只由 `server/conversation-rows.ts`（`rowKind`）裁定、身份只走 `web/src/session-identity.ts`，禁在组件里另写临时键 | `session-identity` · `conversation-row-declared` |
+| **服务端/运行态** | 喂一轮只有 `packages/keel/src/session-turns.ts` 一个出口：禁直连 `sendUserMessage` / `session.steer` / `session.prompt`；退役会话必须 fail-closed | `session-turn-single-source` |
+| **前端/状态** | 左栏「运行中对话 / 历史会话」行归属只由 `packages/keel/src/conversation-rows.ts`（`rowKind`）裁定、身份只走 `web/src/session-identity.ts`，禁在组件里另写临时键 | `session-identity` · `conversation-row-declared` |
 | **插件/依赖** | 宿主提供的包只进 `peerDependencies`（子进程副本进 `optionalDependencies`） | `extension-host-packages` |
 | **插件/依赖** | 复制黑名单只走 `server/fs-copy.ts` 按相对路径判定；插件代码目录可重建、状态只住 `plugin-data/<id>/` | `plugin-copy-single-source` · `plugin-bundled` |
 | **插件/依赖** | 插件市场 builtin 清单 `plugins/catalog.json` 只收本仓库 `plugins/<id>` 自带的插件；第三方插件登记到社区清单仓库 | `plugin-catalog-builtin-scope` |

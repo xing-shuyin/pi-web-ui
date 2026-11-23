@@ -28,4 +28,4 @@
 
 回归必须覆盖：源项目独立新增和修改、双方冲突、删除与类型变化、预览过期、目标软链接/junction、并发创建、持久化失败、注册身份失效、运行中重置与销毁、父子权限继承、终端和未知工具旁路，以及不支持隔离的引擎拒绝启动。
 
-核心实现位于 `server/sandbox-service.ts`、`server/sandbox-tool.ts` 和各引擎会话入口。协议位于 `server/protocol.ts`，前端入口为 `web/src/components/SandboxModal.tsx`。
+核心实现位于 `server/sandbox-service.ts`、`server/sandbox-tool.ts` 和各引擎会话入口。协议位于 `packages/keel/src/protocol.ts`，前端入口为 `web/src/components/SandboxModal.tsx`。

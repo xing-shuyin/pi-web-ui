@@ -22,9 +22,9 @@
   - [只停止 bash 命令（对话继续）](#只停止-bash-命令对话继续)
   - [edit 的 soft 参数（原 edit_soft 已合并进来）](#edit-的-soft-参数原-editsoft-已合并进来)
   - [read 覆盖：路径是目录时列出目录条目（`server/read-tool.ts`）](#read-覆盖路径是目录时列出目录条目serverread-toolts)
-  - [覆盖与第三方扩展同名工具共存（`server/tool-overrides.ts`）](#覆盖与第三方扩展同名工具共存servertool-overridests)
-  - [审查者模式：自动委派（`server/delegate-mode.ts`）](#审查者模式自动委派serverdelegate-modets)
-  - [计划模式：只规划不实施（`server/plan-mode.ts`）](#计划模式只规划不实施serverplan-modets)
+  - [覆盖与第三方扩展同名工具共存（`packages/keel/src/tool-overrides.ts`）](#覆盖与第三方扩展同名工具共存packageskeelsrctool-overridests)
+  - [审查者模式：自动委派（`packages/keel/src/delegate-mode.ts`）](#审查者模式自动委派packageskeelsrcdelegate-modets)
+  - [计划模式：只规划不实施（`packages/keel/src/plan-mode.ts`）](#计划模式只规划不实施packageskeelsrcplan-modets)
   - [模型操作浏览器页面（`browser_page` 工具）](#模型操作浏览器页面browserpage-工具)
   - [扩展 UI 桥](#扩展-ui-桥)
   - [Durable 引擎的数据来源：只认 AgentEvent，不读 `pi.live` 槽位（`server/durable/durable-event-projector.ts`）](#durable-引擎的数据来源只认-agentevent不读-pilive-槽位serverdurabledurable-event-projectorts)
@@ -73,11 +73,11 @@
 
 ## 子代理完成证据、结算边沿与派发预算
 
-子代理自述「做完了」不算证据。`conversation(action="complete")` 除 `summary` 外要求同时给 `evidence`：`{files:[], commands:[]}`（改过的文件、跑过的验证命令）、`{none:true}`（只读任务，声明没有文件改动）或 `{blocked:"原因"}`（做不完，如实报）。归一只在 `server/subagent-evidence.ts`：路径按 `/` 归一、命令压空白、去重并限量（50 文件 / 20 命令 / 单条 400 字符），空对象判非法。
+子代理自述「做完了」不算证据。`conversation(action="complete")` 除 `summary` 外要求同时给 `evidence`：`{files:[], commands:[]}`（改过的文件、跑过的验证命令）、`{none:true}`（只读任务，声明没有文件改动）或 `{blocked:"原因"}`（做不完，如实报）。归一只在 `packages/keel/src/subagent-evidence.ts`：路径按 `/` 归一、命令压空白、去重并限量（50 文件 / 20 命令 / 单条 400 字符），空对象判非法。
 
 对账不接受自述：`collectTranscriptFacts()` 从子代理自己的转录里抽**真改过的文件**（写入类工具调用的 path/file_path/paths/files，名单复用 `subagent-security-gate.ts` 的 `SUBAGENT_WRITE_TOOL_NAMES`）与**真跑过的命令**（bash/powershell 调用的 command、`bashExecution` 的 command+exitCode、`toolResult.isError` 回落标失败）。只有可证伪的冲突才驳回：声称跑过的命令在转录里找不到 / 那条命令在转录里失败 / 声称 `none` 但转录有写入；改过但未声明的文件、声称改过却找不到写入调用的文件只记疑点并降级 `partial`（bash 里 `sed`/`mv` 也会改文件，不能一票否决）。驳回时 `complete` 抛错并把矛盾列给子代理，让它先修正再登记；通过后证据存到 `conv.subagentEvidence`，裁决 `pass / partial / unverified / blocked` 随 `wait_all`、`get_result`、`list`、完成通知（`subagent-notify.ts`）一并呈现；同一裁决经 `ConversationSummary.subagentVerdict` 进左栏，`unverified / partial / blocked` 显示证据角标（`pass` 不占位），别让「没验证」看起来像「已验证」。缺证据不阻塞收口，但状态必须显示 `unverified`，父代理据此决定是否复核——宁可显式未验证，不要假成功。
 
-`wait_all` 不再轮询。`server/subagent-settle.ts` 的 `SubagentSettleRegistry` 只提供**边沿**：运行 id 变化即唤醒订阅者，等待方醒来重算是否真的收口（并重扫新派生的后代与待交付请示）。`agent-service` 在回合结束、停止、移出、问卷队列变化、完成通知投递状态变化处 `notify/notifyAll`，`dispose` 时 `shutdown`。单次等待切片 30s，等待上限仍由看门狗 cap 决定；通用引擎（`universal-session.ts`）用自身的子代理监听实现同一接口，语义一致。判定「已收口」只有一条：拿不到快照（已移出/已结束回收）或显式终态，等待与「还剩谁」共用 `isSettled`，避免出现「全都完成了却报还有人在跑」。
+`wait_all` 不再轮询。`packages/keel/src/subagent-settle.ts` 的 `SubagentSettleRegistry` 只提供**边沿**：运行 id 变化即唤醒订阅者，等待方醒来重算是否真的收口（并重扫新派生的后代与待交付请示）。`agent-service` 在回合结束、停止、移出、问卷队列变化、完成通知投递状态变化处 `notify/notifyAll`，`dispose` 时 `shutdown`。单次等待切片 30s，等待上限仍由看门狗 cap 决定；通用引擎（`universal-session.ts`）用自身的子代理监听实现同一接口，语义一致。判定「已收口」只有一条：拿不到快照（已移出/已结束回收）或显式终态，等待与「还剩谁」共用 `isSettled`，避免出现「全都完成了却报还有人在跑」。
 
 一次调用可以扇出：`spawn` 的 `tasks[]` 一次派多个，先整批校验（prompt、key 形状与唯一性、模板可用、思考档位、隔离模式）再启动，一个不合法就一个都不启动；单批上限 `SUBAGENT_FANOUT_MAX = 16`，启动并发窗口 4（不与并发上限抢名额）。每个 task 可带 `key`（字母数字与 `_.-`，≤40），工具把 `key → 运行身份` 记在**本对话工具实例**的有界表（256 项）里，`wait_all / get_result / steer / stop` 的 `runIds` 接受 key 或真实 id。`steer` 回执区分 `delivered`（送进当前回合）/ `queued`（门关着，已挂起，门一开必定开新一轮）/ `restarted`（本来空闲，同会话开新一轮）/ `missed`（没有可投递通道），父代理不必猜。
 
@@ -85,7 +85,7 @@
 
 ## 运行账本与重启续跑
 
-子代理的工作不能因为重启就消失。`server/subagent-ledger.ts` 把每次派发落到 `<dataDir>/subagent-runs/<runId>/`：
+子代理的工作不能因为重启就消失。`packages/keel/src/subagent-ledger.ts` 把每次派发落到 `<dataDir>/subagent-runs/<runId>/`：
 
 ```
 status.json     机器可读的当前状态（原子替换，最后写者胜）
@@ -116,7 +116,7 @@ events.jsonl    追加式生命周期流水（有字节上限，截断后只留�
 
 ## 引擎与原生 CLI 的共用检测
 
-`server/engine-catalog.ts` 是引擎 ID、包名、安装命令和独立 CLI 能力的单源，供引擎管理、协议类型和 CLI 工作台使用。`server/engine-cli.ts` 统一解析 PATH、常见安装目录和全局包的 `package.json.bin`，并生成不经过 shell 的 `{file, args}`；版本探针、Claude/Codex 驱动与原生 PTY 都使用这份结果，不再各自维护路径查找逻辑。全局包位置继续复用 `global-loader.ts`，只安装库或残缺 bin 不代表存在可启动的 CLI。
+`packages/keel/src/engine-catalog.ts` 是引擎 ID、包名、安装命令和独立 CLI 能力的单源，供引擎管理、协议类型和 CLI 工作台使用。`server/engine-cli.ts` 统一解析 PATH、常见安装目录和全局包的 `package.json.bin`，并生成不经过 shell 的 `{file, args}`；版本探针、Claude/Codex 驱动与原生 PTY 都使用这份结果，不再各自维护路径查找逻辑。全局包位置继续复用 `global-loader.ts`，只安装库或残缺 bin 不代表存在可启动的 CLI。
 
 引擎的 SDK/运行时可用性与独立 CLI 能力分别判断：Pi/DSH/Durable 可通过 SDK 或运行树工作；Pi Durable 没有独立 CLI；DSH 的 `dsh` 需要 profile，不能假设其包含默认终端界面。CLI 工作台的能力与启动约束见 [终端架构](architecture-terminal.md#原生-cli-工作台)。单项和批量引擎探测使用同一登记表与 TTL 缓存。
 
@@ -163,7 +163,7 @@ events.jsonl    追加式生命周期流水（有字节上限，截断后只留�
 
 #### 1. 自定义规则库与匹配引擎（`<dataDir>/approval-rules.json`）
 
-规则由 `server/approval-rules.ts` 的 `ApprovalRulesStore` 持久化，所有客户端全局共享。规则在设置面板「审批规则」页可视化编辑与排序，按列表顺序自顶向下匹配，首个命中生效：
+规则由 `packages/keel/src/approval-rules.ts` 的 `ApprovalRulesStore` 持久化，所有客户端全局共享。规则在设置面板「审批规则」页可视化编辑与排序，按列表顺序自顶向下匹配，首个命中生效：
 
 - **适用工具**（tools）：支持单工具（如 `bash`）、多工具组合（如 `["write", "edit", "patch"]`）或通配 `*`；
 - **检查字段**（field）：`command`（命令字符串）、`path`（目标文件路径：认 `path` / `file_path` / `file` 三种写法，见 `extractTargetPath()`，扩展实现如 pi-better-edit 的 `edit` 用 `file`）、`params`（完整参数 JSON 字符串）；
@@ -181,7 +181,7 @@ events.jsonl    追加式生命周期流水（有字节上限，截断后只留�
 
 #### 2. 三档放行策略（运行时快速免问）
 
-门禁统一在 `ClientSession.askApproval` 入口（纯函数 `approvalSuppressionReason(policy, enabled, categoryId)`，`server/tool-approval.ts`，单测 `tests/unit/tool-approval.test.ts`）：
+门禁统一在 `ClientSession.askApproval` 入口（纯函数 `approvalSuppressionReason(policy, enabled, categoryId)`，`packages/keel/src/tool-approval.ts`，单测 `tests/unit/tool-approval.test.ts`）：
 
 1. **全局关**：设置 →「工具」页的「工具执行审批」总开关（`ClientSettings.toolApprovalEnabled`，默认开，纯运行开关不进预设）。关掉后一切审批都不弹——内置高危检测直接放行、插件 pre guard 的 `ask` 也按放行处理（`withToolGuard` 的 `ask` 分支只改 `needApproval`，最终都经 `askApproval` 定夺）；开关被关掉的那一刻，挂着的待审批项由 `autoApprovePendingApprovals` 全部按批准放行（不让人对着弹窗干等）。
 2. **本对话全部允许**（弹窗按钮，`tool_approval_response.scope = "all"`）：该对话后续任何高危操作都不再询问。
@@ -238,9 +238,9 @@ SDK 内置 `read` 只处理文件（`read("server")` 直接 `EISDIR: illegal ope
 
 参数上额外接受 `file_path` 作为 `path` 的别名（部分客户端/模型习惯发 `file_path`）：schema 里 `path` 仍必填，靠 `prepareArguments` 在校验前把只有 `file_path` 的调用归一成 `path`（两者都给时 `path` 为准），转发内置实现时也带上归一后的 `path`。前端工具卡头的路径提示（`web/src/tool-args.ts`）本来就同时认这两个名（SDK 自带 renderers 亦然）。
 
-**基底也可能是第三方扩展注册的 `read` 或 `bash`**：SDK 的合并链是 `[...扩展注册的工具, ...customTools]` 逐个后写赢，所以覆盖层若直接进创建时的 `customTools` 就会**静默顶掉**扩展的同名工具 —— 而官方 `docs/extensions.md` §Overriding Built-in Tools 明写扩展可以覆盖 `read`/`bash`/`edit`/`write` 等。因此 `bash` / `read` / `write` / `edit` 四处覆盖**不在创建时注册**，改由 `server/tool-overrides.ts` 在会话建好后注入，基底优先取扩展实现 —— 详见下一节「覆盖与第三方扩展同名工具共存」。
+**基底也可能是第三方扩展注册的 `read` 或 `bash`**：SDK 的合并链是 `[...扩展注册的工具, ...customTools]` 逐个后写赢，所以覆盖层若直接进创建时的 `customTools` 就会**静默顶掉**扩展的同名工具 —— 而官方 `docs/extensions.md` §Overriding Built-in Tools 明写扩展可以覆盖 `read`/`bash`/`edit`/`write` 等。因此 `bash` / `read` / `write` / `edit` 四处覆盖**不在创建时注册**，改由 `packages/keel/src/tool-overrides.ts` 在会话建好后注入，基底优先取扩展实现 —— 详见下一节「覆盖与第三方扩展同名工具共存」。
 
-### 覆盖与第三方扩展同名工具共存（`server/tool-overrides.ts`）
+### 覆盖与第三方扩展同名工具共存（`packages/keel/src/tool-overrides.ts`）
 
 pi-web-ui 覆盖了 SDK 内置 `bash` / `read` / `write` / `edit`。SDK 的注册表合并链是 `allCustomTools = [...扩展注册的工具, ...customTools]` 再逐个 `definitionRegistry.set(name, …)` —— **后写赢**：创建时把覆盖塞进 `customTools`，等于让 `docs/extensions.md`「扩展可覆盖内置工具」那句承诺失效（第三方扩展的同名工具永远轮不到，且审查/沙盒类扩展被彻底架空，例如 `@buyong/pi-codex-auto-review` 的 bash 审查完全不触发，命令直接裸奔，issue #750）。
 
@@ -252,11 +252,11 @@ pi-web-ui 覆盖了 SDK 内置 `bash` / `read` / `write` / `edit`。SDK 的注�
 
 四条不变量：① 扩展那份实现的 schema / 描述 / prompt 指引 / 渲染不被替换（扩展独有参数如 better-edit 的 `windows` 照旧可用）；② 覆盖项前置 ⇒ pi-web-ui **插件**注册的同名工具（也是 customTools、比覆盖层后写）仍是最后赢家，与改动前的相对顺序一致；③ 重复注入幂等（同名先剔除再前置）；④ 会话对象形状不符（SDK 改私有字段名）返回 `null`，按「覆盖没装上」降级（等价改动前行为，不会更差）；`extensionRunner` 缺失时同样退回内置基底。
 
-`extractTargetPath()`（`server/approval-rules.ts`）：权限沙箱与审批规则要按「目标文件」判定，必须认三种写法 —— SDK 内置用 `path`、`read` 有 `file_path` 别名、部分扩展（`pi-better-edit` 的 `edit`）用 `file`；只认 `path` 会在叠上扩展实现后取到空串、被判成工作区内而**静默放行**。规则引擎的 `path` 字段走同一个函数。
+`extractTargetPath()`（`packages/keel/src/approval-rules.ts`）：权限沙箱与审批规则要按「目标文件」判定，必须认三种写法 —— SDK 内置用 `path`、`read` 有 `file_path` 别名、部分扩展（`pi-better-edit` 的 `edit`）用 `file`；只认 `path` 会在叠上扩展实现后取到空串、被判成工作区内而**静默放行**。规则引擎的 `path` 字段走同一个函数。
 
 开关仍是行为开关（`readDirEnabled`），不进 `tool-manager.ts` 的 `AGENT_TOOL_CATALOG`；DSH 引擎无 customTool 注册面，不接。工具定义提示词遵循纯英文约定（`tests/unit/tool-prompt-hygiene.test.ts`）。回归：`tests/unit/tool-overrides.test.ts`（基底解析 / 前置顺序 / 幂等 / 降级）、`tests/unit/read-dir.test.ts`（`withReadDirSupport` 的 schema、描述、转发与目录分支）、`tests/unit/approval-rules.test.ts`（`extractTargetPath` 与规则字段）。
 
-### 审查者模式：自动委派（`server/delegate-mode.ts`）
+### 审查者模式：自动委派（`packages/keel/src/delegate-mode.ts`）
 
 「强制 AI 开持久子代理」的服务端实现，形态是**会话级开关 + 全自动路由 + 纯委派闸门**（默认关）：
 
@@ -270,7 +270,7 @@ pi-web-ui 覆盖了 SDK 内置 `bash` / `read` / `write` / `edit`。SDK 的注�
 
 落盘执行对话持有普通对话 runtime，与目标模式的执行对话共用项目计数。默认不限数量；只有显式配置 `PI_WEB_MAX_OPEN_CONVERSATIONS` 后，满员时派活才会抛错并提示关掉模式或先释放名额。
 
-### 计划模式：只规划不实施（`server/plan-mode.ts`）
+### 计划模式：只规划不实施（`packages/keel/src/plan-mode.ts`）
 
 目标条**展开行**里有个 **计划** 按钮（`host:goal-plan` 槽位，DSH 引擎不渲染 —— 它没有 customTools 注册面，闸门无处可挂）。它经历了两次调整：① 从输入框工具条的开关（`host:composer-plan`）搬进目标条 —— 语义是「拿你在这个框里写的输入去做规划」，与目标同属一条线，所以只挂编辑行、**不进折叠药丸**；② 现行为**「下一次设目标时顺带开计划模式」的一次性修饰**：按钮的按下态可见（`aria-pressed` → `.goalbar-btn.action[aria-pressed="true"]`，见 `styles.css`），`set_goal` / `start_goal_wizard` 发出后立刻 `setGoalPlan(false)` 消费掉，避免出现「按钮亮着但闸门没开」的第二个真相源（历史上曾短暂改成「点一下直接发」的一次性动作，但目标撰写态里的草稿是**目标文本**、走 `set_goal`，没有独立的 `prompt` 出口，直接发会把目标当成普通消息，故未采用）。目标模式被关掉（`goalModeEnabled=false`，整条目标区不渲染）时它也跟着一起隐藏。闸门本身仍是会话级、热生效：开启后**本对话只调研 + 出实施计划，不做任何改动**，产物是 `plan_update` 步骤看板（PlanBoard）+ 计划正文。**关闸门的唯一出口是计划看板里的「开始实施」**（PlanBoard.tsx：`set_plan_mode{false}` + 发一条实施请求）—— 删掉开关语义后必须补这个出口，否则进得去出不来。**与目标模式正交**：目标模式是「让执行者把目标做完」，计划模式是「先别动，把方案给我」。
 

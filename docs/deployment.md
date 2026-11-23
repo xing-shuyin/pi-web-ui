@@ -46,7 +46,7 @@ PI_WEB_ENGINE=dsh pi-web-ui --port 9000 --cwd /path   # 环境变量后备
 ```
 
 - **运行中可切换**：界面中的引擎选择器可在 pi、DSH、Claude Code、Codex 与 Durable 间切换；启动参数设置默认引擎。
-- **共用界面协议**：各引擎共用 `server/protocol.ts`，支持的目标、审查、工具及会话操作由能力声明控制。
+- **共用界面协议**：各引擎共用 `packages/keel/src/protocol.ts`，支持的目标、审查、工具及会话操作由能力声明控制。
 - DSH 架构与差异见 `docs/dsh-engine.md`。
 - **Codex**：先运行 `npm i -g @openai/codex` 和 `codex login`，然后在选择器中切换，或使用 `pi-web-ui --engine codex --cwd /path` 启动。沿用本机 Codex 配置与认证；详情见 `docs/architecture-runtime.md` 的 Codex CLI 引擎章节。
 

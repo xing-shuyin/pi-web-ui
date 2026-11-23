@@ -206,7 +206,7 @@ slot 框架的原则是「插件声明、宿主渲染」——插件碰不到宿
 ## UI 扩展点（slot 框架，issue #146）
 
 插件对宿主 UI 的贡献走**声明式挂载点（slot）**：插件只声明「有什么条目、想放哪儿」，渲染 / 排序 /
-溢出 / 可访问性全部归宿主，**插件不碰 DOM**。契约在 `server/protocol.ts`（`UiSlotId` /
+溢出 / 可访问性全部归宿主，**插件不碰 DOM**。契约在 `packages/keel/src/protocol.ts`（`UiSlotId` /
 `UiContribution` / `UiArrangeOp` / `UiPluginUi` / `UiLayoutPrefs` / `UiSlotSpec`），服务端解析与运行时注册在
 `server/plugins.ts`（`parseUiItem` / `parseUiContributions` / `parseUiArrange` / `UI_SLOTS` /
 `UI_SLOT_ALIASES`），前端合并引擎是 `web/src/ui-slots.ts` 的 `buildUiSlots()`（纯函数，有单测）。

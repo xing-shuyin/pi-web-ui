@@ -99,7 +99,7 @@ v0.116.0 的旧 `task-recovery-outbox.json` 在完成时未保存 leaseToken/gen
 
 ## 8. 交付与审查（交付 ≠ 验收）
 
-群组开发交付独立于执行状态：`completed` 不代表验收通过。交付与审查协议统一在 `server/protocol.ts`，Bot 交付必须绑定自身运行任务、稳定对话及完整提交 SHA；审查绑定交付 ID 与 SHA，禁止 Bot 自审，新版本不得沿用旧版本验收。检查来源固定为 `bot_reported`，不得声称宿主或 CI 已验证，不自动执行声明的命令或合并。人类可启动独立集成流水线：目标设备固定 Bot 工作区创建隔离预合并，显式选择验证命令，最后确认按目标 SHA 原子更新；目标分支在任何工作树被检出时拒绝，禁止 hard reset 或自动推送，集成会话与操作代次须持久并绑定 exact delivery/review/Bot revision。交付/审查先持久化，幂等冲突明确拒绝，有界历史不得静默淘汰。详情见 [`device-center.md`](device-center.md)，完整回归 `tests/device-project-collaboration-test.mjs`。
+群组开发交付独立于执行状态：`completed` 不代表验收通过。交付与审查协议统一在 `packages/keel/src/protocol.ts`，Bot 交付必须绑定自身运行任务、稳定对话及完整提交 SHA；审查绑定交付 ID 与 SHA，禁止 Bot 自审，新版本不得沿用旧版本验收。检查来源固定为 `bot_reported`，不得声称宿主或 CI 已验证，不自动执行声明的命令或合并。人类可启动独立集成流水线：目标设备固定 Bot 工作区创建隔离预合并，显式选择验证命令，最后确认按目标 SHA 原子更新；目标分支在任何工作树被检出时拒绝，禁止 hard reset 或自动推送，集成会话与操作代次须持久并绑定 exact delivery/review/Bot revision。交付/审查先持久化，幂等冲突明确拒绝，有界历史不得静默淘汰。详情见 [`device-center.md`](device-center.md)，完整回归 `tests/device-project-collaboration-test.mjs`。
 
 ## 9. 远程桌面
 

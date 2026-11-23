@@ -26,7 +26,7 @@ TUI 通过 `tui-overlay-bridge.ts` 在代码下载期间按顺序缓冲 ANSI 输
 
 ## 历史转录修复
 
-`server/compaction-markers.ts` 的环检测为已完成路径建立集合。后续节点抵达已完成路径即可停止，避免健康长链反复向根回溯，将此步骤从 O(N²) 降到 O(N)，额外空间 O(N)。其他转录解析与 SDK 初始化成本仍然存在。
+`packages/keel/src/compaction-markers.ts` 的环检测为已完成路径建立集合。后续节点抵达已完成路径即可停止，避免健康长链反复向根回溯，将此步骤从 O(N²) 降到 O(N)，额外空间 O(N)。其他转录解析与 SDK 初始化成本仍然存在。
 
 测试对照旧算法穷举 1,296 种四节点父图，验证断环位置和统计一致；长链通过 Map 查找次数上界检查复杂度，不依赖不稳定的机器耗时阈值。
 
@@ -51,7 +51,7 @@ KaTeX 渲染器和 CSS 通过独立 `math` 分包按内容加载。基础 Markdo
 
 独立 Chrome + Vite 测试入口验证了普通正文和 disableMath 不请求公式资源、首次公式异步加载并恢复排版，以及 rawHtml 的脚本与事件属性仍被净化。验证使用临时入口和独立端口，未访问用户浏览器或运行中的服务。这验证功能与请求时机，不代表生产环境加载秒数。
 
-`server/serialize.ts` 的工具结果不再先 join 全部文本再截断，而是在 100,000 个 UTF-16 码元预算内拼接。分隔符、空段、截断标记和图片占位语义保持不变；文本超限后仍处理后续图片。此优化减少超大输出的临时字符串分配，不改变完整转录或模型上下文。
+`packages/keel/src/serialize.ts` 的工具结果不再先 join 全部文本再截断，而是在 100,000 个 UTF-16 码元预算内拼接。分隔符、空段、截断标记和图片占位语义保持不变；文本超限后仍处理后续图片。此优化减少超大输出的临时字符串分配，不改变完整转录或模型上下文。
 
 ## 第三轮：历史列表和流式快照
 
@@ -102,7 +102,7 @@ fork 基准的旧算法针对预归一化单链重现原固定点传播，不包
 
 ### 预处理合并为一次异步读盘
 
-`server/transcript-prepare.ts` 的 `prepareTranscriptForOpen` 替代原来的「链修复 + 悬空调用修复」两段同步流程：
+`packages/keel/src/transcript-prepare.ts` 的 `prepareTranscriptForOpen` 替代原来的「链修复 + 悬空调用修复」两段同步流程：
 
 - 两份健康指纹（`mtimeMs:size`）都命中：不读盘。
 - 否则 `fs.promises.readFile` 读一次，两项检查共用文本；修复结束后按最终文件状态刷新两份指纹（悬空修复追加合成结果后，下次打开仍命中）。
@@ -167,7 +167,7 @@ fork 基准的旧算法针对预归一化单链重现原固定点传播，不包
 
 ## 第九轮：会话列表扫描（字节级 + 增量）与流式过滤器
 
-### 列表元信息：`server/session-list-scan.ts`
+### 列表元信息：`packages/keel/src/session-list-scan.ts`
 
 `scanSessionListInfo` 取代列表模式的 `parseSessionInfoFast` 实现（后者列表模式直接委托给它，全文模式不变）：
 
@@ -192,7 +192,7 @@ fork 基准的旧算法针对预归一化单链重现原固定点传播，不包
 
 ## 第十轮：打开会话不再阻塞事件循环；会话列表服务端分页
 
-### 异步分时片打开（`server/session-open.ts`）
+### 异步分时片打开（`packages/keel/src/session-open.ts`）
 
 `switchSession` 里的 `SessionManager.open`（同步 readSync 读完整个转录 + 同步逐行 JSON.parse）改为 `openSessionManagerAsync`：`fs.promises.readFile` 异步读取，逐行解析每约 8 ms 让出一次事件循环，再把解析好的条目交给 SDK 构造。SDK 本身在超大头部时也走这条 `preloadedFileEntries` 构造路径。
 
@@ -240,11 +240,11 @@ fork 基准的旧算法针对预归一化单链重现原固定点传播，不包
 
 ### 打开前修复改成「流式元数据扫描 + 只读尾部」
 
-`server/transcript-prepare.ts` 的冷路径原先 `readFile` 读整份转录，然后在这个大字符串上跑两段同步计算：`repairSessionTranscript`（把每行的完整 entry 攒进内存做链修复）和 `healDanglingToolCallsInText`（再逐行解析一遍查悬空工具调用）。74 MB 会话实测 ≈ 450 ms、堆 +50 MB 以上（与 issue 数据一致），紧接着 SDK 打开又把同一份文件完整解析一遍。
+`packages/keel/src/transcript-prepare.ts` 的冷路径原先 `readFile` 读整份转录，然后在这个大字符串上跑两段同步计算：`repairSessionTranscript`（把每行的完整 entry 攒进内存做链修复）和 `healDanglingToolCallsInText`（再逐行解析一遍查悬空工具调用）。74 MB 会话实测 ≈ 450 ms、堆 +50 MB 以上（与 issue 数据一致），紧接着 SDK 打开又把同一份文件完整解析一遍。
 
 现在冷路径分两步，两步都只做「判定」，不物化 entry 实体：
 
-- **`server/transcript-scan.ts` 的 `scanTranscriptForRepair`**：按 512 KB 分片流式读、按行套与修复本体同一个行分类口径（`classifyTranscriptLine`：空行 / 坏行不产生实体，`> 512` 字符的长行只扫行首 260 字符）。状态里只保留 `id → parentId`、parentId 集合、header id 集合和最后一条 id —— 内存随条目数线性、与正文大小无关。判定条件与修复本体一一对应：pending 压缩标记、重复 id、父链成环、「叶子不是最后一条」（分支顺序需要重排）；发现异常立即提前结束扫描。
+- **`packages/keel/src/transcript-scan.ts` 的 `scanTranscriptForRepair`**：按 512 KB 分片流式读、按行套与修复本体同一个行分类口径（`classifyTranscriptLine`：空行 / 坏行不产生实体，`> 512` 字符的长行只扫行首 260 字符）。状态里只保留 `id → parentId`、parentId 集合、header id 集合和最后一条 id —— 内存随条目数线性、与正文大小无关。判定条件与修复本体一一对应：pending 压缩标记、重复 id、父链成环、「叶子不是最后一条」（分支顺序需要重排）；发现异常立即提前结束扫描。
 - **`dangling-tools.ts` 的 `probeTailDangling`**：悬空工具调用本来只需要文件尾部。从末尾读 256 KB（不够逐级放大到 1/4/16 MB），丢掉窗口首行残片，沿 parentId 回溯找尾部 assistant 与它的工具调用 id，再在窗口内匹配 toolResult —— 与整份算法共用 `scanTailChain` / `danglingCallsOf`，不是第二套实现。
 - 两步都通过才走快路径：`repair` 返回 `healthyRepairResult`（changed=false），命中悬空调用时只 `appendDanglingResults` 追加合成结果，随后按最终文件状态刷新两份健康指纹。
 - 任何一步判定不了（有分支重排 / 重复 id / pending 标记 / 父链走出窗口 / 文件读不了）都回退到原来的整份 `readFile` 流程，语义与旧流程逐项相同。
@@ -253,7 +253,7 @@ fork 基准的旧算法针对预归一化单链重现原固定点传播，不包
 
 `reorderEntriesForMainBranch` 是唯一需要全部 entry 实体的步骤，但它先跑 `selectBestSessionLeaf(nonHeader, tail.id)`：只有一个叶子时候选集长度就是 1，函数直接返回 `changed = (tail.id !== 该叶子)`。所以「叶子恰好是最后一条」⇒ `changed=false` ⇒ 重排在拿到实体之前就返回。再叠上「无重复 id」「无环」「session 文件头都在最前」，修复必然不动文件。反过来也成立：有旁支就一定不止一个叶子（每个条目只有一个 parentId，唯一叶子意味着所有条目都在它到根的这条链上），于是保守回退整份读取。
 
-`server/dangling-tools.ts` 里 `lastId` / 尾部 assistant / 悬空列表的算法抽成了 `scanTailChain`（整份文本与尾部窗口共用），窗口模式下父链走出窗口会标 `escaped` 让调用方扩窗或回退，不会把「窗口里没找到」当成「文件里没有」。
+`packages/keel/src/dangling-tools.ts` 里 `lastId` / 尾部 assistant / 悬空列表的算法抽成了 `scanTailChain`（整份文本与尾部窗口共用），窗口模式下父链走出窗口会标 `escaped` 让调用方扩窗或回退，不会把「窗口里没找到」当成「文件里没有」。
 
 ### 基准
 

@@ -177,6 +177,6 @@ MethodChannel `pwu/localengine`，事件流推送状态：
 ## 不做的事
 
 - 不重写聊天 UI（Flutter/RN），不自研 `dsh_client` 式独立协议客户端；协议消费继续走单一 `web/dist`。
-- 不动 `server/protocol.ts` 协议；不为本机模式开新 API。
+- 不动 `packages/keel/src/protocol.ts` 协议；不为本机模式开新 API。
 - MVP 不装 DSH 引擎（后续作为可选层，`docs/dsh-engine.md` 的 file: 克隆隔离不受影响）。
 - 不承诺 iOS：路径与 dsh-go 相同（未来可复用 CI），本期不投入。

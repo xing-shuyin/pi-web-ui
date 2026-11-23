@@ -122,13 +122,13 @@ SDK 没有自动压缩指令及权限前别名解析的公开接口，分别用 
 
 一个问题对象曾经在 `ask_user_question` / `communicate` / `conversation` 各抄一遍
 （`preview` / `recommended` / `dependsOn` / `optionsMap` 这套富交互字段），下发给模型
-就是同一段结构的三份拷贝，改字段还得改三处。现在统一在 `server/question-params.ts`：
+就是同一段结构的三份拷贝，改字段还得改三处。现在统一在 `packages/keel/src/question-params.ts`：
 
 - `richQuestionsSchema()`：富弹窗的全量字段（`preview` / `dependsOn` / `optionsMap` 这些弹窗专属能力的事实源）；
 - `askQuestionsSchema()`：`ask_user_question` 下发给模型的派生视图——去掉弹窗专属字段与装饰关键字，模型只看到「问什么、给哪些选项」，字段定义仍只有富档一处；
 - **跨对话工具不再声明问题/回答结构**：`communicate` 的 `request`/`reply` 与 `conversation`
   的 `consult`/`answer` 只收纯文本 `message`，结构化提问只留在 `ask_user_question`。
-  服务端在状态机入口（`server/conversation-communication.ts` 的 `questionsFromMessage()` /
+  服务端在状态机入口（`packages/keel/src/conversation-communication.ts` 的 `questionsFromMessage()` /
   `answersFromMessage()`）把文本折成内部结构：问题包成 `[{ id: "q1", question: message }]`，
   回答按待答问题展开成 `{ id, selected: [], custom: message }`。旧的结构化
   `questions`/`answers` 仍然照收（TypeBox 不写 `additionalProperties: false`），由

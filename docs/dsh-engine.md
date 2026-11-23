@@ -248,10 +248,10 @@ E:/pi-web-ui/server/dsh/
 
 ### 3.2 引擎分发 + 前端徽标
 
-- `server/index.ts`：`ENGINE = PI_WEB_ENGINE === "dsh" ? "dsh" : "pi"`；`new DshAgentService(CWD, stateFile, DATA_DIR, getAgentDir())` vs `new AgentService(...)`。契约（`DispatchSession` / `EngineService` / `TerminalManagerLike`）住在 `server/engine-service.ts`，五个引擎都 `implements EngineService`，pi/dsh 两引擎结构兼容。**agentDir 贯通**：auth.json 读写与 DshRuntime 的 key 读取都尊重 PI_CODING_AGENT_DIR（smoke 测试的临时 agent 目录才能隔离）。
+- `server/index.ts`：`ENGINE = PI_WEB_ENGINE === "dsh" ? "dsh" : "pi"`；`new DshAgentService(CWD, stateFile, DATA_DIR, getAgentDir())` vs `new AgentService(...)`。契约（`DispatchSession` / `EngineService` / `TerminalManagerLike`）住在 `packages/keel/src/engine-service.ts`，五个引擎都 `implements EngineService`，pi/dsh 两引擎结构兼容。**agentDir 贯通**：auth.json 读写与 DshRuntime 的 key 读取都尊重 PI_CODING_AGENT_DIR（smoke 测试的临时 agent 目录才能隔离）。
 - `/api/health` 返回 `engine` 字段；`ready` 消息带 `engine`。
 - `server/control-socket.ts`：startControlServer 的 service 类型放宽为 `ControlService`（Pick serviceStatus/quiesce/unquiesce）。
-- `server/protocol.ts`：ready 加 `engine?: string`；`dsh_patches_list`/`dsh_patches_rescan`（客户端）+ `dsh_patches`（服务端）协议消息；types.ts shim 自动同步（check:protocol ✓）。
+- `packages/keel/src/protocol.ts`：ready 加 `engine?: string`；`dsh_patches_list`/`dsh_patches_rescan`（客户端）+ `dsh_patches`（服务端）协议消息；types.ts shim 自动同步（check:protocol ✓）。
 - 前端：`web/src/use-chat.ts` state 加 `engine` + `dshPatches`；`FooterBar.tsx` 显示 DSH 徽标；`SettingsModal.tsx` 插件页签下加"DSH 用户补丁"区块（列表 + 重扫，仅 dsh 引擎显示）；i18n 加对应 key（zh/en）。
 
 ### 3.3 已验证（empirical）
@@ -411,8 +411,8 @@ E:/pi-web-ui/server/dsh/
 | `E:/pi-web-ui/web/src/components/QuestionDialog.tsx`     | 模型提问对话框（单选/多选/自定义文本 + `Markdown(rawHtml)` 富渲染 + 选项 `preview` 预览框）    |
 | `E:/pi-web-ui/dev/dsh-probes/probe-patch-seam.mjs`       | 用户 patch 层 probe（会话根重定向验证）                                                        |
 | `E:/pi-web-ui/server/index.ts`                           | 引擎分发（ENGINE）+ dispatch 表 + dsh_patches 分支                                             |
-| `E:/pi-web-ui/server/engine-service.ts`                  | 引擎契约唯一事实源（EngineService / DispatchSession / TerminalManagerLike）                    |
-| `E:/pi-web-ui/server/protocol.ts`                        | wire 协议唯一事实源（ready.engine + dsh_patches 消息）                                         |
+| `E:/pi-web-ui/packages/keel/src/engine-service.ts`       | 引擎契约唯一事实源（EngineService / DispatchSession / TerminalManagerLike）                    |
+| `E:/pi-web-ui/packages/keel/src/protocol.ts`             | wire 协议唯一事实源（ready.engine + dsh_patches 消息）                                         |
 | `E:/pi-web-ui/scripts/copy-dsh-runtime.mjs`              | build:dsh-runtime（拷贝 .mjs/.yml 到 dist）                                                    |
 | `E:/pi-web-ui/server/agent-service.ts`                   | pi 引擎（协议对齐参照；QuiesceRejectedError 定义处）                                           |
 | `E:/pi-web-ui/server/files-service.ts`                   | 文件/SCM 服务（scmQuery 带 git-dir watcher，dsh 复用）                                         |

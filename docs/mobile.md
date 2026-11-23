@@ -4,17 +4,17 @@
 
 ## 事实源
 
-| 能力                                   | 实现                                                                                  |
-| -------------------------------------- | ------------------------------------------------------------------------------------- |
-| 连接方式、认证与凭据恢复               | `mobile/src/ConnectionScreen.tsx`、`connections.ts`、`connection.ts`                  |
-| 手机入口、设备选择与切换               | `mobile/src/main.tsx`、`hub.ts`                                                       |
-| 通知状态、权限、订阅与点击             | `mobile/src/push-controller.ts`、`Settings.tsx`                                       |
-| 原生推送与安全存储                     | `mobile/native/push/`，导出 `PiPush` / `PiCredentials`                                |
-| 本地 React 使用远端服务                | `web/src/mobile-runtime.ts`、`base-url.ts`、`auth-token.ts`                           |
-| Hub 登录、设备目录及 native capability | `server/device-center/hub-mobile.ts`、`hub-auth.ts`、`relay.ts`                       |
-| 服务端权威事件                         | `server/mobile-notification-events.ts`、`agent-service.ts`、`agent-service-daemon.ts` |
-| 设备事件可靠转发到 Hub                 | `server/device-center/mobile-notification-forwarder.ts`、`local.ts`                   |
-| 中央系统推送                           | `server/mobile-push.ts`；Hub 初始化和关闭在 `device-center/hub.ts`                    |
+| 能力                                   | 实现                                                                                             |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| 连接方式、认证与凭据恢复               | `mobile/src/ConnectionScreen.tsx`、`connections.ts`、`connection.ts`                             |
+| 手机入口、设备选择与切换               | `mobile/src/main.tsx`、`hub.ts`                                                                  |
+| 通知状态、权限、订阅与点击             | `mobile/src/push-controller.ts`、`Settings.tsx`                                                  |
+| 原生推送与安全存储                     | `mobile/native/push/`，导出 `PiPush` / `PiCredentials`                                           |
+| 本地 React 使用远端服务                | `web/src/mobile-runtime.ts`、`base-url.ts`、`auth-token.ts`                                      |
+| Hub 登录、设备目录及 native capability | `server/device-center/hub-mobile.ts`、`hub-auth.ts`、`relay.ts`                                  |
+| 服务端权威事件                         | `packages/keel/src/mobile-notification-events.ts`、`agent-service.ts`、`agent-service-daemon.ts` |
+| 设备事件可靠转发到 Hub                 | `server/device-center/mobile-notification-forwarder.ts`、`local.ts`                              |
+| 中央系统推送                           | `server/mobile-push.ts`；Hub 初始化和关闭在 `device-center/hub.ts`                               |
 
 ## 连接方式
 

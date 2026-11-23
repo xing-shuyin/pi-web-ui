@@ -76,7 +76,7 @@
 
 ## 协议单源（types.ts 是 re-export shim，不再手工同步）
 
-`server/protocol.ts` 是唯一事实源；`web/src/types.ts` 用 `export type * from "../../server/protocol"` 全量再导出（纯类型，构建时擦除），前端本地类型（FileContent/FileListing/ToolStatus）附在 shim 下方。
+`packages/keel/src/protocol.ts` 是唯一事实源；`web/src/types.ts` 用 `export type * from "../../server/protocol"` 全量再导出（纯类型，构建时擦除），前端本地类型（FileContent/FileListing/ToolStatus）附在 shim 下方。
 
 新增/修改任何消息：只改 `protocol.ts`，然后在 `server/index.ts` 的 `dispatch` switch 和 `web/src/use-chat.ts` 的 `onmessage` switch 各加一个分支。注意 protocol.ts 必须保持**纯类型导出**（不能加 const/function 等运行时代码，否则破坏 type-only 前提）；`npm run check:protocol` 守护这两个不变量。
 
@@ -113,15 +113,15 @@
 
 `web/src/app-globals.ts` 是模块级单例 store，放「**整棵树都要知道**」的少量运行态：服务端身份/能力（整个连接内只变一次）+ 连接态与当前工作目录（低频变化，靠单字段订阅隔离）：
 
-| 字段                            | 来源                                              | 谁在用                                                                                                             |
-| ------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `engine`（`"pi"` / `"dsh"`）    | `ready.engine`（老服务端不传 → 回落 `"pi"`）      | FooterBar 引擎图标、GoalBar/SettingsModal/ChatInput 的 DSH gating（无审查模型 / 无插件市场 / 无 mid-run steering） |
-| `managed`（`PI_WEB_MANAGED=1`） | `ready.managed`                                   | TopBar 更新入口、PiSetupModal 安装引导、SettingsModal 插件市场                                                     |
-| `tabs`（`PI_WEB_TABS`）         | `ready.tabs`                                      | 顶栏视图 tab 白名单（undefined = 全部）                                                                            |
-| `service`（被哪个平台服务托管） | `ready.service`（`server/launch-origin.ts` 探测） | TopBar 更新面板的「重启服务」按钮（缺省 = 前台/dev/Docker → 不画按钮，服务端也拒绝 `restart_service`）             |
-| `appVersion` / `serverVersion`  | `ready`                                           | TopBar 版本号                                                                                                      |
-| `status` / `ready`              | useChat 的 reducer（`status` 动作 / hello+快照）  | 左栏（能不能拉清单）、ChatInput（输入框能不能用）、TopBar / FooterBar 的连接点                                     |
-| `cwd`（当前对话的工作目录）     | `chat.state?.cwd`                                 | 左栏分组与「当前」标记、右栏路径拼接、全局搜索的当前项目标记、底栏目录选择器                                       |
+| 字段                            | 来源                                                         | 谁在用                                                                                                             |
+| ------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `engine`（`"pi"` / `"dsh"`）    | `ready.engine`（老服务端不传 → 回落 `"pi"`）                 | FooterBar 引擎图标、GoalBar/SettingsModal/ChatInput 的 DSH gating（无审查模型 / 无插件市场 / 无 mid-run steering） |
+| `managed`（`PI_WEB_MANAGED=1`） | `ready.managed`                                              | TopBar 更新入口、PiSetupModal 安装引导、SettingsModal 插件市场                                                     |
+| `tabs`（`PI_WEB_TABS`）         | `ready.tabs`                                                 | 顶栏视图 tab 白名单（undefined = 全部）                                                                            |
+| `service`（被哪个平台服务托管） | `ready.service`（`packages/keel/src/launch-origin.ts` 探测） | TopBar 更新面板的「重启服务」按钮（缺省 = 前台/dev/Docker → 不画按钮，服务端也拒绝 `restart_service`）             |
+| `appVersion` / `serverVersion`  | `ready`                                                      | TopBar 版本号                                                                                                      |
+| `status` / `ready`              | useChat 的 reducer（`status` 动作 / hello+快照）             | 左栏（能不能拉清单）、ChatInput（输入框能不能用）、TopBar / FooterBar 的连接点                                     |
+| `cwd`（当前对话的工作目录）     | `chat.state?.cwd`                                            | 左栏分组与「当前」标记、右栏路径拼接、全局搜索的当前项目标记、底栏目录选择器                                       |
 
 写入点两处，都是单一来源、只镜像不复制：`use-chat.ts` 收到 `ready` 时写身份/能力（**在 dispatch 之前**同步落地，不闪一帧 `pi`）；另一个 effect 把 `ready` / `status` / `cwd` 镜像过来（值就是 reducer 里的真值，最多晚一帧 —— 对应默认值只会是「未就绪 / 未连接 / 空目录」，看不出来）。非 React 代码用 `getAppGlobals()` / `subscribeAppGlobals()`。
 
@@ -148,7 +148,7 @@
 ## 会话退役与扩展运行态（#958）
 
 - **退役是终态，不是「无记忆再跑一轮」**：SDK 的 `AgentSession.dispose()` 只给 `ExtensionRunner` 打 `staleMessage`，`sdk.js` 的 `extensionRunnerRef.current` 仍指向它，`transformContext` 只判 `if (!runner)`——于是「已 dispose 的会话被再喂一轮」时每轮全量 `structuredClone` + 每个扩展一条带栈 stale 报错（实测单会话 3,659 条 / 9.7 MB 日志 / 单核 53%）。
-- **两个单源（`server/session-turns.ts`）**：
+- **两个单源（`packages/keel/src/session-turns.ts`）**：
   - **退役**：`guardSession(session)` 在宿主接手会话时（`makeConversation` / `bindSession`）包一层 `dispose`，任何来源的 dispose 都把它记进 `retired`（WeakSet，按会话身份），并顺手清 `_extensionRunnerRef.current`；`isRetiredSession()` 是唯一判定。幂等，不吞原 dispose。
   - **会话身份**：`Conversation.session` 是 `conv.runtime.session` 的**只读投影**（接口 `readonly session` + `makeConversation` 里的 getter 读 `this.runtime.session`）：换会话只有一种写法——赋值 `conv.runtime`。`server/` 内出现 `conv.session = …` 会被守卫测试直接判红（此前两个字段可各自漂移，正是「退役会话仍被喂轮」的温床）。
   - **喂轮**：`promptSession()` / `steerSession()` / `runTurn()` 是**唯一**出口，退役即抛 `SessionRetiredError`（`code: "session_retired"`）。**server/ 内禁止直连 `sendUserMessage` / `session.steer` / `session.prompt`**，由 `tests/unit/session-turn-single-source.test.ts` 静态守卫（原 `delivery-gate-single-source` 里「直连 SDK 站点数」的上限已收紧为 0）。
@@ -194,7 +194,7 @@
 
 ## 多对话并发
 
-- **引擎契约单源 `server/engine-service.ts`**：`EngineService`（谁能接客户端）与 `DispatchSession`（一个会话能干什么）、`TerminalManagerLike` 只在这里声明。五个引擎（pi / dsh / claude / codex / durable）都显式 `implements EngineService`，服务模块不得再从 `server/index.ts` 取这些类型（入口是装配代码，被当类型库 import 就是一条「服务 → 入口」的回边）。守卫：`tests/unit/engine-service-single-source.test.ts`。
+- **引擎契约单源 `packages/keel/src/engine-service.ts`**：`EngineService`（谁能接客户端）与 `DispatchSession`（一个会话能干什么）、`TerminalManagerLike` 只在这里声明。五个引擎（pi / dsh / claude / codex / durable）都显式 `implements EngineService`，服务模块不得再从 `server/index.ts` 取这些类型（入口是装配代码，被当类型库 import 就是一条「服务 → 入口」的回边）。守卫：`tests/unit/engine-service-single-source.test.ts`。
 - 每客户端 `convs: Map<convId, Conversation>`，**每个对话一个独立 `AgentSessionRuntime`**：`new_chat` 新建 runtime + 新 session 文件（旧对话继续在后台跑，不中断）；`switch_conversation` 只换 `activeId`（不碰其他 runtime）；`runtime`/`session` 访问器指向当前活动对话。**对话按项目归属**：`conv.cwd` 即所属项目，每个项目各自的活动对话互不干扰。
 - **`set_cwd` 不再重建当前对话**——改为切到目标项目自己的对话（该项目最近活动的那个；没有则新建一个并恢复该项目最近的持久会话）。
 - **工作区命令必须串行（#872）**：`cs.cwd`、活动对话、runtime 绑定是同一组可变状态，而改它们的命令（`set_cwd` / `new_chat` / `new_cli_chat` / `switch_session` / `switch_conversation` / `fork_session` / `rollback_session` / `make_dir(setAsCwd)` / 沙盒切换）都是异步重活（stat、恢复最近会话、挂载 runtime、复制沙盒）。ws 消息逐条派发，上一条还在 await，下一条已经在跑 —— 「先切项目再新建对话」抢跑时 `newChat()` 读到的还是旧 cwd，新对话就落进上一个项目（左栏里像「消失」了）。

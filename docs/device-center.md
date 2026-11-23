@@ -224,7 +224,7 @@ AI 可调用 `device_collab` 列 Bot、列群。获得工具授权的 Bot 执行
 
 人类可在折叠交付面板按确切版本验收，其他 Bot 使用 `conversation_review` 提交 `accepted` 或 `changes_requested`，不能自审。提交方式绑定同一提交 SHA；产物验收必须先有真实成功的 Integration 验证，并绑定 artifactDigest、integrationId、verificationDigest，按封存 acceptanceCriteria 逐项记录结果与证据。旧版本、另一产物或两个缺失的 commit 不能匹配当前交付。返工沿原群组会话继续，保留历史；验收本身不自动派发返工或执行 Git 合并。
 
-协议定义位于 `server/protocol.ts`；Hub 在事务内验证账号、群成员、Bot 和运行任务归属，并先持久化再返回。事务回调保持同步，外部 RPC 在事务外执行；返回数据在 WAL 提交前验证可克隆性并生成独立副本，函数等不可分离结果不会造成“已经提交却返回失败”，异步期间的外部别名也不能改写返回事实。交付与审查按幂等键去重，相同键不同内容拒绝；历史有容量预算，满后明确拒绝追加。HTTP 入口为 `POST /rooms/:id/conversations/:conversationId/deliveries` 与 `/reviews`，沿用本机代理、Agent 及跨设备账号边界。
+协议定义位于 `packages/keel/src/protocol.ts`；Hub 在事务内验证账号、群成员、Bot 和运行任务归属，并先持久化再返回。事务回调保持同步，外部 RPC 在事务外执行；返回数据在 WAL 提交前验证可克隆性并生成独立副本，函数等不可分离结果不会造成“已经提交却返回失败”，异步期间的外部别名也不能改写返回事实。交付与审查按幂等键去重，相同键不同内容拒绝；历史有容量预算，满后明确拒绝追加。HTTP 入口为 `POST /rooms/:id/conversations/:conversationId/deliveries` 与 `/reviews`，沿用本机代理、Agent 及跨设备账号边界。
 
 完整开发回归：`node tests/device-project-collaboration-test.mjs`（或通过冒烟跑器）。测试启动独立 Hub 与两个独立设备服务，使用真实 Git 仓库和本地确定性模型，覆盖交付、跨设备拉取、失败返工、再次验收与集成检查。同机双服务验证设备间协议和流程，不替代 Windows/macOS 实机适配验收。
 

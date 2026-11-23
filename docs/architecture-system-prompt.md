@@ -183,13 +183,13 @@
     到该子代理的追加段。模板会话不套主会话组合模板（角色由模板定义）。主会话
     组合模板不影响模板派生的子代理。
     另外两个模板维度与提示词无关，在派发时（spawnSubagentConversation）套用：
-    model（provider/id）与 thinkingLevel（off…max，见 server/subagent-templates.ts
+    model（provider/id）与 thinkingLevel（off…max，见 packages/keel/src/subagent-templates.ts
     的 THINKING_LEVELS）。优先级：显式 model 参数 > 模板 model > 设置面板子代理
     默认模型 > 跟随派发会话当前模型；thinkingLevel 无显式参数，模板空值 = 跟随
     派发会话当前强度（session.thinkingLevel）。两者都在换模型之后套用，
     setThinkingLevel 会按模型能力收敛（reasoning:false → off，xhigh/max 需
     thinkingLevelMap），不传 persist，只影响该子代理会话。
-    内置模板在 server/subagent-templates.ts 的 DEFAULT_TEMPLATES（含 oh-my-pi
+    内置模板在 packages/keel/src/subagent-templates.ts 的 DEFAULT_TEMPLATES（含 oh-my-pi
     specialist 系列：oracle/librarian/explore/metis/momus/multimodal-looker/
     sisyphus-junior）；老用户已有文件时缺失的内置模板一次性补齐（sidecar
     subagent-templates.seeded.json 记已播种名单，删后不再复活）。
@@ -226,7 +226,7 @@
     - pi-web-ui：server/prompt-composer.ts（token/引擎/默认模板）、
       server/agent-service.ts（override + 内联扩展 + 渲染预览）、
       server/settings-service.ts / client-state.ts（设置持久化与迁移）、
-      server/protocol.ts（UiSettingsState 字段）、web/src/components/SettingsModal.tsx
+      packages/keel/src/protocol.ts（UiSettingsState 字段）、web/src/components/SettingsModal.tsx
     - SDK：dist/core/system-prompt.js（buildSystemPrompt 默认拼装）、
       dist/core/resource-loader.js（SYSTEM.md / 上下文收集 / override 重放）、
       dist/core/extensions/runner.js（before_agent_start 链式替换）
