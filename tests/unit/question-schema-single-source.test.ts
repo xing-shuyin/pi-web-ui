@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { Value } from "typebox/value";
@@ -7,6 +7,7 @@ import { makeCommunicateTool } from "../../server/communicate-tool.js";
 import { makeAskUserQuestionTool } from "../../server/ask-user-question-tool.js";
 import { makeSubagentTools, type SubagentToolHost } from "../../server/subagents.js";
 import { relayQuestionsSchema, richQuestionsSchema } from "../../server/question-params.js";
+import { SCAN_ROOTS, isShim } from "../helpers/guard-roots.js";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -14,9 +15,14 @@ const INLINE_QUESTION_FIELDS = /\b(optionsMap|dependsOn)\s*:\s*Type\.Optional/;
 
 describe("question schema single source（结构化提问只在一处声明）", () => {
 	it("其他服务端文件不再手抄富问题对象", () => {
-		const offenders = readdirSync(join(ROOT, "server"))
-			.filter((f) => f.endsWith(".ts") && !f.endsWith(".d.ts") && f !== "question-params.ts")
-			.filter((f) => INLINE_QUESTION_FIELDS.test(readFileSync(join(ROOT, "server", f), "utf8")));
+		// 只扫两个根下的平级 .ts（不递归）：共享 schema 就在平级，第二份也只能长在平级。
+		const offenders = SCAN_ROOTS.flatMap((dir) =>
+			readdirSync(dir)
+				.filter((f) => f.endsWith(".ts") && !f.endsWith(".d.ts") && f !== "question-params.ts")
+				.filter((f) => !isShim(readFileSync(join(dir, f), "utf8")))
+				.filter((f) => INLINE_QUESTION_FIELDS.test(readFileSync(join(dir, f), "utf8")))
+				.map((f) => relative(ROOT, join(dir, f))),
+		);
 		expect(offenders, `请改用 server/question-params.ts 的共享 schema：\n${offenders.join("\n")}`).toEqual([]);
 	});
 

@@ -1,14 +1,15 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { codeFiles, isShim, sourceOf } from "../helpers/guard-roots.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
 const SERVER = join(root, "server");
 
 /** 路径边界不变量（「目标是否落在授权根内」）的唯一判定模块（#972 / #973）。 */
-const SINGLE_SOURCE = join(SERVER, "path-boundary.ts");
+const SINGLE_SOURCE = sourceOf("path-boundary");
 
 /**
  * 存量：还把「`relative()` 看 `..`」当越界判定的模块。这些都是本次 brief 之外的文件（各有归属），
@@ -34,14 +35,9 @@ const KNOWN_LEXICAL_DUPLICATES = new Set([
 	"server/workspace-handle.ts",
 ]);
 
-function serverSources(dir = SERVER): string[] {
-	const out: string[] = [];
-	for (const entry of readdirSync(dir, { withFileTypes: true })) {
-		const path = join(dir, entry.name);
-		if (entry.isDirectory()) out.push(...serverSources(path));
-		else if (entry.name.endsWith(".ts")) out.push(path);
-	}
-	return out;
+/** 两个源码根（老树 + keel）下的真实现文件，shim 与单源本身除外。 */
+function guardSources(): string[] {
+	return codeFiles().filter((file) => file !== SINGLE_SOURCE && !isShim(readFileSync(file, "utf8")));
 }
 
 /** `relative(...)` 之后紧跟 `startsWith("..")` 的写法，就是第二份「越界判定」。 */
@@ -75,8 +71,7 @@ describe("路径边界判定只有一个单源（server/path-boundary.ts）", ()
 
 	it("除单源外没有新增「relative + startsWith('..')」形态的越界判定", () => {
 		const offenders: string[] = [];
-		for (const file of serverSources()) {
-			if (file === SINGLE_SOURCE) continue;
+		for (const file of guardSources()) {
 			const rel = relative(root, file).split("\\").join("/");
 			if (!hasLexicalContainment(readFileSync(file, "utf8"))) continue;
 			if (!KNOWN_LEXICAL_DUPLICATES.has(rel)) offenders.push(rel);
@@ -89,8 +84,7 @@ describe("路径边界判定只有一个单源（server/path-boundary.ts）", ()
 
 	it("旧的私有实现名已删光（isPathInsideRoot / assertRealInsideRoot）", () => {
 		const offenders: string[] = [];
-		for (const file of serverSources()) {
-			if (file === SINGLE_SOURCE) continue; // 单源的注释里会点名这些旧实现
+		for (const file of guardSources()) {
 			const source = readFileSync(file, "utf8");
 			for (const gone of ["isPathInsideRoot", "assertRealInsideRoot"]) {
 				if (source.includes(gone)) offenders.push(`${relative(root, file)} (${gone})`);
@@ -119,7 +113,7 @@ describe("路径边界判定只有一个单源（server/path-boundary.ts）", ()
 		const sandbox = readFileSync(join(SERVER, "sandbox-service.ts"), "utf8");
 		expect(definitionWindow(sandbox, "export function isStrictlyInsideSandbox", 40)).toContain("realPathOrNearest(");
 
-		const guards = readFileSync(join(SERVER, "tool-guards.ts"), "utf8");
+		const guards = readFileSync(sourceOf("tool-guards"), "utf8");
 		const workspaceRoots = definitionWindow(guards, "export function isInsideWorkspaceRoots", 14);
 		expect(workspaceRoots).toContain("isInsideRoots(");
 		expect(workspaceRoots).toContain("isInsideRootsLexical(");

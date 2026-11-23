@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
@@ -11,13 +11,14 @@ import {
 	SessionRetiredError,
 	steerSession,
 } from "../../server/session-turns.js";
+import { codeFiles, isShim, sourceOf } from "../helpers/guard-roots.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
 const SERVER = join(root, "server");
 
-/** 唯一允许直接调 SDK 喂轮回的模块（#958）。 */
-const SINGLE_SOURCE = join(SERVER, "session-turns.ts");
+/** 唯一允许直接调 SDK 喂轮回的模块（#958）：搬家前后由 sourceOf 解析。 */
+const SINGLE_SOURCE = sourceOf("session-turns");
 
 /**
  * 直连 SDK 喂轮的写法。故意只收「几乎不可能是别的东西」的形式：
@@ -36,29 +37,21 @@ const RAW_TURN_CALLS = [
 /** 直接给会话字段赋值：换会话只能换 `conv.runtime`（`session` 是只读投影）。 */
 const SESSION_ASSIGNMENT = /\b(?:conv|conversation)\.session\s*=[^=]/;
 
-function sources(dir: string): string[] {
-	const out: string[] = [];
-	for (const entry of readdirSync(dir, { withFileTypes: true })) {
-		const path = join(dir, entry.name);
-		if (entry.isDirectory()) out.push(...sources(path));
-		else if (entry.name.endsWith(".ts")) out.push(path);
-	}
-	return out;
-}
-
 describe("session-turns 是唯一喂轮出口（#958）", () => {
 	it("除 session-turns.ts 外没有地方直接调 SDK 的 sendUserMessage / steer / prompt", () => {
 		const offenders: string[] = [];
-		for (const file of sources(SERVER)) {
+		for (const file of codeFiles()) {
 			if (file === SINGLE_SOURCE) continue;
 			const text = readFileSync(file, "utf8");
+			// 老位置只剩 `export *` 的 shim：本身不含调用，跳过以防 shim 日后变异成误报源。
+			if (isShim(text)) continue;
 			for (const pattern of RAW_TURN_CALLS) {
 				if (pattern.test(text)) offenders.push(`${relative(root, file)} (${pattern})`);
 			}
 		}
 		expect(
 			offenders,
-			`请改走 server/session-turns.ts 的 promptSession / steerSession / runTurn：\n${offenders.join("\n")}`,
+			`请改走 packages/keel/src/session-turns.ts 的 promptSession / steerSession / runTurn：\n${offenders.join("\n")}`,
 		).toEqual([]);
 	});
 
@@ -76,14 +69,14 @@ describe("session-turns 是唯一喂轮出口（#958）", () => {
 		expect(literal).toContain("return this.runtime.session;");
 	});
 
-	it("server/ 下没有任何地方给 conv.session 赋值", () => {
+	it("两个源码根下都没有任何地方给 conv.session 赋值", () => {
 		const offenders: string[] = [];
-		for (const file of sources(SERVER)) {
-			readFileSync(file, "utf8")
-				.split("\n")
-				.forEach((line, index) => {
-					if (SESSION_ASSIGNMENT.test(line)) offenders.push(`${relative(root, file)}:${index + 1}`);
-				});
+		for (const file of codeFiles()) {
+			const text = readFileSync(file, "utf8");
+			if (isShim(text)) continue;
+			text.split("\n").forEach((line, index) => {
+				if (SESSION_ASSIGNMENT.test(line)) offenders.push(`${relative(root, file)}:${index + 1}`);
+			});
 		}
 		expect(offenders, `换会话请赋值 conv.runtime（session 是只读投影）：\n${offenders.join("\n")}`).toEqual([]);
 	});

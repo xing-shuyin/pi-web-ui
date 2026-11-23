@@ -1,9 +1,8 @@
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { ClientMessage } from "../../server/protocol.js";
 import { REQUEST_REPLIES, refuse } from "../../server/ws-refusal.js";
+import { sourceOf } from "../helpers/guard-roots.js";
 
 /**
  * 接线类型校验：`server/index.ts` 的 `msg` 就是 `ClientMessage`，必须能直接喂给 `refuse()`
@@ -26,8 +25,7 @@ const refusableClientMessage: RefusableClientMessage = true;
  * 第 4 条顺带挡住第二种「只发 notice」的写法：任何人想再手搓一条失败回包，都要先过这张表。
  */
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const PROTOCOL = readFileSync(join(ROOT, "server/protocol.ts"), "utf8");
+const PROTOCOL = readFileSync(sourceOf("protocol"), "utf8");
 
 function unionMembers(typeName: string, nextMarker: string): string[] {
 	const start = PROTOCOL.indexOf(`export type ${typeName} =`);

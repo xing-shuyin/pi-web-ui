@@ -1,6 +1,6 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
@@ -12,6 +12,8 @@ import {
 	selectSessionBranch,
 } from "../../server/session-projection.js";
 import { scanSessionForSearch } from "../../server/session-search.js";
+import { blankNonCode } from "../helpers/code-scan.js";
+import { codeFiles } from "../helpers/guard-roots.js";
 
 /**
  * 会话投影单源（issue #979）。
@@ -241,37 +243,29 @@ describe("历史检索按投影口径过滤", () => {
 });
 
 describe("会话投影单源守卫", () => {
-	function serverSources(): { name: string; source: string }[] {
-		const out: { name: string; source: string }[] = [];
-		const walk = (dir: string) => {
-			for (const name of readdirSync(dir)) {
-				const full = join(dir, name);
-				if (statSync(full).isDirectory()) {
-					walk(full);
-					continue;
-				}
-				if (name.endsWith(".ts"))
-					out.push({ name: `server/${full.slice(dir.length + 1)}`, source: readFileSync(full, "utf8") });
-			}
-		};
-		walk(join(ROOT, "server"));
-		return out;
+	/** 按模块基名记账：搬家（server/ → packages/keel/src/）后断言不变。 */
+	function guardSources(): { name: string; source: string; code: string }[] {
+		return codeFiles().map((file) => {
+			const source = readFileSync(file, "utf8");
+			return { name: basename(file, ".ts"), source, code: blankNonCode(source) };
+		});
 	}
 
 	it("解 jsonl 的裸实现只剩投影模块：parseSessionEntries 只出现在它一处", () => {
-		const sources = serverSources();
-		for (const { name, source } of sources) {
+		const sources = guardSources();
+		for (const { source, name } of sources) {
 			expect(source, `${name} 又自己解转录了：请用 session-projection 的 projectSessionText()`).not.toContain(
 				"parseTranscriptLines",
 			);
 		}
-		expect(sources.filter(({ source }) => source.includes("parseSessionEntries")).map(({ name }) => name)).toEqual([
-			"server/session-projection.ts",
+		// 注释里点名不算第二份实现，只看代码。
+		expect(sources.filter(({ code }) => code.includes("parseSessionEntries")).map(({ name }) => name)).toEqual([
+			"session-projection",
 		]);
 		// 叶选择只有一份实现。
 		expect(
-			sources.filter(({ source }) => source.includes("export function selectBestSessionLeaf")).map(({ name }) => name),
-		).toEqual(["server/session-branch.ts"]);
+			sources.filter(({ code }) => code.includes("export function selectBestSessionLeaf")).map(({ name }) => name),
+		).toEqual(["session-branch"]);
 	});
 
 	it("conversation_read 的 files/status 不再并集 .touches.json", () => {

@@ -11,6 +11,7 @@ import { MockAgentDriver } from "../../server/universal/drivers/mock-driver.js";
 import type { AgentEventSink } from "../../server/universal/driver-base.js";
 import { isBuiltinEngineId } from "../../server/engine-catalog.js";
 import type { CanvasEngineId, EngineId } from "../../server/protocol.js";
+import { sourceOf } from "../helpers/guard-roots.js";
 
 const roots: string[] = [];
 const sessions: UniversalSession[] = [];
@@ -132,7 +133,7 @@ describe("Codex engine wiring", () => {
 			"driverFactory: (cwd) => new CodexDriver(cwd, { agentDir: getAgentDir(), dataDir: DATA_DIR })",
 		);
 		expect(index).toContain("if (codexServiceInstance) list.push(codexServiceInstance)");
-		const protocol = readFileSync(new URL("../../server/protocol.ts", import.meta.url), "utf8");
+		const protocol = readFileSync(sourceOf("protocol"), "utf8");
 		const engine: EngineId = "codex";
 		const canvasEngine: CanvasEngineId = "codex";
 		expect(isBuiltinEngineId(engine)).toBe(true);

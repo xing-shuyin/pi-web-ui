@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { codeFiles, isShim, sourceOf } from "../helpers/guard-roots.js";
 
 /**
  * 守卫：「版本化文档的读−校验−写」只能有一份实现（issues #982）。
@@ -17,17 +18,7 @@ import { describe, expect, it } from "vitest";
  */
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
-const SERVER = join(ROOT, "server");
-const OWNER = join(SERVER, "versioned-doc.ts");
-
-function walk(dir: string, out: string[] = []): string[] {
-	for (const entry of readdirSync(dir, { withFileTypes: true })) {
-		const path = join(dir, entry.name);
-		if (entry.isDirectory()) walk(path, out);
-		else if (entry.name.endsWith(".ts")) out.push(path);
-	}
-	return out;
-}
+const OWNER = sourceOf("versioned-doc");
 
 /** 去掉注释只留代码：注释里写「版本不认识」是在解释根因，不该算违规。 */
 function codeOf(source: string): string {
@@ -63,7 +54,7 @@ const LEGACY_STORES = new Set([
 	"server/sandbox-data.ts",
 ]);
 
-const serverFiles = walk(SERVER).filter((file) => file !== OWNER);
+const serverFiles = codeFiles().filter((file) => file !== OWNER && !isShim(readFileSync(file, "utf8")));
 
 describe("版本化文档单源（issues #982）", () => {
 	it("「读文件 + 版本比较 + 写文件」组合只出现在 versioned-doc.ts 或存量名单里", () => {
@@ -101,9 +92,7 @@ describe("版本化文档单源（issues #982）", () => {
 			(id) => !codeOf(readFileSync(join(ROOT, id), "utf8")).includes("versioned-doc.js"),
 		);
 		expect(notMigrated, `这些存储还没走 versioned-doc：${notMigrated.join(", ")}`).toEqual([]);
-		expect(codeOf(readFileSync(join(ROOT, "server/session-open.ts"), "utf8"))).toContain(
-			"assertSupportedTranscriptVersion",
-		);
+		expect(codeOf(readFileSync(sourceOf("session-open"), "utf8"))).toContain("assertSupportedTranscriptVersion");
 	});
 
 	it("每个直接 SessionManager.open 之前都有转录版本门禁", () => {

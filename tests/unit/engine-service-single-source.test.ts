@@ -12,9 +12,13 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { sourceOf } from "../helpers/guard-roots.js";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
-const CONTRACT = "server/engine-service.ts";
+/** 契约唯一声明处（搬家前后由 sourceOf 解析）。 */
+const CONTRACT = sourceOf("engine-service");
+/** 打印用：相对仓库根（与扫描得到的 id 同一坐标系）。 */
+const CONTRACT_ID = relative(ROOT, CONTRACT).split("\\").join("/");
 const MOVED = ["DispatchSession", "EngineService", "TerminalManagerLike"];
 const SKIP = new Set(["node_modules", ".git", "dist", "release", "artifacts", "vendor", "build"]);
 
@@ -28,16 +32,18 @@ function walk(dir: string, out: string[] = []): string[] {
 	return out;
 }
 
-const sources = ["server", "web", "desktop", "browser", "extensions", "tests"].flatMap((dir) => walk(dir));
+const sources = ["server", "packages/keel/src", "web", "desktop", "browser", "extensions", "tests"].flatMap((dir) =>
+	walk(dir),
+);
 const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
 
 describe("引擎契约单源", () => {
-	it("契约只声明在 server/engine-service.ts", () => {
-		const contract = read(CONTRACT);
+	it(`契约只声明在 ${CONTRACT_ID}`, () => {
+		const contract = readFileSync(CONTRACT, "utf8");
 		for (const name of MOVED) {
 			expect(contract, name).toContain(`export interface ${name} {`);
 			const declarers = sources.filter((path) => new RegExp(`export interface ${name} \\{`).test(read(path)));
-			expect(declarers, name).toEqual([CONTRACT]);
+			expect(declarers, name).toEqual([CONTRACT_ID]);
 		}
 	});
 
@@ -45,8 +51,8 @@ describe("引擎契约单源", () => {
 		const offenders: string[] = [];
 		for (const path of sources) {
 			for (const match of read(path).matchAll(/import (?:type )?\{([^}]*)\} from "[^"]*index\.js";/g)) {
-				if (MOVED.some((name) => new RegExp(`\\b${name}\\b`).test(match[1]) && path !== CONTRACT)) {
-					offenders.push(relative(".", path));
+				if (MOVED.some((name) => new RegExp(`\\b${name}\\b`).test(match[1]) && path !== CONTRACT_ID)) {
+					offenders.push(path);
 				}
 			}
 		}

@@ -1,10 +1,13 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { join } from "node:path";
+import { relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { blankNonCode } from "../helpers/code-scan.js";
+import { codeFiles, sourceOf } from "../helpers/guard-roots.js";
 
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
+/** 登记项的键：相对仓库根的路径（搬家前后同一函数解析）。 */
+const moduleId = (file: string) => relative(repoRoot, file).split("\\").join("/");
 const SYNC_ATOMIC_CALL = /\b(writeAtomicSync|writeJsonAtomicSync|readFileSyncRetry)\s*\(/;
 const SYNC_ATOMIC_DECL =
 	/^\s*(export\s+)?(async\s+)?function\s+(writeAtomicSync|writeJsonAtomicSync|readFileSyncRetry)\b/;
@@ -34,7 +37,7 @@ const ALLOWED: Record<string, number> = {
 	"server/native-cli-model.ts": 1,
 
 	// versioned-doc 的 handle 同时持有读与写：写入侧已异步化，只剩读侧的同步退避重试。
-	"server/versioned-doc.ts": 1,
+	[moduleId(sourceOf("versioned-doc"))]: 1,
 
 	// 设置 / 客户端状态：saveSettings 的失败契约是同步抛错（订阅者据此不广播），
 	// 异步化要先拆「提交」语义并改动 40+ 调用点。
@@ -49,32 +52,16 @@ const ALLOWED: Record<string, number> = {
 	"server/attachment-store.ts": 1,
 };
 
-function walk(dir: string, out: string[] = []): string[] {
-	for (const name of readdirSync(dir)) {
-		const path = join(dir, name);
-		if (statSync(path).isDirectory()) walk(path, out);
-		else if (name.endsWith(".ts")) out.push(path);
-	}
-	return out;
-}
-
 function currentSyncAtomicSites(): Record<string, number> {
-	const files = walk(join(repoRoot, "server"));
 	const counts: Record<string, number> = {};
-	for (const file of files) {
+	for (const file of codeFiles()) {
 		const lines = blankNonCode(readFileSync(file, "utf8")).split("\n");
 		let hits = 0;
 		for (const line of lines) {
 			if (!SYNC_ATOMIC_CALL.test(line) || SYNC_ATOMIC_DECL.test(line) || /from "/.test(line)) continue;
 			hits++;
 		}
-		if (hits > 0)
-			counts[
-				file
-					.split("\\")
-					.join("/")
-					.replace(/^.*\/server\//, "server/")
-			] = hits;
+		if (hits > 0) counts[moduleId(file)] = hits;
 	}
 	return counts;
 }

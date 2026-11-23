@@ -3,6 +3,7 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { blankNonCode } from "../helpers/code-scan.js";
+import { KEEL_SRC } from "../helpers/guard-roots.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
@@ -52,6 +53,8 @@ function walk(dir: string, out: string[] = []): string[] {
 
 const scanned = [
 	...walk(join(root, "server")),
+	// 搬进 keel 的叶子与老树共用同一进程的事件循环：同一套禁令
+	...walk(KEEL_SRC),
 	...walk(join(root, "plugins")),
 	// 扩展跑在 pi 宿主主进程里（与 server 共用事件循环），同一套禁令
 	...walk(join(root, "extensions")),

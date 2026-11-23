@@ -3,6 +3,7 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { blankNonCode } from "../helpers/code-scan.js";
+import { KEEL_SRC } from "../helpers/guard-roots.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
@@ -40,7 +41,7 @@ function walk(dir: string, out: string[] = []): string[] {
 	return out;
 }
 
-const scanned = walk(join(root, "server")).sort();
+const scanned = [...walk(join(root, "server")), ...walk(KEEL_SRC)].sort();
 
 const hits = scanned.flatMap((file) => {
 	const code = blankNonCode(readFileSync(join(root, file), "utf8"));
@@ -51,7 +52,7 @@ const hits = scanned.flatMap((file) => {
 	}));
 });
 
-describe("子进程只走三个出口（server/）", () => {
+describe("子进程只走三个出口（server/ + packages/keel/src）", () => {
 	it("扫描器本身可靠：注释/字符串/模板里的调用不算，真实调用要抓到", () => {
 		const sample = [
 			'// spawn("x") 注释里不算',
@@ -66,7 +67,7 @@ describe("子进程只走三个出口（server/）", () => {
 		expect(found).toEqual(["spawn", "execFileSync"]);
 	});
 
-	it("除三个出口与登记过的基座外，server/ 不直接起子进程", () => {
+	it("除三个出口与登记过的基座外，两个源码根都不直接起子进程", () => {
 		const offending = hits
 			.filter((hit) => !(hit.file in OUTLETS))
 			.map((hit) => `${hit.file}:${hit.line} → ${hit.api}(…)`);
