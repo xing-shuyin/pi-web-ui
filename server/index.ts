@@ -1607,7 +1607,11 @@ function ensureEngine(engine: EngineId): EngineService {
 		piServiceInstance =
 			resolvePiEngineMode() === "core"
 				? // 新引擎（keel）实现 EngineService 但仍有 AgentService 专属调用点待清零，类型面暂借 legacy。
-					(new CoreEngine(CWD, { version: VERSION, dataDir: DATA_DIR, agentDir: getAgentDir() }) as unknown as AgentService)
+					(new CoreEngine(CWD, {
+						version: VERSION,
+						dataDir: DATA_DIR,
+						agentDir: getAgentDir(),
+					}) as unknown as AgentService)
 				: new AgentService(CWD, sharedStateStore);
 		for (let i = 0; i < sharedSocketCount; i++) piServiceInstance.noteSocketOpen();
 		if (sharedQuiesced) piServiceInstance.quiesce();
