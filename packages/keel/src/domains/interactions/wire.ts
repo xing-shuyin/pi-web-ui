@@ -20,6 +20,8 @@ export interface ApprovalWaiter {
 	pendingForSnapshot(conversationId: string): UiToolApproval[];
 	/** 会话收尾：本会话的审批全部结算成 deny，返回结算条数。 */
 	cancelConversation(conversationId: string, reason: string): number;
+	/** 全局开关（如「关闭审批」）：把当前所有待审批一次性结算，返回结算条数。 */
+	settleAll(decision: "approve" | "deny", reason: string): number;
 }
 
 type ApprovalFrame = Extract<ServerMessage, { type: "tool_approval_pending" }>;
@@ -147,6 +149,15 @@ export function createApprovalWaiter(input: {
 			for (const record of inbox.list("approval")) {
 				if (record.conversationId !== conversationId) continue;
 				if (settleEntry(record.id, { decision: "deny", reason })) settled++;
+			}
+			return settled;
+		},
+
+		settleAll(decision: "approve" | "deny", reason: string): number {
+			let settled = 0;
+			// 快照一份再结算：`settleEntry` 会边结边改 pending，直接遍历会漏。
+			for (const id of [...pending.keys()]) {
+				if (settleEntry(id, { decision, reason })) settled++;
 			}
 			return settled;
 		},

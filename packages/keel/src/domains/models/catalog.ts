@@ -1,32 +1,13 @@
 import { join } from "node:path";
 import type { ModelInfo } from "../../protocol.js";
+import type {
+	CatalogModel,
+	ModelCatalogRuntime,
+	ModelRuntimeFactory,
+	ModelRuntimePaths,
+} from "../../contracts/models.js";
 
-/**
- * 运行时给出的模型形状：本域只认这几个字段，与 SDK 的 `Model` 保持结构兼容
- * （多出来的字段不看，字段改名会在这里编译报错，不会静默发出空值）。
- */
-export interface CatalogModel {
-	id: string;
-	name: string;
-	provider: string;
-	reasoning: boolean;
-	input?: readonly string[];
-}
-
-/** 运行时的窄面：只认「刷新目录」「取可用模型」与「按 id 取模型对象」，本域不碰 SDK。 */
-export interface ModelCatalogRuntime {
-	refresh(options: { allowNetwork: boolean; signal: AbortSignal }): Promise<unknown>;
-	getAvailable(): Promise<readonly CatalogModel[]>;
-	/** 按 `provider` + `id` 取模型对象（SDK 的模型实体）：换模型时传给会话，不在内核里拼。 */
-	getModel?(provider: string, id: string): unknown | undefined;
-}
-
-export interface ModelRuntimePaths {
-	authPath: string;
-	modelsPath: string;
-}
-
-export type ModelRuntimeFactory = (paths: ModelRuntimePaths) => Promise<ModelCatalogRuntime>;
+export type { CatalogModel, ModelCatalogRuntime, ModelRuntimeFactory, ModelRuntimePaths };
 
 export interface LoadModelCatalogOptions {
 	agentDir: string;

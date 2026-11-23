@@ -13,6 +13,8 @@ export interface SettingsHostInput {
 	getSession: () => unknown;
 	/** 设置变更后要刷新的对话帧；新树的快照域在 W5 接上，缺省不发。 */
 	flushSnapshot?: () => void;
+	/** 设置帧里的 `approvalPolicy`：内核聚合根是唯一所有者，适配器只读投影。 */
+	getApprovalPolicy?: () => import("../../protocol.js").UiApprovalPolicyState;
 }
 
 /** 会话句柄类型从 `SettingsHost` 推导，避免适配器直接依赖 SDK（边界守卫只允许 turns/feed 与 adapters/sdk 碰它）。 */
@@ -32,6 +34,9 @@ export function createSettingsHost(input: SettingsHostInput): SettingsHost {
 		flushSnapshot: () => input.flushSnapshot?.(),
 		isDisposed: () => input.isDisposed,
 		getSession: () => input.getSession() as HostSession,
+		...(input.getApprovalPolicy
+			? { getApprovalPolicy: (): import("../../protocol.js").UiApprovalPolicyState => input.getApprovalPolicy!() }
+			: {}),
 		cwd: () => input.cwd,
 		agentDir: () => input.agentDir,
 		isStreaming: () => input.isStreaming,

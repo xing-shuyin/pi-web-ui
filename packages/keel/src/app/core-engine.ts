@@ -1,10 +1,14 @@
 import type { DispatchSession, EngineService } from "../engine-service.js";
-import type { ServerMessage, UiServiceInfo } from "../protocol.js";
+import type { ServerMessage, UiApprovalPolicyState, UiServiceInfo } from "../protocol.js";
+import type { Conversation } from "../kernel/conversation/index.js";
 import { toServiceInfo, launchOrigin } from "../launch-origin.js";
 import { join } from "node:path";
 import { join as joinPath, resolve as resolveFsPath } from "node:path";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
 import type { ModelAdminPort, ModelAdminSinks } from "../contracts/model-admin.js";
+import type { SettingsFramePort } from "../contracts/settings.js";
+import type { SlashCommandSinks, SlashCommandsPort } from "../contracts/commands.js";
+import type { SettingsService } from "../../../../server/settings-service.js";
 import { isInsideRoots } from "../path-boundary.js";
 import { ClientStateStore } from "../../../../server/client-state.js";
 import { createProjectSource } from "../adapters/state/index.js";
@@ -30,6 +34,7 @@ import { ClientRuntime, type ClientFrames } from "./client-runtime.js";
 import { SessionRegistry } from "./session-registry.js";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
 import { resolvePiEngineAttach } from "./engine-mode.js";
+import { resolveServerLang, type ServerLang } from "../i18n.js";
 
 export { CoreEngineNotReadyError };
 
@@ -41,8 +46,30 @@ export interface CoreEngineOptions {
 	agentDir?: string;
 	/** 模型/供应商管理面工厂（宿主实现：`server/core-model-adapter.ts`）；缺省 = 能力未接。 */
 	modelAdmin?: (sinks: ModelAdminSinks) => ModelAdminPort;
+	/** 设置帧/预设/审批规则库面工厂（宿主实现：`server/core-settings-adapter.ts`）；缺省 = 能力未接。 */
+	settingsFrame?: (sinks: CoreSettingsSinks) => SettingsFramePort;
+	/** 斜杠命令面工厂（宿主实现：`server/core-commands-adapter.ts`）；缺省 = 能力未接。 */
+	slashCommands?: (sinks: SlashCommandSinks) => SlashCommandsPort;
 	/** 换完模型后的宿主收尾（压缩预留重算 / 插件通知）：C 类能力一律留在宿主。 */
 	onSessionModelChanged?: (clientId: string, conversationId: string) => void;
+}
+
+/** 审批策略 → 设置帧里的投影（老实现 `approvalPolicyState()` 同口径：无对话就是空策略）。 */
+function approvalPolicyState(conv: Conversation | undefined): UiApprovalPolicyState {
+	const policy = conv?.approvalPolicy;
+	return {
+		...(conv ? { conversationId: conv.id } : {}),
+		allowAll: policy?.allowAll ?? false,
+		categories: policy ? [...policy.categories.values()] : [],
+	};
+}
+
+/** 宿主实现 `SettingsFramePort` 时要拼的几块现成东西（都是宿主端口桶里的模块，P2 会收成端口）。 */
+export interface CoreSettingsSinks {
+	service: SettingsService;
+	stateStore: ClientStateStore;
+	clientId: string;
+	lang: { get(): ServerLang; set(next: ServerLang): void };
 }
 
 const systemClock: ClockPort = {
@@ -60,7 +87,8 @@ const systemClock: ClockPort = {
 export class CoreEngine implements EngineService {
 	onQuit?: () => boolean;
 	private readonly runtimes = new Map<string, ClientRuntime>();
-	private settingsLang: "zh" | "en" | "zh-TW" = "zh";
+	/** 语言是「每客户端」的（`client-state` 里按 clientId 存 locale），不是进程级。 */
+	private readonly langs = new Map<string, ServerLang>();
 	private socketCount = 0;
 	private quiescedSince: number | undefined;
 
@@ -80,8 +108,8 @@ export class CoreEngine implements EngineService {
 		this.projectSource = createProjectSource({ file: join(dataDir, "client-state.json") });
 	}
 
-	/** 模型管理面由宿主建（结构性适配器），内核只按窄面调用；没装配就当能力未接。 */
-	private modelAdminPort(): ModelAdminPort | undefined {
+	/** 模型管理面由宿主建（结构性适配器），内核只按窄面调用；没装配就当能力未接。 */ private modelAdminPort():
+		ModelAdminPort | undefined {
 		if (!this.options.modelAdmin) return undefined;
 		this.modelAdmin ??= this.options.modelAdmin({
 			emit: (msg) => {
@@ -108,7 +136,7 @@ export class CoreEngine implements EngineService {
 		const terminalHost = createTerminalHost({
 			transport,
 			cwdOf: (conversationId) => runtime.registry.get(conversationId)?.meta.cwd ?? this.cwd,
-			lang: () => this.settingsLang,
+			lang: () => this.langOf(clientId),
 		});
 		const inbox = new InteractionInbox(() => {});
 		const approvalWaiter = createApprovalWaiter({ inbox, transport });
@@ -124,7 +152,7 @@ export class CoreEngine implements EngineService {
 				...(subagents ? [subagents.toolFor(conv.id)] : []),
 				...createGuardedBuiltinTools({
 					cwd: this.cwd,
-					getLang: () => this.settingsLang,
+					getLang: () => this.langOf(clientId),
 					conversationId: () => conv.id,
 					askApproval: (_toolCallId, toolName, params, reason, reasonEn) =>
 						approvalWaiter.request({
@@ -160,7 +188,7 @@ export class CoreEngine implements EngineService {
 				},
 			},
 			// 只会删自己会话目录里的文件：根 = agentDir/sessions（与 SDK 落盘位置一致）。
-			getLang: () => this.settingsLang,
+			getLang: () => this.langOf(clientId),
 			resolveToolApproval: (id, decision, editedParams, reason) =>
 				approvalWaiter.resolve(id, decision, editedParams, reason),
 			resolveQuestion: (id, answers, cancelled, cancelReason) => askWaiter.answer(id, answers, cancelled, cancelReason),
@@ -170,6 +198,11 @@ export class CoreEngine implements EngineService {
 			persistSessionTitle: async (sessionFile, title) => {
 				await renameSessionFile({ sessionFile, title });
 			},
+			// 设置面：`SettingsService` 要本运行时的会话与帧出口，所以用 thunk 懒取。
+			settingsFrame: () => settingsFrame,
+			slashCommands: () => slashCommands,
+			commandCwd: () => runtime.registry.activeConv()?.meta.cwd ?? this.cwd,
+			releasePendingApprovals: (reason) => approvalWaiter.settleAll("approve", reason),
 			modelAdmin: this.modelAdminPort(),
 			modelMemory: createModelMemory(this.stateStore),
 			resolveModel: (provider, id) => modelPusher.getModel(provider, id),
@@ -182,7 +215,7 @@ export class CoreEngine implements EngineService {
 				pendingApprovals: approvalWaiter.pendingForSnapshot(conv.id),
 			}),
 			env: {
-				settingsVersion: 0,
+				settingsVersion: this.stateStore.getSettingsVersion(),
 				piConfigured: false,
 				piAgentInstalled: false,
 				capabilities: DEFAULT_PI_CAPABILITIES,
@@ -203,13 +236,35 @@ export class CoreEngine implements EngineService {
 					if (!opened) throw new CoreEngineNotReadyError("settings session");
 					return opened.session;
 				},
+				// 审批策略的唯一所有者在对话聚合根：这里只把它投影成协议形状。
+				getApprovalPolicy: () => approvalPolicyState(runtime.registry.activeConv()),
 			}),
 			transport,
+		});
+		const settingsFrame = this.options.settingsFrame?.({
+			service: pusher.service,
+			stateStore: this.stateStore,
+			clientId,
+			lang: { get: () => this.langOf(clientId), set: (next) => this.langs.set(clientId, next) },
+		});
+		const slashCommands = this.options.slashCommands?.({
+			emit: (msg) => transport.send(msg),
+			cwd: () => runtime.registry.activeConv()?.meta.cwd ?? this.cwd,
+			getSession: () => {
+				const conv = runtime.registry.activeConv();
+				return conv ? sessions.get(conv.id)?.session : undefined;
+			},
 		});
 		const modelPusher = createModelPusher({
 			transport,
 			agentDir: this.options.agentDir ?? this.cwd,
 			runtimeFactory: createModelRuntimeFactory(),
+			// 启用范围是「账号设置」（SDK 设置层），只有真开了会话才拿得到；拿不到就不带 enabled。
+			enabledPatterns: () => {
+				const conv = runtime.registry.activeConv();
+				const opened = conv ? sessions.get(conv.id) : undefined;
+				return opened?.session.settingsManager?.getEnabledModels?.();
+			},
 		});
 		subagents = createSubagentRuntime({ runtime, sessions, now: () => Date.now() });
 		const frames: ClientFrames = {
@@ -329,8 +384,14 @@ export class CoreEngine implements EngineService {
 
 	refreshBackgroundServers(): void {}
 
-	async setLocale(_clientId: string, locale: string): Promise<void> {
-		this.settingsLang = locale.startsWith("en") ? "en" : locale === "zh-TW" ? "zh-TW" : "zh";
+	async setLocale(clientId: string, locale: string): Promise<void> {
+		const code = locale.trim().slice(0, 16);
+		if (code) this.langs.set(clientId, resolveServerLang(code));
+	}
+
+	/** 当前语言：优先本次会话里刚设的，否则从 `client-state` 的 locale 推导（与老实现同口径）。 */
+	private langOf(clientId: string): ServerLang {
+		return this.langs.get(clientId) ?? resolveServerLang(this.stateStore.get(clientId).locale);
 	}
 
 	getCapabilities(): AgentEngineCapabilities {

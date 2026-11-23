@@ -1,5 +1,8 @@
 import type { ClientId, ConversationId } from "../contracts/ids.js";
 import type { ModelAdminPort, ModelMemoryPort } from "../contracts/model-admin.js";
+import type { SettingsFramePort } from "../contracts/settings.js";
+import type { SlashCommandsPort } from "../contracts/commands.js";
+import { createCommandHandlers, type CommandHandlers } from "../domains/commands/index.js";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
 import type { SnapshotConversationView, SnapshotEnvView, SnapshotView } from "../contracts/snapshot-view.js";
 import { createDispatchSurfaceAdapter, type DispatchHandlers } from "../adapters/wire/index.js";
@@ -9,6 +12,7 @@ import { Conversation, ConversationRegistry, type ConversationInit } from "../ke
 import { createSnapshotBuilders, SnapshotPublisher, type SnapshotBuilders } from "../domains/snapshots/index.js";
 import { createModelSwitchers, type ModelSwitchers } from "../domains/models/index.js";
 import { createProviderHandlers, type ProviderHandlers } from "../domains/providers/index.js";
+import { createSettingsHandlers, type SettingsHandlers } from "../domains/settings/index.js";
 import { TurnRunner, type TurnRunnerDeps } from "../domains/turns/index.js";
 import type { SessionListScanState } from "../session-list-scan.js";
 import { dirname } from "node:path";
@@ -77,6 +81,17 @@ export interface ClientRuntimeOptions {
 	onTurnError?: (conversationId: ConversationId, error: unknown) => void;
 	/** 模型/供应商管理面（宿主实现）；缺省 = 该能力未接，相关 handler 抛 `CoreEngineNotReadyError`。 */
 	modelAdmin?: ModelAdminPort;
+	/**
+	 * 设置帧/预设/审批规则库面（宿主实现）。用 thunk：`SettingsService` 构造期要拿本运行时
+	 * 的会话与帧出口，而运行时又把这项当成装配参数 —— 懒取才不会成环。
+	 */
+	settingsFrame?: () => SettingsFramePort | undefined;
+	/** 「关闭审批」时把待审批一次性放行。 */
+	releasePendingApprovals?(reason: string): number;
+	/** 斜杠命令面（宿主 `SlashCommandsService`）；缺省 = 该能力未接。 */
+	slashCommands?: () => SlashCommandsPort | undefined;
+	/** `listCommands` / `saveCommands` 读写的目录（跟随当前对话的 cwd）。 */
+	commandCwd?: () => string;
 	/** 项目/全局模型记忆 + 供应商 key pin（宿主设置存储）；缺省 = 不落盘。 */
 	modelMemory?: ModelMemoryPort;
 	/** 取模型对象（由模型目录域提供）；缺省 = `setModel` 报错。 */
@@ -101,6 +116,8 @@ export class ClientRuntime {
 	private scanState: Map<string, SessionListScanState> | undefined;
 	private switchers: ModelSwitchers | undefined;
 	private providers: ProviderHandlers | undefined;
+	private settingsHandlers: SettingsHandlers | undefined;
+	private commandHandlers: CommandHandlers | undefined;
 
 	constructor(options: ClientRuntimeOptions) {
 		this.options = options;
@@ -132,6 +149,27 @@ export class ClientRuntime {
 		return (this.providers ??= createProviderHandlers({
 			modelAdmin: this.options.modelAdmin,
 			getLang: () => this.options.getLang?.() ?? "zh",
+		}));
+	}
+
+	/** 设置/预设/审批规则：端口是 thunk（`SettingsService` 反过来要拿本运行时）。 */
+	private settings(): SettingsHandlers {
+		return (this.settingsHandlers ??= createSettingsHandlers({
+			settings: () => this.options.settingsFrame?.(),
+			transport: this.options.transport,
+			flushSnapshot: () => {
+				if (!this.disposed) this.publisher.flush({ forceFull: false });
+			},
+			releasePendingApprovals: (reason) => this.options.releasePendingApprovals?.(reason) ?? 0,
+		}));
+	}
+
+	/** 斜杠命令：`pushSlashCommands` 走宿主端口；读写自定义命令走工作区的文件叶子。 */
+	private commands(): CommandHandlers {
+		return (this.commandHandlers ??= createCommandHandlers({
+			slash: () => this.options.slashCommands?.(),
+			cwd: () => this.options.commandCwd?.() ?? this.options.cwd,
+			transport: this.options.transport,
 		}));
 	}
 
@@ -262,10 +300,21 @@ export class ClientRuntime {
 			pushProjects: () => frames().pushProjects(),
 			listModels: () => frames().listModels(),
 			...this.providerHandlers(),
+			...this.settings(),
+			...this.commands(),
 			setModel: (modelId: string) => this.modelSwitchers().setModel(modelId),
 			setDefaultModel: (modelId: string) => this.modelSwitchers().setDefaultModel(modelId),
 			clearDefaultModel: () => this.modelSwitchers().clearDefaultModel(),
 			setThinking: (level: string) => this.modelSwitchers().setThinking(level),
+			// 审批策略：写对话聚合根（唯一所有者）→ 设置帧真了 + 出快照；子代理对话不接策略（老口径）。
+			setApprovalPolicy: (partial: { conversationId?: string; allowAll?: boolean; categories?: string[] }) => {
+				const conv = partial.conversationId ? this.registry.get(partial.conversationId) : this.registry.activeConv();
+				if (!conv || conv.meta.kind === "subagent") return;
+				conv.setApprovalPolicy({ allowAll: partial.allowAll, categories: partial.categories });
+				// 帧通道还没装配（客户端未 attach）时，写入照样成立；推帧只在有出口时做。
+				this.frames?.pushSettings();
+				this.publisher.request();
+			},
 			deleteSession: async (path: string) => {
 				await deleteSessionFile({
 					registry: this.registry,

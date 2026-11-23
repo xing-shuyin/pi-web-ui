@@ -244,4 +244,53 @@ describe("createModelPusher", () => {
 		expect(seenDefault.map((s) => s.allowNetwork)).toEqual([true]);
 		expect(seenOff.map((s) => s.allowNetwork)).toEqual([false]);
 	});
+
+	it("账号启用范围非空时给每行酷 enabled（未命中的是 false，不是缺字段）", async () => {
+		const { sent, transport } = fakeTransport();
+		const runtime = {
+			...fakeRuntime({
+				available: [model({ id: "a", provider: "openai" }), model({ id: "b", provider: "demo" })],
+			}),
+			enabledScope: async (patterns: readonly string[]) => (patterns.includes("openai/*") ? ["openai/a"] : []),
+		};
+		await createModelPusher({
+			transport,
+			agentDir: "/agent",
+			allowNetwork: false,
+			runtimeFactory: countingFactory(() => runtime).factory,
+			enabledPatterns: () => ["openai/*"],
+		}).push();
+		expect(modelsOf(sent.at(-1)).map((m) => [m.id, m.enabled])).toEqual([
+			["openai/a", true],
+			["demo/b", false],
+		]);
+	});
+
+	it("没有启用范围（或解析失败）就不带 enabled —— 宁可全展示，也不能把整个目录标成禁用", async () => {
+		const none = fakeTransport();
+		await createModelPusher({
+			transport: none.transport,
+			agentDir: "/agent",
+			allowNetwork: false,
+			runtimeFactory: countingFactory(() => fakeRuntime({ available: [model({ id: "a" })] })).factory,
+			enabledPatterns: () => [],
+		}).push();
+		expect(modelsOf(none.sent.at(-1)).map((m) => "enabled" in m)).toEqual([false]);
+
+		const broken = fakeTransport();
+		const failing = {
+			...fakeRuntime({ available: [model({ id: "a" })] }),
+			enabledScope: async () => {
+				throw new Error("scope 爆了");
+			},
+		};
+		await createModelPusher({
+			transport: broken.transport,
+			agentDir: "/agent",
+			allowNetwork: false,
+			runtimeFactory: countingFactory(() => failing).factory,
+			enabledPatterns: () => ["openai/*"],
+		}).push();
+		expect(modelsOf(broken.sent.at(-1)).map((m) => "enabled" in m)).toEqual([false]);
+	});
 });
