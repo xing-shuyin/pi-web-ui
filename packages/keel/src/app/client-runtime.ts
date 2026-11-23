@@ -43,6 +43,8 @@ export interface ClientRuntimeOptions {
 	persistSessionTitle?(sessionFile: string, title: string): Promise<void> | void;
 	/** 终端管理器来源（缺省 = 终端能力未接）。 */
 	terminalManagerFor?(conversationId: string): unknown;
+	/** 当前语言（notice/工具文案用）。 */
+	getLang?(): string;
 	/** 前端回包：审批。返回 true = 真的结算了这一条。 */
 	resolveToolApproval?(
 		id: string,
@@ -174,6 +176,17 @@ export class ClientRuntime {
 			flushSnapshot: (forceFull?: boolean) => {
 				if (this.disposed) return;
 				this.publisher.flush({ forceFull });
+			},
+			// 裸 get_state（没报 since）= 客户端手上没有状态 → 必须真发全量；
+			// 报了 since 就走闸门的增量/跳过判定（与 legacy 的 respondWithSnapshot 同口径）。
+			respondWithSnapshot: (_send, options?: { since?: number; force?: boolean }) => {
+				if (this.disposed) return;
+				this.publisher.flush({ forceFull: options?.force ?? options?.since === undefined });
+			},
+			getLang: () => this.options.getLang?.() ?? "zh",
+			emitNotice: (level: "info" | "warning" | "error", text: string, textEn?: string) => {
+				if (this.disposed) return;
+				this.options.transport.send({ type: "notice", level, text, ...(textEn ? { textEn } : {}) });
 			},
 			newChat: async (_preset?: string, _ephemeral?: boolean, onReady?: (id: string) => void) => {
 				if (this.disposed) return false;

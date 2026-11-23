@@ -391,3 +391,39 @@ describe("app · 前端回包 handler", () => {
 		expect(bare.resolveQuestion?.("x", [])).toBe(false);
 	});
 });
+
+describe("app · 三个连接期零碎 handler", () => {
+	it("respondWithSnapshot：没报 since 就强制全量，报了 since 走闸门", () => {
+		const clock = fakeClock();
+		const transport = fakeTransport();
+		const runtime = new ClientRuntime({
+			clientId: "c1",
+			cwd: "/work",
+			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: false },
+			clock,
+			transport: transport.port,
+		});
+		const cs = runtime.handlers();
+		cs.respondWithSnapshot?.(transport.port.send);
+		expect(transport.sent.filter((m) => m.type === "snapshot").length).toBe(1);
+	});
+
+	it("getLang / emitNotice 有缺省值，不发未定义", () => {
+		const clock = fakeClock();
+		const transport = fakeTransport();
+		const runtime = new ClientRuntime({
+			clientId: "c1",
+			cwd: "/work",
+			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: false },
+			clock,
+			transport: transport.port,
+			getLang: () => "en",
+		});
+		const cs = runtime.handlers();
+		expect(cs.getLang()).toBe("en");
+		cs.emitNotice("warning", "hello", "hello-en");
+		const notice = transport.sent.find((m) => m.type === "notice") as { text: string; textEn?: string } | undefined;
+		expect(notice?.text).toBe("hello");
+		expect(notice?.textEn).toBe("hello-en");
+	});
+});
