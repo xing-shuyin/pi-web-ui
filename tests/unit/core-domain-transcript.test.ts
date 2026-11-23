@@ -4,7 +4,7 @@ import {
 	projectTranscriptEntries,
 	projectTranscriptText,
 	type ProjectionResult,
-} from "../../server/core/domains/history/transcript.js";
+} from "../../packages/keel/src/domains/history/transcript.js";
 
 /**
  * 转录投影（历史域）：条目一律来自 `server/session-projection.ts`，序列化一律来自

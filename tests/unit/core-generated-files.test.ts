@@ -20,7 +20,7 @@ function runScript(name: string): { ok: boolean; out: string } {
 }
 
 describe("生成物与源码一致（勿手改）", () => {
-	it("server/core/OWNERSHIP.md 由 scripts/gen-core-ownership.mjs 生成", () => {
+	it("packages/keel/src/OWNERSHIP.md 由 scripts/gen-core-ownership.mjs 生成", () => {
 		const { ok, out } = runScript("gen-core-ownership.mjs");
 		expect(out).toContain("OWNERSHIP.md");
 		expect(ok).toBe(true);

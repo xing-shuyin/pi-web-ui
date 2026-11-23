@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const openTurnSession = vi.fn();
 
-vi.mock("../../server/core/adapters/sdk/index.js", () => ({
+vi.mock("../../packages/keel/src/adapters/sdk/index.js", () => ({
 	openTurnSession: (...args: unknown[]) => openTurnSession(...args),
 }));
 
-const { SessionRegistry, SessionUnavailableError } = await import("../../server/core/app/session-registry.js");
-const { Conversation } = await import("../../server/core/kernel/conversation/index.js");
+const { SessionRegistry, SessionUnavailableError } = await import("../../packages/keel/src/app/session-registry.js");
+const { Conversation } = await import("../../packages/keel/src/kernel/conversation/index.js");
 
 function makeConv(overrides: Partial<{ id: string; sessionFile: string }> = {}) {
 	return new Conversation({

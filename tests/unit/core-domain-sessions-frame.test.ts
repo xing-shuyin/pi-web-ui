@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { TransportPort } from "../../server/core/contracts/ports.js";
+import type { TransportPort } from "../../packages/keel/src/contracts/ports.js";
 import type { ServerMessage } from "../../server/protocol.js";
 import type { SessionListScanState } from "../../server/session-list-scan.js";
 import {
@@ -10,7 +10,7 @@ import {
 	type HistoryEntry,
 	refreshSessions,
 	scanHistory,
-} from "../../server/core/domains/history/index.js";
+} from "../../packages/keel/src/domains/history/index.js";
 
 const CWD = "/p/demo";
 

@@ -9,12 +9,12 @@ import {
 	createSettingsHost,
 	createSettingsHost as createSettingsHostFromBarrel,
 	type SettingsHostInput,
-} from "../../server/core/adapters/settings/index.js";
+} from "../../packages/keel/src/adapters/settings/index.js";
 import {
 	createSettingsPusher,
 	createSettingsPusher as createSettingsPusherFromBarrel,
-} from "../../server/core/domains/settings/index.js";
-import type { TransportPort } from "../../server/core/contracts/ports.js";
+} from "../../packages/keel/src/domains/settings/index.js";
+import type { TransportPort } from "../../packages/keel/src/contracts/ports.js";
 
 const CLIENT_ID = "core-settings-client";
 

@@ -4,7 +4,7 @@ import {
 	shouldAutoApprove,
 	type InteractionKind,
 	type InteractionOutcomes,
-} from "../../server/core/domains/interactions/index.js";
+} from "../../packages/keel/src/domains/interactions/index.js";
 import type { ApprovalRule } from "../../server/approval-rules.js";
 
 interface SettledCall {

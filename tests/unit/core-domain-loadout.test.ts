@@ -5,7 +5,7 @@ import {
 	resolveToolLoadout,
 	type ToolLoadout,
 	type ToolLoadoutInput,
-} from "../../server/core/domains/tools/index.js";
+} from "../../packages/keel/src/domains/tools/index.js";
 
 const CATALOG = ALL_AGENT_TOOL_ENTRIES.map((entry) => entry.name);
 const DEFAULT_ON = ALL_AGENT_TOOL_ENTRIES.filter((entry) => entry.defaultOn).map((entry) => entry.name);

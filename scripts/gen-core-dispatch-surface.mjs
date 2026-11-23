@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 从 `server/engine-service.ts` 的 `export interface DispatchSession` 生成 `server/core/adapters/wire/dispatch-surface.ts`：
+ * 从 `server/engine-service.ts` 的 `export interface DispatchSession` 生成 `packages/keel/src/adapters/wire/dispatch-surface.ts`：
  * 新树照这份清单逐个接入，接口改动后跑一次即可，禁止手抄成员名。
  * 用法：`node scripts/gen-core-dispatch-surface.mjs`（写文件）· `--check`（只校验现有文件是否过期）
  */
@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE = join(root, "server", "engine-service.ts");
-const TARGET = join(root, "server", "core", "adapters", "wire", "dispatch-surface.ts");
+const TARGET = join(root, "packages", "keel", "src", "adapters", "wire", "dispatch-surface.ts");
 const INTERFACE = "DispatchSession";
 const HEADER = "// 生成物，勿手改：node scripts/gen-core-dispatch-surface.mjs";
 const MODIFIERS = new Set(["readonly", "public", "private", "protected", "static", "override", "declare"]);
@@ -149,7 +149,7 @@ if (process.argv.includes("--check")) {
 	const current = readFileSync(TARGET, "utf8");
 	if (current !== content) {
 		console.error(
-			"✗ server/core/adapters/wire/dispatch-surface.ts 已过期，请运行 node scripts/gen-core-dispatch-surface.mjs",
+			"✗ packages/keel/src/adapters/wire/dispatch-surface.ts 已过期，请运行 node scripts/gen-core-dispatch-surface.mjs",
 		);
 		process.exit(1);
 	}

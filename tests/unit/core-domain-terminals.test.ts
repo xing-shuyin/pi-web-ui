@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { TransportPort } from "../../server/core/contracts/ports.js";
-import { createTerminalHost } from "../../server/core/domains/terminals/index.js";
+import type { TransportPort } from "../../packages/keel/src/contracts/ports.js";
+import { createTerminalHost } from "../../packages/keel/src/domains/terminals/index.js";
 import type { ServerLang } from "../../server/i18n.js";
 import type { ServerMessage, TerminalInfo } from "../../server/protocol.js";
 

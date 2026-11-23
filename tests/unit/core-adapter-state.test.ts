@@ -2,11 +2,11 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createFileStatePort, type FileStatePort } from "../../server/core/adapters/state/file-state-port.js";
+import { createFileStatePort, type FileStatePort } from "../../packages/keel/src/adapters/state/file-state-port.js";
 import {
 	createFileStatePort as createFromBarrel,
 	type FileStateSnapshot,
-} from "../../server/core/adapters/state/index.js";
+} from "../../packages/keel/src/adapters/state/index.js";
 import {
 	resetStorageIntegrityForTests,
 	StorageBlockedError,

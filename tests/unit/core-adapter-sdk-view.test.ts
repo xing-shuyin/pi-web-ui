@@ -5,9 +5,9 @@ import {
 	projectStreamingMessage,
 	subscribeSession,
 	toWireModel,
-} from "../../server/core/adapters/sdk/view.js";
-import { Conversation } from "../../server/core/kernel/conversation/index.js";
-import type { TurnCapableSession } from "../../server/core/contracts/session.js";
+} from "../../packages/keel/src/adapters/sdk/view.js";
+import { Conversation } from "../../packages/keel/src/kernel/conversation/index.js";
+import type { TurnCapableSession } from "../../packages/keel/src/contracts/session.js";
 
 function makeConv() {
 	return new Conversation({ id: "c1", clientId: "client-1", cwd: "/work", kind: "user", createdAt: 1 });

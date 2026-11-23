@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createSubagentTool } from "../../server/core/adapters/tools/subagent.js";
+import { createSubagentTool } from "../../packages/keel/src/adapters/tools/subagent.js";
 import {
 	createSubagentToolHost,
 	SubagentHostUnsupportedError,
 	type SubagentHostInput,
 	type SubagentSnapshotSource,
 	type SubagentSpawnSpec,
-} from "../../server/core/domains/subagents/host.js";
-import { SubagentRegistry } from "../../server/core/domains/subagents/registry.js";
+} from "../../packages/keel/src/domains/subagents/host.js";
+import { SubagentRegistry } from "../../packages/keel/src/domains/subagents/registry.js";
 import type { SubagentSnapshot } from "../../server/subagents.js";
 import { CONVERSATION_TOOL_NAME } from "../../server/tool-manager.js";
 

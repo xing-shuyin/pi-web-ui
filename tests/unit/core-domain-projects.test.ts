@@ -3,16 +3,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ClientStateStore, RECENT_PROJECTS_MAX } from "../../server/client-state.js";
-import { createProjectSource, type ProjectSource } from "../../server/core/adapters/state/client-state-projects.js";
-import { createProjectSource as createProjectSourceFromBarrel } from "../../server/core/adapters/state/index.js";
-import type { TransportPort } from "../../server/core/contracts/ports.js";
+import {
+	createProjectSource,
+	type ProjectSource,
+} from "../../packages/keel/src/adapters/state/client-state-projects.js";
+import { createProjectSource as createProjectSourceFromBarrel } from "../../packages/keel/src/adapters/state/index.js";
+import type { TransportPort } from "../../packages/keel/src/contracts/ports.js";
 import {
 	orderProjects,
 	buildProjectsFrame,
 	pushProjects,
 	type ProjectEntry,
 	type RecentProjectsSource,
-} from "../../server/core/domains/projects/index.js";
+} from "../../packages/keel/src/domains/projects/index.js";
 import type { ServerMessage } from "../../server/protocol.js";
 
 function transportStub(closed = false): { sent: ServerMessage[]; transport: TransportPort } {

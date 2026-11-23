@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { ClientRuntime } from "../../server/core/app/client-runtime.js";
-import { CoreEngineNotReadyError } from "../../server/core/app/core-engine.js";
-import type { ClockPort } from "../../server/core/contracts/ports.js";
+import { ClientRuntime } from "../../packages/keel/src/app/client-runtime.js";
+import { CoreEngineNotReadyError } from "../../packages/keel/src/app/core-engine.js";
+import type { ClockPort } from "../../packages/keel/src/contracts/ports.js";
 import type { ServerMessage } from "../../server/protocol.js";
-import type { SnapshotBuilders } from "../../server/core/domains/snapshots/index.js";
+import type { SnapshotBuilders } from "../../packages/keel/src/domains/snapshots/index.js";
 
 function fakeClock(): ClockPort & { advance(ms: number): void } {
 	let now = 1_000;

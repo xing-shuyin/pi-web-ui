@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const pkgDir = join(root, "packages", "keel");
-const coreDir = join(root, "server", "core");
+const coreDir = join(root, "packages", "keel", "src");
 
 /** P0 冻结的依赖清单：只许在 P1 里逐行划掉，新增一行就红。 */
 const MOVES_IN_P1 = [
@@ -60,7 +60,7 @@ function appDepsOf(files: string[]): Set<string> {
 			const abs = resolve(dirname(file), m[1]).replace(/\.js$/, ".ts");
 			const rel = relative(root, abs).split(sep).join("/");
 			if (!rel.startsWith("server/")) continue;
-			if (rel.startsWith("server/core/")) continue;
+			if (rel.startsWith("packages/keel/src/")) continue;
 			deps.add(rel.replace(/^server\//, "").replace(/\.ts$/, ""));
 		}
 	}
@@ -77,17 +77,16 @@ describe("keel · 包骨架", () => {
 		expect(pkg.engines).toEqual({ node: ">=22.19.0" });
 	});
 
-	it("入口只有 src/index.ts，且 exports 指向它", () => {
+	it("包入口是 src/index.ts，且 exports 指向它", () => {
 		const exportsField = pkg.exports as Record<string, { types: string; default: string }>;
 		expect(exportsField["."].types).toBe("./src/index.ts");
 		expect(exportsField["."].default).toBe("./src/index.ts");
-		expect(readdirSync(join(pkgDir, "src"))).toEqual(["index.ts"]);
+		expect(walk(join(pkgDir, "src")).length).toBeGreaterThan(50);
 	});
 
-	it("P0 桥只允许一个文件指向 app 老路径", () => {
+	it("内核里没有指向 app 的桥（P1 后只允许对老叶子的显式依赖）", () => {
 		const files = walk(join(pkgDir, "src"));
-		const bridges = files.filter((f) => readFileSync(f, "utf8").includes("server/core/"));
-		expect(bridges.map((f) => relative(pkgDir, f).split(sep).join("/"))).toEqual(["src/index.ts"]);
+		expect(files.filter((f) => readFileSync(f, "utf8").includes("server/core/"))).toEqual([]);
 	});
 });
 

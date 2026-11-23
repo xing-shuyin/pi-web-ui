@@ -2,10 +2,10 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { createAskQuestionTool } from "../../server/core/adapters/tools/ask-question.js";
-import type { TransportPort } from "../../server/core/contracts/ports.js";
-import { InteractionInbox, type InteractionKind } from "../../server/core/domains/interactions/index.js";
-import { createAskUserWaiter, type AskUserWaiter } from "../../server/core/domains/interactions/questions.js";
+import { createAskQuestionTool } from "../../packages/keel/src/adapters/tools/ask-question.js";
+import type { TransportPort } from "../../packages/keel/src/contracts/ports.js";
+import { InteractionInbox, type InteractionKind } from "../../packages/keel/src/domains/interactions/index.js";
+import { createAskUserWaiter, type AskUserWaiter } from "../../packages/keel/src/domains/interactions/questions.js";
 import type { QuestionAnswer, ServerMessage, UiQuestion } from "../../server/protocol.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -108,7 +108,10 @@ describe("interactions/questions · 发帧形状", () => {
 	});
 
 	it("源文件不读时钟（登记序号只是顺序，不是时间）", () => {
-		const source = readFileSync(join(root, "server", "core", "domains", "interactions", "questions.ts"), "utf8");
+		const source = readFileSync(
+			join(root, "packages", "keel", "src", "domains", "interactions", "questions.ts"),
+			"utf8",
+		);
 		expect(source).not.toMatch(/Date\.now|new Date\(/);
 	});
 });
@@ -367,7 +370,7 @@ describe("adapters/tools/ask-question · 工具定义", () => {
 
 describe("adapters/tools/ask-question · 分层", () => {
 	it("适配器不直连 domains、也不引用 SDK（两个方向都只走窄口与叶子实现）", () => {
-		const source = readFileSync(join(root, "server", "core", "adapters", "tools", "ask-question.ts"), "utf8");
+		const source = readFileSync(join(root, "packages", "keel", "src", "adapters", "tools", "ask-question.ts"), "utf8");
 		const importLines = source.split("\n").filter((line) => line.startsWith("import "));
 		expect(importLines.join("\n")).not.toMatch(/domains|@earendil-works/);
 	});

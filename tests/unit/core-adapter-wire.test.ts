@@ -10,23 +10,23 @@ import {
 	type DispatchFunctionMember,
 	type DispatchHandler,
 	type NonFunctionMember,
-} from "../../server/core/adapters/wire/dispatch-adapter.js";
+} from "../../packages/keel/src/adapters/wire/dispatch-adapter.js";
 import {
 	createDispatchSurfaceAdapter as createFromBarrel,
 	DISPATCH_SURFACE as SURFACE_FROM_BARREL,
-} from "../../server/core/adapters/wire/index.js";
+} from "../../packages/keel/src/adapters/wire/index.js";
 import {
 	DISPATCH_OPTIONAL_MEMBERS,
 	DISPATCH_SURFACE,
 	type DispatchSessionMember,
-} from "../../server/core/adapters/wire/dispatch-surface.js";
-import { CoreEngineNotReadyError } from "../../server/core/contracts/core-engine-errors.js";
+} from "../../packages/keel/src/adapters/wire/dispatch-surface.js";
+import { CoreEngineNotReadyError } from "../../packages/keel/src/contracts/core-engine-errors.js";
 import type { DispatchSession } from "../../server/engine-service.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
 const generatorPath = join(root, "scripts", "gen-core-dispatch-surface.mjs");
-const surfacePath = join(root, "server", "core", "adapters", "wire", "dispatch-surface.ts");
+const surfacePath = join(root, "packages", "keel", "src", "adapters", "wire", "dispatch-surface.ts");
 const engineServicePath = join(root, "server", "engine-service.ts");
 const generatedHeader = "// 生成物，勿手改：node scripts/gen-core-dispatch-surface.mjs";
 const workspace = "D:/ws";

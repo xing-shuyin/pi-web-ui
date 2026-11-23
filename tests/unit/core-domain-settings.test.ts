@@ -5,14 +5,14 @@ import {
 	normalizeUiLayout,
 } from "../../server/client-state.js";
 import type { ClientSettings } from "../../server/client-state.js";
-import type { StatePort } from "../../server/core/contracts/ports.js";
+import type { StatePort } from "../../packages/keel/src/contracts/ports.js";
 import {
 	applySettingsPatch,
 	buildSettingsView,
 	CLIENT_SETTINGS_KEYS,
 	SettingsStore,
 	settingsStateKey,
-} from "../../server/core/domains/settings/index.js";
+} from "../../packages/keel/src/domains/settings/index.js";
 
 const VIEW_KEYS = [
 	"bgAutoCleanupMin",

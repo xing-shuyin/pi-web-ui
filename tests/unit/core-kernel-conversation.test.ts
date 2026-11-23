@@ -8,7 +8,7 @@ import {
 	ConversationRegistry,
 	normalizeTitle,
 	transition,
-} from "../../server/core/kernel/conversation/index.js";
+} from "../../packages/keel/src/kernel/conversation/index.js";
 import { DEFAULT_CONV_TITLE } from "../../server/agent-formatters.js";
 
 const at = (ms: number) => ms;

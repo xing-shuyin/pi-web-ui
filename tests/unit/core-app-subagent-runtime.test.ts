@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { createSubagentRuntime } from "../../server/core/app/subagent-runtime.js";
-import { Conversation, ConversationRegistry } from "../../server/core/kernel/conversation/index.js";
-import type { ClientRuntime } from "../../server/core/app/client-runtime.js";
-import type { SessionRegistry } from "../../server/core/app/session-registry.js";
+import { createSubagentRuntime } from "../../packages/keel/src/app/subagent-runtime.js";
+import { Conversation, ConversationRegistry } from "../../packages/keel/src/kernel/conversation/index.js";
+import type { ClientRuntime } from "../../packages/keel/src/app/client-runtime.js";
+import type { SessionRegistry } from "../../packages/keel/src/app/session-registry.js";
 
 function fakeRuntime() {
 	const registry = new ConversationRegistry<Conversation>();

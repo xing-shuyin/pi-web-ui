@@ -8,7 +8,7 @@ import {
 	type HistoryEntry,
 	type OpenConversationFact,
 	scanHistory,
-} from "../../server/core/domains/history/index.js";
+} from "../../packages/keel/src/domains/history/index.js";
 
 const CWD = "/p/demo";
 const OTHER_CWD = "/p/other";

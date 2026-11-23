@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * 扫描老树 god object（`server/agent-service.ts` 的 `ClientSession`），把每个可变字段按命名归类到新树的域，
- * 产出 `server/core/OWNERSHIP.md`：新树的「状态所有权表」底稿，交给人工裁定 `?` 项。
+ * 产出 `packages/keel/OWNERSHIP.md`：新树的「状态所有权表」底稿，交给人工裁定 `?` 项。
  *
  * 用法：`node scripts/gen-core-ownership.mjs`（写文件）· `--check`（只校验现有文件是否过期）
  */
@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE = join(root, "server", "agent-service.ts");
-const TARGET = join(root, "server", "core", "OWNERSHIP.md");
+const TARGET = join(root, "packages", "keel", "OWNERSHIP.md");
 
 /** 顺序即优先级：先匹配到的域赢。 */
 const RULES = [
@@ -183,7 +183,7 @@ const content = await prettier.format(lines.join("\n"), {
 if (process.argv.includes("--check")) {
 	const current = readFileSync(TARGET, "utf8");
 	if (current !== content) {
-		console.error("✗ server/core/OWNERSHIP.md 已过期，请运行 node scripts/gen-core-ownership.mjs");
+		console.error("✗ packages/keel/OWNERSHIP.md 已过期，请运行 node scripts/gen-core-ownership.mjs");
 		process.exit(1);
 	}
 	console.log("✓ OWNERSHIP.md 与源码一致");

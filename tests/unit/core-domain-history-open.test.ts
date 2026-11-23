@@ -3,15 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { UiMessage } from "../../server/protocol.js";
-import { Conversation, ConversationRegistry } from "../../server/core/kernel/conversation/index.js";
-import { openHistoryConversation, type OpenHistoryInput } from "../../server/core/domains/history/open.js";
-import { projectTranscriptText } from "../../server/core/domains/history/transcript.js";
+import { Conversation, ConversationRegistry } from "../../packages/keel/src/kernel/conversation/index.js";
+import { openHistoryConversation, type OpenHistoryInput } from "../../packages/keel/src/domains/history/open.js";
+import { projectTranscriptText } from "../../packages/keel/src/domains/history/transcript.js";
 
 /** 投影抛错用「整块换成会抛的实现」来造：真实现自己吞错，只能从外面顶掉一次。 */
 const projectionFault = vi.hoisted(() => ({ fail: false }));
 
-vi.mock("../../server/core/domains/history/transcript.js", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("../../server/core/domains/history/transcript.js")>();
+vi.mock("../../packages/keel/src/domains/history/transcript.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../packages/keel/src/domains/history/transcript.js")>();
 	return {
 		...actual,
 		projectTranscriptText: (text: string, opts?: { seq?: number }) => {

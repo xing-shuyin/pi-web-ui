@@ -7,8 +7,8 @@ import {
 	createApprovalWaiter,
 	type ApprovalWaiter,
 	type InteractionKind,
-} from "../../server/core/domains/interactions/index.js";
-import type { TransportPort } from "../../server/core/contracts/ports.js";
+} from "../../packages/keel/src/domains/interactions/index.js";
+import type { TransportPort } from "../../packages/keel/src/contracts/ports.js";
 import type { ServerMessage } from "../../server/protocol.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -144,7 +144,7 @@ describe("interactions/wire · 发帧形状", () => {
 	});
 
 	it("源文件不读时钟（id 与登记序号都来自注入/本地计数）", () => {
-		const source = readFileSync(join(root, "server", "core", "domains", "interactions", "wire.ts"), "utf8");
+		const source = readFileSync(join(root, "packages", "keel", "src", "domains", "interactions", "wire.ts"), "utf8");
 		expect(source).not.toMatch(/Date\.now|new Date\(/);
 	});
 });

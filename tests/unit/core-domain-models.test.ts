@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ModelInfo, ServerMessage } from "../../server/protocol.js";
-import { createModelRuntimeFactory } from "../../server/core/adapters/models/index.js";
+import { createModelRuntimeFactory } from "../../packages/keel/src/adapters/models/index.js";
 import {
 	createModelPusher,
 	loadModelCatalog,
@@ -13,7 +13,7 @@ import {
 	type ModelCatalogRuntime,
 	type ModelRuntimeFactory,
 	type ModelRuntimePaths,
-} from "../../server/core/domains/models/index.js";
+} from "../../packages/keel/src/domains/models/index.js";
 
 function model(over: Partial<CatalogModel> & { id: string }): CatalogModel {
 	return { name: `M-${over.id}`, provider: "demo", reasoning: false, input: ["text"], ...over };

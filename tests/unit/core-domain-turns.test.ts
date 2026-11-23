@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ConversationId } from "../../server/core/contracts/ids.js";
-import type { ClockPort } from "../../server/core/contracts/ports.js";
-import type { TurnCapableSession, TurnEvents, TurnOutcome } from "../../server/core/contracts/session.js";
-import { feedSteer, feedTurn } from "../../server/core/domains/turns/feed.js";
-import { TurnRejectedError, TurnRunner } from "../../server/core/domains/turns/index.js";
-import { Conversation } from "../../server/core/kernel/conversation/index.js";
+import type { ConversationId } from "../../packages/keel/src/contracts/ids.js";
+import type { ClockPort } from "../../packages/keel/src/contracts/ports.js";
+import type { TurnCapableSession, TurnEvents, TurnOutcome } from "../../packages/keel/src/contracts/session.js";
+import { feedSteer, feedTurn } from "../../packages/keel/src/domains/turns/feed.js";
+import { TurnRejectedError, TurnRunner } from "../../packages/keel/src/domains/turns/index.js";
+import { Conversation } from "../../packages/keel/src/kernel/conversation/index.js";
 import { guardSession, isRetiredSession, promptSession, SessionRetiredError } from "../../server/session-turns.js";
 
-vi.mock("../../server/core/domains/turns/feed.js", () => ({ feedSteer: vi.fn(), feedTurn: vi.fn() }));
+vi.mock("../../packages/keel/src/domains/turns/feed.js", () => ({ feedSteer: vi.fn(), feedTurn: vi.fn() }));
 
 const feedTurnMock = vi.mocked(feedTurn);
 const feedSteerMock = vi.mocked(feedSteer);

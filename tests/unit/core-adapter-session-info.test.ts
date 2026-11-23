@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DEFAULT_CONV_TITLE } from "../../server/agent-formatters.js";
-import { readSessionName, renameSessionFile } from "../../server/core/adapters/sdk/session-info.js";
+import { readSessionName, renameSessionFile } from "../../packages/keel/src/adapters/sdk/session-info.js";
 
 /**
  * 重命名落盘（叶子适配器）：真造 jsonl 文件，验的是「标题进得了会话文件、读得回来」，

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createGuardedBuiltinTools, GUARDED_BUILTIN_NAMES } from "../../server/core/adapters/tools/guarded.js";
+import { createGuardedBuiltinTools, GUARDED_BUILTIN_NAMES } from "../../packages/keel/src/adapters/tools/guarded.js";
 
 describe("adapters/tools · 内置工具审批闸", () => {
 	it("重建同名 bash 工具（名字必须与内置一致才能覆盖）", () => {

@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite
 
 const SDK = "@earendil-works/pi-coding-agent";
 const PREPARE = "../../server/transcript-prepare.js";
-const OPENER = "../../server/core/adapters/sdk/session-opener.js";
+const OPENER = "../../packages/keel/src/adapters/sdk/session-opener.js";
 
-type OpenerModule = typeof import("../../server/core/adapters/sdk/session-opener.js");
+type OpenerModule = typeof import("../../packages/keel/src/adapters/sdk/session-opener.js");
 
 interface FakeSession {
 	sessionFile?: string;

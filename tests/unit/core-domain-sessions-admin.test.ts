@@ -8,12 +8,12 @@ import {
 	dismissConversation,
 	renameConversation,
 	renameSession,
-} from "../../server/core/domains/sessions/index.js";
+} from "../../packages/keel/src/domains/sessions/index.js";
 import {
 	Conversation,
 	type ConversationInit,
 	ConversationRegistry,
-} from "../../server/core/kernel/conversation/index.js";
+} from "../../packages/keel/src/kernel/conversation/index.js";
 
 /**
  * 会话管理操作域：删除 / 重命名 / 关闭只碰「文件 + 注册表 + 相位」，

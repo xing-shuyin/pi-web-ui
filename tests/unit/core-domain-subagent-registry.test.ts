@@ -8,7 +8,7 @@ import {
 	type SubagentRegistryOptions,
 	type SubagentSetTimer,
 	type SubagentTimerHandle,
-} from "../../server/core/domains/subagents/index.js";
+} from "../../packages/keel/src/domains/subagents/index.js";
 
 /**
  * 子代理账本域：登记 / 结算 / 并发闸 / 结算等待。

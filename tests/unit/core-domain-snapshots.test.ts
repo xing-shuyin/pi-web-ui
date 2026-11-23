@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ClockPort, TransportPort } from "../../server/core/contracts/ports.js";
+import type { ClockPort, TransportPort } from "../../packages/keel/src/contracts/ports.js";
 import type { ServerMessage } from "../../server/protocol.js";
 import {
 	DELTA_ACTIVE_WINDOW_MS,
@@ -10,7 +10,7 @@ import {
 	type SnapshotPlan,
 	type SnapshotPlanInput,
 	type SnapshotReason,
-} from "../../server/core/domains/snapshots/index.js";
+} from "../../packages/keel/src/domains/snapshots/index.js";
 
 const BASE: SnapshotPlanInput = {
 	lastEmit: { rev: 3, at: 10_000 },

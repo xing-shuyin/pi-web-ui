@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
-const coreDir = join(root, "server", "core");
+const coreDir = join(root, "packages", "keel", "src");
 
 const LAYERS = ["contracts", "kernel", "domains", "adapters", "app"] as const;
 type Layer = (typeof LAYERS)[number];
@@ -23,10 +23,10 @@ const MAX_CORE_FILE_LINES = 600;
 
 /** 只允许这些路径碰 SDK 与喂轮出口；其余层只认 `contracts/session.ts` 的窄面。 */
 const SDK_BOUNDARY = [
-	"server/core/domains/turns/feed.ts",
-	"server/core/adapters/sdk/",
-	"server/core/adapters/models/",
-	"server/core/adapters/tools/",
+	"packages/keel/src/domains/turns/feed.ts",
+	"packages/keel/src/adapters/sdk/",
+	"packages/keel/src/adapters/models/",
+	"packages/keel/src/adapters/tools/",
 ];
 
 function inSdkBoundary(rel: string): boolean {
@@ -77,7 +77,7 @@ const ALLOWED_EDGES: Record<Layer, readonly Layer[]> = {
 	app: ["contracts", "kernel", "domains", "adapters", "app"],
 };
 
-describe("server/core 分层边界", () => {
+describe("keel/src 分层边界", () => {
 	it("新树里确实有文件（防止扫描器坏掉后静默通过）", () => {
 		expect(files.length).toBeGreaterThanOrEqual(6);
 	});

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { CoreEngine, CoreEngineNotReadyError } from "../../server/core/app/core-engine.js";
-import { PI_ENGINE_ENV, resolvePiEngineMode } from "../../server/core/app/engine-mode.js";
+import { CoreEngine, CoreEngineNotReadyError } from "../../packages/keel/src/app/core-engine.js";
+import { PI_ENGINE_ENV, resolvePiEngineMode } from "../../packages/keel/src/app/engine-mode.js";
 
 describe("core/app · 引擎开关", () => {
 	it("只认 core，其余一律 legacy（未知值不能把用户带到未完成的实现上）", () => {

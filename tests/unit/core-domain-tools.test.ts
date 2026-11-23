@@ -3,7 +3,7 @@ import {
 	appendLoadedTools,
 	resolveActiveToolNames,
 	type ToolGatingInput,
-} from "../../server/core/domains/tools/index.js";
+} from "../../packages/keel/src/domains/tools/index.js";
 
 const allSupported = () => true;
 
