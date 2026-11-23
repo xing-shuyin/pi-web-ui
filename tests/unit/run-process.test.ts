@@ -85,8 +85,16 @@ describe("runProcess：子进程执行单源", () => {
 			"process.stdout.write(JSON.stringify({ noColor: process.env.NO_COLOR ?? null, x: process.env.PWU_X ?? null }))";
 		const withDefaults = await runProcess({ cmd: NODE, args: ["-e", script], env: { PWU_X: "1" } });
 		expect(JSON.parse(withDefaults.stdout)).toEqual({ noColor: "1", x: "1" });
-		const keepColor = await runProcess({ cmd: NODE, args: ["-e", script], keepColor: true });
-		expect(JSON.parse(keepColor.stdout).noColor).toBe(null);
+		// keepColor 的语义是「我们不注入」，不是「保证没有」：环境里本来就有 NO_COLOR 时会继承下来
+		// （ci:local 经 safe-exec 跑，NO_COLOR=1 是它设的）。断言前先清掉环境，别把外部变量算进被测行为。
+		const ambient = process.env.NO_COLOR;
+		delete process.env.NO_COLOR;
+		try {
+			const keepColor = await runProcess({ cmd: NODE, args: ["-e", script], keepColor: true });
+			expect(JSON.parse(keepColor.stdout).noColor).toBe(null);
+		} finally {
+			if (ambient !== undefined) process.env.NO_COLOR = ambient;
+		}
 	});
 
 	it.runIf(process.platform === "win32")(

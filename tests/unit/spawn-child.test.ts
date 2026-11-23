@@ -44,10 +44,18 @@ describe("spawnChild：常驻子进程单源", () => {
 		await new Promise<void>((done) => withDefaults.child.once("close", () => done()));
 		expect(JSON.parse(out.join(""))).toEqual({ c: "1", x: "1" });
 
-		const keepColor = spawnChild({ cmd: NODE, args: ["-e", script], keepColor: true });
-		const out2 = collect(keepColor.child);
-		await new Promise<void>((done) => keepColor.child.once("close", () => done()));
-		expect(JSON.parse(out2.join("")).c).toBe(null);
+		// 同 run-process：keepColor 只表示「我们不注入」，环境里已有的 NO_COLOR 会照常继承
+		// （ci:local 经 safe-exec 跑时会带 NO_COLOR=1）。断言前清掉，别把外部变量算进被测行为。
+		const ambient = process.env.NO_COLOR;
+		delete process.env.NO_COLOR;
+		try {
+			const keepColor = spawnChild({ cmd: NODE, args: ["-e", script], keepColor: true });
+			const out2 = collect(keepColor.child);
+			await new Promise<void>((done) => keepColor.child.once("close", () => done()));
+			expect(JSON.parse(out2.join("")).c).toBe(null);
+		} finally {
+			if (ambient !== undefined) process.env.NO_COLOR = ambient;
+		}
 	});
 
 	it("inheritEnv 替换基底（隔离环境，不继承父进程变量）", async () => {
