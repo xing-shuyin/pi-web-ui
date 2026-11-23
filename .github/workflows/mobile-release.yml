@@ -88,9 +88,8 @@ jobs:
           fi
           if [ ! -x /usr/bin/qemu-aarch64-static ]; then
             echo "apt 没装上，改用 multiarch 镜像里的静态解释器"
-            docker create --name pwu-qemu multiarch/qemu-user-static:x86_64-aarch64 >/dev/null
-            docker cp pwu-qemu:/usr/bin/qemu-aarch64-static /tmp/qemu-aarch64-static
-            docker rm pwu-qemu >/dev/null
+            # 该镜像没有 CMD，用 --entrypoint cat 直接把静态解释器取到宿主
+            docker run --rm --entrypoint cat multiarch/qemu-user-static:x86_64-aarch64 /usr/bin/qemu-aarch64-static > /tmp/qemu-aarch64-static
             sudo install -m 0755 /tmp/qemu-aarch64-static /usr/bin/qemu-aarch64-static
           fi
           test -x /usr/bin/qemu-aarch64-static
