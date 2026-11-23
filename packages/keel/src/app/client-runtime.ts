@@ -2,7 +2,9 @@ import type { ClientId, ConversationId } from "../contracts/ids.js";
 import type { ModelAdminPort, ModelMemoryPort } from "../contracts/model-admin.js";
 import type { SettingsFramePort } from "../contracts/settings.js";
 import type { SlashCommandsPort } from "../contracts/commands.js";
+import type { FilesPort, WorkspacePort } from "../contracts/files.js";
 import { createCommandHandlers, type CommandHandlers } from "../domains/commands/index.js";
+import { createFilesHandlers, type FilesHandlers } from "../domains/files/index.js";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
 import type { SnapshotConversationView, SnapshotEnvView, SnapshotView } from "../contracts/snapshot-view.js";
 import { createDispatchSurfaceAdapter, type DispatchHandlers } from "../adapters/wire/index.js";
@@ -90,6 +92,10 @@ export interface ClientRuntimeOptions {
 	releasePendingApprovals?(reason: string): number;
 	/** 斜杠命令面（宿主 `SlashCommandsService`）；缺省 = 该能力未接。 */
 	slashCommands?: () => SlashCommandsPort | undefined;
+	/** 文件 / 目录面（宿主 `FilesService`）；缺省 = 该能力未接。 */
+	files?: () => FilesPort | undefined;
+	/** 工作区绑定（换 cwd / 换额外根）；缺省 = 该能力未接。 */
+	workspace?: () => WorkspacePort | undefined;
 	/** `listCommands` / `saveCommands` 读写的目录（跟随当前对话的 cwd）。 */
 	commandCwd?: () => string;
 	/** 项目/全局模型记忆 + 供应商 key pin（宿主设置存储）；缺省 = 不落盘。 */
@@ -118,6 +124,7 @@ export class ClientRuntime {
 	private providers: ProviderHandlers | undefined;
 	private settingsHandlers: SettingsHandlers | undefined;
 	private commandHandlers: CommandHandlers | undefined;
+	private fileHandlers: FilesHandlers | undefined;
 
 	constructor(options: ClientRuntimeOptions) {
 		this.options = options;
@@ -164,12 +171,19 @@ export class ClientRuntime {
 		}));
 	}
 
-	/** 斜杠命令：`pushSlashCommands` 走宿主端口；读写自定义命令走工作区的文件叶子。 */
-	private commands(): CommandHandlers {
+	/** 斜杠命令：`pushSlashCommands` 走宿主端口；读写自定义命令走工作区的文件叶子。 */ private commands(): CommandHandlers {
 		return (this.commandHandlers ??= createCommandHandlers({
 			slash: () => this.options.slashCommands?.(),
 			cwd: () => this.options.commandCwd?.() ?? this.options.cwd,
 			transport: this.options.transport,
+		}));
+	}
+
+	/** 文件 / 目录 / 工作区绑定：13 个走 `FilesService`，2 个工作区绑定走独立窄面。 */
+	private filesHandlers(): FilesHandlers {
+		return (this.fileHandlers ??= createFilesHandlers({
+			files: () => this.options.files?.(),
+			workspace: () => this.options.workspace?.(),
 		}));
 	}
 
@@ -302,6 +316,7 @@ export class ClientRuntime {
 			...this.providerHandlers(),
 			...this.settings(),
 			...this.commands(),
+			...this.filesHandlers(),
 			setModel: (modelId: string) => this.modelSwitchers().setModel(modelId),
 			setDefaultModel: (modelId: string) => this.modelSwitchers().setDefaultModel(modelId),
 			clearDefaultModel: () => this.modelSwitchers().clearDefaultModel(),

@@ -8,6 +8,7 @@ import type { ClockPort, TransportPort } from "../contracts/ports.js";
 import type { ModelAdminPort, ModelAdminSinks } from "../contracts/model-admin.js";
 import type { SettingsFramePort } from "../contracts/settings.js";
 import type { SlashCommandSinks, SlashCommandsPort } from "../contracts/commands.js";
+import type { FilesPort, WorkspacePort } from "../contracts/files.js";
 import type { SettingsService } from "../../../../server/settings-service.js";
 import { isInsideRoots } from "../path-boundary.js";
 import { ClientStateStore } from "../../../../server/client-state.js";
@@ -50,6 +51,10 @@ export interface CoreEngineOptions {
 	settingsFrame?: (sinks: CoreSettingsSinks) => SettingsFramePort;
 	/** 斜杠命令面工厂（宿主实现：`server/core-commands-adapter.ts`）；缺省 = 能力未接。 */
 	slashCommands?: (sinks: SlashCommandSinks) => SlashCommandsPort;
+	/** 文件面工厂（宿主实现：`server/core-files-adapter.ts`）；缺省 = 能力未接。 */
+	files?: (sinks: CoreFilesSinks) => FilesPort;
+	/** 工作区绑定面工厂；缺省 = 能力未接。 */
+	workspace?: () => WorkspacePort;
 	/** 换完模型后的宿主收尾（压缩预留重算 / 插件通知）：C 类能力一律留在宿主。 */
 	onSessionModelChanged?: (clientId: string, conversationId: string) => void;
 }
@@ -62,6 +67,16 @@ function approvalPolicyState(conv: Conversation | undefined): UiApprovalPolicySt
 		allowAll: policy?.allowAll ?? false,
 		categories: policy ? [...policy.categories.values()] : [],
 	};
+}
+
+/** 宿主实现 `FilesPort` 时要拼的几块：帧出口 + 工作区线径根。 */
+export interface CoreFilesSinks {
+	emit(msg: ServerMessage): void;
+	isDisposed(): boolean;
+	getCwd(): string;
+	getActiveCwd(): string;
+	getLang?: () => ServerLang;
+	getUploadMaxBytes?: () => number;
 }
 
 /** 宿主实现 `SettingsFramePort` 时要拼的几块现成东西（都是宿主端口桶里的模块，P2 会收成端口）。 */
@@ -201,6 +216,8 @@ export class CoreEngine implements EngineService {
 			// 设置面：`SettingsService` 要本运行时的会话与帧出口，所以用 thunk 懒取。
 			settingsFrame: () => settingsFrame,
 			slashCommands: () => slashCommands,
+			files: () => files,
+			workspace: () => this.options.workspace?.(),
 			commandCwd: () => runtime.registry.activeConv()?.meta.cwd ?? this.cwd,
 			releasePendingApprovals: (reason) => approvalWaiter.settleAll("approve", reason),
 			modelAdmin: this.modelAdminPort(),
@@ -254,6 +271,13 @@ export class CoreEngine implements EngineService {
 				const conv = runtime.registry.activeConv();
 				return conv ? sessions.get(conv.id)?.session : undefined;
 			},
+		});
+		const files = this.options.files?.({
+			emit: (msg) => transport.send(msg),
+			isDisposed: () => this.runtimes.get(clientId) !== runtime,
+			getCwd: () => runtime.registry.activeConv()?.meta.cwd ?? this.cwd,
+			getActiveCwd: () => runtime.registry.activeConv()?.meta.cwd ?? this.cwd,
+			getLang: () => this.langOf(clientId),
 		});
 		const modelPusher = createModelPusher({
 			transport,
