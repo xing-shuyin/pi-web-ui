@@ -4,10 +4,12 @@ import type { SettingsFramePort } from "../contracts/settings.js";
 import type { SlashCommandsPort } from "../contracts/commands.js";
 import type { FilesPort, WorkspacePort } from "../contracts/files.js";
 import type { WorktreePort } from "../contracts/worktree.js";
+import type { BackgroundPort } from "../contracts/background.js";
 import { createCommandHandlers, type CommandHandlers } from "../domains/commands/index.js";
 import { createFilesHandlers, type FilesHandlers } from "../domains/files/index.js";
 import { createWorktreeHandlers, type WorktreeHandlers } from "../domains/worktree/index.js";
 import { createConversationStateHandlers, type ConversationStateHandlers } from "../domains/sessions/index.js";
+import { createBackgroundHandlers, type BackgroundHandlers } from "../domains/background/index.js";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
 import type { SnapshotConversationView, SnapshotEnvView, SnapshotView } from "../contracts/snapshot-view.js";
 import { createDispatchSurfaceAdapter, type DispatchHandlers } from "../adapters/wire/index.js";
@@ -97,6 +99,8 @@ export interface ClientRuntimeOptions {
 	releasePendingApprovals?(reason: string): number;
 	/** 输入框草稿存储；缺省按 `cwd` 建一份（真实部署由组合根传 dataDir 下的路径）。 */
 	drafts?: ComposerDraftsStore;
+	/** 后台任务面（宿主 `bg-servers` + `job-runner`）；缺省 = 该能力未接。 */
+	background?: () => BackgroundPort | undefined;
 	/** 斜杠命令面（宿主 `SlashCommandsService`）；缺省 = 该能力未接。 */
 	slashCommands?: () => SlashCommandsPort | undefined;
 	/** 文件 / 目录面（宿主 `FilesService`）；缺省 = 该能力未接。 */
@@ -136,6 +140,7 @@ export class ClientRuntime {
 	private fileHandlers: FilesHandlers | undefined;
 	private worktreeHandlers: WorktreeHandlers | undefined;
 	private conversationState: ConversationStateHandlers | undefined;
+	private backgroundHandlers: BackgroundHandlers | undefined;
 	/** 工作树全貌：工作树域的发布口写它，刷新/删除都从这里读「当前是哪个」。 */
 	private worktreeInfo: WorktreeInfo | null = null;
 	/** 沙盒全貌：`null` = 当前工作区不是沙盒（沙盒适配器接线后由宿主写）。 */
@@ -194,6 +199,13 @@ export class ClientRuntime {
 			slash: () => this.options.slashCommands?.(),
 			cwd: () => this.options.commandCwd?.() ?? this.options.cwd,
 			transport: this.options.transport,
+		}));
+	}
+
+	/** 后台任务：进程树 kill / 端口 diff / job 登记 / 每条 notice 全在宿主，内核只按位转交。 */
+	private background(): BackgroundHandlers {
+		return (this.backgroundHandlers ??= createBackgroundHandlers({
+			background: () => this.options.background?.(),
 		}));
 	}
 
@@ -372,6 +384,7 @@ export class ClientRuntime {
 			...this.filesHandlers(),
 			...this.worktrees(),
 			...this.conversations(),
+			...this.background(),
 			setModel: (modelId: string) => this.modelSwitchers().setModel(modelId),
 			setDefaultModel: (modelId: string) => this.modelSwitchers().setDefaultModel(modelId),
 			clearDefaultModel: () => this.modelSwitchers().clearDefaultModel(),
