@@ -95,6 +95,22 @@ workspaces 要求 lockfile 里登记 workspace 包，`npm ci` 会因此校验失
 老位置（`server/<m>.ts`）一律只剩 `export * from "../packages/keel/src/<m>.js";` 的 shim，
 主应用 100+ 处 import 不用动，直到 P5 删 shim。
 
+## P2 依赖销账（keel 引了多少宿主模块）
+
+判据：`tests/unit/keel-package.test.ts` 的 `appDepsOf`（静态 import 与动态 `import()` 都算）。
+**目标是 0**；每批只许变小。
+
+| 批次  | 剩    | 这一步做了什么                                                                                                                                                                                        |
+| ----- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P2 前 | 10    | client-state / settings-service / terminals / tool-manager / plugins / quick-ask-context / remote-ssh-service / conversation-read-tool / native-cli / approval-default-rules                          |
+| 1     | 7     | 工具**名字**表进 `tool-names.ts`；`native-cli-meta` / `transcript-input` 纯函数搬入（连带 `conversation-touches`）；远程 URI 层进 `remote-workspace.ts`，SSH 操作改 `RemoteSdkOperationsFactory` 注入 |
+| 2     | 6     | `terminals` 销账：命令文件进 `commands-file.ts`（路径解析注入）、PTY 改 `createManager` 工厂注入                                                                                                      |
+| 3     | 4     | `tool-manager` 整份搬入（纯数据 748 行，**不需要端口**）；`plugins` / `quick-ask-context` 改窄类型；`approval-default-rules` + 手机分档搬入                                                           |
+| 当前  | **2** | 余 `client-state`、`settings-service` —— 都是「设置」面，P2 的最后两个端口                                                                                                                            |
+
+判据之外的收益：`ToolCatalogPort` **不再需要**（目录是纯数据，搬比开端口干净）；
+`TerminalPort` / `FilesPort` 都是「宿主实现直通」，没有第二套逻辑。
+
 ## 契约
 
 - 入口只有 `src/index.ts`；宿主不得 import 包内其它路径。

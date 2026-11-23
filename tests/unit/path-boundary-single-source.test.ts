@@ -28,6 +28,7 @@ const KNOWN_LEXICAL_DUPLICATES = new Set([
 	"server/native-cli-references.ts",
 	"server/native-cli-remote-files.ts",
 	"server/native-cli.ts",
+	"server/remote-workspace.ts",
 	"server/remote-ssh-service.ts",
 	"server/skill-maintenance.ts",
 	"server/terminals.ts",
