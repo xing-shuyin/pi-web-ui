@@ -67,6 +67,8 @@ W3 之后 `CoreEngine.attach()` 仍默认关闭（`CoreEngineNotReadyError`）�
 - **打开历史**：`openHistoryConversation` 先按 `sessionFile` 去重再建，读盘/投影失败不抛（空消息 + 计数）。
 - **工具装载**：开会话前由装载域算 `resolveToolLoadout(...).tools` 传给 SDK；活动集只经 `resolveActiveToolNames` 这一个漏斗，装载域只备料（禁用集/平台支持/按需未加载）。
 - **自定义工具**：`customToolsFor(conv)` 一个对话一份闭包（工具里要带会话身份）；`ask_user_question` 与 `conversation`（子代理）已接。
+- **终端**：叶子 `TerminalManager` 原样复用，域只做「对话 → 管理器」懒建与释放；`emit` 只经 `transport.send`，通道关就丢帧。
+- **标题落盘**：`renameSession` 归一标题后经 `renameSessionFile` 追加一条 `session_info`（先过版本校验，不重写整份转录）。
 - **子代理**：账本（谁在跑/何时收口）归 `domains/subagents/registry`，快照（转录/输出）归会话投影，派发/停止/steer 复用会话持有与轮次执行——三者由 `app/subagent-runtime` 连线；对外工具名沿用叶子的 `conversation`。
 - **审批**：SDK 没有审批钩子——审批只能长在自定义工具里（`tool-guards.ts` 的 `askApproval`）。所以 `createApprovalWaiter` 现在只是协议面就绪（登记 → 发 `tool_approval_pending` → 结算 → 发 `tool_approval_resolved`），**内置工具仍绕过审批**，真正触发要等 W7 自定义工具。
 

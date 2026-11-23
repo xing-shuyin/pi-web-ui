@@ -20,6 +20,8 @@ import { createApprovalWaiter, createAskUserWaiter } from "../domains/interactio
 import { createAskQuestionTool } from "../adapters/tools/ask-question.js";
 import { createGuardedBuiltinTools } from "../adapters/tools/guarded.js";
 import { createSubagentRuntime, type SubagentRuntime } from "./subagent-runtime.js";
+import { renameSessionFile } from "../adapters/sdk/session-info.js";
+import { createTerminalHost } from "../domains/terminals/index.js";
 import { DEFAULT_PI_CAPABILITIES } from "../../engine-capabilities.js";
 import type { AgentEngineCapabilities } from "../../protocol.js";
 import { ClientRuntime, type ClientFrames } from "./client-runtime.js";
@@ -66,6 +68,11 @@ export class CoreEngine implements EngineService {
 		if (existing) return existing.handlers();
 		const transport: TransportPort = { send, isClosed: () => !this.runtimes.has(clientId) };
 		const unsubscribers = new Map<string, () => void>();
+		const terminalHost = createTerminalHost({
+			transport,
+			cwdOf: (conversationId) => runtime.registry.get(conversationId)?.meta.cwd ?? this.cwd,
+			lang: () => this.settingsLang,
+		});
 		const inbox = new InteractionInbox(() => {});
 		const approvalWaiter = createApprovalWaiter({ inbox, transport });
 		const askWaiter = createAskUserWaiter({ inbox, transport });
@@ -116,6 +123,10 @@ export class CoreEngine implements EngineService {
 				},
 			},
 			// 只会删自己会话目录里的文件：根 = agentDir/sessions（与 SDK 落盘位置一致）。
+			persistSessionTitle: async (sessionFile, title) => {
+				await renameSessionFile({ sessionFile, title });
+			},
+			terminalManagerFor: (conversationId) => terminalHost.managerFor(conversationId, this.cwd),
 			isAllowedPath: (target) =>
 				isInsideRoots(resolveFsPath(target), [joinPath(this.options.agentDir ?? this.cwd, "sessions")]),
 			viewOf: (conv) => ({

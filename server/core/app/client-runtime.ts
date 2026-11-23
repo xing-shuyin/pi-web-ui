@@ -39,6 +39,10 @@ export interface ClientRuntimeOptions {
 	viewOf?: (conversation: Conversation) => SnapshotConversationView;
 	/** 删会话文件前的路径谓词（缺省 fail-closed：一律拒绝）。 */
 	isAllowedPath?(path: string): boolean;
+	/** 把归一后的标题落进会话文件头（缺省只改内存）。 */
+	persistSessionTitle?(sessionFile: string, title: string): Promise<void> | void;
+	/** 终端管理器来源（缺省 = 终端能力未接）。 */
+	terminalManagerFor?(conversationId: string): unknown;
 	builders?: SnapshotBuilders;
 	sessions?: SessionRegistry;
 	turnEvents?: TurnRunnerDeps["events"];
@@ -170,8 +174,11 @@ export class ClientRuntime {
 				});
 			},
 			renameSession: async (path: string, name: string) => {
-				renameSession({ sessionFile: path, title: name });
+				const { title } = renameSession({ sessionFile: path, title: name });
+				await this.options.persistSessionTitle?.(path, title);
 			},
+			getTerminalManager: (conversationId?: string) =>
+				this.options.terminalManagerFor?.(conversationId ?? this.registry.activeId()) as never,
 			renameConversation: async (id: string, name: string) => {
 				renameConversation({ registry: this.registry, conversationId: id, title: name, now: this.options.clock.now() });
 			},
