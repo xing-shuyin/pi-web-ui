@@ -12,21 +12,25 @@
 | **P0** | 包骨架 + 依赖清单守卫（本目录）                                                     | ✅                                                         |
 | P1     | 把 30 个随包模块物理搬进 `src/`，`src/index.ts` 的桥删掉                            | ✅ 63 个（29 + `protocol` + 33 个连带叶子），老位置留 shim |
 | P2     | 剩下 4 个（settings / terminals / tool-manager / client-state）反转成端口，宿主注入 | 未开始                                                     |
-| P3     | 补齐 165 个 handler（B1~B8）                                                        | 🚧 已真实现 88 / 163（B1 28 + B2 20 + B3 18）              |
+| P3     | 补齐 165 个 handler（B1~B8）                                                        | 🚧 已真实现 95 / 163（B1 28 + B2 20 + B3 18 + B4a 7）      |
 | P5     | 发布 `@earendil-works/keel`，主应用改成版本依赖；启用 npm workspaces                | 未开始                                                     |
 
 ## handler 进度（`handlers()` 里已注册的成员）
 
-| 批次    | 域                                     | 已真实现 | 备注                                                                                                                             |
-| ------- | -------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| —       | 骨架期（W1~W7 已接）                   | 22       | 出帧 / 会话 / 审批回包 / 终端句柄 / 列表                                                                                         |
-| **B1**  | 模型 / 供应商                          | 28       | 4 个真逻辑（选模型 / 思考档 / 全局默认），24 个走 `ModelAdminPort` 纯转发                                                        |
-| **B2**  | 设置 / 预设 / 审批 / 命令              | 20       | 16 走 `SettingsFramePort`，`setApprovalPolicy` 归聚合根，3 个斜杠命令                                                            |
-| B2 未做 | 引擎预设 6 + `setClaudePermissionMode` | 0        | **本引擎显式不支持**：依赖 `tool-manager` 目录 / SDK 分支写入 / claude driver，退到 B8/P4                                        |
-| **B3a** | 文件 / 目录                            | 15       | 13 个走 `FilesService`；`makeDir(setAsCwd)` 是「建目录 → 切工作区」两步                                                          |
-| **B3b** | Git 工作树                             | 3        | `worktree-service` 三支纯函数直通；内核只编排「删当前树先回退 cwd」                                                              |
-| B3 未做 | 沙盒 7                                 | 0        | 真实实现长在 `ClientSession`：要 `coordinateSandboxLifecycle` + `setCwd` 一起抽（P4）。契约与域已落地、27 条用例，只差宿主适配器 |
-| B3 未做 | `setCwd` / `setWorkspaceRoots`         | 0        | 同属工作区重绑：宿主实现显式报「core 引擎暂不支持」（`createCoreWorkspaceUnavailable`），不静默                                  |
+| 批次    | 域                                                  | 已真实现 | 备注                                                                                                                             |
+| ------- | --------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| —       | 骨架期（W1~W7 已接）                                | 22       | 出帧 / 会话 / 审批回包 / 终端句柄 / 列表                                                                                         |
+| **B1**  | 模型 / 供应商                                       | 28       | 4 个真逻辑（选模型 / 思考档 / 全局默认），24 个走 `ModelAdminPort` 纯转发                                                        |
+| **B2**  | 设置 / 预设 / 审批 / 命令                           | 20       | 16 走 `SettingsFramePort`，`setApprovalPolicy` 归聚合根，3 个斜杠命令                                                            |
+| B2 未做 | 引擎预设 6 + `setClaudePermissionMode`              | 0        | **本引擎显式不支持**：依赖 `tool-manager` 目录 / SDK 分支写入 / claude driver，退到 B8/P4                                        |
+| **B3a** | 文件 / 目录                                         | 15       | 13 个走 `FilesService`；`makeDir(setAsCwd)` 是「建目录 → 切工作区」两步                                                          |
+| **B3b** | Git 工作树                                          | 3        | `worktree-service` 三支纯函数直通；内核只编排「删当前树先回退 cwd」                                                              |
+| B3 未做 | 沙盒 7                                              | 0        | 真实实现长在 `ClientSession`：要 `coordinateSandboxLifecycle` + `setCwd` 一起抽（P4）。契约与域已落地、27 条用例，只差宿主适配器 |
+| B3 未做 | `setCwd` / `setWorkspaceRoots`                      | 0        | 同属工作区重绑：宿主实现显式报「core 引擎暂不支持」（`createCoreWorkspaceUnavailable`），不静默                                  |
+| **B4a** | 会话状态                                            | 7        | 切对话 / 队列摘除 / 草稿 / 计数 / 取消息 / 子代理收口；`composer-drafts` 一并搬进 keel                                           |
+| B4 未做 | `switchSession` / `forkSession` / `rollbackSession` | 0        | 与 `setCwd`、沙盒共用「释放旧会话 → 起新会话 → 推帧」链，归 P4「会话实体重绑」一批                                               |
+| B4 未做 | `editMessage` / `deleteMessage` / `retryLast`       | 0        | 要改 SDK 会话消息 + 重跑一轮：需要 `TurnCapableSession` 的消息编辑窄面，归 P4                                                    |
+| B4 未做 | `pinSession` / `setConversationPinned`              | 0        | 要 `client-state.setSessionPinned` + `conversations` 帧，随 `SettingsStorePort`（P2）一起收                                      |
 
 两个新端口都由宿主编译期结构直通（不做参数搬运）：
 `server/core-model-adapter.ts`（`ModelAdminPort`）、`server/core-settings-adapter.ts` +
