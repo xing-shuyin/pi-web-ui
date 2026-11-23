@@ -15,5 +15,5 @@
     "noEmitOnError": true,
     "types": ["node"]
   },
-  "include": ["server/**/*.ts", "shared/**/*.ts"]
+  "include": ["server/**/*.ts", "shared/**/*.ts", "packages/keel/src/**/*.ts"]
 }

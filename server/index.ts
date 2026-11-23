@@ -54,6 +54,8 @@ import { VERSION, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { sdkCopies, sdkOriginNote } from "./sdk-origin.js";
 import { PROTOCOL_VERSION } from "./protocol-version.js";
 import { AgentService, workspacePath, QuiesceRejectedError, ClientSession } from "./agent-service.js";
+import { CoreEngine } from "../packages/keel/src/app/core-engine.js";
+import { resolvePiEngineMode } from "../packages/keel/src/app/engine-mode.js";
 import { ClientStateStore } from "./client-state.js";
 import { isAbsoluteWirePath, wireToAbs } from "./files-service.js";
 import { WS_MAX_PAYLOAD_BYTES } from "./payload-limits.js";
@@ -1602,7 +1604,11 @@ function ensureEngine(engine: EngineId): EngineService {
 		return dshServiceInstance;
 	}
 	if (!piServiceInstance) {
-		piServiceInstance = new AgentService(CWD, sharedStateStore);
+		piServiceInstance =
+			resolvePiEngineMode() === "core"
+				? // 新引擎（keel）实现 EngineService 但仍有 AgentService 专属调用点待清零，类型面暂借 legacy。
+					(new CoreEngine(CWD, { version: VERSION, dataDir: DATA_DIR, agentDir: getAgentDir() }) as unknown as AgentService)
+				: new AgentService(CWD, sharedStateStore);
 		for (let i = 0; i < sharedSocketCount; i++) piServiceInstance.noteSocketOpen();
 		if (sharedQuiesced) piServiceInstance.quiesce();
 		wireEngineHooks?.(piServiceInstance);

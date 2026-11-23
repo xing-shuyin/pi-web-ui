@@ -116,6 +116,16 @@ export const ENV_SPECS: readonly EnvSpec[] = [
 	{ name: "PI_WEB_DSH_RUNTIME_BASE", scope: "internal" },
 	{ name: "PI_WEB_NATIVE_CLI_APPROVAL", scope: "internal" },
 	{ name: "PI_WEB_NATIVE_CLI_KEY", scope: "internal" },
+	{
+		name: "PI_WEB_PI_ENGINE",
+		scope: "internal",
+		note: "新树（server/core）接管 pi 引擎的开关；core 未完成前不进 env-vars.md。",
+	},
+	{
+		name: "PI_WEB_PI_ENGINE_ATTACH",
+		scope: "internal",
+		note: "新引擎 attach 的显式开关（快照投影未接前默认关闭）。",
+	},
 	{ name: "PI_WEB_PKG_ROOT", scope: "internal" },
 	{ name: "PI_WEB_PLUGIN_FORCE_REMOTE", scope: "internal" },
 	{ name: "PI_WEB_RESTART_CHILD", scope: "internal" },

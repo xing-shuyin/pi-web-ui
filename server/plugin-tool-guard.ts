@@ -1,4 +1,4 @@
-export type GuardedToolName = "bash" | "read";
+export type GuardedToolName = "bash" | "read" | "write" | "edit";
 
 export interface ToolPreRequest {
 	toolName: GuardedToolName;

@@ -1,0 +1,19 @@
+{
+	"name": "@earendil-works/keel",
+	"version": "0.0.1",
+	"description": "Keel — 编码智能体的会话编排内核（多对话 / 轮次 / 工具与审批 / 子代理 / 出帧）",
+	"type": "module",
+	"license": "MIT",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"default": "./src/index.ts"
+		}
+	},
+	"files": [
+		"src"
+	],
+	"engines": {
+		"node": ">=22.19.0"
+	}
+}

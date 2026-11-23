@@ -1,0 +1,69 @@
+import { describe, expect, it } from "vitest";
+import { CoreEngine, CoreEngineNotReadyError } from "../../packages/keel/src/app/core-engine.js";
+import { PI_ENGINE_ENV, resolvePiEngineMode } from "../../packages/keel/src/app/engine-mode.js";
+
+describe("core/app · 引擎开关", () => {
+	it("只认 core，其余一律 legacy（未知值不能把用户带到未完成的实现上）", () => {
+		expect(resolvePiEngineMode({})).toBe("legacy");
+		expect(resolvePiEngineMode({ [PI_ENGINE_ENV]: "" })).toBe("legacy");
+		expect(resolvePiEngineMode({ [PI_ENGINE_ENV]: "legacy" })).toBe("legacy");
+		expect(resolvePiEngineMode({ [PI_ENGINE_ENV]: " COR " })).toBe("legacy");
+		expect(resolvePiEngineMode({ [PI_ENGINE_ENV]: " CORE " })).toBe("core");
+	});
+});
+
+describe("core/app · CoreEngine 生命周期", () => {
+	it("quiesce / unquiesce 与 serviceStatus 自洽", async () => {
+		const engine = new CoreEngine("/work", { version: "test-version" });
+		expect(engine.isQuiesced()).toBe(false);
+		engine.quiesce();
+		expect(engine.isQuiesced()).toBe(true);
+		expect(engine.quiesceInfo().quiesced).toBe(true);
+		const status = engine.serviceStatus();
+		expect(status.quiesced).toBe(true);
+		expect(status.cwd).toBe("/work");
+		expect(status.activeConversations).toBe(0);
+		expect(status.pendingMessages).toBe(0);
+		engine.unquiesce();
+		expect(engine.isQuiesced()).toBe(false);
+		await engine.disposeAll();
+		expect(engine.serviceStatus().connectedClients).toBe(0);
+	});
+
+	it("socket 计数不为负", () => {
+		const engine = new CoreEngine("/work", { version: "test-version" });
+		engine.noteSocketClose();
+		expect(engine.serviceStatus().connectedClients).toBe(0);
+		engine.noteSocketOpen();
+		engine.noteSocketOpen();
+		expect(engine.serviceStatus().connectedClients).toBe(2);
+		engine.noteSocketClose();
+		expect(engine.serviceStatus().connectedClients).toBe(1);
+	});
+
+	it("attach 默认关闭：明确报「尚未接入」，不静默降级", async () => {
+		const engine = new CoreEngine("/work", { version: "test-version", attach: false });
+		await expect(engine.attach("c1", () => {})).rejects.toBeInstanceOf(CoreEngineNotReadyError);
+		expect(engine.get("c1")).toBeUndefined();
+	});
+
+	it("显式打开 attach：接客户端并保持同一份运行时", async () => {
+		const engine = new CoreEngine("/work", { version: "test-version", attach: true });
+		const sent: unknown[] = [];
+		const cs = await engine.attach("c1", (msg) => void sent.push(msg));
+		expect(cs.cwd).toBe("/work");
+		expect(engine.get("c1")).toBe(cs);
+		expect(engine.serviceStatus().connectedClients).toBe(0);
+		engine.detach("c1", () => {});
+		expect(engine.get("c1")).toBeUndefined();
+	});
+
+	it("activeConversations / pendingMessages 汇总各客户端运行时", async () => {
+		const engine = new CoreEngine("/work", { version: "test-version", attach: true });
+		const a = await engine.attach("a", () => {});
+		await engine.attach("b", () => {});
+		expect(engine.activeConversations()).toBe(0);
+		expect(engine.pendingMessages()).toBe(0);
+		expect(a.activeConversationId?.()).toBeUndefined();
+	});
+});
