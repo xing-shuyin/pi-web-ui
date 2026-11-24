@@ -60,6 +60,7 @@ import { createCoreModelAdmin } from "./core-model-adapter.js";
 import { createCoreSettingsAdapter } from "./core-settings-adapter.js";
 import { createCoreSlashCommands } from "./core-commands-adapter.js";
 import { createCoreFiles } from "./core-files-adapter.js";
+import { createCoreScmCommitMessage } from "./core-scm-adapter.js";
 import { createCoreWorkspace } from "./core-workspace-adapter.js";
 import { createCoreSandbox } from "./core-sandbox-adapter.js";
 import { createCorePlugins } from "./core-plugin-adapter.js";
@@ -1658,6 +1659,10 @@ function ensureEngine(engine: EngineId): EngineService {
 						settingsFrame: (sinks) => createCoreSettingsAdapter({ ...sinks, stateStore: sharedStateStore }),
 						slashCommands: (sinks) => createCoreSlashCommands(sinks),
 						files: (sinks) => createCoreFiles(sinks),
+						// SCM 提交信息：git 采集与一次独立推断都在宿主叶子（`server/scm-commitmsg.ts`），
+						// 模型运行时 / 凭证 / 提示词口径全归宿主；内核只转发并回一帧。
+						scmCommitMessage: (sinks) =>
+							createCoreScmCommitMessage({ agentDir: getAgentDir(), stateStore: sharedStateStore, ...sinks }),
 						// 后台任务面：`BgServerTracker` + `JobRegistry` 都是进程级叶子，这里只把本客户端的帧出口接上。
 						background: (sinks) => createCoreBackground({ dataDir: DATA_DIR, ...sinks }),
 						plugins: (sinks) =>

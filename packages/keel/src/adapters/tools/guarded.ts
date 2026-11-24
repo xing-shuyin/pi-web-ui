@@ -7,6 +7,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { withToolGuard, type AskApprovalFn } from "../../tool-guards.js";
 import type { ServerLang } from "../../i18n.js";
 import type { RemoteSdkOperationsFactory } from "../../contracts/remote-ops.js";
+import type { BashAbortRegistry } from "../../contracts/background.js";
 
 export interface GuardedToolOptions {
 	cwd: string;
@@ -14,6 +15,37 @@ export interface GuardedToolOptions {
 	askApproval: AskApprovalFn;
 	getRoots?: () => string[];
 	conversationId?: () => string | undefined;
+	/** 对话级 bash 中止表（内核 `BashKills`）：缺省 = 没有可中止的句柄（`abortBash` 恒报没在跑）。 */
+	bashKills?: BashAbortRegistry;
+}
+
+/**
+ * 对话级 bash 中止：SDK 内置 bash 的 `execute` 第三参就是 `AbortSignal`（abort 时 SDK 自己
+ * `killProcessTree`），所以内核只需要「执行开始登记 / 结束注销」这一层，`abortBash` 就有真句柄可拉。
+ *
+ * 合成 signal 用的是 `AbortSignal.any([上游, 句柄])`：会话中止 / 用户 ESC 与「停掉这条命令」两路都要
+ * 真杀掉进程树，任一方向到达都算数。注销放在 `finally`：成功、失败、被中止三条路都不会漏表。
+ * 登记只覆盖**真正开始执行之后**这一段（审批等待不算「正在跑的命令」），所以这层包在审批闸里面。
+ */
+export function withBashAbortHandle(
+	def: ToolDefinition,
+	options: { kills: BashAbortRegistry; conversationId?: () => string | undefined },
+): ToolDefinition {
+	const run = def.execute as (...args: unknown[]) => unknown;
+	return {
+		...def,
+		execute: (async (...args: unknown[]) => {
+			const handle = options.kills.register(options.conversationId?.());
+			if (!handle) return run(...args);
+			const upstream = args[2];
+			const signal = upstream instanceof AbortSignal ? AbortSignal.any([upstream, handle.signal]) : handle.signal;
+			try {
+				return await run(args[0], args[1], signal, args[3], args[4]);
+			} finally {
+				handle.release();
+			}
+		}) as ToolDefinition["execute"],
+	};
 }
 
 /**
@@ -45,9 +77,15 @@ export function createGuardedBuiltinTools(
 		askApproval: options.askApproval,
 	};
 	// 写盘类工具默认规则库已经覆盖（`approval-default-rules.ts` 的 `tools: ["write","edit","patch"]`），
-	// 这里只是把它们的执行接到同一个审批闸上。
+	// 这里只是把它们的执行接到同一个审批闸上。bash 里面再套一层中止句柄登记（审批等完才开始算「在跑」）。
+	const killableBash = options.bashKills
+		? withBashAbortHandle(bash as ToolDefinition, {
+				kills: options.bashKills,
+				...(options.conversationId ? { conversationId: options.conversationId } : {}),
+			})
+		: (bash as ToolDefinition);
 	return [
-		withToolGuard(bash as ToolDefinition, { ...common, toolName: "bash" }),
+		withToolGuard(killableBash, { ...common, toolName: "bash" }),
 		withToolGuard(write as ToolDefinition, { ...common, toolName: "write" }),
 		withToolGuard(edit as ToolDefinition, { ...common, toolName: "edit" }),
 	];

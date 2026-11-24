@@ -195,12 +195,6 @@ export function createCoreBackground(options: { dataDir: string } & CoreBackgrou
 			return bg.cleanStale(thresholdMs, { manual: true });
 		},
 
-		async abortBash(conversationId?: string): Promise<void> {
-			throw new Error(
-				`core 引擎暂不支持停止 bash 命令${conversationId ? `（对话 ${conversationId}）` : ""}：keel 侧还没有对话级 bash 终止句柄（老实现 ClientSession.bashKills）`,
-			);
-		},
-
 		dispose(): void {
 			bg.stop();
 			jobs.dispose();

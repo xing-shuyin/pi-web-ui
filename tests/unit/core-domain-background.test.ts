@@ -36,9 +36,6 @@ function fakeBackground(overrides: Partial<BackgroundPort> = {}): { port: Backgr
 			calls.push(["cleanBackgroundLeftovers", minutesOverride]);
 			return [3000];
 		},
-		abortBash: async (conversationId?: string) => {
-			calls.push(["abortBash", conversationId]);
-		},
 		...overrides,
 	};
 	return { port, calls };
@@ -66,11 +63,9 @@ const cases: [string, (h: BackgroundHandlers) => unknown, Call][] = [
 	["setBackgroundKeep(keep=false)", (h) => h.setBackgroundKeep(3000, false), ["setBackgroundKeep", 3000, false]],
 	["cleanBackgroundLeftovers(minutes)", (h) => h.cleanBackgroundLeftovers(15), ["cleanBackgroundLeftovers", 15]],
 	["cleanBackgroundLeftovers()", (h) => h.cleanBackgroundLeftovers(), ["cleanBackgroundLeftovers", undefined]],
-	["abortBash(conversationId)", (h) => h.abortBash("c-7"), ["abortBash", "c-7"]],
-	["abortBash()", (h) => h.abortBash(), ["abortBash", undefined]],
 ];
 
-describe("后台任务 handler（B5）· 8 个按位转发", () => {
+describe("后台任务 handler（B5）· 7 个按位转发", () => {
 	for (const [member, invoke, expected] of cases) {
 		it(`${member} → ${expected[0]}(${expected.slice(1).length} 参逐字)`, async () => {
 			const { port, calls } = fakeBackground();
@@ -88,7 +83,7 @@ describe("后台任务 handler（B5）· 8 个按位转发", () => {
 		await expect(handlers.cleanBackgroundLeftovers()).resolves.toEqual([3000]);
 	});
 
-	it("端口缺省时 8 个成员都同步抛 CoreEngineNotReadyError（register 表口径：不能变 rejected promise）", () => {
+	it("端口缺省时 7 个转发成员都同步抛 CoreEngineNotReadyError（register 表口径：不能变 rejected promise）", () => {
 		const handlers = createBackgroundHandlers({});
 		const silent: string[] = [];
 		for (const [member, invoke] of cases) {
@@ -102,15 +97,12 @@ describe("后台任务 handler（B5）· 8 个按位转发", () => {
 		expect(silent).toEqual([]);
 	});
 
-	it("abortBash 没有活跃命令的分支归宿主：内核照样转交、自己不补 notice、不抛", async () => {
-		// 老实现这一支是「info notice（当前没有正在运行的 bash 命令）+ flush 快照」——
-		// per-对话 kill 句柄集合在宿主，内核看不见，所以宿主的 abortBash 直接 resolve 就代表「没有活跃命令」。
-		const { port, calls } = fakeBackground({
-			abortBash: async (conversationId?: string) => void calls.push(["abortBash", conversationId]),
-		});
+	it("abortBash 不归宿主端口：端口齐但中止表没接，仍然同步抛（不假装「没有命令在跑」）", () => {
+		// 句柄表在工具执行那一侧（`BashKills`）：没有它就无从判断有没有在跑，只能如实报未接。
+		const { port, calls } = fakeBackground();
 		const handlers = createBackgroundHandlers({ background: () => port });
-		await expect(handlers.abortBash("c-empty")).resolves.toBeUndefined();
-		expect(calls).toEqual([["abortBash", "c-empty"]]);
+		expect(() => handlers.abortBash("c-7")).toThrow(CoreEngineNotReadyError);
+		expect(calls).toEqual([]);
 	});
 
 	it("宿主 reject 不吞：错原样冒泡（停不掉的端口行由宿主发 notice，内核不假装成功）", async () => {

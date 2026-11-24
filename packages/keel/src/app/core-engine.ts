@@ -35,6 +35,7 @@ import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
 import { resolvePiEngineAttach } from "./engine-mode.js";
 import { resolveServerLang, type ServerLang } from "../i18n.js";
 import { createHostFaces, type HostFaceFactories } from "./host-faces.js";
+import { BashKills } from "../domains/background/index.js";
 
 export { CoreEngineNotReadyError };
 /** 宿主面形状（sinks / 工厂表）住在 `host-faces.ts`，这里只做转发，宿主的 import 路径不变。 */
@@ -45,6 +46,7 @@ export type {
 	CoreNativeCliSinks,
 	CorePluginsSinks,
 	CoreSandboxSinks,
+	CoreScmCommitMessageSinks,
 	CoreSettingsSinks,
 	CoreWorkspaceSinks,
 	HostFaceDeps,
@@ -161,6 +163,8 @@ export class CoreEngine implements EngineService {
 		const cliConversations = new NativeCliConversations();
 		// 预设的运行态：`selectAgentPreset` / `setPermissionPreset` 写它，快照 `agentPreset` / `permission` 读它。
 		const presets = new PresetState();
+		// 对话级 bash 中止表：工具执行登记（`guarded.ts`）、`abortBash` 中止，两边必须是同一份。
+		const bashKills = new BashKills();
 		/**
 		 * 会话（重新）打开时按当前预设重设一次工具集：预设只在内存里，重开会话不能回到全量。
 		 * 只对**显式选过的非标准**预设动手：`standard` 与「没选过」必须保持 SDK 从转录恢复的装载
@@ -196,6 +200,8 @@ export class CoreEngine implements EngineService {
 							...(this.options.remoteOpsOf ? { remoteOpsOf: this.options.remoteOpsOf } : {}),
 							getLang: () => this.langOf(clientId),
 							conversationId: () => conv.id,
+							// bash 中止句柄按对话登记：`abortBash` 才真杀得掉（老实现 `ClientSession.bashKills` 同口径）。
+							bashKills,
 							askApproval: (_toolCallId, toolName, params, reason, reasonEn) =>
 								approvalWaiter.request({
 									conversationId: conv.id,
@@ -289,6 +295,8 @@ export class CoreEngine implements EngineService {
 			uiBridge: () => faces.uiBridge,
 			plugins: () => faces.plugins,
 			background: () => faces.background,
+			bashKills,
+			scmCommitMessage: () => faces.scmCommitMessage,
 			sandbox: () => faces.sandbox,
 			stateStore: () => this.stateStore,
 			workspaceHost: () => faces.workspaceHost,

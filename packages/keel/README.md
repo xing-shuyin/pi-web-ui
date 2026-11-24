@@ -18,9 +18,9 @@
 **数字口径（唯一可复现口径，别再拿估数当账；基线 = 提交 `6a93e03c`，与 `.scratch/gap-audit.md` 同源）**
 
 - **分母 185** = `packages/keel/src/adapters/wire/dispatch-surface.ts` 的 `DISPATCH_SURFACE` 项数（生成物；源 = `packages/keel/src/engine-service.ts` 的 `interface DispatchSession`，186 行声明去掉重复的 `forkSession`）。守卫 `tests/unit/core-adapter-wire.test.ts`（成员数 = 声明数、无重复）。
-- **内核真提供 177** = 运行时枚举 `ClientRuntime.handlers()` 得 **178** 个键，减去 1 个面外键 `botIdOf`（`domains/bots/chat.ts`，`DispatchSession` 里没有它）；155 是审计基线 `6a93e03c` 的值，本批后 +22。
-- **缺 8** = 185 − 177 = 未实现 **1**（`scmGenCommitMessage`）+ 显式不支持 **7**（DSH 补丁 6 + `setClaudePermissionMode` 1），名单在「剩余 8 个」一节。
-- **可用 176** = 177 − **跑不动 1**（`abortBash` 端口内恒抛）。native-cli 4 个已在本批接上宿主口。
+- **内核真提供 178** = 运行时枚举 `ClientRuntime.handlers()` 得 **179** 个键，减去 1 个面外键 `botIdOf`（`domains/bots/chat.ts`，`DispatchSession` 里没有它）；155 是审计基线 `6a93e03c` 的值，之后 +23。
+- **缺 7** = 185 − 178，**全部是显式不支持**（DSH 补丁 6 + `setClaudePermissionMode` 1），名单见下一节；未实现 = **0**。
+- **可用 178**：`abortBash` 已改为内核自卫（`domains/background/bash-kills.ts` 登记 AbortController，SDK bash 的 `signal` 真杀进程树），native-cli 4 个也已接上宿主口——「跑不动」清零。
 - 计划期的「165」作废：任何提交点的 `DispatchSession` 都不是 165（取证 `.scratch/gap-audit.md` §4.2）。旧算式「155 可用 + 2 接线就绪 + 剩 10」三处都错：分母错、余数错（应 30）、接线就绪实为 0。
 
 ## handler 进度
@@ -42,8 +42,9 @@
 | **B3b** | Git 工作树                                                                                                                       | 3       | 可用                     | `worktree-service` 三支纯函数直通；内核只编排「删当前树先回退 cwd」                                                                                                                                         |
 | **B4a** | 会话状态                                                                                                                         | 7       | 可用                     | 切对话 / 队列摘除 / 草稿 / 计数 / 取消息 / 子代理收口；`composer-drafts` 一并搬进 keel                                                                                                                      |
 | **B5a** | 终端查询 / 项目脚本                                                                                                              | 4       | 可用                     | `getTerminalCwd` / `findTerminalManager` / `listProjectScripts`；`project-scripts` 搬进 keel                                                                                                                |
-| **B5b** | 后台任务                                                                                                                         | 7       | 可用                     | 宿主 `core-background-adapter`（`BgServerTracker` + `JobRegistry`）；同组 8 个成员里 `abortBash` 单列下一行                                                                                                 |
-| —       | `abortBash`（停止对话级 bash）                                                                                                   | 1       | 跑不动                   | handler 已注册、端口实现**恒抛**（`server/core-background-adapter.ts:198-203`：keel 侧还没有对话级 bash 终止句柄）⇒ 记「跑不动」，不是「未实现」。旧台账把 8 个全记「可用」，同一格备注又承认它没实现       |
+| **B5b** | 后台任务                                                                                                                         | 7       | 可用                     | 宿主 `core-background-adapter`（`BgServerTracker` + `JobRegistry`）；`abortBash` 内核自卫（`domains/background/bash-kills.ts`）                                                                             |
+| —       | `abortBash`（停止对话级 bash）                                                                                                   | 1       | 可用                     | 内核按对话登记 `AbortController`，SDK bash 的 `AbortSignal` 真杀进程树；无在跑时与老实现同样只发 notice                                                                                                     |
+| —       | `scmQuery` / `scmGenCommitMessage`                                                                                               | 2       | 可用                     | `FilesPort.scmQuery` 直通宿主 `FilesService`；提交信息推断走新 `ScmCommitMessagePort`（宿主 `core-scm-adapter`，帧由内核发）                                                                                |
 | **B6**  | 插件 / MCP / 扩展 / 技能                                                                                                         | 14      | 可用                     | `PluginsPort` 14 个直通宿主叶子（mcp-manager / 市场 / 技能盘 / 插件更新）；`installPiAgent` 不在本组                                                                                                        |
 | **B3c** | 沙盒                                                                                                                             | 7       | 可用                     | 宿主 `core-sandbox-adapter`（`SandboxManager`）；内核编排「建/升后切工作区」「reset/apply/destroy 前后迁 owner」                                                                                            |
 | **P4**  | 会话实体重绑组                                                                                                                   | 5       | 可用                     | `rebindSession` 单原语（先建后拆、失败真回滚）：`setCwd` / `setWorkspaceRoots` / `switchSession` / `pinSession` / `pushSessionsForCwd`；`setConversationPinned` 只在本表单列记一次（旧台账两行各记一次）    |
@@ -67,19 +68,18 @@
 **沙盒 / 工作树是全貌字段**（`UiState.sandbox` / `UiState.worktree`）：进程级、跟着 cwd 走，
 由每次组帧现取；`undefined` 不出键、显式 `null` 出键（客户端据此清横幅）。
 
-## 剩余 8 个（1 未实现 + 7 显式不支持）
+## 剩余 7 个（全部显式不支持）
 
-算术：**185（面）− 177（内核真提供）= 8**。前 22 个在本轮补完（A 组 7 · B 组 5 · C 组 8 · 预设 2），
-当时的 30 行取证表在 `.scratch/gap-audit.md` §1。
+算术：**185（面）− 178（内核真提供）= 7**，全部是显式不支持。审计基线（`6a93e03c`）的 30 行取证表在
+`.scratch/gap-audit.md` §1；此后按「A 组 7 · B 组 5 · C 组 8 · 预设 2 · native-cli 4 · scm 2」逐批销账。
 
-| 成员                                                                                                               | 分类       | 下一个真阻塞点                                                                                                             |
-| ------------------------------------------------------------------------------------------------------------------ | ---------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `scmGenCommitMessage`                                                                                              | 未实现     | 宿主 `server/scm-commitmsg.ts:110` 的「独立于对话的一次模型推断 + git diff 采集」尚未端口化；内核只有会话内的 `TurnRunner` |
-| `listDshPatches` / `rescanDshPatches` / `installDshPatch` / `toggleDshPatch` / `deleteDshPatch` / `fetchDshMarket` | 显式不支持 | DSH 引擎专属，只活在 `server/dsh/dsh-agent-service.ts`；pi 引擎老实现里也没有，UI 侧由 `engine === "dsh"` 门控             |
-| `setClaudePermissionMode`                                                                                          | 显式不支持 | claude driver 专属：写的是 `server/universal/drivers/claude-code.ts:58` 的模块级单例，pi/codex/keel 没有这个 driver        |
+| 成员                                                                                                               | 分类       | 下一个真阻塞点                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------ | ---------- | ------------------------------------------------------------------------------------------------------------------- |
+| `listDshPatches` / `rescanDshPatches` / `installDshPatch` / `toggleDshPatch` / `deleteDshPatch` / `fetchDshMarket` | 显式不支持 | DSH 引擎专属，只活在 `server/dsh/dsh-agent-service.ts`；pi 引擎老实现里也没有，UI 侧由 `engine === "dsh"` 门控      |
+| `setClaudePermissionMode`                                                                                          | 显式不支持 | claude driver 专属：写的是 `server/universal/drivers/claude-code.ts:58` 的模块级单例，pi/codex/keel 没有这个 driver |
 
-另：`abortBash` 是唯一「已实现但跑不动」的（`server/core-background-adapter.ts:198-203` 恒抛，
-缺对话级 bash kill 登记；老实现靠 `ClientSession.bashKills`）。
+另：`abortBash` 已转正——内核 `domains/background/bash-kills.ts` 按对话登记 `AbortController`，
+SDK bash 的 `AbortSignal` 会真杀进程树；端口零参与（不再需要宿主句柄）。
 
 ## P4 会话实体重绑链（一次做对，四个入口共享）
 

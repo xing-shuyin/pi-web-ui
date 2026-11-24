@@ -10,12 +10,15 @@
  * 内核在这里**没有**任何编排可做：进程树 kill、硬超时、日志落盘、端口 diff / 复核、
  * `job:` 前缀解析、清理阈值（设置项 + 兜底分钟数）全归宿主。内核不 spawn、不 kill、不重写。
  *
- * 出帧口径（8 支一致）：**帧与 notice 全由宿主发** —— `bg_servers` 帧由 `push()` 出、每条 notice 都
- * 绑着宿主才知道的原因（端口不在列表 / pid 已换 / 停不掉 / 脚本名不合法 / 没有活跃 bash…）、
+ * 出帧口径（7 支一致）：**帧与 notice 全由宿主发** —— `bg_servers` 帧由 `push()` 出、每条 notice 都
+ * 绑着宿主才知道的原因（端口不在列表 / pid 已换 / 停不掉 / 脚本名不合法 / 清理失败…）、
  * 快照也由宿主自己 flush。内核不补帧、不改文案：在内核里重写一遍就是第二套语义。
  *
- * 失败口径：**端口 reject 就原样冒泡**，内核不 catch、不返回「假装成功」。唯一老实现里被吞掉的
- * 是 `abortBash` 内部「投递系统提示」那一段 `catch {}`——那一段仍在宿主实现里，不在端口契约外面。
+ * 失败口径：**端口 reject 就原样冒泡**，内核不 catch、不返回「假装成功」。
+ *
+ * `abortBash` **不在**这个端口上：老实现靠 `ClientSession.bashKills` 按对话登记 `AbortController`，
+ * 而新树的 bash 走 SDK `createBashToolDefinition`（`adapters/tools/guarded.ts`）——句柄就在内核手里，
+ * 所以那张表（`BashAbortRegistry`）与「中止 + 出回执」的编排也归内核，宿主没有任何可做的事。
  */
 export interface BackgroundPort {
 	/**
@@ -67,15 +70,26 @@ export interface BackgroundPort {
 	 * 出帧：宿主（notice / `bg_servers` / 快照）。失败：单个实例停不掉走 notice，不 reject。
 	 */
 	cleanBackgroundLeftovers(minutesOverride?: number): Promise<number[]>;
+}
 
-	/**
-	 * 停掉某条对话当前正在跑的 bash 命令（对话继续），并给该会话补一句「用户手动停止了命令」。
-	 *
-	 * 整条链都在宿主里，因为内核拿不到也没资格碰这些状态：按 `conversationId ?? 当前活跃对话`
-	 * 解析对话 → 取该对话的 bash kill 句柄集合 → 逐个 abort → **没有活跃命令时发 info notice**
-	 * （「当前没有正在运行的 bash 命令」，不是错）→ 走唯一喂轮出口投递系统提示（子代理工作树准入
-	 * 检查也在那一步）→ flush 快照。老实现只吞「投递系统提示」这一段异常，其余照常。
-	 * 出帧：宿主（info notice 两分支 / 快照）。失败：投递失败在宿主内部吞掉；端口 reject 则冒泡。
-	 */
-	abortBash(conversationId?: string): Promise<void>;
+/**
+ * 一次 bash 执行在中止表里的句柄。
+ *
+ * `signal` 由工具层合成进 SDK 的 `execute`（`AbortSignal.any([上游 signal, 这条])`）：
+ * SDK 的 bash 在 signal abort 时会 `killProcessTree`，所以「登记 → abort」就等于真杀掉整棵进程树。
+ */
+export interface BashAbortHandle {
+	readonly signal: AbortSignal;
+	/** 执行结束必须调用一次（漏调 = 表里留一条死句柄，`abortBash` 会误报「还有命令在跑」）。 */
+	release(): void;
+}
+
+/**
+ * 对话级 bash 中止表（内核实现：`domains/background/bash-kills.ts`）。
+ *
+ * 工具侧只认这两个成员：执行开始时 `register`、结束时 `release()`；表本身按对话分桶，
+ * 多对话并发时互不误杀。没有对话身份（`conversationId` 为空）就返回 `undefined` —— 不登记，不猜主人。
+ */
+export interface BashAbortRegistry {
+	register(conversationId: string | undefined): BashAbortHandle | undefined;
 }

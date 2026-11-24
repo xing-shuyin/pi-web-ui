@@ -30,6 +30,8 @@ import type { SessionListScanState } from "../session-list-scan.js";
 import { dirname, join } from "node:path";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
 import type { SessionRegistry } from "./session-registry.js";
+import type { BashKills } from "../domains/background/index.js";
+import type { ScmCommitMessagePort } from "../contracts/scm.js";
 
 export type ClientEnvView = Omit<SnapshotEnvView, "clientId" | "cwd" | "workspaceRoots">;
 
@@ -102,6 +104,13 @@ export interface ClientRuntimeOptions extends GoalHostPorts {
 	commandsPathOf?: (workspaceRoot: string) => string;
 	/** 后台任务面（宿主 `bg-servers` + `job-runner`）；缺省 = 该能力未接。 */
 	background?: () => BackgroundPort | undefined;
+	/**
+	 * 对话级 bash 中止表（内核 `BashKills`）：由 `CoreEngine` 建一份（与工具执行的登记同一份），
+	 * `abortBash` 靠它真中止。缺省 = 未接（`abortBash` 同步抛）。
+	 */
+	bashKills?: BashKills;
+	/** SCM 提交信息生成面（宿主 `server/core-scm-adapter.ts`）；缺省 = `scmGenCommitMessage` 同步抛。 */
+	scmCommitMessage?: () => ScmCommitMessagePort | undefined;
 	/** 斜杠命令面（宿主 `SlashCommandsService`）；缺省 = 该能力未接。 */
 	slashCommands?: () => SlashCommandsPort | undefined;
 	/** 文件 / 目录面（宿主 `FilesService`）；缺省 = 该能力未接。 */
@@ -391,10 +400,28 @@ export class ClientRuntime {
 		}
 	}
 
+	/**
+	 * 把一句系统说明投回指定对话（老实现 `deliverFromOutside`）：轮次在跑就 steer 进去，否则单起一轮。
+	 * 两条分支都只走唯一喂轮出口（`TurnRunner` → `feed.ts` → `session-turns.ts`），不直连 `sendUserMessage`。
+	 * 调用方（`abortBash`）自己吞投递失败：对话已换代 / 轮次已收尾时不该把「命令已停」的结论顶掉。
+	 */
+	async noteConversation(conversationId: string, text: string): Promise<void> {
+		if (this.disposed) return;
+		const conv = this.registry.get(conversationId);
+		if (!conv) throw new Error(`core: conversation ${conversationId} is no longer available`);
+		const sessions = this.options.sessions;
+		if (!sessions) throw new Error("core: session registry is not wired");
+		const opened = await sessions.ensure(conv);
+		if (conv.phase === "running") await this.turns.steer(conv, opened.session, text);
+		else await this.turns.start(conv, opened.session, text);
+	}
+
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
 		this.publisher.dispose();
+		// bash 中止表：连接断开时把所有在跑的命令真拉死（不留孤儿进程，也不留表项）。
+		this.options.bashKills?.abortAll();
 		// 每客户端一份的插件端口持有 MCP OAuth 的 attempt 与宿主句柄（`dispose()` 才注销）：断开时必须收口一次。
 		this.options.plugins?.()?.dispose?.();
 		// UI 桥的挂起表（页面 / 手机 / dialog / overlay）：断开时全部结算，不留永不 settle 的 Promise。

@@ -3,6 +3,7 @@ import type { ServerMessage, UiApprovalPolicyState, UiToolPromptOverride } from 
 import type { Conversation } from "../kernel/conversation/index.js";
 import type { TransportPort } from "../contracts/ports.js";
 import type { BackgroundPort } from "../contracts/background.js";
+import type { ScmCommitMessagePort } from "../contracts/scm.js";
 import type { SettingsStorePort } from "../contracts/settings-store.js";
 import type { SlashCommandSinks, SlashCommandsPort } from "../contracts/commands.js";
 import type { FilesPort } from "../contracts/files.js";
@@ -173,6 +174,17 @@ export interface CoreSettingsSinks {
 	flushSnapshot?(): void;
 }
 
+/**
+ * 宿主实现 `ScmCommitMessagePort` 时要拼的几块：当前对话正在用的模型（选型归宿主）、语言、客户端 id。
+ * 要采集的 cwd 由内核随调用递进端口方法（与 `scmQuery` 同一口径），不走这里。
+ */
+export interface CoreScmCommitMessageSinks {
+	clientId: string;
+	getLang(): ServerLang;
+	/** 当前对话正在用的模型（`session.model` 的 provider/id）：没开过会话 = `undefined`（宿主报「先选模型」）。 */
+	sessionModel(): { provider: string; id: string } | undefined;
+}
+
 /** 宿主面工厂全表：`CoreEngineOptions` 直接 `extends` 这一份，装配只认它。 */
 export interface HostFaceFactories {
 	/** 设置帧/预设/审批规则库面工厂（宿主实现：`server/core-settings-adapter.ts`）；缺省 = 能力未接。 */
@@ -181,6 +193,11 @@ export interface HostFaceFactories {
 	slashCommands?: (sinks: SlashCommandSinks) => SlashCommandsPort;
 	/** 文件面工厂（宿主实现：`server/core-files-adapter.ts`）；缺省 = 能力未接。 */
 	files?: (sinks: CoreFilesSinks) => FilesPort;
+	/**
+	 * SCM 提交信息生成面工厂（宿主实现：`server/core-scm-adapter.ts`，包 `server/scm-commitmsg.ts`）；
+	 * 缺省 = 能力未接（`scmGenCommitMessage` 同步抛）。
+	 */
+	scmCommitMessage?: (sinks: CoreScmCommitMessageSinks) => ScmCommitMessagePort;
 	/** 工作区绑定面工厂（宿主实现 `server/core-workspace-adapter.ts`：目标解析 + 换完后的宿主收尾）；
 	 * 缺省 = 内核只认本地路径（`~` 展开 + 相对路径 + stat 目录校验）。 */
 	workspaceHost?: (sinks: CoreWorkspaceSinks) => WorkspaceHostPort;
@@ -240,6 +257,7 @@ export interface HostFaces {
 	settingsFrame: SettingsFramePort | undefined;
 	slashCommands: SlashCommandsPort | undefined;
 	files: FilesPort | undefined;
+	scmCommitMessage: ScmCommitMessagePort | undefined;
 	plugins: PluginsPort | undefined;
 	background: BackgroundPort | undefined;
 	sandbox: SandboxPort | undefined;
@@ -325,6 +343,19 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 		getCwd: () => runtime.registry.activeConv()?.meta.cwd ?? cwd,
 		getActiveCwd: () => runtime.registry.activeConv()?.meta.cwd ?? cwd,
 		getLang: () => langOf(),
+	});
+	// 当前对话正在用的模型（provider/id）：会话实体只有内核拿得到，选型与凭证归宿主（`core-scm-adapter`）。
+	const activeSessionModel = (): { provider: string; id: string } | undefined => {
+		const conv = runtime.registry.activeConv();
+		const model = conv ? sessions.get(conv.id)?.session.model : undefined;
+		const { provider, id } = (model ?? {}) as { provider?: unknown; id?: unknown };
+		return typeof provider === "string" && typeof id === "string" && provider && id ? { provider, id } : undefined;
+	};
+	// SCM 提交信息：git 采集 + 一次独立于对话的模型推断都在宿主叶子（`server/scm-commitmsg.ts`）。
+	const scmCommitMessage = deps.scmCommitMessage?.({
+		clientId,
+		getLang: () => langOf(),
+		sessionModel: () => activeSessionModel(),
 	});
 	const plugins = deps.plugins?.({
 		emit: (msg) => transport.send(msg),
@@ -433,10 +464,7 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 			const inherit = stateStore.getSettingsSnapshot(clientId).nativeCliInheritModel as
 				Record<string, boolean | undefined> | undefined;
 			if (!inherit?.[preset]) return undefined;
-			const conv = runtime.registry.activeConv();
-			const model = conv ? sessions.get(conv.id)?.session.model : undefined;
-			const { provider, id } = (model ?? {}) as { provider?: unknown; id?: unknown };
-			return typeof provider === "string" && typeof id === "string" && provider && id ? { provider, id } : undefined;
+			return activeSessionModel();
 		},
 		...(deps.notifyMobile
 			? {
@@ -452,6 +480,7 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 		settingsFrame,
 		slashCommands,
 		files,
+		scmCommitMessage,
 		plugins,
 		background,
 		sandbox,

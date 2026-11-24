@@ -6,7 +6,7 @@ import type { ServerMessage } from "../../server/protocol.js";
 
 /**
  * 宿主后台任务适配器：`BgServerTracker`（真叶子）+ `JobRegistry`（替身：真实现会 spawn 进程）。
- * 端口行相关的行为由真叶子跑，job 行只钉「适配器怎么装配、参数怎么传」，两边合起来覆盖 8 个成员。
+ * 端口行相关的行为由真叶子跑，job 行只钉「适配器怎么装配、参数怎么传」，两边合起来覆盖 7 个成员（第 8 个 `abortBash` 不在这张端口上：句柄表与中止都在内核）。
  */
 const h = vi.hoisted(() => ({
 	/** 当前「系统里」的监听端口 → pid。 */
@@ -217,7 +217,7 @@ describe("后台任务适配器：装配", () => {
 	});
 });
 
-describe("后台任务适配器：8 个成员", () => {
+describe("后台任务适配器：7 个成员", () => {
 	it("listBgServers：重算并下发一帧（真叶子里的 job 行也在帧里）", async () => {
 		const { port, bgFrames } = makePort();
 		h.listed = [{ id: "abc", pid: 11, since: 5, label: "dev", command: "npm run dev", logPath: "/l/abc.log" }];
@@ -410,13 +410,6 @@ describe("后台任务适配器：8 个成员", () => {
 			expect(notices().at(-1)?.text).toContain(expected);
 			port.dispose();
 		}
-	});
-
-	it("abortBash：没有对话级 bash 句柄就如实报错，不假装停成功", async () => {
-		const { port, frames } = makePort();
-		await expect(port.abortBash("conv-1")).rejects.toThrow(/暂不支持停止 bash 命令（对话 conv-1）/);
-		expect(frames).toEqual([]);
-		port.dispose();
 	});
 
 	it("dispose：停刷新定时器并把 job 进程树一起收", () => {

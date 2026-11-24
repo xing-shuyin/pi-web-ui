@@ -6,6 +6,64 @@ export const SCM_COMMITMSG_TIMEOUT_MS = 60_000;
 
 export const MAX_COMMITMSG_LEN = 200;
 
+/**
+ * 一次独立推断需要宿主模型运行时的那两支（结构类型，不引 SDK）：
+ * `completeSimple` 做推断，`getModel` 用于按 provider/id 选型（core 适配器走这一支）。
+ */
+export interface ScmCommitRuntime {
+	completeSimple: (
+		model: any,
+		context: any,
+		options?: any,
+	) => Promise<{
+		stopReason: string;
+		errorMessage?: string;
+		content: Array<{ type: string; text?: string }>;
+	}>;
+	getModel?: (provider: string, id: string) => unknown;
+}
+
+/** 「先选模型」的错：老实现 `agent-service.ts` 里那句（core 侧同一句话，不另写一套文案）。 */
+export function noScmCommitModelMessage(lang: ServerLang): string {
+	return pick(
+		lang,
+		"当前没有可用模型——先在顶栏选择一个模型再生成",
+		"No model available — pick one in the top bar first",
+		"scm.commitmsg.no.model",
+	);
+}
+
+/**
+ * 宿主侧「选型 + 一次独立推断」：core 适配器（`server/core-scm-adapter.ts`）只用这一个入口，
+ * 免得把「按 provider/id 取模型 → 校验 → 调用」在宿主里再抄一遍。
+ *
+ * 老实现直接拿 `conv.session?.model`（就是同一个 SDK 模型对象）；core 的会话模型在 keel 里，
+ * 宿主只知道 provider/id，所以这里按 id 从**宿主自己的**模型运行时里取——凭证与目录都归它。
+ */
+export async function generateScmCommitMessageForCurrent(opts: {
+	cwd: string;
+	/** 当前对话正在用的模型（没选过 = undefined → 「先在顶栏选择模型」）。 */
+	model: { provider: string; id: string } | undefined;
+	runtime: ScmCommitRuntime;
+	lang: ServerLang;
+	promptMode?: "append" | "replace";
+	customPrompt?: string;
+	timeoutMs?: number;
+}): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+	const { cwd, model, runtime, lang, promptMode, customPrompt, timeoutMs } = opts;
+	const resolved = model ? runtime.getModel?.(model.provider, model.id) : undefined;
+	if (!resolved) return { ok: false, error: noScmCommitModelMessage(lang) };
+	return generateScmCommitMessage({
+		cwd,
+		model: resolved,
+		runtime,
+		lang,
+		...(promptMode ? { promptMode } : {}),
+		...(customPrompt ? { customPrompt } : {}),
+		...(timeoutMs ? { timeoutMs } : {}),
+	});
+}
+
 const MAX_FILE_LINES = 200;
 
 export const COMMITMSG_SYSTEM_PROMPT = `You write git commit messages. You receive the pending changes of a repository and output exactly one commit message: a single subject line.
@@ -110,17 +168,7 @@ export function sanitizeCommitMessage(raw: string): string {
 export async function generateScmCommitMessage(opts: {
 	cwd: string;
 	model: any;
-	runtime: {
-		completeSimple: (
-			model: any,
-			context: any,
-			options?: any,
-		) => Promise<{
-			stopReason: string;
-			errorMessage?: string;
-			content: Array<{ type: string; text?: string }>;
-		}>;
-	};
+	runtime: ScmCommitRuntime;
 	lang: ServerLang;
 	promptMode?: "append" | "replace";
 	customPrompt?: string;

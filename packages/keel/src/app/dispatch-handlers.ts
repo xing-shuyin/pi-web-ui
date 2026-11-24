@@ -26,6 +26,7 @@ import {
 	type SessionManagerLike,
 } from "../domains/sessions/index.js";
 import { createBackgroundHandlers } from "../domains/background/index.js";
+import { createScmHandlers } from "../domains/scm/index.js";
 import { createPluginsHandlers } from "../domains/plugins/index.js";
 import { createModelSwitchers } from "../domains/models/index.js";
 import { createTurnsEditHandlers } from "../domains/turns/index.js";
@@ -85,6 +86,8 @@ export interface DispatchRuntime {
 	setWorktreeInfo(info: WorktreeInfo | null): void;
 	/** 唯一喂轮出口（目标运行交接与 `prompt` handler 共用）。 */
 	feedTurn(text: string, queue?: boolean): Promise<void>;
+	/** 把一句系统说明投回指定对话（只有 `abortBash` 用）：仍走 `TurnRunner` 那一出口。 */
+	noteConversation(conversationId: string, text: string): Promise<void>;
 	/** 推一帧 `conversations`（固化对话后由新转录重算这一帧）。 */
 	pushConversations(): void;
 	/** 分发表：私聊入口调用时才取（装配期取会与 `handlers()` 成环）。 */
@@ -136,9 +139,27 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 		commandsPathOf: (root) => runtime.options.commandsPathOf?.(root) ?? `${root}/.pi/commands.json`,
 	});
 
-	/** 后台任务：进程树 kill / 端口 diff / job 登记 / 每条 notice 全在宿主，内核只按位转交。 */
+	/** 后台任务：进程树 kill / 端口 diff / job 登记 / 每条 notice 全在宿主，内核只按位转交。
+	 * 唯一例外是 `abortBash`：句柄表（`BashKills`）与两条回执都在内核，宿主端口不参与。
+	 */
 	const background = createBackgroundHandlers({
 		background: () => runtime.options.background?.(),
+		...(runtime.options.bashKills ? { bashKills: runtime.options.bashKills } : {}),
+		emit: (msg) => {
+			if (!runtime.options.transport.isClosed()) runtime.options.transport.send(msg);
+		},
+		flushSnapshot: () => {
+			if (!runtime.isDisposed()) runtime.publisher.request();
+		},
+		deliverNote: (conversationId, text) => runtime.noteConversation(conversationId, text),
+		activeConversationId: () => runtime.activeConversationId(),
+	});
+
+	/** SCM 提交信息：git 采集 + 一次独立于对话的模型推断都在宿主端口，内核只转发并回一帧 `scm_data`。 */
+	const scm = createScmHandlers({
+		scm: () => runtime.options.scmCommitMessage?.(),
+		transport: runtime.options.transport,
+		cwd: () => runtime.registry.activeConv()?.meta.cwd ?? runtime.cwd,
 	});
 
 	/** 会话状态：队列摘除 / 草稿 / 子代理收口——全是聚合根 + 草稿叶子的内存操作。 */
@@ -355,6 +376,7 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 		...surface.sandbox(),
 		...conversations,
 		...background,
+		...scm,
 		...pluginHandlers,
 		...turnEdits,
 		...goals,
