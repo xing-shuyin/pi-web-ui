@@ -35,9 +35,12 @@ export function projectSessionMessages(session: TurnCapableSession | undefined):
 }
 
 export function projectStreamingMessage(session: TurnCapableSession | undefined): UiMessage | null {
+	if (!session?.isStreaming) return null;
+	const streaming = (session as any)?.agent?.state?.streamingMessage;
+	if (streaming) return serializeStreamingMessage(streaming as AgentMessage);
 	const raw = session?.messages ?? [];
 	const last = raw[raw.length - 1];
-	if (!session?.isStreaming || !last) return null;
+	if (!last || (last as any).role !== "assistant") return null;
 	return serializeStreamingMessage(last as AgentMessage);
 }
 
@@ -58,6 +61,7 @@ export function conversationViewFromSession(
 		model: toWireModel(session?.model),
 		thinkingLevel: session?.thinkingLevel ?? "off",
 		availableThinkingLevels: session?.getAvailableThinkingLevels?.() ?? [],
+		bot: conv.meta.botId ? { id: conv.meta.botId, name: conv.meta.botName ?? conv.meta.botId } : null,
 		tools: [...tools],
 		steering: conv.queues.texts("steer"),
 		followUp: conv.queues.texts("followUp"),

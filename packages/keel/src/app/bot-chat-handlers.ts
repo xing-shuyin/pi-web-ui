@@ -41,6 +41,7 @@ export function createBotChatHandlersFor(runtime: BotChatRuntime): BotChatHandle
 				session.newChat(preset, ephemeral, onReady, independent, botId),
 			flushSnapshot: (forceFull) => session.flushSnapshot(forceFull),
 			pushSettings: () => runtime.pushSettings(),
+			pushConversations: () => runtime.surface().conversations().push(),
 		};
 	};
 	return createBotChatHandlers({

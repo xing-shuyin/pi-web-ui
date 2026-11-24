@@ -49,6 +49,7 @@ export function emptyView(conv: Conversation): SnapshotConversationView {
 		model: null,
 		thinkingLevel: "off",
 		availableThinkingLevels: [],
+		bot: conv.meta.botId ? { id: conv.meta.botId, name: conv.meta.botName ?? conv.meta.botId } : null,
 		tools: [],
 		steering: conv.queues.texts("steer"),
 		followUp: conv.queues.texts("followUp"),

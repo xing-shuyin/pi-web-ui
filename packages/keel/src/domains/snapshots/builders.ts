@@ -29,6 +29,7 @@ export function buildSnapshotState(rev: number, env: SnapshotEnvView, conv: Snap
 		piConfigured: env.piConfigured,
 		piAgentInstalled: env.piAgentInstalled,
 		stats: EMPTY_STATS,
+		bot: null,
 	};
 	if (!conv)
 		return {
@@ -67,6 +68,7 @@ export function buildSnapshotState(rev: number, env: SnapshotEnvView, conv: Snap
 		...(conv.draft ? { draft: conv.draft } : {}),
 		...(conv.pendingApprovals && conv.pendingApprovals.length > 0 ? { pendingApprovals: conv.pendingApprovals } : {}),
 		...sandboxAndWorktree(env),
+		bot: conv.bot ?? null,
 		tools: [...conv.tools],
 	};
 }

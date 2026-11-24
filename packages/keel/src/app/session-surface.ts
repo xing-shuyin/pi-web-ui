@@ -150,6 +150,8 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 				...(conv.meta.parentId ? { parentId: conv.meta.parentId } : {}),
 				...(opened?.sessionId ? { sessionId: opened.sessionId } : {}),
 				...(conv.meta.sessionFile ? { sessionFile: conv.meta.sessionFile } : {}),
+				...(conv.meta.botId ? { botId: conv.meta.botId } : {}),
+				...(conv.meta.botName ? { botName: conv.meta.botName } : {}),
 				...(thinkingLevel ? { thinkingLevel } : {}),
 			};
 		});

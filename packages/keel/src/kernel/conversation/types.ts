@@ -17,4 +17,7 @@ export interface ConversationMeta {
 	sessionFile?: SessionFile;
 	/** 临时对话：会话开在内存里（不落 `.jsonl`），转正（`persist_conversation`）后才删掉标记。 */
 	ephemeral?: boolean;
+	botId?: string;
+	botName?: string;
+	readOnly?: boolean;
 }

@@ -23,6 +23,7 @@ export interface BotChatDispatch {
 	): Promise<boolean | void>;
 	flushSnapshot(forceFull?: boolean): void;
 	pushSettings?(): void;
+	pushConversations?(): void;
 }
 
 export interface BotChatDeps {
@@ -123,6 +124,8 @@ export function createBotChatHandlers(deps: BotChatDeps): BotChatHandlers {
 				deps.dispatch().flushSnapshot();
 			}
 			// 编辑过 Bot 之后，已开的私聊按新配置重绑（工具/提示词/模型/记忆）。
+			const conv = deps.registry.get(open.id);
+			if (conv && target.name) conv.setBot(target.id, target.name);
 			await port.rebindIfStale?.(open.id, target.id, target);
 			return true;
 		}
@@ -132,7 +135,11 @@ export function createBotChatHandlers(deps: BotChatDeps): BotChatHandlers {
 		const opened = activeId() ?? deps.registry.bySessionFile(latest)?.id;
 		if (!opened) return false;
 		bindings.set(opened, target.id);
+		const conv = deps.registry.get(opened);
+		if (conv && target.name) conv.setBot(target.id, target.name);
 		await port.rebindIfStale?.(opened, target.id, target);
+		deps.dispatch().flushSnapshot(true);
+		deps.dispatch().pushConversations?.();
 		return true;
 	};
 
@@ -163,7 +170,11 @@ export function createBotChatHandlers(deps: BotChatDeps): BotChatHandlers {
 			const created = await deps.dispatch().newChat(undefined, false, undefined, true, target.id);
 			if (created === false) return false;
 			const opened = activeId();
-			if (opened) bindings.set(opened, target.id);
+			if (opened) {
+				bindings.set(opened, target.id);
+				const createdConv = deps.registry.get(opened);
+				if (createdConv && target.name) createdConv.setBot(target.id, target.name);
+			}
 			return true;
 		} catch (error) {
 			notice(

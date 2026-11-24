@@ -37,7 +37,9 @@ export interface PromptEntryDeps {
 	/** 唯一喂轮出口。 */
 	feedTurn(text: string, queue?: boolean): Promise<void>;
 	/** 只注册并激活一条对话（`botId` → 会话级 Bot 身份）。 */
-	createConversation(init?: Partial<{ kind: "bot"; ephemeral: boolean }>): Conversation;
+	createConversation(
+		init?: Partial<{ kind: "bot"; ephemeral: boolean; botId: string; botName: string; title: string }>,
+	): Conversation;
 	/** 换工作区（`/cwd` 走它：重绑 + 帧 + 宿主收尾都在里面）。 */
 	workspace(): WorkspacePort;
 	setModel(modelId: string): Promise<void>;
@@ -61,7 +63,8 @@ export interface PromptEntry {
 	 * `new_chat`：空白对话复用，否则真建一条；两边都出帧。返回收尾后的活动对话。
 	 * `allowReuse: false` = 临时对话（老实现 `ephemeral` 分支**不**复用空白对话：它要的是一条新记录）。
 	 */
-	startNewChat(botId?: string, allowReuse?: boolean): Conversation;
+	startNewChat(botId?: string, allowReuse?: boolean, botName?: string): Conversation;
+	publishNewChat(forceFull?: boolean): void;
 	/** 附件 asides（`prompt` 与编辑重问共用）：`conv` 缺省 = 当前对话。 */
 	deliverAttachments(attachments?: readonly PromptAttachment[], conv?: Conversation): Promise<void>;
 }
@@ -87,25 +90,24 @@ export function createPromptEntry(deps: PromptEntryDeps): PromptEntry {
 		return !conv.meta.sessionFile;
 	};
 
-	/** 新建/复用对话后的共同收尾：运行列表帧 + 快照（换了对话一定是全量，内容没变就一帧不发）。 */
-	const publishNewChat = (): void => {
+	/** 新建/复用对话后的共同收尾：运行列表帧 + 快照（换了对话一定是全量）。 */
+	const publishNewChat = (forceFull = true): void => {
 		if (deps.isDisposed()) return;
 		deps.pushConversations();
-		deps.publisher.flush({ forceFull: false });
+		deps.publisher.flush({ forceFull });
 	};
 
-	const startNewChat = (botId?: string, allowReuse = true): Conversation => {
+	const startNewChat = (botId?: string, allowReuse = true, botName?: string): Conversation => {
 		const active = deps.registry.activeConv();
 		if (allowReuse && !botId && active && active.meta.kind === "user" && isBlank(active)) {
-			publishNewChat();
+			publishNewChat(true);
 			return active;
 		}
 		// 临时对话（`allowReuse: false`）：会话开在内存里，不写 `.jsonl`（`persist_conversation` 才转正）。
 		const conv = deps.createConversation({
-			...(botId ? { kind: "bot" as const } : {}),
+			...(botId ? { kind: "bot" as const, botId, ...(botName ? { botName, title: botName } : {}) } : {}),
 			...(allowReuse ? {} : { ephemeral: true }),
 		});
-		publishNewChat();
 		return conv;
 	};
 
@@ -136,6 +138,15 @@ export function createPromptEntry(deps: PromptEntryDeps): PromptEntry {
 
 	// 两个入口互引（`/new <提示>` 的首条提示要再走一遍斜杠解析）：用函数声明把顺序交给提升。
 	async function submit(text: string, attachments?: PromptAttachment[], queue?: boolean): Promise<void> {
+		const active = deps.registry.activeConv();
+		if (active?.meta.readOnly) {
+			notice(
+				"error",
+				"本会话为只读会话（仅供查看），不能继续发送消息。",
+				"Bot transcripts are inspection-only outside their execution capability",
+			);
+			return;
+		}
 		if (await execSlash(text)) return;
 		if (deps.dispatchDelegate && (await deps.dispatchDelegate(text))) return;
 		// 附件先落进会话（老实现同序：asides → `sendCustomMessage(nextTurn)` → 喂轮）。
@@ -181,5 +192,5 @@ export function createPromptEntry(deps: PromptEntryDeps): PromptEntry {
 		return handled;
 	}
 
-	return { submit, startNewChat, deliverAttachments };
+	return { submit, startNewChat, deliverAttachments, publishNewChat };
 }

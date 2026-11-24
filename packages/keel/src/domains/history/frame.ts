@@ -109,6 +109,8 @@ export interface ConversationFrameFact {
 	 * 不是 CLI 对话就不给（不编默认相位）。
 	 */
 	nativeCli?: NativeCliConversation;
+	botId?: string;
+	botName?: string;
 }
 
 /** 运行列表的内存态（老树 `conv.pinned` / `conv.listed`）：由 `domains/sessions/pins` 合流后交进来。 */
@@ -139,6 +141,7 @@ function inRunningList(fact: ConversationFrameFact, state: ConversationFrameStat
 	if (fact.isEphemeral) return true;
 	if (fact.isStreaming || fact.completionPending || fact.hasQuestion) return true;
 	if (fact.id !== activeId) return false;
+	if (fact.botId) return true;
 	if (fact.title !== DEFAULT_CONV_TITLE) return true;
 	return fact.messageCount > 0;
 }
@@ -177,6 +180,8 @@ function summaryOfConversation(
 		...(fact.hasQuestion ? { hasQuestion: true as const } : {}),
 		...(fact.sessionId ? { sessionId: fact.sessionId } : {}),
 		...(fact.sessionFile ? { sessionFile: fact.sessionFile } : {}),
+		...(fact.botId ? { botId: fact.botId } : {}),
+		...(fact.botName ? { botName: fact.botName } : {}),
 		...(fact.thinkingLevel ? { thinkingLevel: fact.thinkingLevel } : {}),
 		...(fact.updatedAt ? { modified: fact.updatedAt } : {}),
 		...(state.pinned ? { pinned: true as const } : {}),

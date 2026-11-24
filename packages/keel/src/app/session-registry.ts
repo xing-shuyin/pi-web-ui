@@ -7,6 +7,10 @@ export interface SessionRegistryOptions {
 	toolsFor?(conversation: Conversation): readonly string[] | undefined;
 	/** 开会话时注册哪些自定义工具；由 app 层按对话装配。 */
 	customToolsFor?(conversation: Conversation): readonly unknown[] | undefined;
+	/** Bot 私聊转录的存放目录（单源在宿主侧：`<agentDir>/bot-sessions/<botId>`）。 */
+	botSessionDir?(botId: string): string | undefined;
+	/** 会话打开时绑定 Bot 身份与转录锚点（停用/降级/孤儿拦截/重绑锚点）。 */
+	bindBotSession?(conversation: Conversation, opened: OpenedSession): Promise<void>;
 	prepare?(conversation: Conversation): Promise<void>;
 	onOpened?(conversation: Conversation, opened: OpenedSession): void;
 	onClosed?(conversationId: string): void;
@@ -50,6 +54,8 @@ export class SessionRegistry {
 			// 远程工作区的 SDK 会话目录与 cwd 分离（`cwd` 是 URI，会话落本地镜像目录）。
 			cwd: options?.cwd ?? conv.meta.cwd,
 			agentDir: this.options.agentDir,
+			sessionDir:
+				conv.meta.kind === "bot" && conv.meta.botId ? this.options.botSessionDir?.(conv.meta.botId) : undefined,
 			sessionFile: conv.meta.sessionFile,
 			// 临时对话：会话开在内存里，不产生 `.jsonl`（转正后才由 `persist_conversation` 落盘）。
 			...(conv.ephemeral ? { ephemeral: true } : {}),
@@ -57,6 +63,12 @@ export class SessionRegistry {
 			customTools: this.options.customToolsFor?.(conv),
 		});
 		if (opened.sessionFile && opened.sessionFile !== conv.meta.sessionFile) conv.setSessionFile(opened.sessionFile);
+		try {
+			if (this.options.bindBotSession) await this.options.bindBotSession(conv, opened);
+		} catch (error) {
+			opened.dispose();
+			throw error;
+		}
 		this.byConversation.set(conv.id, opened);
 		this.options.onOpened?.(conv, opened);
 		return opened;

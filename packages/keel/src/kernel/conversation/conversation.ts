@@ -17,6 +17,9 @@ export interface ConversationInit {
 	sessionFile?: SessionFile;
 	/** 临时对话（老实现 `conv.isEphemeral`）：会话不落盘，`persist_conversation` 才转正。 */
 	ephemeral?: boolean;
+	botId?: string;
+	botName?: string;
+	readOnly?: boolean;
 }
 
 /**
@@ -42,6 +45,9 @@ export class Conversation {
 			parentId: init.parentId,
 			sessionFile: init.sessionFile,
 			ephemeral: init.ephemeral === true,
+			botId: init.botId,
+			botName: init.botName,
+			readOnly: init.readOnly === true ? true : undefined,
 		};
 	}
 
@@ -99,6 +105,16 @@ export class Conversation {
 	setSessionFile(file: SessionFile | undefined): void {
 		if (file) this.meta.sessionFile = file;
 		else delete this.meta.sessionFile;
+	}
+
+	setBot(botId: string, botName?: string): void {
+		this.meta.botId = botId;
+		if (botName) this.meta.botName = botName;
+	}
+
+	setReadOnly(readOnly: boolean): void {
+		if (readOnly) this.meta.readOnly = true;
+		else delete this.meta.readOnly;
 	}
 
 	/** 审批策略唯一所有者在本聚合：读出来的就是内部对象（审批回填类别详情时原地改）。 */

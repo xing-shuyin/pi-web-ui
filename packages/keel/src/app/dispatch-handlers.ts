@@ -12,7 +12,6 @@ import type { SessionListScanState } from "../session-list-scan.js";
 import type { DispatchSession } from "../engine-service.js";
 import type { ClientId } from "../contracts/ids.js";
 import type { PromptAttachment, WorktreeInfo } from "../protocol.js";
-import { DEFAULT_CLIENT_SETTINGS } from "../settings-schema.js";
 import { createProviderHandlers } from "../domains/providers/index.js";
 import { createSettingsHandlers } from "../domains/settings/index.js";
 import { createCommandHandlers } from "../domains/commands/index.js";
@@ -413,11 +412,22 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 		newChat: async (...args: Parameters<DispatchSession["newChat"]>) => {
 			if (runtime.isDisposed()) return false;
 			const [, ephemeral, onReady, , botId] = args; // `botId` → `kind: "bot"`：私聊 = 普通对话 + 一个会话级 Bot 身份。
+			let botName: string | undefined;
+			if (botId) {
+				try {
+					botName = (await runtime.options.bots?.()?.resolve(botId))?.name;
+				} catch {}
+			}
 			// 临时对话（`ephemeral`）不复用空白对话：老实现同口径，它要的是一条新记录。
-			const conv = promptEntry.startNewChat(botId, ephemeral !== true);
+			const conv = promptEntry.startNewChat(botId, ephemeral !== true, botName);
 			try {
-				if (runtime.options.sessions) await runtime.options.sessions.ensure(conv);
-			} catch {}
+				if (runtime.options.sessions) {
+					await runtime.options.sessions.ensure(conv);
+				}
+			} catch (err) {
+				console.error("[newChat session.ensure error]", err);
+			}
+			promptEntry.publishNewChat(true);
 			onReady?.(conv.id);
 			return true;
 		},

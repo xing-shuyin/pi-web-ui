@@ -18,10 +18,25 @@ import type { ConversationId } from "./ids.js";
  */
 export interface BotChatTarget {
 	id: string;
+	name?: string;
 	/** Bot 固定工作目录：私聊会话必须落在它下面，否则下一轮撞 `Bot execution cwd mismatch`。 */
 	cwd: string;
 	/** 配置版本：已开的私聊对不上就说明 Bot 改过，按新配置重绑。 */
 	revision?: number;
+	model?: { provider: string; modelId: string };
+}
+
+export interface BotChatSessionEntry {
+	type?: string;
+	customType?: string;
+	data?: unknown;
+}
+
+export interface BotChatSessionBinding {
+	bot?: { id: string; name: string; revision?: number };
+	model?: { provider: string; modelId: string };
+	readOnly?: boolean;
+	warningNotice?: { text: string; textEn: string };
 }
 
 export interface BotChatPort {
@@ -39,11 +54,22 @@ export interface BotChatPort {
 	 */
 	latestTranscript(botId: string, cwd: string): string | undefined;
 
+	/** Bot 会话转录的目录（单源在宿主侧：`<agentDir>/bot-sessions/<botId>`）。 */
+	sessionDir?(botId: string): string;
+
+	/**
+	 * 会话打开时绑定 Bot 身份与转录锚点（新建私聊、重开私聊、停用只读、孤儿执行拦截）。
+	 */
+	bindTranscriptSession?(input: {
+		botId?: string;
+		cwd: string;
+		fallbackModel?: string;
+		entries: readonly BotChatSessionEntry[];
+		appendCustomEntry(customType: string, data?: unknown): void;
+	}): Promise<BotChatSessionBinding>;
+
 	/**
 	 * 已开的私聊遇到 Bot 改过配置（`revision` 变了）时按**当前**配置重绑能力快照。
-	 *
-	 * 缺省 = 不重绑：内核还没有 Bot 能力快照的持有者（`ConversationMeta` 里也只有 `kind`，
-	 * `botId` 随内核会话身份一起落地），这时宿主没有可重绑的对象——宁可不假装，也不给空实现。
 	 */
 	rebindIfStale?(conversationId: ConversationId, botId: string, target: BotChatTarget): Promise<void>;
 }

@@ -438,7 +438,9 @@ export class ClientRuntime {
 	private conversationView(conv: Conversation): SnapshotConversationView {
 		const view = this.options.viewOf?.(conv) ?? emptyView(conv);
 		const stats = view.stats ?? this.sessionStatsOf(conv);
-		return { ...view, isEphemeral: conv.ephemeral, ...(stats ? { stats } : {}) };
+		const bot =
+			view.bot ?? (conv.meta.botId ? { id: conv.meta.botId, name: conv.meta.botName ?? conv.meta.botId } : null);
+		return { ...view, isEphemeral: conv.ephemeral, bot, ...(stats ? { stats } : {}) };
 	}
 
 	private sessionStatsOf(conv: Conversation): SnapshotConversationView["stats"] {
@@ -474,7 +476,8 @@ export class ClientRuntime {
 			if (this.options.onTurnError) this.options.onTurnError(conv.id, error);
 			else console.error("[core] turn failed:", error);
 		} finally {
-			this.publisher.request();
+			this.publisher.flush({ forceFull: true });
+			this.pushConversations();
 		}
 	}
 

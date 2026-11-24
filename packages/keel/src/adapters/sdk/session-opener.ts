@@ -15,6 +15,8 @@ import type { TurnCapableSession } from "../../contracts/session.js";
 export interface OpenSessionOptions {
 	cwd: string;
 	agentDir: string;
+	/** 会话转录目录（Bot 私聊落 `<agentDir>/bot-sessions/<botId>`，普通会话缺省在 cwd/agentDir）。 */
+	sessionDir?: string;
 	/** 要接着写的那份转录；缺省 = 在 `cwd` 下新建会话。 */
 	sessionFile?: string;
 	/**
@@ -37,6 +39,8 @@ export interface OpenedSession {
 	session: TurnCapableSession;
 	sessionId: string;
 	sessionFile?: string;
+	appendCustomEntry?(customType: string, data?: unknown): void;
+	getEntries?(): readonly unknown[];
 	dispose(): void;
 }
 
@@ -74,10 +78,24 @@ async function isExistingFile(path: string): Promise<boolean> {
 	}
 }
 
-async function openSessionManager(cwd: string, sessionFile: string | undefined, ephemeral?: boolean): Promise<SessionManager> {
+async function openSessionManager(
+	cwd: string,
+	sessionFile: string | undefined,
+	ephemeral?: boolean,
+	sessionDir?: string,
+): Promise<SessionManager> {
 	// 临时对话：不建转录文件（SDK 只在真正 append 时落盘，`inMemory()` 连这个都关掉）。
 	if (ephemeral && sessionFile === undefined) return SessionManager.inMemory(cwd);
-	if (sessionFile === undefined) return SessionManager.create(cwd);
+	if (sessionFile === undefined) {
+		if (sessionDir) {
+			const { mkdirSync } = await import("node:fs");
+			try {
+				mkdirSync(sessionDir, { recursive: true });
+			} catch {}
+			return SessionManager.create(cwd, sessionDir);
+		}
+		return SessionManager.create(cwd);
+	}
 	const existing = await isExistingFile(sessionFile);
 	if (!existing) throw new Error("转录文件不存在，已拒绝在别处新建来假装打开（fail-closed）");
 	// 顺序是硬约束：版本校验必须早于打开前修复，否则看不懂的转录会被新内核按自己的语义改写。
@@ -136,7 +154,7 @@ export async function openTurnSession(opts: OpenSessionOptions): Promise<OpenedS
 
 	let manager: SessionManager;
 	try {
-		manager = await openSessionManager(cwd, sessionFile, opts.ephemeral);
+		manager = await openSessionManager(cwd, sessionFile, opts.ephemeral, opts.sessionDir);
 	} catch (error) {
 		throw new OpenSessionError("open-transcript", cwd, sessionFile, error);
 	}
@@ -163,6 +181,12 @@ export async function openTurnSession(opts: OpenSessionOptions): Promise<OpenedS
 		session: guarded,
 		sessionId: manager.getSessionId(),
 		...(file === undefined ? {} : { sessionFile: file }),
+		appendCustomEntry(customType: string, data?: unknown) {
+			manager.appendCustomEntry(customType, data);
+		},
+		getEntries() {
+			return manager.getEntries?.() ?? [];
+		},
 		dispose() {
 			// 幂等：先置位再 dispose，SDK 那边抛错也不会让调用方有机会重复 dispose 同一个会话。
 			if (disposed) return;
