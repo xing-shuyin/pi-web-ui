@@ -103,7 +103,7 @@ function makeHarness(overrides: { resolveModel?: (provider: string, id: string) 
 	const runtime = new ClientRuntime({
 		clientId: "c1",
 		cwd: "/work",
-		env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+		env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: true }),
 		clock: { now: () => 1, after: () => () => {} },
 		transport: transport.port,
 		sessions: {

@@ -7,8 +7,10 @@ import {
 	type ConversationRow,
 	type HistoryEntry,
 	type OpenConversationFact,
+	refreshSessions,
 	scanHistory,
 } from "../../packages/keel/src/domains/history/index.js";
+import type { ServerMessage } from "../../packages/keel/src/protocol.js";
 
 const CWD = "/p/demo";
 const OTHER_CWD = "/p/other";
@@ -292,5 +294,42 @@ describe("scanHistory：session-list-scan 的薄封装", () => {
 		const result = await scanHistory({ root: dir, limit: 0 });
 		expect(result.entries).toEqual([]);
 		expect(result.states.size).toBe(1);
+	});
+});
+
+describe("refreshSessions：limit 截断 + hasMore", () => {
+	function transport() {
+		const sent: ServerMessage[] = [];
+		return { sent, port: { send: (msg: ServerMessage) => void sent.push(msg), isClosed: () => false } };
+	}
+
+	it("被 limit 截过时帧里带 hasMore: true，返回条目也只剩一页", async () => {
+		const dir = sessionsDir();
+		writeFileSync(join(dir, "a.jsonl"), transcript({ id: "a", cwd: CWD, text: "甲", at: 1_700_000_000_000 }), "utf8");
+		writeFileSync(join(dir, "b.jsonl"), transcript({ id: "b", cwd: CWD, text: "乙", at: 1_600_000_000_000 }), "utf8");
+		const t = transport();
+
+		const result = await refreshSessions({ root: dir, cwd: CWD, transport: t.port, limit: 1 });
+
+		expect(result.entries.map((entry) => entry.id)).toEqual(["a"]);
+		expect(t.sent).toEqual([
+			expect.objectContaining({
+				type: "sessions",
+				cwd: CWD,
+				hasMore: true,
+				sessions: [expect.objectContaining({ path: join(dir, "a.jsonl") })],
+			}),
+		]);
+	});
+
+	it("没被截断时不带 hasMore", async () => {
+		const dir = sessionsDir();
+		writeFileSync(join(dir, "a.jsonl"), transcript({ id: "a", cwd: CWD, text: "甲", at: 1_700_000_000_000 }), "utf8");
+		const t = transport();
+
+		await refreshSessions({ root: dir, cwd: CWD, transport: t.port, limit: 5 });
+
+		expect(t.sent).toEqual([expect.objectContaining({ type: "sessions", cwd: CWD })]);
+		expect(t.sent[0]).not.toHaveProperty("hasMore");
 	});
 });

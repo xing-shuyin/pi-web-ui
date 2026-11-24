@@ -60,7 +60,7 @@ function makeRuntime(overrides: Partial<ClientRuntimeOptions> = {}) {
 		clientId: "client-1",
 		cwd: "/work",
 		workspaceRoots: ["/work"],
-		env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: false },
+		env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: false }),
 		clock,
 		transport: transport.port,
 		builders: build,
@@ -115,7 +115,7 @@ describe("app · ClientRuntime 组合根", () => {
 		const runtime = new ClientRuntime({
 			clientId: "c1",
 			cwd: "/work",
-			env: { settingsVersion: 0, piConfigured: false, piAgentInstalled: false },
+			env: () => ({ settingsVersion: 0, piConfigured: false, piAgentInstalled: false }),
 			clock,
 			transport: transport.port,
 			onTurnError: (_id, err) => void errors.push(err),
@@ -181,7 +181,7 @@ describe("app · 默认快照帧", () => {
 			clientId: "c1",
 			cwd: "/work",
 			workspaceRoots: ["/work"],
-			env: { settingsVersion: 7, piConfigured: true, piAgentInstalled: false },
+			env: () => ({ settingsVersion: 7, piConfigured: true, piAgentInstalled: false }),
 			clock,
 			transport: transport.port,
 		});
@@ -221,7 +221,7 @@ describe("app · 默认快照帧", () => {
 		const runtime = new ClientRuntime({
 			clientId: "c1",
 			cwd: "/work",
-			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+			env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: true }),
 			clock,
 			transport: transport.port,
 			viewOf: (conv) => ({
@@ -258,7 +258,7 @@ describe("app · 连接期帧", () => {
 		const runtime = new ClientRuntime({
 			clientId: "c1",
 			cwd: "/work",
-			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+			env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: true }),
 			clock,
 			transport: transport.port,
 		});
@@ -288,7 +288,7 @@ describe("app · 连接期帧", () => {
 		const runtime = new ClientRuntime({
 			clientId: "c1",
 			cwd: "/work",
-			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+			env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: true }),
 			clock,
 			transport: transport.port,
 		});
@@ -313,7 +313,7 @@ describe("app · 会话管理 handler", () => {
 		const runtime = new ClientRuntime({
 			clientId: "c1",
 			cwd: "/work",
-			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+			env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: true }),
 			clock,
 			transport: transport.port,
 			isAllowedPath: () => false,
@@ -360,7 +360,7 @@ describe("app · 前端回包 handler", () => {
 		const runtime = new ClientRuntime({
 			clientId: "c1",
 			cwd: "/work",
-			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: false },
+			env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: false }),
 			clock,
 			transport: transport.port,
 			resolveToolApproval: (id) => {
@@ -384,7 +384,7 @@ describe("app · 前端回包 handler", () => {
 		const bare = new ClientRuntime({
 			clientId: "c2",
 			cwd: "/work",
-			env: { settingsVersion: 1, piConfigured: false, piAgentInstalled: false },
+			env: () => ({ settingsVersion: 1, piConfigured: false, piAgentInstalled: false }),
 			clock,
 			transport: transport.port,
 		}).handlers();
@@ -400,7 +400,7 @@ describe("app · 三个连接期零碎 handler", () => {
 		const runtime = new ClientRuntime({
 			clientId: "c1",
 			cwd: "/work",
-			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: false },
+			env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: false }),
 			clock,
 			transport: transport.port,
 		});
@@ -415,7 +415,7 @@ describe("app · 三个连接期零碎 handler", () => {
 		const runtime = new ClientRuntime({
 			clientId: "c1",
 			cwd: "/work",
-			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: false },
+			env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: false }),
 			clock,
 			transport: transport.port,
 			getLang: () => "en",

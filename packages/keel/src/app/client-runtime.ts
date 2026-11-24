@@ -9,42 +9,24 @@ import type { SettingsStorePort } from "../contracts/settings-store.js";
 import type { WorktreePort } from "../contracts/worktree.js";
 import type { BackgroundPort } from "../contracts/background.js";
 import type { PluginsPort } from "../contracts/plugins.js";
-import { createPluginsHandlers, type PluginsHandlers } from "../domains/plugins/index.js";
-import { createCommandHandlers, type CommandHandlers } from "../domains/commands/index.js";
-import { createFilesHandlers, type FilesHandlers } from "../domains/files/index.js";
-import { createWorktreeHandlers, type WorktreeHandlers } from "../domains/worktree/index.js";
-import { createConversationStateHandlers, type ConversationStateHandlers } from "../domains/sessions/index.js";
 import type { SessionSurface } from "./session-surface.js";
 import { createSessionSurface } from "./session-surface.js";
-import {
-	createConversationDispatchHandlers,
-	emptyView,
-	type ConversationDispatchHandlers,
-} from "./conversation-handlers.js";
-import { createGoalHandlersFor, type GoalHandlers, type GoalHostPorts } from "./goal-handlers.js";
-import { createNativeCliHandlersFor } from "./native-cli-handlers.js";
-import { createBotChatHandlersFor } from "./bot-chat-handlers.js";
-import { createTerminalHandlers } from "../domains/terminals/index.js";
-import { createBackgroundHandlers, type BackgroundHandlers } from "../domains/background/index.js";
+import { emptyView } from "./conversation-handlers.js";
+import type { GoalHostPorts } from "./goal-handlers.js";
+import { createDispatchHandlers, type DispatchAssembly } from "./dispatch-handlers.js";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
 import type { SnapshotConversationView, SnapshotEnvView, SnapshotView } from "../contracts/snapshot-view.js";
-import { createDispatchSurfaceAdapter, type DispatchHandlers } from "../adapters/wire/index.js";
+import { createDispatchSurfaceAdapter } from "../adapters/wire/index.js";
 import type { DispatchSession } from "../engine-service.js";
-import type { PromptAttachment, SandboxInfo, WorktreeInfo } from "../protocol.js";
+import type { SandboxInfo, WorktreeInfo } from "../protocol.js";
 import { ComposerDraftsStore } from "../composer-drafts.js";
 import { Conversation, ConversationRegistry, type ConversationInit } from "../kernel/conversation/index.js";
 import { createSnapshotBuilders, SnapshotPublisher, type SnapshotBuilders } from "../domains/snapshots/index.js";
-import { createModelSwitchers, type ModelSwitchers } from "../domains/models/index.js";
-import { createProviderHandlers, type ProviderHandlers } from "../domains/providers/index.js";
-import { createSettingsHandlers, type SettingsHandlers } from "../domains/settings/index.js";
 import { TurnRunner, type TurnRunnerDeps } from "../domains/turns/index.js";
-import { createTurnsEditHandlers, type TurnsEditHandlers } from "../domains/turns/index.js";
-import { createSessionEditor, type EditSessionHost } from "../adapters/sdk/session-edits.js";
 import type { SessionListScanState } from "../session-list-scan.js";
 import { dirname, join } from "node:path";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
 import type { SessionRegistry } from "./session-registry.js";
-import { deleteSessionFile, renameSession } from "../domains/sessions/index.js";
 
 export type ClientEnvView = Omit<SnapshotEnvView, "clientId" | "cwd" | "workspaceRoots">;
 
@@ -64,7 +46,8 @@ export interface ClientRuntimeOptions extends GoalHostPorts {
 	clientId: ClientId;
 	cwd: string;
 	workspaceRoots?: readonly string[];
-	env: ClientEnvView;
+	/** 环境视图（`settingsVersion` / 探针真值）：thunk —— `installPiAgent` 之后要能翻真，不能是构造期快照。 */
+	env: () => ClientEnvView;
 	clock: ClockPort;
 	transport: TransportPort;
 	/** 对话可见面的来源；缺省用注册表里的空视图（域接上后注入）。 */
@@ -126,6 +109,12 @@ export interface ClientRuntimeOptions extends GoalHostPorts {
 	plugins?: () => PluginsPort | undefined;
 	nativeCli?: () => import("../contracts/native-cli.js").NativeCliPort | undefined; // 原生 CLI 会话面（PTY / hook / 远程文件归宿主）；缺省 = 未接。
 	bots?: () => import("../contracts/bots.js").BotChatPort | undefined; // Bot 私聊的宿主面（注册表 + 转录锚点）；缺省 = 未接，`openBotChat` 同步抛。
+	/** 工具信息面（宿主 `core-tool-info-adapter`：覆盖解析 + 载荷截断）；缺省 = 未接，两个 handler 同步抛。 */
+	toolInfo?: () => import("../contracts/session.js").ToolInfoPort | undefined;
+	/** 随手问上下文读取面（宿主 `core-quick-ask-adapter`：转录摘取 + 磁盘历史）；缺省 = 未接，调用即抛。 */
+	quickAskConversation?: () => import("../contracts/quick-ask.js").QuickAskConversationReadPort | undefined;
+	/** UI 桥（宿主 `core-ui-bridge-adapter`：dialog/overlay 表 + 装 CLI + 探针）；缺省 = 未接。 */
+	uiBridge?: () => import("../contracts/ui-bridge.js").UiBridgePort | undefined;
 	/** `listCommands` / `saveCommands` 读写的目录（跟随当前对话的 cwd）。 */
 	commandCwd?: () => string;
 	/** 项目/全局模型记忆 + 供应商 key pin（宿主设置存储）；缺省 = 不落盘。 */
@@ -136,33 +125,29 @@ export interface ClientRuntimeOptions extends GoalHostPorts {
 	onSessionModelChanged?(conversationId: ConversationId): void;
 }
 
-/** 一个客户端（浏览器标签）的全部运行态：对话注册表 + 出帧 + 分发表（跨域能力只在这里装配，域之间互不认识）。 */
+/**
+ * 一个客户端（浏览器标签）的全部运行态：对话注册表 + 出帧 + 分发表。
+ *
+ * 分发表本身（每组 handler 的端口拼装 + 对象字面量）在 `dispatch-handlers.ts`：那边是「装配」，
+ * 这里是「状态与生命周期」，两者分开才守得住「门面里不写业务」。跨域能力只在这里装配，域之间互不认识。
+ */
 export class ClientRuntime {
 	readonly registry = new ConversationRegistry<Conversation>();
 	readonly publisher: SnapshotPublisher;
 	readonly turns: TurnRunner;
 	private disposed = false;
 	private adapter: DispatchSession | undefined;
+	private assembly: DispatchAssembly | undefined;
 	private frames: ClientFrames | undefined;
 	private historyRootPath: string | undefined;
 	private scanState: Map<string, SessionListScanState> | undefined;
-	private switchers: ModelSwitchers | undefined;
-	private providers: ProviderHandlers | undefined;
-	private settingsHandlers: SettingsHandlers | undefined;
-	private commandHandlers: CommandHandlers | undefined;
-	private fileHandlers: FilesHandlers | undefined;
-	private worktreeHandlers: WorktreeHandlers | undefined;
-	private conversationState: ConversationStateHandlers | undefined;
-	private dispatchHandlers: ConversationDispatchHandlers | undefined;
 	private sessionSurface: SessionSurface | undefined;
 	private workspaceCwd: string; // 当前工作区与额外根：换工作区会就地改它们（快照 / 目录类 handler 都现取）。
 	private workspaceRoots: readonly string[];
-	private backgroundHandlers: BackgroundHandlers | undefined;
-	private goalHandlersCache: GoalHandlers | undefined;
-	private pluginHandlersCache: PluginsHandlers | undefined;
 	private worktreeInfo: WorktreeInfo | null = null; // 工作树全貌：工作树域的发布口写它，刷新/删除都从这里读「当前是哪个」。
 	/** 沙盒全貌：`null` = 不是沙盒（宿主写）。 */ private sandboxInfo: SandboxInfo | null = null;
-	/** 输入框草稿：不传就按 `dataDir/composer-drafts.json` 建（构造不读盘，首次访问才读）。 */ private readonly drafts: ComposerDraftsStore;
+	/** 会话列表条数：`sessions` 帧与 `setSessionListLimit` 共读。 */ readonly sessionLimits = new Map<string, number>();
+	/** 输入框草稿：不传就按 `dataDir/composer-drafts.json` 建（构造不读盘，首次访问才读）。 */ readonly drafts: ComposerDraftsStore;
 	/** `conversations` 帧出口。 */ readonly pushConversations = () => this.surface().conversations().push();
 
 	constructor(readonly options: ClientRuntimeOptions) {
@@ -189,106 +174,29 @@ export class ClientRuntime {
 	attachFrames(frames: ClientFrames): void {
 		this.frames = frames;
 	}
-	/** 供应商/模型管理面的 24 个 handler：全部转发给宿主端口，未注入即逐个同步抛 `CoreEngineNotReadyError`。 */ private providerHandlers(): ProviderHandlers {
-		return (this.providers ??= createProviderHandlers({
-			modelAdmin: this.options.modelAdmin,
-			getLang: () => this.options.getLang?.() ?? "zh",
-		}));
+	/** 连接是否已被换掉 / 卸掉（宿主面据此停止出帧）。 */
+	isDisposed(): boolean {
+		return this.disposed;
+	}
+	/** 帧出口：还没 attach 就同步抛（连接期唯一一次装配在 `host-faces`）。 */
+	requireFrames(): ClientFrames {
+		if (!this.frames) throw new CoreEngineNotReadyError("connect frames");
+		return this.frames;
+	}
+	/** 帧出口：没 attach 就是 `undefined`（只「顺手推一帧」的成员不该因此报错）。 */
+	optionalFrames(): ClientFrames | undefined {
+		return this.frames;
+	}
+	/** 工作树全貌（工作树域的发布口写它，快照组帧读它）。 */
+	currentWorktreeInfo(): WorktreeInfo | null {
+		return this.worktreeInfo;
+	}
+	setWorktreeInfo(info: WorktreeInfo): void {
+		this.worktreeInfo = info;
 	}
 
-	/** 设置/预设/审批规则：端口是 thunk（`SettingsService` 反过来要拿本运行时）。 */ private settings(): SettingsHandlers {
-		return (this.settingsHandlers ??= createSettingsHandlers({
-			settings: () => this.options.settingsFrame?.(),
-			transport: this.options.transport,
-			flushSnapshot: () => {
-				if (!this.disposed) this.publisher.flush({ forceFull: false });
-			},
-			releasePendingApprovals: (reason) => this.options.releasePendingApprovals?.(reason) ?? 0,
-		}));
-	}
-
-	/** 斜杠命令：`pushSlashCommands` 走宿主端口；读写自定义命令走工作区的文件叶子。 */ private commands(): CommandHandlers {
-		return (this.commandHandlers ??= createCommandHandlers({
-			slash: () => this.options.slashCommands?.(),
-			cwd: () => this.options.commandCwd?.() ?? this.options.cwd,
-			transport: this.options.transport,
-			commandsPathOf: (root) => this.options.commandsPathOf?.(root) ?? `${root}/.pi/commands.json`,
-		}));
-	}
-
-	/** 后台任务：进程树 kill / 端口 diff / job 登记 / 每条 notice 全在宿主，内核只按位转交。 */ private background(): BackgroundHandlers {
-		return (this.backgroundHandlers ??= createBackgroundHandlers({
-			background: () => this.options.background?.(),
-		}));
-	}
-
-	/** 会话状态：队列摘除 / 草稿 / 子代理收口——全是聚合根 + 草稿叶子的内存操作。 */ private conversations(): ConversationStateHandlers {
-		return (this.conversationState ??= createConversationStateHandlers({
-			clientId: this.options.clientId,
-			registry: this.registry,
-			transport: this.options.transport,
-			drafts: this.drafts,
-			flushSnapshot: () => {
-				if (!this.disposed) this.publisher.request();
-			},
-			pushSessions: () => {
-				if (!this.disposed) void this.frames?.refreshSessions();
-			},
-		}));
-	}
-
-	/** 工作树：`git worktree` 的细节全在宿主，内核只编排「删当前树先回退 cwd → 刷帧」。 */ private worktrees(): WorktreeHandlers {
-		return (this.worktreeHandlers ??= createWorktreeHandlers({
-			worktree: () => this.options.worktree?.(),
-			// 换工作树 = 换工作区（老实现 `switchWorktree` 逐字就是 `setCwd`）。
-			workspace: () => this.surface().workspace(),
-			cwd: () => this.registry.activeConv()?.meta.cwd ?? this.workspaceCwd,
-			currentInfo: () => this.worktreeInfo,
-			publish: (info) => {
-				this.worktreeInfo = info;
-				if (!this.disposed) this.publisher.request();
-			},
-			transport: this.options.transport,
-			getLang: () => this.options.getLang?.() ?? "zh",
-		}));
-	}
-
-	/** MCP / 技能 / 市场 / 更新：宿主认得 mcp.json、GitHub、npm registry，内核只按位转发；变更后要重发设置帧。 */ private pluginHandlers(): PluginsHandlers {
-		return (this.pluginHandlersCache ??= createPluginsHandlers({
-			plugins: () => this.options.plugins?.(),
-			pushSettings: () => {
-				if (!this.disposed) this.frames?.pushSettings();
-			},
-		}));
-	}
-
-	/** 文件 / 目录 / 工作区绑定：13 个走 `FilesService`，2 个工作区绑定走内核的重绑链。 */ private filesHandlers(): FilesHandlers {
-		return (this.fileHandlers ??= createFilesHandlers({
-			files: () => this.options.files?.(),
-			workspace: () => this.surface().workspace(),
-		}));
-	}
-
-	/** 对话级派发：只依赖注册表 + 帧出口 + 叶子（不碰会话实体）。 */ private conversationDispatch(): ConversationDispatchHandlers {
-		return (this.dispatchHandlers ??= createConversationDispatchHandlers({
-			registry: this.registry,
-			transport: this.options.transport,
-			cwd: () => this.workspaceCwd,
-			...(this.options.viewOf ? { viewOf: this.options.viewOf } : {}),
-			requestSnapshot: () => this.publisher.request(),
-			now: () => this.options.clock.now(),
-			...(this.options.isAllowedPath ? { isAllowedPath: this.options.isAllowedPath } : {}),
-			closeSession: (id) => this.options.sessions?.close(id),
-			terminalManagerFor: (id) => this.options.terminalManagerFor?.(id ?? this.registry.activeId()),
-			abortActive: async () => {
-				const conv = this.registry.activeConv();
-				const opened = conv ? this.options.sessions?.get(conv.id) : undefined;
-				await opened?.session.abort?.();
-			},
-		}));
-	}
-
-	/** 会话实体重绑面（换目录 / 切会话 / 沙盒迁移共用一份原语）：装配细节在 session-surface。 */ surface(): SessionSurface {
+	/** 会话实体重绑面（换目录 / 切会话 / 沙盒迁移共用一份原语）：装配细节在 session-surface。 */
+	surface(): SessionSurface {
 		return (this.sessionSurface ??= createSessionSurface({
 			clientId: this.options.clientId,
 			registry: this.registry,
@@ -320,7 +228,13 @@ export class ClientRuntime {
 		}));
 	}
 
-	/** 重绑 / 钉住 / 编辑面共用的帧出口：全量刷一帧 + 会话帧 + 项目帧。 */ private rebindFrames() {
+	/** 重绑 / 钉住 / 编辑面共用的帧出口：全量刷一帧 + 会话帧 + 项目帧。 */
+	rebindFrames(): {
+		flush(forceFull?: boolean): void;
+		pushSessions(): void;
+		pushProjects(): void;
+		refreshSessionsFor(cwd: string): Promise<void>;
+	} {
 		return {
 			flush: (forceFull?: boolean) => {
 				if (!this.disposed) this.publisher.flush({ forceFull: forceFull ?? true });
@@ -333,31 +247,6 @@ export class ClientRuntime {
 			},
 			refreshSessionsFor: (cwd: string) => this.frames?.refreshSessionsFor?.(cwd) ?? Promise.resolve(),
 		};
-	}
-
-	/** 选模型 / 思考档 / 全局默认模型：会话取「当前对话」；默认模型帧由组合根提供，没装配就不发。 */ private modelSwitchers(): ModelSwitchers {
-		return (this.switchers ??= createModelSwitchers({
-			clientId: this.options.clientId,
-			cwd: this.options.cwd,
-			transport: this.options.transport,
-			modelAdmin: this.options.modelAdmin,
-			modelMemory: this.options.modelMemory,
-			resolveModel: this.options.resolveModel,
-			sessionOf: () => {
-				const conv = this.registry.activeConv();
-				return conv ? this.options.sessions?.get(conv.id)?.session : undefined;
-			},
-			flushSnapshot: () => {
-				if (!this.disposed) this.publisher.flush({ forceFull: false });
-			},
-			pushDefaultModel: () => {
-				if (!this.disposed) this.frames?.pushDefaultModel();
-			},
-			onSessionModelChanged: () => {
-				const conv = this.registry.activeConv();
-				if (conv) this.options.onSessionModelChanged?.(conv.id);
-			},
-		}));
 	}
 
 	/** 会话文件落在哪个目录，只有真正开过会话才知道（不猜 SDK 的目录布局）。 */
@@ -401,57 +290,13 @@ export class ClientRuntime {
 	pendingCount(): number {
 		return this.registry.list().reduce((sum, conv) => sum + conv.queues.total(), 0);
 	}
-
-	/** 消息编辑面（`editMessage` / `deleteMessage` / `retryLast`）：编排在 `domains/turns/edits`，这里只交宿主口。 */ private turnEdits(): TurnsEditHandlers {
-		const sessions = this.options.sessions;
-		const pushSessions = this.rebindFrames().pushSessions;
-		return createTurnsEditHandlers({
-			registry: this.registry,
-			transport: this.options.transport,
-			clock: this.options.clock,
-			// 会话没开会 / 已关 = 没有条目树：`undefined` 让 handler 走「找不到」，不拿半死句柄。
-			editorOf: (id) => {
-				if (!sessions) throw new CoreEngineNotReadyError("turnEdits.editorOf");
-				const opened = sessions.get(id);
-				return opened ? createSessionEditor(opened.session as unknown as EditSessionHost) : undefined;
-			},
-			// 重问只能走唯一喂轮出口（`TurnRunner.start` → `feed.ts` → `session-turns.ts`）。
-			reask: async (conv, text) => {
-				const opened = sessions?.get(conv.id);
-				if (!opened) throw new CoreEngineNotReadyError("turnEdits.reask");
-				await this.turns.start(conv, opened.session, text);
-			},
-			whenIdle: (id) => this.turns.whenIdle(id),
-			flushSnapshot: () => void this.publisher.flush({ forceFull: false }),
-			afterReload: pushSessions,
-			sessionsChanged: pushSessions,
-			restoreModel: async (id, model) => {
-				const opened = sessions?.get(id);
-				if (opened) await opened.session.setModel?.(model);
-				this.options.onSessionModelChanged?.(id);
-			},
-			// `cancelDiscarded`（#966）未接：`SchedulerStore` 只由宿主 legacy 服务持有，没有端口。
-		});
-	}
-
-	/** 目标 / 计划 / 委派：计划落 `plans.json`、偏好落 `client-state.json`，运行面归宿主端口（未注入即抛）。 */ private goals(): GoalHandlers {
-		return (this.goalHandlersCache ??= createGoalHandlersFor({
-			options: this.options,
-			registry: this.registry,
-			openConversation: () => this.createConversation().id,
-			feed: (promptText) => this.prompt(promptText),
-			flushSnapshot: () => this.publisher.request(),
-		}));
-	}
-
-	/** 原生 CLI 面（未注入即抛）。 */ private nativeCli = () => createNativeCliHandlersFor(this);
-	/** Bot 私聊入口（未注入即抛）。 */ private botChat = createBotChatHandlersFor(this);
 	/** 设置帧（还没 attach 就不发，等连接期那一次）。 */ readonly pushSettings = () => this.frames?.pushSettings();
 	snapshotView(): SnapshotView {
 		const conv = this.registry.activeConv();
 		return {
 			env: {
-				...this.options.env,
+				// 环境视图每帧现算：装完 pi CLI / 改了设置之后不必重连就能翻真。
+				...this.options.env(),
 				clientId: this.options.clientId,
 				cwd: this.workspaceCwd,
 				workspaceRoots: this.workspaceRoots,
@@ -465,108 +310,21 @@ export class ClientRuntime {
 
 	handlers(): DispatchSession {
 		if (this.adapter) return this.adapter;
-		const frames = () => {
-			if (!this.frames) throw new CoreEngineNotReadyError("connect frames");
-			return this.frames;
-		};
-		const handlers: DispatchHandlers = {
-			cwd: this.workspaceCwd,
-			workspaceRoots: this.workspaceRoots,
-			activeConversationId: () => this.activeConversationId(),
-			flushSnapshot: (forceFull?: boolean) => {
-				if (this.disposed) return;
-				this.publisher.flush({ forceFull });
-			},
-			// 裸 get_state（没报 since）= 客户端手上没有状态 → 必须真发全量；报了 since 走闸门。
-			respondWithSnapshot: (_send, options?: { since?: number; force?: boolean }) => {
-				if (this.disposed) return;
-				this.publisher.flush({ forceFull: options?.force ?? options?.since === undefined });
-			},
-			getLang: () => this.options.getLang?.() ?? "zh",
-			emitNotice: (level: "info" | "warning" | "error", text: string, textEn?: string) => {
-				if (this.disposed) return;
-				this.options.transport.send({ type: "notice", level, text, ...(textEn ? { textEn } : {}) });
-			},
-			newChat: async (...args: Parameters<DispatchSession["newChat"]>) => {
-				if (this.disposed) return false;
-				const [, , onReady, , botId] = args; // `botId` → `kind: "bot"`：私聊 = 普通对话 + 一个会话级 Bot 身份。
-				const conv = this.createConversation(botId ? { kind: "bot" } : undefined);
-				onReady?.(conv.id);
-				return true;
-			},
-			prompt: (text: string, _attachments?: PromptAttachment[], queue?: boolean) => this.prompt(text, queue),
-			resolveToolApproval: (id, decision, editedParams, reason, scope) =>
-				this.options.resolveToolApproval?.(id, decision, editedParams, reason, scope) ?? false,
-			resolveQuestion: (id, answers, cancelled, cancelReason) =>
-				this.options.resolveQuestion?.(id, answers, cancelled, cancelReason) ?? false,
-			answerQuestion: async (id, answers, cancelled, cancelReason) => {
-				await this.options.answerQuestion?.(id, answers, cancelled, cancelReason);
-			},
-			pushSettings: () => frames().pushSettings(),
-			refreshSessions: () => frames().refreshSessions(),
-			pushProjects: () => frames().pushProjects(),
-			listModels: () => frames().listModels(),
-			...this.providerHandlers(),
-			...this.settings(),
-			...this.commands(),
-			...this.filesHandlers(),
-			...this.worktrees(),
-			...this.surface().sandbox(),
-			...this.conversations(),
-			...this.background(),
-			...this.pluginHandlers(),
-			...this.turnEdits(),
-			...this.goals(),
-			...this.nativeCli(),
-			...this.botChat,
-			...createTerminalHandlers(),
-			// 会话实体：切转录 / 钉子 / 分叉 / 回滚（磁盘钉子归设置存储，帧只刷当前项目）。
-			switchSession: (path: string, sessionId?: string, independent?: boolean) =>
-				this.surface().entity().switchSession(path, sessionId, independent),
-			pinSession: (path: string, pinned: boolean) => this.surface().pins().pinSession(path, pinned),
-			setConversationPinned: (id: string, pinned: boolean) => this.surface().pins().setConversationPinned(id, pinned),
-			forkSession: (messageId: string, position?: "before" | "at", conversationId?: string) =>
-				this.surface().forks().forkSession(messageId, position, conversationId),
-			rollbackSession: (messageId: string, conversationId?: string) =>
-				this.surface().rollbacks().rollbackSession(messageId, conversationId),
-			// 跨项目刷列表：钉子落在会话归属项目上，但那个项目目录只有宿主认得，这里只重扫当前项目。
-			pushSessionsForCwd: (targetCwd: string) => frames().refreshSessionsFor?.(targetCwd) ?? Promise.resolve(),
-			setModel: (modelId: string) => this.modelSwitchers().setModel(modelId),
-			setDefaultModel: (modelId: string) => this.modelSwitchers().setDefaultModel(modelId),
-			clearDefaultModel: () => this.modelSwitchers().clearDefaultModel(),
-			setThinking: (level: string) => this.modelSwitchers().setThinking(level),
-			// 审批策略：写对话聚合根（唯一所有者）→ 设置帧真了 + 出快照；子代理对话不接策略（老口径）。
-			setApprovalPolicy: (partial: { conversationId?: string; allowAll?: boolean; categories?: string[] }) => {
-				const conv = partial.conversationId ? this.registry.get(partial.conversationId) : this.registry.activeConv();
-				if (!conv || conv.meta.kind === "subagent") return;
-				conv.setApprovalPolicy({ allowAll: partial.allowAll, categories: partial.categories });
-				this.frames?.pushSettings(); // 帧通道还没装配（未 attach）时写入照样成立，推帧只在有出口时做。
-				this.publisher.request();
-			},
-			deleteSession: async (path: string) => {
-				await deleteSessionFile({
-					registry: this.registry,
-					sessionFile: path,
-					now: () => this.options.clock.now(),
-					isAllowedPath: this.options.isAllowedPath,
-				});
-			},
-			renameSession: async (path: string, name: string) => {
-				const { title } = renameSession({ sessionFile: path, title: name });
-				await this.options.persistSessionTitle?.(path, title);
-			},
-			// 对话级派发（切对话 / 终端归属 / 脚本 / 计数 / 消息 / 改名 / 关闭 / 中止）：实现在 conversation-handlers。
-			...this.conversationDispatch(),
-		};
+		// 每组成员在装配时建一份（`createDispatchHandlers` 只跑一次），之后整表缓存进 `this.adapter`。
+		const assembly = (this.assembly ??= createDispatchHandlers(this));
 		// 值成员走取值口：换工作区之后 `cwd` / `workspaceRoots` 立即是新值。
-		this.adapter = createDispatchSurfaceAdapter(handlers, () => ({
+		this.adapter = createDispatchSurfaceAdapter(assembly.handlers, () => ({
 			cwd: this.workspaceCwd,
 			workspaceRoots: this.workspaceRoots,
 		}));
 		return this.adapter;
 	}
 
-	private async prompt(text: string, queue?: boolean): Promise<void> {
+	/**
+	 * 唯一喂轮出口（`prompt` handler 与目标运行交接共用）：会话没开就开、失败只报错不吞。
+	 * 轮次本身必须走 `TurnRunner.start`（→ `feed.ts` → `session-turns.ts`），这里不另开一条路。
+	 */
+	async feedTurn(text: string, queue?: boolean): Promise<void> {
 		if (this.disposed) return;
 		const conv = this.registry.activeConv() ?? this.createConversation();
 		try {
@@ -588,6 +346,8 @@ export class ClientRuntime {
 		this.publisher.dispose();
 		// 每客户端一份的插件端口持有 MCP OAuth 的 attempt 与宿主句柄（`dispose()` 才注销）：断开时必须收口一次。
 		this.options.plugins?.()?.dispose?.();
+		// UI 桥的挂起表（页面 / 手机 / dialog / overlay）：断开时全部结算，不留永不 settle 的 Promise。
+		this.assembly?.dispose();
 		this.options.sessions?.closeAll();
 		for (const conv of this.registry.list()) {
 			if (conv.acceptsTurns) conv.retire();

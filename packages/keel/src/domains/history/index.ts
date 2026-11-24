@@ -6,8 +6,17 @@ export {
 } from "./rows.js";
 export { scanHistory, type HistoryEntry, type ScanHistoryInput, type ScanHistoryResult } from "./list.js";
 export {
+	applySessionListLimit,
+	SESSION_LIST_DEFAULT,
+	SESSION_LIST_MAX,
+	SESSION_LIST_MIN,
+	sessionListLimitOf,
+	type SessionListLimits,
+} from "./limit.js";
+export {
 	buildSessionsFrame,
 	refreshSessions,
+	sessionSummaryOf,
 	type RefreshSessionsInput,
 	type RefreshSessionsResult,
 	type SessionsFrameInput,

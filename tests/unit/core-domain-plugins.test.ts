@@ -142,7 +142,7 @@ function makeRuntime(plugins: (() => PluginsPort | undefined) | undefined) {
 	const runtime = new ClientRuntime({
 		clientId: "client-1",
 		cwd: "/work",
-		env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: false },
+		env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: false }),
 		clock: fakeClock(),
 		transport: { send: (msg: ServerMessage) => void sent.push(msg), isClosed: () => false },
 		...(plugins ? { plugins } : {}),

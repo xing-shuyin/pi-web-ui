@@ -144,7 +144,11 @@ it("opens multiple global questionnaires outside the viewed conversation and rou
 		return true;
 	});
 	const questions = resolveQuestionQueue([], null, null, [question("bot-a"), question("bot-b")]);
+	// 「当前对话弹出」模式不给别的对话的问卷在本对话里占位（它们由侧栏横幅提示）
 	mount(createElement(QuestionQueue, { questions, activeConversationId: "local", mode: "queue" }));
+	expect(document.querySelector(".question-queue")).toBeNull();
+	// 「所有对话自动弹出」才跨对话弹出并路由到对应持有方
+	act(() => root!.render(createElement(QuestionQueue, { questions, activeConversationId: "local", mode: "all" })));
 	expect(document.querySelector(".question-queue-list")?.textContent).toContain("2");
 	click(".question-option");
 	click(".dialog-submit");
@@ -153,7 +157,7 @@ it("opens multiple global questionnaires outside the viewed conversation and rou
 	);
 	act(() =>
 		root!.render(
-			createElement(QuestionQueue, { questions: questions.slice(1), activeConversationId: "local", mode: "queue" }),
+			createElement(QuestionQueue, { questions: questions.slice(1), activeConversationId: "local", mode: "all" }),
 		),
 	);
 	expect(document.querySelector(".dialog-submit")).not.toBeNull();
@@ -165,7 +169,7 @@ it("opens global approval outside the active conversation and approves the corre
 		return true;
 	});
 	mount(
-		createElement(ToolApprovalDialog, { approvals: [approval("bot-b")], activeConversationId: "local", mode: "queue" }),
+		createElement(ToolApprovalDialog, { approvals: [approval("bot-b")], activeConversationId: "local", mode: "all" }),
 	);
 	click('.approval-modal button[style*="font-weight"]');
 	expect(sent).toContainEqual(

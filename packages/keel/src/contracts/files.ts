@@ -20,6 +20,12 @@ export interface FilesPort {
 	revealEntry(path: string): Promise<void>;
 	openDefaultEntry(path: string): Promise<void>;
 	completePath(input: string): Promise<void>;
+	/** SCM 查询（status / history / filediff / commit）：数据与 `scm_data` 帧都归实现（宿主 `FilesService.scmQuery`）。 */
+	scmQuery(
+		kind: "status" | "history" | "filediff" | "commit",
+		reqId: number,
+		arg?: { path?: string; hash?: string },
+	): Promise<void>;
 }
 
 /**

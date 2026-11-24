@@ -248,6 +248,10 @@ export class CoreEngine implements EngineService {
 			nativeCli: () => faces.nativeCli,
 			bots: () => faces.bots,
 			chatMode: () => faces.chatMode,
+			// 工具信息 / 随手问 / UI 桥：同样是宿主面，装配在 `createHostFaces` 里（这里只递 thunk）。
+			toolInfo: () => faces.toolInfo,
+			quickAskConversation: () => faces.quickAsk,
+			uiBridge: () => faces.uiBridge,
 			plugins: () => faces.plugins,
 			background: () => faces.background,
 			sandbox: () => faces.sandbox,
@@ -270,12 +274,13 @@ export class CoreEngine implements EngineService {
 				delegateMode: chatModes.delegateModeOf(conv.id),
 				pendingApprovals: approvalWaiter.pendingForSnapshot(conv.id),
 			}),
-			env: {
+			// 环境视图是**导出值**（不是状态）：探针真值 / 设置版本随每次组帧现算，装完 pi CLI 不必重连就翻真。
+			env: () => ({
 				settingsVersion: this.stateStore.getSettingsVersion(),
-				piConfigured: false,
-				piAgentInstalled: false,
+				piConfigured: faces.uiBridge?.probe().piConfigured ?? false,
+				piAgentInstalled: faces.uiBridge?.probe().piAgentInstalled ?? false,
 				capabilities: DEFAULT_PI_CAPABILITIES,
-			},
+			}),
 		});
 		// 宿主面（设置/文件/插件/沙盒/后台/终端/CLI/Bot/模式开关 + 帧出口 + 子代理）由 `createHostFaces` 一次装配：
 		// 工厂顺序与老 `attach()` 一致，门面这里只把本客户端的现成东西递进去、拿回一组 port。
@@ -290,6 +295,9 @@ export class CoreEngine implements EngineService {
 			nativeCli: this.options.nativeCli,
 			bots: this.options.bots,
 			chatMode: this.options.chatMode,
+			toolInfo: this.options.toolInfo,
+			quickAsk: this.options.quickAsk,
+			uiBridge: this.options.uiBridge,
 			clientId,
 			cwd: this.cwd,
 			agentDir: this.options.agentDir ?? this.cwd,

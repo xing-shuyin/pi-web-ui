@@ -36,3 +36,22 @@ export {
 } from "./pins.js";
 export { createSessionForks, type SessionForkHandlers, type SessionForkOptions } from "./fork.js";
 export { createSessionRollbacks, type SessionRollbackHandlers, type SessionRollbackOptions } from "./rollback.js";
+export {
+	createCompactedMessagesHandlers,
+	type CompactedMessagesHandlers,
+	type CompactedMessagesOptions,
+} from "./compacted.js";
+export {
+	createPersistConversationHandlers,
+	type PersistConversationHandlers,
+	type PersistConversationOptions,
+	type SessionPersistPort,
+} from "./persist.js";
+export {
+	getCompactedMessages,
+	sliceCompactedEntries,
+	serializeCompactedEntries,
+	walkAncestors,
+	type SessionEntryLike,
+	type SessionManagerLike,
+} from "./compacted-history.js";

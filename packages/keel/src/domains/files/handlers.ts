@@ -8,7 +8,7 @@ export interface FilesHandlersOptions {
 	workspace?: () => WorkspacePort | undefined;
 }
 
-/** 文件 / 目录 / 工作区绑定的 15 个 handler：全部转发给宿主 `FilesService` + 工作区面。 */
+/** 文件 / 目录 / 工作区绑定的 16 个 handler：全部转发给宿主 `FilesService` + 工作区面。 */
 export interface FilesHandlers {
 	listFiles(path?: string): Promise<void>;
 	searchFiles(query: string, reqId: number, scope?: string): Promise<void>;
@@ -23,6 +23,11 @@ export interface FilesHandlers {
 	revealEntry(path: string): Promise<void>;
 	openDefaultEntry(path: string): Promise<void>;
 	completePath(path: string): Promise<void>;
+	scmQuery(
+		kind: "status" | "history" | "filediff" | "commit",
+		reqId: number,
+		arg?: { path?: string; hash?: string },
+	): Promise<void>;
 	setCwd(path: string): Promise<void>;
 	setWorkspaceRoots(roots?: string[]): Promise<void>;
 }
@@ -56,6 +61,7 @@ export function createFilesHandlers(options: FilesHandlersOptions): FilesHandler
 		revealEntry: (path) => files("revealEntry").revealEntry(path),
 		openDefaultEntry: (path) => files("openDefaultEntry").openDefaultEntry(path),
 		completePath: (path) => files("completePath").completePath(path),
+		scmQuery: (kind, reqId, arg) => files("scmQuery").scmQuery(kind, reqId, arg),
 
 		// 建目录 + （可选）把工作区切过去：异步体在端口解析之后，端口缺失的抛错仍是同步的。
 		makeDir(path: string, setAsCwd?: boolean): Promise<void> {

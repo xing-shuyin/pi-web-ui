@@ -37,8 +37,12 @@ export interface RefreshSessionsResult {
 /**
  * `HistoryEntry` → 协议里的 `SessionSummary`：列表行只需要标题 / 条数 / 时间 / 路径。
  * `sessionId` / `source` / `pinned` 这类控件字段不在这里编造，缺了就不写（协议里都是可选的）。
+ * 全局检索结果（`session_search_results`）用的是同一份形状：一份历史条目只有一种摘要写法。
  */
-function summaryOf(entry: HistoryEntry, isPinned?: (cwd: string, sessionFile: string) => boolean): SessionSummary {
+export function sessionSummaryOf(
+	entry: HistoryEntry,
+	isPinned?: (cwd: string, sessionFile: string) => boolean,
+): SessionSummary {
 	return {
 		path: entry.sessionFile,
 		name: entry.title,
@@ -54,7 +58,7 @@ function summaryOf(entry: HistoryEntry, isPinned?: (cwd: string, sessionFile: st
 export function buildSessionsFrame(input: SessionsFrameInput): ServerMessage {
 	return {
 		type: "sessions",
-		sessions: input.entries.map((entry) => summaryOf(entry, input.isPinned)),
+		sessions: input.entries.map((entry) => sessionSummaryOf(entry, input.isPinned)),
 		cwd: input.cwd,
 		...(input.hasMore ? { hasMore: true } : {}),
 	};

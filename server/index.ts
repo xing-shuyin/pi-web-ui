@@ -69,6 +69,10 @@ import { asCoreNativeCliTerminals, createCoreNativeCli } from "./core-native-cli
 import { createCoreBotChat } from "./core-bot-adapter.js";
 import { createCoreChatModePort } from "./core-chat-mode-adapter.js";
 import { createCoreGoalRunPort } from "./core-goal-run-adapter.js";
+import { createCoreToolInfoAdapter } from "./core-tool-info-adapter.js";
+import { createCoreQuickAskAdapter } from "./core-quick-ask-adapter.js";
+import { CoreUiBridges } from "./core-ui-bridge-adapter.js";
+import { WebUIContext } from "./webui-context.js";
 import { ClientStateStore } from "./client-state.js";
 import { isAbsoluteWirePath, wireToAbs } from "./files-service.js";
 import { WS_MAX_PAYLOAD_BYTES } from "./payload-limits.js";
@@ -1553,6 +1557,24 @@ let wireEngineHooks: ((svc: EngineService) => void) | null = null;
 let sharedSocketCount = 0;
 let sharedQuiesced = false;
 
+/**
+ * core 模式的 UI 桥（每客户端一份）：dialog / overlay 的挂起表、`npm i -g` 进程与探针缓存全在这里。
+ * 内核只按 id 转交（`resolveDialog` / `installPiAgent`），宿主交出的是同一份表与探针真值。
+ */
+const coreUiBridges = new CoreUiBridges({ agentDir: getAgentDir() });
+/**
+ * core 模式的每客户端 UI 上下文：`WebUIContext` 用的就是内核那两张表（`dialogs` / `overlays`），
+ * 扩展开出来的 dialog 因此与内核 handler 打在同一份表上。断开时连同 UI 桥一起丢引用（重连是新的帧出口）。
+ */
+const coreWebUis = new Map<string, WebUIContext>();
+function coreWebUiOf(clientId: string, send?: (msg: ServerMessage) => void): WebUIContext {
+	const existing = coreWebUis.get(clientId);
+	if (existing) return existing;
+	const created = new WebUIContext((msg) => send?.(msg));
+	coreWebUis.set(clientId, created);
+	return created;
+}
+
 function activeEngines(): EngineService[] {
 	const list: EngineService[] = [];
 	if (piServiceInstance) list.push(piServiceInstance);
@@ -1657,6 +1679,12 @@ function ensureEngine(engine: EngineId): EngineService {
 						chatMode: (sinks) => createCoreChatModePort(sinks),
 						// 目标运行：执行 / 审查对话 + 逐轮评估全在宿主适配器里，偏好读同一份 `client-state`。
 						goalRun: (sinks) => createCoreGoalRunPort({ sinks, stateStore: sharedStateStore }),
+						// 工具信息：提示词覆盖表与载荷截断在宿主（内核只投影哪条工具、默认文案、是否活动）。
+						toolInfo: (sinks) => createCoreToolInfoAdapter(sinks),
+						// 随手问：转录摘取与磁盘历史读都在宿主叶子里，内核只解析会话。
+						quickAsk: () => createCoreQuickAskAdapter(),
+						// UI 桥：装 pi CLI 的进程归宿主，探针真值读宿主环境（`env.piConfigured` / `piAgentInstalled`）。
+						uiBridge: (clientId, send) => coreUiBridges.portOf(clientId, coreWebUiOf(clientId, send)),
 					}) as unknown as AgentService)
 				: new AgentService(CWD, sharedStateStore);
 		for (let i = 0; i < sharedSocketCount; i++) piServiceInstance.noteSocketOpen();
@@ -1679,6 +1707,9 @@ const service: EngineService = {
 		} else {
 			for (const s of activeEngines()) s.detach(clientId, send);
 		}
+		// core 模式的 UI 上下文 / UI 桥按客户端缓存：连接断了就丢引用（挂起表由 `ClientRuntime.dispose()` 收口）。
+		coreWebUis.delete(clientId);
+		coreUiBridges.forget(clientId);
 	},
 	get(clientId) {
 		if (!clientId) return undefined;

@@ -167,7 +167,7 @@ describe("设置 handler 接到 ClientRuntime（注册表里不再抛）", () =>
 		const runtime = new ClientRuntime({
 			clientId: "c1",
 			cwd: "/work",
-			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+			env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: true }),
 			clock: { now: () => 1, after: () => () => {} },
 			transport: tp,
 			settingsFrame: () => port,
@@ -182,7 +182,7 @@ describe("设置 handler 接到 ClientRuntime（注册表里不再抛）", () =>
 		const runtime = new ClientRuntime({
 			clientId: "c1",
 			cwd: "/work",
-			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+			env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: true }),
 			clock: { now: () => 1, after: () => () => {} },
 			transport: tp,
 			settingsFrame: () => port,
@@ -215,7 +215,7 @@ describe("设置 handler 接到 ClientRuntime（注册表里不再抛）", () =>
 		const runtime = new ClientRuntime({
 			clientId: "c1",
 			cwd: "/work",
-			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+			env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: true }),
 			clock: { now: () => 1, after: () => () => {} },
 			transport: tp,
 			settingsFrame: () => port,

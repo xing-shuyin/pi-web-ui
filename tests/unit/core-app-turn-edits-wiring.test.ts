@@ -166,7 +166,7 @@ function makeRuntime(overrides: Partial<ClientRuntimeOptions> = {}) {
 	const runtime = new ClientRuntime({
 		clientId: "client-1",
 		cwd: "/work",
-		env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: false },
+		env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: false }),
 		clock,
 		transport: transport.port,
 		...overrides,

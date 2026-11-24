@@ -30,6 +30,7 @@ function fakeFiles(overrides: Partial<FilesPort> = {}): { port: FilesPort; calls
 		revealEntry: record("revealEntry") as FilesPort["revealEntry"],
 		openDefaultEntry: record("openDefaultEntry") as FilesPort["openDefaultEntry"],
 		completePath: record("completePath") as FilesPort["completePath"],
+		scmQuery: record("scmQuery") as FilesPort["scmQuery"],
 		...overrides,
 	};
 	return { port, calls };
@@ -59,9 +60,14 @@ const cases: [keyof FilesHandlers, (h: FilesHandlers) => unknown, Call][] = [
 	["revealEntry", (h) => h.revealEntry("src/a.ts"), ["revealEntry", "src/a.ts"]],
 	["openDefaultEntry", (h) => h.openDefaultEntry("src/a.ts"), ["openDefaultEntry", "src/a.ts"]],
 	["completePath", (h) => h.completePath("src/"), ["completePath", "src/"]],
+	[
+		"scmQuery",
+		(h) => h.scmQuery("filediff", 12, { path: "src/a.ts" }),
+		["scmQuery", "filediff", 12, { path: "src/a.ts" }],
+	],
 ];
 
-describe("文件 handler（B3）· 13 个按位转发", () => {
+describe("文件 handler（B3）· 按位转发", () => {
 	for (const [member, invoke, expected] of cases) {
 		it(`${member} → ${expected[0]}`, async () => {
 			const { port, calls } = fakeFiles();

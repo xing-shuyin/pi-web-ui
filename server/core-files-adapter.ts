@@ -17,7 +17,7 @@ export interface CoreFilesSinks {
 /**
  * 宿主侧适配器：把 `FilesService` 按 `FilesPort` 的窄面交给内核。
  *
- * 结构直通：13 个方法一一对应（`FilesService` 本来就是这 13 件事的唯一实现），
+ * 结构直通：14 个方法一一对应（`FilesService` 本来就是这 14 件事的唯一实现，含 `scmQuery`），
  * 这里只补 `FilesHost` 需要的那几项宿主能力，不搬参数、不重算路径归一。
  */
 export function createCoreFiles(options: CoreFilesSinks): FilesPort {

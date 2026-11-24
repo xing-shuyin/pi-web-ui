@@ -69,3 +69,16 @@ export function subscribeSession(session: TurnCapableSession | undefined, onChan
 	if (!session?.subscribe) return () => {};
 	return session.subscribe(() => onChange());
 }
+
+/**
+ * 消息 → 快照里的 seq。`projectSessionMessages` 用的就是 `messages` 数组下标，所以折叠面板要还原
+ * 同一个 `uiMessageId` 只能照同一口径算：身份命中给下标，没命中（已经折出上下文的老消息）给 `1`
+ * —— 老实现靠 `conv.msgIds` 记着那些 id，内核没有那份账，只能保证「当前上下文里的 id 与快照一致」。
+ */
+export function sessionMessageSeqOf(session: TurnCapableSession | undefined): (message: unknown) => number {
+	const index = new Map<unknown, number>();
+	(session?.messages ?? []).forEach((message, i) => {
+		if (!index.has(message)) index.set(message, i);
+	});
+	return (message: unknown): number => index.get(message) ?? 1;
+}

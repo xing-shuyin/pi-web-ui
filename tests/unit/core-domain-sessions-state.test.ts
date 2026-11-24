@@ -22,7 +22,7 @@ function makeRuntime(options: { drafts?: ComposerDraftsStore } = {}): {
 	const runtime = new ClientRuntime({
 		clientId: "c1",
 		cwd: "/work",
-		env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+		env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: true }),
 		clock: { now: () => 1, after: () => () => {} },
 		transport: transport.port,
 		...options,

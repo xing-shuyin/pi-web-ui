@@ -20,7 +20,7 @@ function makeRuntime(): {
 	const runtime = new ClientRuntime({
 		clientId: "c1",
 		cwd: "/work",
-		env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+		env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: true }),
 		clock: { now: () => 1, after: () => () => {} },
 		transport,
 		stateStore: () => store,
@@ -95,7 +95,7 @@ describe("目标运行端口接上后（宿主适配器在位）", () => {
 		const runtime = new ClientRuntime({
 			clientId: "c1",
 			cwd: "/work",
-			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+			env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: true }),
 			clock: { now: () => 1, after: () => () => {} },
 			transport,
 			stateStore: () => store,
@@ -156,7 +156,7 @@ describe("模式开关端口接上后（宿主适配器在位）", () => {
 		const runtime = new ClientRuntime({
 			clientId: "c1",
 			cwd: "/work",
-			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+			env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: true }),
 			clock: { now: () => 1, after: () => () => {} },
 			transport: { send: () => {}, isClosed: () => false },
 			stateStore: () => createFakeSettingsStore(),

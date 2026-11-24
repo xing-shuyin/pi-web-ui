@@ -313,7 +313,7 @@ describe("ClientRuntime · 端口未注入时 handler 同步抛 CoreEngineNotRea
 		const rt = new ClientRuntime({
 			clientId: "c1",
 			cwd: "/work",
-			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+			env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: true }),
 			clock: { now: () => 1, after: () => () => {} },
 			transport,
 			...(options.stateStore ? { stateStore: () => createFakeSettingsStore() } : {}),
@@ -377,7 +377,7 @@ describe("ClientRuntime · 换工作区后分发表上的 cwd / workspaceRoots �
 		const rt = new ClientRuntime({
 			clientId: "c1",
 			cwd: "/work",
-			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+			env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: true }),
 			clock: { now: () => 1, after: () => () => {} },
 			transport: { send: () => {}, isClosed: () => false },
 			stateStore: () => store,
@@ -405,7 +405,7 @@ describe("ClientRuntime · switchSession 走同一条重绑链", () => {
 		const rt = new ClientRuntime({
 			clientId: "c1",
 			cwd: "/work",
-			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+			env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: true }),
 			clock: { now: () => 1, after: () => () => {} },
 			transport: { send: () => {}, isClosed: () => false },
 			sessions: {
@@ -435,7 +435,7 @@ describe("ClientRuntime · switchSession 走同一条重绑链", () => {
 		const rt = new ClientRuntime({
 			clientId: "c1",
 			cwd: "/work",
-			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+			env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: true }),
 			clock: { now: () => 1, after: () => () => {} },
 			transport: { send: (msg) => void notices.push(msg), isClosed: () => false },
 			sessions: {
@@ -466,7 +466,7 @@ describe("ClientRuntime · 沙盒 7 个从抛变真（端口注入后真的走�
 		const rt = new ClientRuntime({
 			clientId: "c1",
 			cwd: "/work",
-			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+			env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: true }),
 			clock: { now: () => 1, after: () => () => {} },
 			transport: { send: () => {}, isClosed: () => false },
 			stateStore: () => store,
@@ -525,7 +525,7 @@ describe("ClientRuntime · switchSession happy path（真开会话 + 工作区�
 		const rt = new ClientRuntime({
 			clientId: "c1",
 			cwd: "/work",
-			env: { settingsVersion: 1, piConfigured: true, piAgentInstalled: true },
+			env: () => ({ settingsVersion: 1, piConfigured: true, piAgentInstalled: true }),
 			clock: { now: () => 1, after: () => () => {} },
 			transport: { send: () => {}, isClosed: () => false },
 			stateStore: () => store,

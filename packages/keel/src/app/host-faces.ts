@@ -1,5 +1,5 @@
 import { resolve as resolveFsPath } from "node:path";
-import type { ServerMessage, UiApprovalPolicyState } from "../protocol.js";
+import type { ServerMessage, UiApprovalPolicyState, UiToolPromptOverride } from "../protocol.js";
 import type { Conversation } from "../kernel/conversation/index.js";
 import type { TransportPort } from "../contracts/ports.js";
 import type { BackgroundPort } from "../contracts/background.js";
@@ -13,12 +13,15 @@ import type { SandboxPort } from "../contracts/sandbox.js";
 import type { NativeCliPort } from "../contracts/native-cli.js";
 import type { BotChatPort } from "../contracts/bots.js";
 import type { ChatModePort } from "../contracts/goals.js";
+import type { ToolInfoPort } from "../contracts/session.js";
+import type { QuickAskConversationReadPort } from "../contracts/quick-ask.js";
+import type { UiBridgePort } from "../contracts/ui-bridge.js";
 import type { ServerLang } from "../i18n.js";
 import type { ProjectSource } from "../adapters/state/index.js";
 import { createModelRuntimeFactory } from "../adapters/models/index.js";
 import { chatModeTranscriptOf, type ChatModeTranscript } from "../adapters/sdk/chat-mode.js";
 import { pushProjects } from "../domains/projects/index.js";
-import { refreshSessions } from "../domains/history/index.js";
+import { refreshSessions, sessionListLimitOf } from "../domains/history/index.js";
 import { createModelPusher, type ModelPusher } from "../domains/models/index.js";
 import type { TerminalHost } from "../domains/terminals/index.js";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
@@ -87,6 +90,11 @@ export interface CoreWorkspaceSinks {
 export interface CoreNativeCliSinks {
 	/** 每对话一支的终端管理器（宿主 `TerminalManager`；`detach` / `stop` 靠它）。 */
 	terminalOf(conversationId: string): unknown;
+}
+
+/** 宿主实现 `ToolInfoPort` 时要拼的几块：提示词覆盖表（客户端设置里的那一份，别名归一只在宿主）。 */
+export interface CoreToolInfoSinks {
+	toolPromptOverrides(): Record<string, UiToolPromptOverride> | undefined;
 }
 
 /** 宿主实现 `ChatModePort` 时要拼的几块：转录句柄（写条目 / 读回恢复）、门禁状态切换、帧出口。 */
@@ -170,6 +178,15 @@ export interface HostFaceFactories {
 	bots?: () => BotChatPort;
 	/** 模式开关面工厂（宿主实现 `server/core-chat-mode-adapter.ts`）；缺省 = 未接（两个 handler 同步抛）。 */
 	chatMode?: (sinks: CoreChatModeSinks) => ChatModePort;
+	/** 工具信息面工厂（宿主实现 `server/core-tool-info-adapter.ts`）；缺省 = 未接（两个 handler 同步抛）。 */
+	toolInfo?: (sinks: CoreToolInfoSinks) => ToolInfoPort;
+	/** 随手问上下文读取面工厂（宿主实现 `server/core-quick-ask-adapter.ts`）；缺省 = 未接（调用即抛）。 */
+	quickAsk?: () => QuickAskConversationReadPort;
+	/**
+	 * UI 桥工厂（宿主实现 `server/core-ui-bridge-adapter.ts`，**每客户端一份**）：`send` 是该客户端当下的帧出口。
+	 * 缺省 = 未接：4 个 dialog/overlay handler 同步抛，`env.piConfigured` / `env.piAgentInstalled` 退回 `false`。
+	 */
+	uiBridge?: (clientId: string, send?: (msg: ServerMessage) => void) => UiBridgePort | undefined;
 }
 
 /** 装配宿主面要的本客户端现成东西：运行时、会话、帧出口、终端归属、语言、设置存储与全局标量。 */
@@ -205,6 +222,9 @@ export interface HostFaces {
 	nativeCli: NativeCliPort | undefined;
 	bots: BotChatPort | undefined;
 	chatMode: ChatModePort | undefined;
+	toolInfo: ToolInfoPort | undefined;
+	quickAsk: QuickAskConversationReadPort | undefined;
+	uiBridge: UiBridgePort | undefined;
 	modelPusher: ModelPusher;
 	subagents: SubagentRuntime;
 	/** 已经接到运行时上的帧出口（`attachFrames` 在装配里就做完了）。 */
@@ -303,6 +323,14 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 		getLang: () => langOf(),
 	});
 	const workspaceHost = deps.workspaceHost?.({ getCwd: () => runtime.cwd });
+	// 工具信息面：覆盖表来自这个客户端的设置快照（`SettingsService.current.toolPromptOverrides` 同一份）。
+	const toolInfo = deps.toolInfo?.({
+		toolPromptOverrides: () => stateStore.getSettingsSnapshot(clientId).toolPromptOverrides,
+	});
+	// 随手问上下文读取：转录摘取与磁盘历史读都在宿主叶子里，内核只解析会话。
+	const quickAsk = deps.quickAsk?.();
+	// UI 桥（每客户端一份）：dialog / overlay 表归宿主那份 `WebUIContext`，页面 / 手机挂起表归内核。
+	const uiBridge = deps.uiBridge?.(clientId, (msg) => transport.send(msg));
 	const modelPusher = createModelPusher({
 		transport,
 		agentDir,
@@ -333,7 +361,9 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 				return;
 			}
 			const pinned = { isPinned: (owner: string, file: string) => stateStore.isSessionPinned(owner, file) };
-			await refreshSessions({ root, cwd, transport, state: runtime.historyState(), ...pinned });
+			// 条数是前端 `list_sessions.limit` 按项目设的（`setSessionListLimit`）：帧出口只按它截断，`hasMore` 跟着算。
+			const limit = sessionListLimitOf(runtime.sessionLimits, cwd);
+			await refreshSessions({ root, cwd, transport, state: runtime.historyState(), limit, ...pinned });
 		},
 		// 钉子落在会话归属的项目上：只有目标就是当前项目时才重扫（别的项目的会话目录只有宿主认得）。
 		refreshSessionsFor: async (targetCwd: string) => {
@@ -363,6 +393,9 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 		nativeCli,
 		bots,
 		chatMode,
+		toolInfo,
+		quickAsk,
+		uiBridge,
 		modelPusher,
 		subagents,
 		frames,

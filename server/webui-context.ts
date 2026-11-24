@@ -6,6 +6,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { Component, OverlayHandle, OverlayOptions } from "@earendil-works/pi-tui";
 import type { ServerMessage } from "./protocol.js";
+import { UiDialogTable } from "../packages/keel/src/domains/ui-bridge/dialogs.js";
+import { UiOverlayTable } from "../packages/keel/src/domains/ui-bridge/overlays.js";
 import { VirtualTuiBridge } from "./virtual-tui.js";
 
 // Ensure global theme is initialized so extensions calling getSettingsListTheme(),
@@ -107,8 +109,12 @@ export class WebUIContext {
 	 */
 	private lastSeenConv: string | null | undefined = undefined;
 
-	private tuiOverlaySeq = 0;
-	private activeTuiOverlays = new Map<number, VirtualTuiBridge<unknown>>();
+	/**
+	 * dialog / overlay 的挂起表：**实现在内核**（`domains/ui-bridge/`），这里只是持有实例——
+	 * 扩展开出来的 dialog 与内核 handler `resolveDialog` 必须打在同一份表上，否则回包永远兑不了。
+	 */
+	readonly overlays = new UiOverlayTable();
+	readonly dialogs: UiDialogTable;
 
 	constructor(
 		emit: (msg: ServerMessage) => void,
@@ -123,6 +129,8 @@ export class WebUIContext {
 		this.activeConversationId = options.activeConversationId ?? (() => null);
 		this.isConversationAlive = options.isConversationAlive ?? (() => true);
 		this.emit = this.headless ? () => {} : emit;
+		// headless 的 dialog 不进表、不等浏览器（子代理 / 后台会话）：这是老实现就有的语义，表里有闸。
+		this.dialogs = new UiDialogTable({ emit: this.emit, headless: this.headless });
 	}
 
 	static headless(): WebUIContext {
@@ -322,9 +330,6 @@ export class WebUIContext {
 		}));
 	}
 
-	private dialogSeq = 0;
-	private pendingDialogs = new Map<number, (value: string | boolean | null) => void>();
-
 	select = (
 		title: string,
 		options: string[],
@@ -349,29 +354,15 @@ export class WebUIContext {
 		args: unknown[],
 		code?: { content: string; language?: string; hasRisk?: boolean },
 	): Promise<string | boolean | null> {
-		if (this.headless) return Promise.resolve(null);
-		return new Promise((resolve) => {
-			const id = ++this.dialogSeq;
-			this.pendingDialogs.set(id, resolve);
-			this.emit({ type: "dialog", id, kind, title, args, ...(code ? { code } : {}) });
-		});
+		return this.dialogs.open(kind, title, args, code ? { code } : {});
 	}
 
 	resolveDialog(id: number, value: string | boolean | null): void {
-		const resolve = this.pendingDialogs.get(id);
-		if (resolve) {
-			this.pendingDialogs.delete(id);
-			resolve(value);
-			this.emit({ type: "dialog_closed", id });
-		}
+		this.dialogs.resolve(id, value);
 	}
 
 	cancelPendingDialogs(): void {
-		for (const [id, resolve] of this.pendingDialogs) {
-			this.pendingDialogs.delete(id);
-			resolve(null);
-			this.emit({ type: "dialog_closed", id });
-		}
+		this.dialogs.cancelAll();
 	}
 
 	custom = async <T>(
@@ -400,19 +391,25 @@ export class WebUIContext {
 			return Promise.resolve(undefined as unknown as T);
 		}
 
-		const id = ++this.tuiOverlaySeq;
-		const bridge = new VirtualTuiBridge<T>({
+		// overlay 的 id 由内核表发（唯一分配者）；bridge 里那份 id 只用于日志，取值相同。
+		let bridge: VirtualTuiBridge<T> | undefined;
+		const id = this.overlays.register({
+			feedInput: (data) => bridge?.feedInput(data),
+			resize: (cols, rows) => bridge?.resize(cols, rows),
+			cancel: () => bridge?.cancel(),
+		});
+		bridge = new VirtualTuiBridge<T>({
 			id,
 			onRender: (ansi) => {
 				this.emit({ type: "tui_overlay_render", id, ansi });
 			},
 			onClose: () => {
-				this.activeTuiOverlays.delete(id);
+				// 表里已经摘过（`cancel` 先摘再调），这里只是幂等地再护一道。
+				this.overlays.remove(id);
 				this.emit({ type: "tui_overlay_close", id });
 			},
 		});
 
-		this.activeTuiOverlays.set(id, bridge as VirtualTuiBridge<unknown>);
 		if (options?.onHandle) {
 			options.onHandle(bridge.createOverlayHandle());
 		}
@@ -442,18 +439,15 @@ export class WebUIContext {
 	};
 
 	handleTuiOverlayInput(id: number, data: string): void {
-		const bridge = this.activeTuiOverlays.get(id);
-		bridge?.feedInput(data);
+		this.overlays.input(id, data);
 	}
 
 	handleTuiOverlayResize(id: number, cols: number, rows: number): void {
-		const bridge = this.activeTuiOverlays.get(id);
-		bridge?.resize(cols, rows);
+		this.overlays.resize(id, cols, rows);
 	}
 
 	handleTuiOverlayCancel(id: number): void {
-		const bridge = this.activeTuiOverlays.get(id);
-		bridge?.cancel();
+		this.overlays.cancel(id);
 	}
 
 	onTerminalInput = (): (() => void) => () => {};
@@ -496,14 +490,8 @@ export class WebUIContext {
 		}
 		this.widgets.clear();
 		this.lastLines.clear();
-		for (const [id, resolve] of this.pendingDialogs) {
-			resolve(null);
-			this.emit({ type: "dialog_closed", id });
-		}
-		this.pendingDialogs.clear();
-		for (const bridge of this.activeTuiOverlays.values()) {
-			bridge.cancel();
-		}
-		this.activeTuiOverlays.clear();
+		// 断开 / 关对话：挂起的 dialog 全部兑现成 `null`，overlay 全部取消（漏一条就是一个永不 settle 的 Promise）。
+		this.dialogs.cancelAll();
+		this.overlays.cancelAll();
 	}
 }
