@@ -399,6 +399,9 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 			const [, ephemeral, onReady, , botId] = args; // `botId` → `kind: "bot"`：私聊 = 普通对话 + 一个会话级 Bot 身份。
 			// 临时对话（`ephemeral`）不复用空白对话：老实现同口径，它要的是一条新记录。
 			const conv = promptEntry.startNewChat(botId, ephemeral !== true);
+			try {
+				if (runtime.options.sessions) await runtime.options.sessions.ensure(conv);
+			} catch {}
 			onReady?.(conv.id);
 			return true;
 		},

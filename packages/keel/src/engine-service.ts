@@ -513,4 +513,5 @@ export interface EngineService {
 	pluginBgTasksProvider?: (() => BgServer[]) | undefined;
 	pluginStopBgTask?: ((taskId: string) => boolean) | undefined;
 	onClientCwdChanged?: ((cwd: string, roots: string[]) => void) | undefined;
+	pluginClient?(): DispatchSession | undefined;
 }

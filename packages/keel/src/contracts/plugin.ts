@@ -48,6 +48,16 @@ export interface PluginConversationSnapshot {
 	};
 }
 
+/** 插件订阅的工具执行事件（`onToolEvent` 的回包）。 */
+export interface PluginToolEvent {
+	phase: "start" | "end";
+	toolName: string;
+	conversationId: string;
+	toolCallId?: string;
+	durationMs?: number;
+	isError?: boolean;
+}
+
 /** 插件订阅的运行事件（`onRunEvent` 的回包）。 */
 export interface PluginRunEvent {
 	sessionId?: string;

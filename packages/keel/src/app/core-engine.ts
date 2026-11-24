@@ -1,28 +1,38 @@
-import type { DispatchSession, EngineService, TerminalManagerLike } from "../engine-service.js";
+import type { DispatchSession, EngineService } from "../engine-service.js";
 import type { ServerMessage } from "../protocol.js";
 import { toServiceInfo, launchOrigin } from "../launch-origin.js";
 import { join as joinPath, resolve as resolveFsPath } from "node:path";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
-import type { ModelAdminPort, ModelAdminSinks } from "../contracts/model-admin.js";
+import type { ModelAdminPort } from "../contracts/model-admin.js";
 import type { SettingsStorePort } from "../contracts/settings-store.js";
 import { QuiesceRejectedError } from "../contracts/quiesce.js";
-import type { PluginToolSyncPort } from "../contracts/plugin.js";
 import type { PluginAgentToolFilter } from "../adapters/tools/plugin-agent-tools.js";
 import { PluginToolsBinder } from "./plugin-tools-binder.js";
-import type { WorktreePort } from "../contracts/worktree.js";
-import type { RemoteSdkOperationsFactory } from "../contracts/remote-ops.js";
 import type { GoalRunPort } from "../contracts/goals.js";
 import { createGoalRunSinks, type GoalRunSinks } from "../domains/goals/index.js";
 import { isInsideRoots } from "../path-boundary.js";
 import { createProjectSource } from "../adapters/state/index.js";
 import { createModelMemory } from "../adapters/state/model-memory.js";
-import { conversationViewFromSession, subscribeSession } from "../adapters/sdk/view.js";
+import { conversationViewFromSession } from "../adapters/sdk/view.js";
+import {
+	chatFromPlugin,
+	notifyPluginModelChange,
+	pickPluginClient,
+	readConversationForPlugins,
+	subscribePluginSessionEvents,
+} from "./plugin-engine-hooks.js";
+import type {
+	PluginChatRequest,
+	PluginConversationQuery,
+	PluginConversationSnapshot,
+	PluginRunEvent,
+	PluginToolEvent,
+} from "../contracts/plugin.js";
 import { ChatModeState, DEFAULT_AGENT_PRESET, PresetState, resolveToolLoadout } from "../domains/tools/index.js";
 import { NativeCliConversations } from "../domains/native-cli/index.js";
 import { conversationPresetViewOf, gateConversationPreset } from "./preset-handlers.js";
 import { withChatModeGates } from "../adapters/sdk/chat-mode.js";
-import { InteractionInbox } from "../domains/interactions/index.js";
-import { createApprovalWaiter, createAskUserWaiter } from "../domains/interactions/index.js";
+import { InteractionInbox, createApprovalWaiter, createAskUserWaiter } from "../domains/interactions/index.js";
 import { createAskQuestionTool } from "../adapters/tools/ask-question.js";
 import { createGuardedBuiltinTools } from "../adapters/tools/guarded.js";
 import { renameSessionFile } from "../adapters/sdk/session-info.js";
@@ -52,58 +62,8 @@ import {
 } from "./plugin-refresh.js";
 
 export { CoreEngineNotReadyError };
-/** 宿主面形状（sinks / 工厂表）住在 `host-faces.ts`，这里只做转发，宿主的 import 路径不变。 */
-export type {
-	CoreBackgroundSinks,
-	CoreChatModeSinks,
-	CoreEngineExtrasSinks,
-	CoreFilesSinks,
-	CoreNativeCliSinks,
-	CorePluginsSinks,
-	CoreSandboxSinks,
-	CoreScmCommitMessageSinks,
-	CoreSettingsSinks,
-	CoreWorkspaceSinks,
-	HostFaceDeps,
-	HostFaceFactories,
-	HostFaces,
-} from "./host-faces.js";
-
-/** 门面的装配参数：宿主注入的能力都在这里（内核不认识宿主模块）。
- * 宿主面工厂（设置/文件/插件/沙盒/后台/终端面…）的形状定义在 `HostFaceFactories`，那边也是装配点。
- */
-export interface CoreEngineOptions extends HostFaceFactories {
-	version: string;
-	attach?: boolean;
-	agentDir?: string;
-	/** 设置存储端口实例（宿主 `server/core-state-adapter.ts`）；引擎的设置/项目/模型记忆全读它。 */
-	stateStore: SettingsStorePort;
-	/** 模型/供应商管理面工厂（宿主实现：`server/core-model-adapter.ts`）；缺省 = 能力未接。 */
-	modelAdmin?: (sinks: ModelAdminSinks) => ModelAdminPort;
-	/** Git 工作树面工厂（宿主实现：`server/core-worktree-adapter.ts`）；缺省 = 能力未接。 */
-	worktree?: () => WorktreePort;
-	/** 终端管理器工厂（宿主叶子 `TerminalManager`）；缺省 = 终端能力未接。 */
-	terminalManager?: (input: {
-		emit: (msg: ServerMessage) => void;
-		cwd: () => string;
-		lang: () => ServerLang;
-	}) => TerminalManagerLike;
-	/** 自定义命令文件的路径解析（远程工作区落会话目录）；缺省由运行时拼本地路径。 */
-	commandsPathOf?: (workspaceRoot: string) => string;
-	/** 目标运行面工厂（宿主实现 `server/core-goal-run-adapter.ts`）；缺省 = 未接（三个 handler 同步抛）。 */
-	goalRun?: (sinks: GoalRunSinks) => GoalRunPort;
-	/** 远程工作区的 SDK 文件操作（宿主实现）；缺省 = 全是本地工具。 */
-	remoteOpsOf?: RemoteSdkOperationsFactory;
-	/** 换完模型后的宿主收尾（压缩预留重算 / 插件通知）：C 类能力一律留在宿主。 */
-	onSessionModelChanged?: (clientId: string, conversationId: string) => void;
-	/**
-	 * 插件工具「装进已开会话」的宿主口（宿主实现：`server/core-plugin-tool-sync-adapter.ts`，
-	 * 包 `server/plugins.ts` 的 `syncPluginToolsIntoSession`）。缺省 = 不就地刷新：插件工具仍然在
-	 * **每次开会话时**装配（`customToolsFor`），只是已开的会话要等下一轮换会话才跟上。
-	 * 这里不是能力门禁：没注入就只是「没有这个钩子」，不抛 `CoreEngineNotReadyError`。
-	 */
-	pluginToolSync?: () => PluginToolSyncPort | undefined;
-}
+import type { CoreEngineOptions } from "./core-engine-options.js";
+export type * from "./core-engine-options.js";
 
 const systemClock: ClockPort = {
 	now: () => Date.now(),
@@ -122,6 +82,12 @@ type FrameSender = (msg: ServerMessage) => void;
  */
 export class CoreEngine implements EngineService {
 	onQuit?: () => boolean;
+	onToolEvent?: ((ev: PluginToolEvent) => void) | undefined;
+	onRunEvent?: ((ev: PluginRunEvent) => void) | undefined;
+	onConversationChanged?: (() => void) | undefined;
+	onClientModelChanged?: ((snap: PluginConversationSnapshot) => void) | undefined;
+	onClientCwdChanged?: ((cwd: string, roots: string[]) => void) | undefined;
+	private readonly pluginModelKeys = new Map<string, string>();
 	/** 手机通知回调：组合根 `wireEngineHooks` 在引擎建好后装上（内核只转发事件，不自己投递）。 */
 	onNotificationEvent?: (event: MobileNotificationEvent) => void | Promise<void>;
 	/**
@@ -286,7 +252,15 @@ export class CoreEngine implements EngineService {
 				resumeAgentPreset(conv, opened);
 				unsubscribers.set(
 					conv.id,
-					subscribeSession(opened.session, () => runtime.publisher.request()),
+					subscribePluginSessionEvents({
+						session: opened.session,
+						conv,
+						clientId,
+						sessionId: opened.sessionId,
+						onChange: () => runtime.publisher.request(),
+						onToolEvent: (ev) => this.onToolEvent?.(ev),
+						onRunEvent: (ev) => this.onRunEvent?.(ev),
+					}),
 				);
 			},
 			onClosed: (conversationId) => {
@@ -373,7 +347,12 @@ export class CoreEngine implements EngineService {
 			modelAdmin: this.modelAdminPort(),
 			modelMemory: createModelMemory(this.stateStore),
 			resolveModel: (provider, id) => faces.resolveModel(provider, id),
-			onSessionModelChanged: (conversationId) => this.options.onSessionModelChanged?.(clientId, conversationId),
+			onCwdChanged: (cwd, roots) => this.onClientCwdChanged?.(cwd, [...roots]),
+			onConversationChanged: () => this.onConversationChanged?.(),
+			onSessionModelChanged: (conversationId) => {
+				this.options.onSessionModelChanged?.(clientId, conversationId);
+				this.notifyPluginModelChange(clientId, conversationId);
+			},
 			terminalManagerFor: (conversationId) => terminalHost.managerFor(conversationId, this.cwd),
 			isAllowedPath: (target) =>
 				isInsideRoots(resolveFsPath(target), [joinPath(this.options.agentDir ?? this.cwd, "sessions")]),
@@ -454,6 +433,8 @@ export class CoreEngine implements EngineService {
 				isQuiesced: () => this.isQuiesced(),
 			}),
 		);
+		this.onClientCwdChanged?.(runtime.cwd, [...runtime.roots]);
+		this.onConversationChanged?.();
 		return runtime.handlers();
 	}
 
@@ -592,6 +573,22 @@ export class CoreEngine implements EngineService {
 		return this.langs.get(clientId) ?? resolveServerLang(this.stateStore.get(clientId).locale);
 	}
 
+	readConversationForPlugins(opts?: PluginConversationQuery): PluginConversationSnapshot | null {
+		return readConversationForPlugins(this.runtimes, opts);
+	}
+	pluginClient(): DispatchSession | undefined {
+		return pickPluginClient(this.runtimes);
+	}
+	chatFromPlugin(pluginId: string, req: PluginChatRequest) {
+		return chatFromPlugin(
+			{ runtimes: this.runtimes, attach: (id, send) => this.attach(id, send), isQuiesced: () => this.isQuiesced() },
+			pluginId,
+			req,
+		);
+	}
+	private notifyPluginModelChange(clientId: string, conversationId: string): void {
+		notifyPluginModelChange(this, this.pluginModelKeys, this.runtimes, clientId, conversationId);
+	}
 	getCapabilities(): AgentEngineCapabilities {
 		return DEFAULT_PI_CAPABILITIES;
 	}

@@ -54,6 +54,8 @@ export interface ClientRuntimeOptions extends GoalHostPorts {
 	clientId: ClientId;
 	cwd: string;
 	workspaceRoots?: readonly string[];
+	onCwdChanged?: (cwd: string, roots: readonly string[]) => void;
+	onConversationChanged?: () => void;
 	/** 环境视图（`settingsVersion` / 探针真值）：thunk —— `installPiAgent` 之后要能翻真，不能是构造期快照。 */
 	env: () => ClientEnvView;
 	clock: ClockPort;
@@ -181,7 +183,10 @@ export class ClientRuntime {
 	/** 沙盒全貌：`null` = 不是沙盒（宿主写）。 */ private sandboxInfo: SandboxInfo | null = null;
 	/** 会话列表条数：`sessions` 帧与 `setSessionListLimit` 共读。 */ readonly sessionLimits = new Map<string, number>();
 	/** 输入框草稿：不传就按 `dataDir/composer-drafts.json` 建（构造不读盘，首次访问才读）。 */ readonly drafts: ComposerDraftsStore;
-	/** `conversations` 帧出口。 */ readonly pushConversations = () => this.surface().conversations().push();
+	/** `conversations` 帧出口。 */ readonly pushConversations = () => {
+		this.surface().conversations().push();
+		this.options.onConversationChanged?.();
+	};
 
 	constructor(readonly options: ClientRuntimeOptions) {
 		this.workspaceCwd = options.cwd;
@@ -247,10 +252,14 @@ export class ClientRuntime {
 			setWorkspace: (cwd, roots) => {
 				this.workspaceCwd = cwd;
 				this.workspaceRoots = roots;
+				this.options.onCwdChanged?.(cwd, roots);
 			},
 			createConversation: (init) => this.newConversation(init),
 			frames: this.rebindFrames(),
-			onActivated: (id) => this.publisher.switchConversation(id),
+			onActivated: (id) => {
+				this.publisher.switchConversation(id);
+				this.options.onConversationChanged?.();
+			},
 			noteSessionFile: (file) => this.noteSessionFile(file),
 			...(this.options.nativeCliState
 				? {
@@ -361,6 +370,7 @@ export class ClientRuntime {
 			cwd: init?.cwd ?? this.workspaceCwd,
 		});
 		this.registry.add(conv);
+		this.options.onConversationChanged?.();
 		return conv;
 	}
 
