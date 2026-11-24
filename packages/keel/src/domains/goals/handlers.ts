@@ -5,6 +5,7 @@ import type {
 	GoalPrefs,
 	GoalPrefsPatch,
 	GoalRunPort,
+	GoalRunPortFactory,
 	GoalStartOptions,
 	GoalWizardOptions,
 } from "../../contracts/goals.js";
@@ -64,7 +65,8 @@ export interface GoalHandlersOptions {
 	/** 计划交接：开新对话并把交接提示词喂进去（只走内核唯一喂轮出口）。 */
 	openConversation?(): string | undefined;
 	feed?(promptText: string): Promise<void>;
-	goalRun?: () => GoalRunPort | undefined;
+	/** 目标运行端口工厂；缺省 = 本引擎不支持目标运行。 */
+	goalRun?: GoalRunPortFactory;
 	chatMode?: () => ChatModePort | undefined;
 }
 
@@ -106,10 +108,24 @@ export function createGoalHandlers(options: GoalHandlersOptions): GoalHandlers {
 		if (!store) throw new CoreEngineNotReadyError("goalPrefs");
 		return store;
 	};
+	/** 端口只建一次（宿主可能持有轮次状态）；hooks 是内核反向回传的写口（今天只有计划面板）。 */
+	let runPort: GoalRunPort | undefined;
 	const enableRun = (what: string): GoalRunPort => {
-		const port = options.goalRun?.();
-		if (!port) throw new CoreEngineNotReadyError(what);
-		return port;
+		const factory = options.goalRun;
+		if (!factory) throw new CoreEngineNotReadyError(what);
+		runPort ??= factory({
+			// 调研产出的步骤落到与 `plan_update` 同一条链（`plans.json` + 帧 + 快照）。
+			setPlan: (conversationId, steps) => {
+				const plans = options.plans?.();
+				if (!plans) return;
+				publishPlan(
+					conversationId,
+					plans.setPlan(conversationId, steps, undefined, options.sessionIdOf?.(conversationId)),
+				);
+			},
+		});
+		if (!runPort) throw new CoreEngineNotReadyError(what);
+		return runPort;
 	};
 	const enableMode = (what: string): ChatModePort => {
 		const port = options.chatMode?.();

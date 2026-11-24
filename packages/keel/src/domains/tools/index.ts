@@ -1,3 +1,4 @@
+export { ChatModeState, type ChatModeKind } from "./chat-mode.js";
 export { resolveActiveToolNames, type ToolGatingInput } from "./gating.js";
 export {
 	appendLoadedTools,

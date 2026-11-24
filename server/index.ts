@@ -67,6 +67,8 @@ import { createCoreWorktree } from "./core-worktree-adapter.js";
 import { createCoreBackground } from "./core-background-adapter.js";
 import { asCoreNativeCliTerminals, createCoreNativeCli } from "./core-native-cli-adapter.js";
 import { createCoreBotChat } from "./core-bot-adapter.js";
+import { createCoreChatModePort } from "./core-chat-mode-adapter.js";
+import { createCoreGoalRunPort } from "./core-goal-run-adapter.js";
 import { ClientStateStore } from "./client-state.js";
 import { isAbsoluteWirePath, wireToAbs } from "./files-service.js";
 import { WS_MAX_PAYLOAD_BYTES } from "./payload-limits.js";
@@ -1651,6 +1653,10 @@ function ensureEngine(engine: EngineId): EngineService {
 							createCoreNativeCli({ terminalOf: (id) => asCoreNativeCliTerminals(sinks.terminalOf(id)) }),
 						// Bot 私聊：本机注册表与私聊转录锚点都是宿主叶子，`agentDir` 只有组合根知道。
 						bots: () => createCoreBotChat({ agentDir: getAgentDir() }),
+						// 模式开关：转录条目（重启后恢复）/ 写工具门禁 / 提示词重载三处都要 SDK 会话句柄，适配器归宿主。
+						chatMode: (sinks) => createCoreChatModePort(sinks),
+						// 目标运行：执行 / 审查对话 + 逐轮评估全在宿主适配器里，偏好读同一份 `client-state`。
+						goalRun: (sinks) => createCoreGoalRunPort({ sinks, stateStore: sharedStateStore }),
 					}) as unknown as AgentService)
 				: new AgentService(CWD, sharedStateStore);
 		for (let i = 0; i < sharedSocketCount; i++) piServiceInstance.noteSocketOpen();

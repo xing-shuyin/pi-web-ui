@@ -21,7 +21,7 @@ import {
 	emptyView,
 	type ConversationDispatchHandlers,
 } from "./conversation-handlers.js";
-import { createGoalHandlersFor, type GoalHandlers } from "./goal-handlers.js";
+import { createGoalHandlersFor, type GoalHandlers, type GoalHostPorts } from "./goal-handlers.js";
 import { createNativeCliHandlersFor } from "./native-cli-handlers.js";
 import { createBotChatHandlersFor } from "./bot-chat-handlers.js";
 import { createTerminalHandlers } from "../domains/terminals/index.js";
@@ -60,7 +60,7 @@ export interface ClientFrames {
 	pushDefaultModel(): void;
 }
 
-export interface ClientRuntimeOptions {
+export interface ClientRuntimeOptions extends GoalHostPorts {
 	clientId: ClientId;
 	cwd: string;
 	workspaceRoots?: readonly string[];

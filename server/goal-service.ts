@@ -12,19 +12,42 @@ import {
 import type { GoalHistoryEntry, GoalStatus, PlanState, PlanStep, ServerMessage } from "./protocol.js";
 import { promptSession } from "./session-turns.js";
 import type { ClientStateStore } from "./client-state.js";
-import { getServerString, pick, type ServerLang } from "./i18n.js";
+import { pick, type ServerLang } from "./i18n.js";
 import { parseModelSpec } from "./attachments.js";
-import { MATERIAL_LIMITS, mergeMaterialRefs, persistMaterialBlobs, type MaterialBlob } from "./material.js";
-import {
-	describeMaterials,
-	normalizeMaterials,
-	planMaterialDelivery,
-	stageMaterials,
-	type DeliveryContext,
-	type DroppedMaterial,
-	type MaterialRef,
-} from "./material.js";
+import type { MaterialBlob } from "./material.js";
 import type { WebUIContext } from "./webui-context.js";
+import {
+	applyGoalMaterialBlobs,
+	createGoalMaterialReporter,
+	goalMaterialOverflowText,
+	planGoalRoundMaterials,
+	type GoalMaterialNotice,
+} from "./goal-run-materials.js";
+import {
+	GOAL_EXEC_FAILED_ROUNDS_LIMIT,
+	buildWizardConversationContext,
+	extractErrorSnippetFromSession,
+	goalRoundBudget,
+	parseReviewerVerdict,
+	parseWizardOutput,
+	recordGoalHistory,
+	resetGoalRoundCounters,
+	sampleGoalRound,
+	stripGoalDraftPrefix,
+} from "./goal-run-rounds.js";
+import {
+	goalCardText,
+	goalExecutorPrompt,
+	goalFailureText,
+	goalMaterialRefs,
+	goalReviewerFeedback,
+	goalReviewerPrompt,
+	goalRoleTitle,
+	goalScopePrompt,
+	roundsSuffix,
+	goalVerdictRetryPrompt,
+} from "./goal-run-prompts.js";
+import { goalStatusOfPrefs } from "../packages/keel/src/domains/goals/index.js";
 
 /**
  * 目标记录：`GoalStatus`（快照 / 回显字段）+ 材料指针。
@@ -112,411 +135,30 @@ export interface GoalHost {
 	roleDeadlineMs?: () => number;
 }
 
-function allBalancedJsonObjects(raw: string): string[] {
-	const src = raw.length > 32768 ? raw.slice(-32768) : raw;
-	const out: string[] = [];
-	for (let start = src.indexOf("{", 0); start >= 0; start = src.indexOf("{", start + 1)) {
-		let depth = 0;
-		let inString = false;
-		let escaped = false;
-		for (let i = start; i < src.length; i++) {
-			const ch = src[i];
-			if (inString) {
-				if (escaped) escaped = false;
-				else if (ch === "\\") escaped = true;
-				else if (ch === '"') inString = false;
-				continue;
-			}
-			if (ch === '"') inString = true;
-			else if (ch === "{") depth++;
-			else if (ch === "}") {
-				depth--;
-				if (depth === 0) {
-					out.push(src.slice(start, i + 1));
-					break;
-				}
-			}
-		}
-	}
-	return out;
-}
-
-export function stripGoalDraftPrefix(raw: string): string {
-	return (raw ?? "")
-		.trim()
-		.replace(/^(?:(?:🎯\s*)?(?:Initial goal draft|原始目标草案)\s*[:：]\s*)+/i, "")
-		.trim();
-}
-
-export function buildWizardConversationContext(messages: unknown[], maxChars = 16_000): string {
-	if (!Array.isArray(messages) || messages.length === 0) return "";
-	let summaryPart = "";
-	const recentLines: string[] = [];
-
-	for (const m of messages) {
-		if (!m || typeof m !== "object") continue;
-		const msg = m as {
-			role?: string;
-			summary?: string;
-			content?: unknown;
-			toolName?: string;
-		};
-		if (msg.role === "compactionSummary" && typeof msg.summary === "string" && msg.summary.trim()) {
-			const s = msg.summary.trim();
-			summaryPart = s.length > 8000 ? s.slice(0, 4000) + "\n...\n" + s.slice(-4000) : s;
-		} else if (msg.role === "user" || msg.role === "assistant") {
-			const parts: string[] = [];
-			if (Array.isArray(msg.content)) {
-				for (const c of msg.content) {
-					if (!c || typeof c !== "object") continue;
-					const block = c as {
-						type?: string;
-						text?: string;
-						name?: string;
-						arguments?: Record<string, unknown>;
-					};
-					if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
-						parts.push(block.text.trim());
-					} else if (block.type === "toolCall" && block.name) {
-						const args = block.arguments;
-						const target = args?.path || args?.file_path || args?.pattern || args?.command || args?.query || "";
-						parts.push(`[tool:${block.name}${target ? " " + String(target).slice(0, 80) : ""}]`);
-					}
-				}
-			} else if (typeof msg.content === "string" && msg.content.trim()) {
-				parts.push(msg.content.trim());
-			}
-			if (parts.length > 0) {
-				const joined = parts.join(" ").slice(0, 2000);
-				recentLines.push(`[${msg.role}]: ${joined}`);
-			}
-		}
-	}
-
-	const recentBudget = summaryPart ? Math.max(4000, maxChars - summaryPart.length) : maxChars;
-	let recentAcc = "";
-	for (let i = recentLines.length - 1; i >= 0; i--) {
-		const line = recentLines[i];
-		if (recentAcc.length + line.length + 1 > recentBudget) break;
-		recentAcc = line + (recentAcc ? "\n" + recentAcc : "");
-	}
-
-	const sections: string[] = [];
-	if (summaryPart) sections.push(`## Previous Context Summary\n${summaryPart}`);
-	if (recentAcc) sections.push(`## Recent Conversation Turns\n${recentAcc}`);
-	return sections.join("\n\n").slice(0, maxChars);
-}
-
-export function parseReviewerVerdict(raw: string): { verdict: "pass" | "fail"; feedback: string } | undefined {
-	let found: { verdict: "pass" | "fail"; feedback: string } | undefined;
-	for (const json of allBalancedJsonObjects(raw)) {
-		try {
-			const value = JSON.parse(json) as { verdict?: unknown; feedback?: unknown };
-			if (value && typeof value === "object" && !Array.isArray(value)) {
-				if (value.verdict === "pass" || value.verdict === "fail") {
-					found = { verdict: value.verdict, feedback: typeof value.feedback === "string" ? value.feedback : "" };
-				}
-			}
-		} catch {}
-	}
-	if (found) return found;
-	const re = /\{\s*"verdict"\s*:\s*"(pass|fail)"[^}]*\}/g;
-	let m: RegExpExecArray | null;
-	let last: { verdict: "pass" | "fail"; feedback: string } | undefined;
-	while ((m = re.exec(raw)) !== null) {
-		const block = m[0];
-		const fm = block.match(/"feedback"\s*:\s*"([^"]*)"/);
-		last = { verdict: m[1] as "pass" | "fail", feedback: fm?.[1] ?? "" };
-	}
-	return last;
-}
-
-export const GIT_DIFF_CAP = 60_000;
-
-export function buildDiffFingerprint(diffOut: string, statusOut: string): string {
-	let status = "";
-	if (statusOut.trim() !== "") {
-		status = statusOut
-			.split("\n")
-			.filter((line) => line.trim() !== "")
-			.sort()
-			.join("\n")
-			.slice(0, 20_000);
-	}
-	if (diffOut.trim() === "") return status;
-	const meta = `\n[diff-meta] chars=${diffOut.length}${status ? `\n[git-status]\n${status}` : ""}`;
-	return diffOut.slice(0, GIT_DIFF_CAP) + meta;
-}
-
-export function extractErrorSnippetFromSession(session: unknown, text: string): string | undefined {
-	try {
-		const messages = (session as AgentSession | undefined)?.agent?.state?.messages;
-		if (Array.isArray(messages)) {
-			for (let i = messages.length - 1; i >= 0 && i >= messages.length - 6; i--) {
-				const m = messages[i];
-				if (m.role === "toolResult" && m.isError) {
-					const errText = m.content
-						?.map((c) => (c.type === "text" ? c.text : ""))
-						.join(" ")
-						.trim();
-					if (errText) return errText.slice(0, 300);
-				}
-				if (m.role === "bashExecution" && m.exitCode && m.exitCode !== 0) {
-					const snippet = m.output?.trim().slice(-300);
-					if (snippet) return `bash exit ${m.exitCode}: ${snippet}`;
-				}
-			}
-		}
-	} catch {}
-	const errMatch = text.match(/(?:(?:Error|Exception|Fail|Fatal):[^\n]+)/i);
-	if (errMatch) {
-		return errMatch[0].trim().slice(0, 300);
-	}
-	return undefined;
-}
-
-export function lastToolNameOfSession(session: unknown): string | undefined {
-	try {
-		const messages = (session as AgentSession | undefined)?.agent?.state?.messages;
-		if (!Array.isArray(messages)) return undefined;
-		for (let i = messages.length - 1; i >= 0 && i >= messages.length - 6; i--) {
-			const m = messages[i] as { role?: unknown; content?: unknown };
-			if (m.role !== "assistant" || !Array.isArray(m.content)) continue;
-			for (let j = m.content.length - 1; j >= 0; j--) {
-				const b = m.content[j] as { type?: unknown; name?: unknown };
-				if (b?.type === "toolCall" && typeof b.name === "string" && b.name.trim() !== "") {
-					return b.name.trim();
-				}
-			}
-		}
-	} catch {}
-	return undefined;
-}
-
-export function parseWizardOutput(raw: string): { goal: string; steps: PlanStep[] } {
-	const trimmed = (raw ?? "").trim();
-	if (!trimmed) return { goal: "", steps: [] };
-
-	let goalText = "";
-	let stepsPart = "";
-
-	const stepsHeaderMatch = trimmed.match(/\n\s*(?:STEPS|PLAN|TASKS)\s*[:：]\s*([\s\S]*)/i);
-	let preSteps = trimmed;
-	if (stepsHeaderMatch) {
-		preSteps = trimmed.slice(0, stepsHeaderMatch.index).trim();
-		stepsPart = stepsHeaderMatch[1].trim();
-	}
-
-	const goalMatch = preSteps.match(/GOAL\s*[:：]\s*([\s\S]*)/i);
-	if (goalMatch) {
-		goalText = goalMatch[1].trim();
-	} else {
-		const lines = preSteps.split("\n").filter((l) => l.trim());
-		if (lines.length > 1 && !/[。.!?？]\s*$/.test(lines[0])) {
-			goalText = lines.slice(1).join(" ").trim();
-		} else {
-			goalText = preSteps;
-		}
-	}
-
-	const steps: PlanStep[] = [];
-	if (stepsPart) {
-		const stepLines = stepsPart
-			.split("\n")
-			.map((l) => l.trim())
-			.filter(Boolean);
-		let stepIdx = 1;
-		for (const line of stepLines) {
-			if (line.startsWith("(") && line.endsWith(")")) continue;
-			const itemMatch = line.match(/^(?:(?:\d+[.、)]|-|\*|\[\s*\])\s*)*(?:(?:Step\s*\d+|步骤\s*\d+)[:：\s]*)?(.+)$/i);
-			if (!itemMatch) continue;
-			const content = itemMatch[1].trim();
-			if (!content) continue;
-
-			let title = content;
-			let description: string | undefined;
-			const splitIdx = content.indexOf("|");
-			if (splitIdx > 0) {
-				title = content.slice(0, splitIdx).trim();
-				description = content.slice(splitIdx + 1).trim();
-			} else {
-				const colonIdx = content.indexOf("：") !== -1 ? content.indexOf("：") : content.indexOf(":");
-				if (colonIdx > 0 && colonIdx < 40) {
-					title = content.slice(0, colonIdx).trim();
-					description = content.slice(colonIdx + 1).trim();
-				}
-			}
-
-			steps.push({
-				id: `step-${stepIdx}`,
-				title: title.slice(0, 200),
-				status: "pending",
-				...(description ? { description: description.slice(0, 1000) } : {}),
-			});
-			stepIdx++;
-			if (steps.length >= 10) break;
-		}
-	}
-
-	return {
-		goal: goalText,
-		steps,
-	};
-}
-
-function wizardPrompt(draft: string, contextSummary = ""): string {
-	return [
-		`You are a goal-clarification wizard. The user has stated a raw requirement. Your job is to turn it into ONE precise, actionable goal that a coding agent can fully satisfy and that can be strictly reviewed.`, // eslint-disable-line max-len
-		...(contextSummary ? [``, `# Current conversation context (background & recent history)`, contextSummary] : []),
-		``,
-		`# User's raw requirement`, // eslint-disable-line no-regex-spaces
-		draft,
-		``,
-		`Use your goal_ask tool to ask the user focused questions to pin down the essential, ambiguous details.`,
-		`Convergence guidelines:`,
-		`- Ground your understanding in the conversation context above so you already know what files, models, and prior work the user is referring to. Do NOT re-ask things already clear from context.`, // eslint-disable-line max-len
-		`- If you need to verify a specific file or directory in the workspace, do at most 1 to 3 quick read-only checks (read/ls/find/grep), then IMMEDIATELY call goal_ask. Never do exhaustive exploration or attempt the actual task during scoping.`, // eslint-disable-line max-len
-		`- Ask ONE question at a time, strictly 1 to 3 questions total: what exactly to build/do, scope boundaries (what NOT to do), acceptance criteria / done-definition, and any constraints (style, performance, environment).`, // eslint-disable-line max-len
-		`- Prefer multiple-choice with 2-4 mutually exclusive options and place your recommended choice FIRST.`,
-		`- In each option, concisely explain the impact or tradeoff. Use open questions only for things that genuinely need free text.`, // eslint-disable-line max-len
-		`Once you have enough to write an unambiguous, reviewable goal, STOP asking and reply with EXACTLY this format and nothing else (no preamble, no bullets):`, // eslint-disable-line max-len
-		`GOAL: <one concrete, verifiable sentence describing the deliverable and its acceptance criteria>`, // eslint-disable-line max-len
-		`STEPS:`,
-		`1. <first step title> | <brief description / acceptance check>`,
-		`2. <second step title> | <brief description / acceptance check>`,
-		`(include 2 to 6 concrete, sequential steps for executing the goal)`,
-		`If the user cancels or stops answering (the tool reports a cancellation), still produce a sensible best-effort goal from what you already know.`, // eslint-disable-line max-len
-	].join("\n");
-}
-
-function roundsSuffix(budget: number): string {
-	return budget > 0 && Number.isFinite(budget) ? `/${budget}` : "";
-}
-
 /**
- * 把材料清单拼进目标段落。
- *
- * `materialsBlock` 是 `describeMaterials()` 的唯一产物（R3），空/未传时**原样返回**：
- * 无材料的目标 prompt 与今天逐字节一致（R10）。
+ * 纯逻辑已搬到两个叶子（这里是**旧入口的同名再导出**，同一个函数，不是第二套实现）：
+ * - `goal-run-rounds.ts`：一轮的量与判定（git 指纹 / 错误片段 / verdict 解析 / 调研输出解析）；
+ * - `goal-run-prompts.ts`：prompt 与回执文案（执行 / 审查 / 调研 / 重试 / 受阻原因）。
+ * 宿主适配器 `core-goal-run-adapter.ts` 与本文件引用的是同一份。
  */
-export function withMaterialBlock(goalText: string, materialsBlock?: string): string {
-	const block = (materialsBlock ?? "").trim();
-	return block ? `${goalText}\n\n${block}` : goalText;
-}
-
-/**
- * 规格里只存字符串（R1）：非字符串项丢弃（脏数据不抛错）；全空 → `undefined`。
- * 缺字段 ≡ `[]`（R9），并让无材料的目标快照与今天逐字节一致（R10）。
- */
-export function goalMaterialRefs(raw: unknown): string[] | undefined {
-	const items = Array.isArray(raw) ? raw.filter((m): m is string => typeof m === "string") : [];
-	return items.length > 0 ? [...items] : undefined;
-}
-
-/** 执行侧环境：目标执行者 / 向导都是满血对话（自带 read/bash），材料只会以指针形式下发。 */
-const GOAL_EXEC_ENV: DeliveryContext = { hasFs: true, vision: true };
-
-export interface GoalMaterialsComposition {
-	/** 给模型的清单文本（`describeMaterials()` 唯一产物）；空串 = 没有材料 */
-	block: string;
-	pointers: MaterialRef[];
-	/** 记账回执（R6 / R7 不许静默）：`null` = 无需告知 */
-	notice: { text: string; textEn: string } | null;
-}
-
-/**
- * 纯逻辑：已归一的材料 → 投递计划 + 清单 + 记账回执。
- *
- * R5：投递形式（inline / 指针 / 降级）只由 `planMaterialDelivery()` 决定，这里只把执行侧事实递进去；
- * R3：清单文本只由 `describeMaterials()` 产出，本函数不另写材料文案（`notice` 是用户可见回执，不进 prompt）。
- */
-export function composeGoalMaterials(
-	materials: readonly MaterialRef[],
-	failed: ReadonlyArray<{ ref: string; reason: string }> = [],
-	dropped: readonly DroppedMaterial[] = [],
-): GoalMaterialsComposition {
-	const plan = planMaterialDelivery(materials, GOAL_EXEC_ENV);
-	const unusable = [
-		...dropped.map((d) => `${d.value}(${d.reason})`),
-		...failed.map((f) => `${f.ref}(unreachable)`),
-		...plan.degraded.map((d) => `${d.ref}(${d.reason})`),
-	];
-	const notice =
-		unusable.length > 0
-			? {
-					text: `🎯 材料有 ${unusable.length} 项不可用，已跳过：${unusable.join("、")}`,
-					textEn: `🎯 ${unusable.length} material(s) unusable and skipped: ${unusable.join(", ")}`,
-				}
-			: null;
-	return { block: describeMaterials(plan.pointers), pointers: plan.pointers, notice };
-}
-
-/** 执行者每轮 prompt（纯函数，供回放单测）。 */
-export function goalExecutorPrompt(
-	lang: ServerLang,
-	input: { goalText: string; round: number; budget: number; feedback?: string; materialsBlock?: string },
-): string {
-	const rounds = roundsSuffix(input.budget);
-	const prev = (input.feedback ?? "").trim();
-	const goalText = withMaterialBlock(input.goalText, input.materialsBlock);
-	return pick(
-		lang,
-		`【目标 · 第 ${input.round}${rounds} 轮】\n\n${goalText}\n\n${prev ? `上一轮审查意见：\n${prev}\n\n` : ""}要求：\n- 直接修改工作区（不要只在回复里描述改动），做完用一段话说明「改了什么、怎么验证的」。\n- 禁止向用户提问（本对话由服务端自动驱动，弹窗会被按取消返回）。\n- 禁止派生或等待其他子代理（轮次由服务端控制，你只负责这一轮）。`,
-		`[Goal · round ${input.round}${rounds}]\n\n${goalText}\n\n${prev ? `Review feedback from the previous round:\n${prev}\n\n` : ""}Requirements:\n- Change the workspace directly (don't just describe it), then summarize in one paragraph what you changed and how you verified it.\n- Do NOT ask the user anything (this conversation is server-driven; dialogs are auto-cancelled).\n- Do NOT spawn or wait for other subagents (the server owns the rounds; you own this one only).`,
-		"goal.role.exec",
-		{ round: input.round, rounds, goalText, prev },
-	);
-}
-
-/** 审查者每轮 prompt（纯函数）。与执行者共用**同一份** `materialsBlock`，保证两侧看到同一张清单。 */
-export function goalReviewerPrompt(
-	lang: ServerLang,
-	input: {
-		goalText: string;
-		round: number;
-		budget: number;
-		execOutput: string;
-		planDesc?: string;
-		evidence?: string;
-		materialsBlock?: string;
-	},
-): string {
-	const rounds = roundsSuffix(input.budget);
-	const out = input.execOutput.trim().slice(0, 4000);
-	const goalText = withMaterialBlock(input.goalText, input.materialsBlock);
-	const planDesc = input.planDesc ?? "";
-	const planBlockZh =
-		planDesc && planDesc !== "No active plan."
-			? `\n\n【任务计划看板当前状态】\n${planDesc}\n核验时请同时核实上述计划步骤的推进与完成状态是否真实。`
-			: "";
-	const planBlockEn =
-		planDesc && planDesc !== "No active plan."
-			? `\n\n# Task Plan Board\n${planDesc}\nWhen verifying, also check whether the above plan steps have been legitimately advanced or completed.`
-			: "";
-	const ev = (input.evidence ?? "").trim();
-	const evidenceBlockZh = ev
-		? `\n\n【执行者最近的工具与命令证据（服务端自动采集，只保留输出尾部，可能被截断）】\n${ev}`
-		: "";
-	const evidenceBlockEn = ev
-		? `\n\n# Executor's recent tool & command evidence (auto-collected, output tails only, may be truncated)\n${ev}`
-		: "";
-	return pick(
-		lang,
-		`你是严格、独立的验收者。只判断目标是否被完全满足：不要相信描述，去看工作区的实际状态。\n\n【目标】\n${goalText}\n\n【这是第 ${input.round}${rounds} 轮】${planBlockZh}\n\n【执行者本轮自述】\n${out || "（执行者本轮没有给出自述）"}${evidenceBlockZh}\n\n你可以用只读手段核实：read / grep / scm（只读 git）/ 只读 bash（跑测试）。\n\n判定口径：\n- 只判【执行者本轮自述】里**声称已完成**的条目；本轮没声称完成的后续阶段不构成 fail 理由（目标写成「完成阶段 3 并收尾后续」也不代表这一轮要做完所有阶段）。\n- 忽略与目标无关的本地改动（其它项目的补丁、工具/模型配置、临时文件）。\n- 声称完成但自述与证据里都没有对应命令输出或文件证据的，必须 fail，并点名缺哪条命令的输出。\n- feedback 不得为空：fail 时必须给出可以直接动手改的具体待改项。\n\n只输出一个 JSON 对象，不要有任何其他文本、不要代码围栏、不要复述下面的形状示例。本回合写类与派发类工具会被服务端直接拒绝（不要试）。字段：verdict 只能填 pass（目标已完全满足，一句话说明满足了什么）或 fail（未满足，给出可以直接动手改的具体待改项）；feedback 是一句话说明。形状示例（不要照抄尖括号里的占位符）：\n{"verdict":"<pass|fail>","feedback":"<一句话说明>"}\n[goal-review]`,
-		`You are a strict, independent acceptor. Judge only whether the goal is fully satisfied: do not trust the summary — inspect the actual workspace state.\n\n# Goal\n${goalText}\n\n# This is round ${input.round}${rounds}${planBlockEn}\n\n# Executor's summary this round\n${out || "(the executor produced no summary)"}${evidenceBlockEn}\n\nYou may verify with read-only means: read / grep / scm (read-only git) / read-only bash (run tests).\n\nJudging rules:\n- Judge only the items the executor's summary **claims to have completed this round**; later phases it did not claim this round are NOT grounds for fail (a goal phrased as "finish phase 3 and wrap up the rest" does not mean all phases must land this round).\n- Ignore local changes unrelated to the goal (other projects' patches, tool/model settings, scratch files).\n- If a claimed item has no matching command output or file evidence in the summary or the evidence above, you MUST fail and name which command's output is missing.\n- feedback must not be empty: on fail, give concrete items the executor can act on directly.\n\nReply with ONLY one JSON object — no other text, no code fences, do not echo the shape example below. Write and dispatch tools are blocked by the server during this round — do not try them. Fields: verdict must be pass (goal fully satisfied, say what in one sentence) or fail (not satisfied, give concrete items the executor must fix); feedback is one short sentence. Shape example (do not copy the placeholders in angle brackets):\n{"verdict":"<pass|fail>","feedback":"<one sentence>"}\n[goal-review]`,
-		"goal.role.review",
-		{
-			goalText,
-			round: input.round,
-			rounds,
-			out: out || "(the executor produced no summary)",
-			planBlockEn,
-			evidenceBlockEn,
-			planBlockZh,
-			evidenceBlockZh,
-		},
-	);
-}
+export {
+	stripGoalDraftPrefix,
+	buildWizardConversationContext,
+	parseReviewerVerdict,
+	buildDiffFingerprint,
+	GIT_DIFF_CAP,
+	extractErrorSnippetFromSession,
+	lastToolNameOfSession,
+	parseWizardOutput,
+} from "./goal-run-rounds.js";
+export {
+	withMaterialBlock,
+	goalMaterialRefs,
+	composeGoalMaterials,
+	goalExecutorPrompt,
+	goalReviewerPrompt,
+	type GoalMaterialsComposition,
+} from "./goal-run-prompts.js";
 
 export class GoalService {
 	private prefs = {
@@ -533,11 +175,10 @@ export class GoalService {
 	private verdictSignals = new Map<string, Set<() => void>>();
 	private delegatedLoops = new Map<string, Promise<void>>();
 	private delegatedPending = new Map<string, { goalGeneration: number; goalText: string }>();
-	/** 已告知过用户的材料账（避免每轮刷屏）；同一份账只报一次。 */
-	private materialsReported = new Map<string, string>();
+	/** 已告知过用户的材料账（避免每轮刷屏）；同一份账只报一次（报送口径在 `goal-run-materials`）。 */
+	private readonly reportMaterialNotice = createGoalMaterialReporter((msg) => this.host.emit(msg));
 	private static readonly WIZARD_IDLE_TIMEOUT_MS = 5 * 60_000;
 	private static readonly WIZARD_MAX_TOTAL_MS = 20 * 60_000;
-	private static readonly EXEC_FAILED_ROUNDS_LIMIT = 2;
 
 	constructor(private readonly host: GoalHost) {
 		const gPrefs = host.stateStore.getGoalPrefs(host.clientId);
@@ -560,27 +201,7 @@ export class GoalService {
 	}
 
 	makeGoalStatus(): GoalStatus {
-		return {
-			conversationId: null,
-			goal: null,
-			reviewModel: this.prefs.reviewModel,
-			maxRounds: this.prefs.maxRounds,
-			locked: this.prefs.locked,
-			execModel: this.prefs.execModel,
-			phase: "idle",
-			reviewing: false,
-			round: 0,
-			status: "",
-			verdict: "pending",
-			wizard: {
-				active: false,
-				draft: "",
-				model: null,
-				step: 0,
-				maxSteps: 6,
-				status: "",
-			},
-		};
+		return goalStatusOfPrefs(this.prefs);
 	}
 
 	emitGoalStatus(): void {
@@ -1140,7 +761,7 @@ export class GoalService {
 			const wizardMaterials = await this.planRoundMaterials(wizardConversation, wizardConversation.cwd);
 
 			try {
-				await wizard.prompt([wizardPrompt(draft, contextSummary), wizardMaterials].filter(Boolean).join("\n\n"));
+				await wizard.prompt([goalScopePrompt({ draft, contextSummary }), wizardMaterials].filter(Boolean).join("\n\n"));
 			} finally {
 				unsubscribe();
 			}
@@ -1529,14 +1150,7 @@ export class GoalService {
 	}
 
 	private resetLoopCounters(conv: GoalConversation): void {
-		conv.stagnantRounds = 0;
-		conv.failedRounds = 0;
-		conv.execUsageBefore = undefined;
-		conv.reviewUsageBefore = undefined;
-		conv.goalUsage = undefined;
-		conv.lastDiff = undefined;
-		conv.lastErrorSnippet = undefined;
-		conv.sameErrorRounds = 0;
+		resetGoalRoundCounters(conv);
 	}
 
 	private clearGoalFields(conv: GoalConversation): void {
@@ -1554,11 +1168,11 @@ export class GoalService {
 		goal.wizard.active = false;
 		goal.wizard.status = "";
 		goal.wizard.statusEn = "";
-		this.materialsReported.delete(conv.id);
+		this.reportMaterialNotice(conv.id, null);
 	}
 
 	private roundBudget(goal: GoalStatus): number {
-		return goal.locked ? (goal.maxRounds > 0 ? Math.min(goal.maxRounds, 50) : Number.POSITIVE_INFINITY) : 1;
+		return goalRoundBudget(goal);
 	}
 
 	private detachRoleExec(conv: GoalConversation): string | undefined {
@@ -1666,48 +1280,26 @@ export class GoalService {
 		base: string[] | undefined,
 		blobs: MaterialBlob[] | undefined,
 	): Promise<string[] | undefined> {
-		if (!Array.isArray(blobs) || blobs.length === 0) return base;
-		const { paths, dropped } = await persistMaterialBlobs(blobs);
-		if (dropped.length > 0) {
-			const names = dropped.map((d) => d.value).join("、");
-			this.host.emit({
-				type: "notice",
-				level: "warning",
-				text: `${names} 无法保存为目标材料（单张上限 ${Math.round(MATERIAL_LIMITS.maxBlobBytes / 1024 / 1024)}MB），已跳过。`,
-				textEn: `${names} could not be saved as goal material (limit ${Math.round(MATERIAL_LIMITS.maxBlobBytes / 1024 / 1024)}MB each) and was skipped.`,
-			});
-			console.warn(`[goal] material blobs dropped (${conv.id}): ${names}`);
+		const result = await applyGoalMaterialBlobs(base, blobs);
+		if (result.dropped.length > 0) {
+			console.warn(`[goal] material blobs dropped (${conv.id}): ${result.dropped.map((d) => d.value).join("、")}`);
+			this.host.emit({ type: "notice", level: "warning", ...goalMaterialOverflowText(result.dropped) });
 		}
-		return mergeMaterialRefs(base, paths);
+		return result.refs;
 	}
 
-	private async planRoundMaterials(conv: GoalConversation, targetCwd: string): Promise<string> {
-		const raw = conv.goal.materials ?? [];
-		if (raw.length === 0) return "";
-		const { materials, dropped } = await normalizeMaterials(raw, { cwd: conv.cwd });
-		let refs: MaterialRef[] = materials;
-		let failed: Array<{ ref: string; reason: string }> = [];
-		if (targetCwd !== conv.cwd) {
-			// R7：跨 cwd（worktree / 沙箱 / 执行对话换了工作区）先把材料搬到执行侧能读到的位置。
-			const staged = await stageMaterials(materials, targetCwd);
-			refs = staged.staged;
-			failed = staged.failed;
-		}
-		const composed = composeGoalMaterials(refs, failed, dropped);
-		this.reportGoalMaterials(conv, composed.notice);
-		return composed.block;
+	private planRoundMaterials(conv: GoalConversation, targetCwd: string): string | Promise<string> {
+		// 无材料：不做 IO、不产生 notice，也不改变轮转次数（R10；首轮派发的时序是既有契约）。
+		if ((conv.goal.materials ?? []).length === 0) return "";
+		return planGoalRoundMaterials({ refs: conv.goal.materials, goalCwd: conv.cwd, execCwd: targetCwd }).then((plan) => {
+			this.reportGoalMaterials(conv, plan.notice);
+			return plan.block;
+		});
 	}
 
 	/** R6：材料账不静默——日志 + 用户可见 notice（同一份账只报一次）。 */
-	private reportGoalMaterials(conv: GoalConversation, notice: { text: string; textEn: string } | null): void {
-		if (!notice) {
-			this.materialsReported.delete(conv.id);
-			return;
-		}
-		if (this.materialsReported.get(conv.id) === notice.text) return;
-		this.materialsReported.set(conv.id, notice.text);
-		console.warn(`[goal] materials skipped (${conv.id}): ${notice.text}`);
-		this.host.emit({ type: "notice", level: "warning", text: notice.text, textEn: notice.textEn });
+	private reportGoalMaterials(conv: GoalConversation, notice: GoalMaterialNotice | null): void {
+		this.reportMaterialNotice(conv.id, notice);
 	}
 
 	private async runDelegatedLoop(conv: GoalConversation, goalGeneration: number, goalText: string): Promise<void> {
@@ -1759,7 +1351,7 @@ export class GoalService {
 			if (
 				(conv.sameErrorRounds ?? 0) >= 2 ||
 				(conv.stagnantRounds ?? 0) >= 2 ||
-				(conv.failedRounds ?? 0) >= GoalService.EXEC_FAILED_ROUNDS_LIMIT
+				(conv.failedRounds ?? 0) >= GOAL_EXEC_FAILED_ROUNDS_LIMIT
 			) {
 				await this.finishDelegated(conv, goalGeneration, "blocked", round, "", goalText);
 				return;
@@ -1775,7 +1367,7 @@ export class GoalService {
 					return;
 				}
 				conv.failedRounds = (conv.failedRounds ?? 0) + 1;
-				if (conv.failedRounds >= GoalService.EXEC_FAILED_ROUNDS_LIMIT) {
+				if (conv.failedRounds >= GOAL_EXEC_FAILED_ROUNDS_LIMIT) {
 					await this.finishDelegated(
 						conv,
 						goalGeneration,
@@ -1933,41 +1525,18 @@ export class GoalService {
 			diffOut = "";
 		}
 		const currentError = read?.errorSnippet ?? extractErrorSnippetFromSession(undefined, output);
-		const prevError = conv.lastErrorSnippet;
-		if (
-			currentError &&
-			prevError &&
-			(currentError === prevError || currentError.includes(prevError) || prevError.includes(currentError))
-		) {
-			conv.sameErrorRounds = (conv.sameErrorRounds ?? 0) + 1;
-		} else {
-			conv.sameErrorRounds = currentError ? 1 : 0;
-		}
-		conv.lastErrorSnippet = currentError;
 		let repoAvailable = true;
 		try {
 			if (this.host.isGitRepo) repoAvailable = await this.host.isGitRepo(conv.cwd);
 		} catch {
 			repoAvailable = true;
 		}
-		if (repoAvailable) {
-			const trimmed = diffOut.trim();
-			const prevDiff = conv.lastDiff;
-			const noChange = trimmed === "" || (prevDiff !== undefined && trimmed === prevDiff);
-			conv.stagnantRounds = noChange ? (conv.stagnantRounds ?? 0) + 1 : 0;
-			conv.lastDiff = trimmed;
-		}
-		const after = read?.usage;
-		const before = conv.execUsageBefore;
-		if (after && before) {
-			const dIn = Math.max(0, after.input - before.input);
-			const dOut = Math.max(0, after.output - before.output);
-			conv.goalUsage = {
-				input: (conv.goalUsage?.input ?? 0) + dIn,
-				output: (conv.goalUsage?.output ?? 0) + dOut,
-			};
-		}
-		conv.execUsageBefore = undefined;
+		sampleGoalRound(conv, {
+			errorSnippet: currentError,
+			diffFingerprint: diffOut,
+			repoAvailable,
+			usageAfter: read?.usage,
+		});
 		this.snapshotExecutor(conv, execId, read);
 		return { output, errorSnippet: currentError };
 	}
@@ -2013,27 +1582,7 @@ export class GoalService {
 	}
 
 	private ensureReviewerFeedback(verdict: "pass" | "fail", feedback: string, prevFeedback: string): string {
-		const fb = feedback.trim();
-		if (fb) return fb;
-		if (verdict === "pass") {
-			return pick(this.lang(), "（审查者未附说明）", "(the reviewer gave no note)", "goal.role.review.feedback.pass");
-		}
-		const prev = prevFeedback.trim();
-		if (prev) {
-			return pick(
-				this.lang(),
-				`（审查者本轮未给出新意见，沿用上一轮意见）\n${prev}`,
-				`(the reviewer gave no new feedback this round — carrying the previous round's over)\n${prev}`,
-				"goal.role.review.feedback.prev",
-				{ prev },
-			);
-		}
-		return pick(
-			this.lang(),
-			"审查者判 fail 但未给出说明。请复核目标的每一条要求，补齐尚未完成或尚未验证的部分，并在自述里给出可核验的证据（跑过的命令与输出）。",
-			"The reviewer returned fail without a note. Re-check every requirement in the goal, finish what is unfinished or unverified, and back it up with verifiable evidence (the commands you ran and their output).",
-			"goal.role.review.feedback.empty",
-		);
+		return goalReviewerFeedback(this.lang(), verdict, feedback, prevFeedback);
 	}
 
 	private async waitMainIdle(conv: GoalConversation): Promise<boolean> {
@@ -2136,16 +1685,12 @@ export class GoalService {
 	): void {
 		const text = (conv.goal.goal ?? "").trim();
 		if (!text) return;
-		conv.goalHistory = [
-			{
-				goal: text.slice(0, 200),
-				verdict,
-				rounds,
-				feedback: feedback.trim().replace(/\s+/g, " ").slice(0, 200),
-				finishedAt: Date.now(),
-			},
-			...(conv.goalHistory ?? []),
-		].slice(0, 20);
+		conv.goalHistory = recordGoalHistory(conv.goalHistory, {
+			goal: text.slice(0, 200),
+			verdict,
+			rounds,
+			feedback: feedback.trim().replace(/\s+/g, " ").slice(0, 200),
+		});
 	}
 
 	private async finishDelegated(
@@ -2276,15 +1821,7 @@ export class GoalService {
 	}
 
 	private roleConvTitle(goalText: string): string {
-		const brief = goalText.replace(/\s+/g, " ").trim().slice(0, 40);
-		const withTail = goalText.trim().length > 40 ? "…" : "";
-		return pick(
-			this.lang(),
-			`[目标执行] ${brief}${withTail}`,
-			`[Goal executor] ${brief}${withTail}`,
-			"goal.role.conv_title",
-			{ brief, withTail },
-		);
+		return goalRoleTitle(this.lang(), goalText);
 	}
 
 	private async abortOnSpawnFailure(
@@ -2330,30 +1867,7 @@ export class GoalService {
 	}
 
 	private reviewCardText(kind: "start" | "pass" | "fail", round: number, budget: number, feedback: string): string {
-		const rounds = this.roundsLabel(budget);
-		const fb = feedback.trim().replace(/\s+/g, " ").slice(0, 300);
-		if (kind === "start") {
-			return pick(
-				this.lang(),
-				`🔍 第 ${round}${rounds} 轮审查开始（本回合只回 verdict JSON；审查进行中发消息会自动排队，不用等）`,
-				`🔍 Review round ${round}${rounds} started (reply with only the verdict JSON this round; messages sent mid-review are queued automatically)`,
-				"goal.role.card.start",
-				{ round, rounds },
-			);
-		}
-		const specificKey = kind === "pass" ? "goal.role.card.pass" : "goal.role.card.fail";
-		const key = getServerString(this.lang(), specificKey) ? specificKey : "goal.role.card.result";
-		const fbZh = fb ? `：${fb}` : "";
-		const fbEn = fb ? `: ${fb}` : "";
-		return pick(
-			this.lang(),
-			kind === "pass" ? `✅ 第 ${round}${rounds} 轮审查通过${fbZh}` : `❌ 第 ${round}${rounds} 轮未通过${fbZh}`,
-			kind === "pass"
-				? `✅ Review round ${round}${rounds} passed${fbEn}`
-				: `❌ Review round ${round}${rounds} failed${fbEn}`,
-			key,
-			{ round, rounds, fb: fbEn, fbZh, fbEn, feedback: fb },
-		);
+		return goalCardText(this.lang(), kind, round, budget, feedback);
 	}
 
 	private reviewerRoundPrompt(
@@ -2369,44 +1883,10 @@ export class GoalService {
 	}
 
 	private verdictRetryPrompt(): string {
-		return pick(
-			this.lang(),
-			`你上一条回复没有给出约定的 JSON。现在只回一个 JSON 对象，不要有任何其他文本或代码围栏：\n{"verdict":"pass|fail","feedback":"…"}\n[goal-review]`,
-			`Your last reply did not contain the required JSON. Reply with ONLY one JSON object now — no other text, no code fences:\n{"verdict":"pass|fail","feedback":"..."}\n[goal-review]`,
-			"goal.role.review.retry",
-		);
+		return goalVerdictRetryPrompt(this.lang());
 	}
 
 	private roleFailureText(kind: string, detail = ""): string {
-		const detailZh = detail ? `（${detail.slice(0, 160)}）` : "";
-		const detailEn = detail ? ` (${detail.slice(0, 160)})` : "";
-		const zh: Record<string, string> = {
-			timeout: `上一轮执行超时，未完成既定改动${detailZh}。请拆成更小的步骤完成。`,
-			"timeout-repeat": `执行连续 ${GoalService.EXEC_FAILED_ROUNDS_LIMIT} 轮超时未完成${detailZh}，目标循环已暂停（不会自己重新派活）。请检查执行环境后重新设定目标。`,
-			canceled: `执行被手动中止${detailZh}，目标循环已暂停（不会自己重新派活）。`,
-			error: `上一轮执行报错${detailZh}。请先排查错误再继续。`,
-			"error-repeat": `执行连续 ${GoalService.EXEC_FAILED_ROUNDS_LIMIT} 轮报错${detailZh}，目标循环已暂停（不会自己重新派活）。请先排查错误再重新设定目标。`,
-			"exec-gone": "执行对话已被移出或服务重启，执行者记忆已丢失，目标循环已暂停（不会自己重新派活）。",
-			quiesce:
-				"服务器正在排空存量工作（quiesce），不再派发新一轮，目标循环已暂停。用 pi-web-ui server unquiesce 恢复后可重新设定目标继续。",
-			"review-timeout": "审查回合超时，未收到结论。",
-			"review-gone": "审查对话已不可用，未收到结论。",
-			"review-invalid": "审查回合没有给出约定的 JSON 结论（重试一次仍未通过）。",
-		};
-		const en: Record<string, string> = {
-			timeout: `The previous execution round timed out before finishing the work${detailEn}. Please split it into smaller steps.`,
-			"timeout-repeat": `The executor has timed out for ${GoalService.EXEC_FAILED_ROUNDS_LIMIT} consecutive rounds${detailEn}; the goal loop is paused (it will not dispatch again by itself). Check the environment, then set the goal again.`,
-			canceled: `The execution was aborted manually${detailEn}; the goal loop is paused (it will not dispatch again by itself).`,
-			error: `The previous execution round hit an error${detailEn}. Please investigate before continuing.`,
-			"error-repeat": `The executor has errored for ${GoalService.EXEC_FAILED_ROUNDS_LIMIT} consecutive rounds${detailEn}; the goal loop is paused (it will not dispatch again by itself). Please investigate, then set the goal again.`,
-			"exec-gone":
-				"The executor conversation is gone (dismissed or the server restarted); its memory is lost and the loop is paused (it will not dispatch again by itself).",
-			quiesce:
-				"The server is draining (quiesce); no new rounds will be dispatched and the goal loop is paused. Resume with pi-web-ui server unquiesce, then set the goal again to continue.",
-			"review-timeout": "The review round timed out without a verdict.",
-			"review-gone": "The reviewer conversation is unavailable; no verdict was received.",
-			"review-invalid": "The review round did not produce the required JSON verdict (still missing after one retry).",
-		};
-		return pick(this.lang(), zh[kind] ?? kind, en[kind] ?? kind, `goal.role.failure.${kind}`);
+		return goalFailureText(this.lang(), kind, detail);
 	}
 }

@@ -284,6 +284,11 @@ describe("会话投影单源守卫", () => {
 	it("状态类读取一律沿叶链：permission-preset 不再 getEntries() 全文件倒序", () => {
 		const source = readFileSync(join(ROOT, "server/permission-preset.ts"), "utf8");
 		expect(source).not.toContain(".getEntries(");
-		expect(source).toContain("getBranch");
+		// 读实现（`lastBranchEvent`）搬到了 chat-mode-entries.ts（适配器要复用同一份三态写侧）：
+		// 叶链判据跟着搬，两个文件都不许退回去倒序遍历整份转录。
+		const leaf = readFileSync(join(ROOT, "server/chat-mode-entries.ts"), "utf8");
+		expect(leaf).toContain("getBranch");
+		// 叶链实现里只允许提到 `getEntries()` 的注释（说明它为什么不能用），不许真的调它。
+		expect(leaf).not.toMatch(/\.getEntries\s*\(/);
 	});
 });

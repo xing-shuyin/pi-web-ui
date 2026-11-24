@@ -1,4 +1,5 @@
 import type { ClientMessage } from "../protocol.js";
+import type { PlanStep } from "../protocol.js";
 import type { ClientState } from "../projects-schema.js";
 
 /**
@@ -26,7 +27,29 @@ export interface GoalRunPort {
 	setGoal(goal: string, opts?: GoalStartOptions): Promise<void>;
 	clearGoal(conversationId?: string): Promise<void>;
 	startGoalWizard(text: string, opts?: GoalWizardOptions): Promise<void>;
+	/**
+	 * 每轮收尾通知（可选）：内核在 `TurnRunner.onTurnSettled` 里转发，宿主的逐轮评估/续跑就挂在这里
+	 * （禁自建 setTimeout 轮询）。不实现 = 内核不驱动它，宿主自己负责收尾。
+	 */
+	onTurnSettled?(conversationId: string, outcome: "done" | "failed" | "aborted"): void;
 }
+
+/**
+ * 目标运行的反向口（可选）：宿主跑出来的副作用要落回内核的域时用，今天只有一个。
+ *
+ * - `setPlan`：调研问卷推出的计划步骤要进 `plans.json` 并发 `plan_updated`。计划存储的装配归
+ *   app 层（`app/goal-handlers.ts` 的 `PlanStore`），宿主拿不到，也不许自己再建一份，
+ *   所以由域把写口回传给端口工厂。不接 = 该项不生效（面板不自动填），不静默造假。
+ */
+export interface GoalRunHooks {
+	setPlan?(conversationId: string, steps: PlanStep[]): void;
+}
+
+/**
+ * 目标运行端口的工厂：域在第一次用目标运行能力时才建（未注入 = 本引擎不支持，handler 同步抛）。
+ * `hooks` 是内核反向回传的写口（见 `GoalRunHooks`），宿主可以不理也不用。
+ */
+export type GoalRunPortFactory = (hooks?: GoalRunHooks) => GoalRunPort | undefined;
 
 /**
  * 计划模式 / 审查者模式的开关：真值有三处——会话转录里的模式条目（重启后恢复）、
@@ -36,4 +59,9 @@ export interface GoalRunPort {
 export interface ChatModePort {
 	setPlanMode(enabled: boolean, conversationId?: string): Promise<void>;
 	setDelegateMode(enabled: boolean, conversationId?: string): Promise<void>;
+	/**
+	 * 会话（重新）打开后，把转录里的模式条目读回运行态——重启 / 换转录之后仍然生效。
+	 * 缺省 = 不恢复（快照会显示关闭，写工具不拦）。
+	 */
+	restore?(conversationId?: string): void;
 }
