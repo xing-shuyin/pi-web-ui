@@ -69,6 +69,7 @@ import { asCoreNativeCliTerminals, createCoreNativeCli } from "./core-native-cli
 import { createCoreBotChat } from "./core-bot-adapter.js";
 import { createCoreChatModePort } from "./core-chat-mode-adapter.js";
 import { createCoreGoalRunPort } from "./core-goal-run-adapter.js";
+import { createCorePresetTranscriptPort } from "./core-preset-adapter.js";
 import { createCoreToolInfoAdapter } from "./core-tool-info-adapter.js";
 import { createCoreQuickAskAdapter } from "./core-quick-ask-adapter.js";
 import { CoreUiBridges } from "./core-ui-bridge-adapter.js";
@@ -183,6 +184,7 @@ import {
 import {
 	RemoteSshService,
 	createRemoteSdkOperations,
+	getGlobalRemoteSshService,
 	isRemoteWorkspaceUri,
 	serveRemoteWorkspaceFile,
 	setGlobalRemoteSshService,
@@ -1669,16 +1671,28 @@ function ensureEngine(engine: EngineId): EngineService {
 						workspaceHost: () => createCoreWorkspace({ dataDir: DATA_DIR }),
 						sandbox: (sinks) => createCoreSandbox({ dataDir: DATA_DIR, ...sinks }),
 						worktree: () => createCoreWorktree(),
-						// 原生 CLI：内核只持有账（身份 / 标题 / 归属），PTY、hook、会话文件那套运行时还在老树，
-						// 所以只交出终端归属；没接的口（start / reconnect / statusOf / applyTitle）调用即抛并说明缺什么。
+						// 原生 CLI：内核只持有账（身份 / 标题 / 归属），PTY / hook / 转录 / 状态 / 标题写回都在
+						// `server/native-cli-host.ts`（老树抽出来的单源叶子两边共用），这里只把宿主那几件事递进去。
 						nativeCli: (sinks) =>
-							createCoreNativeCli({ terminalOf: (id) => asCoreNativeCliTerminals(sinks.terminalOf(id)) }),
+							createCoreNativeCli({
+								dataDir: DATA_DIR,
+								terminalOf: (id, cwd) => asCoreNativeCliTerminals(sinks.terminalOf(id, cwd)),
+								emit: (msg) => sinks.emit(msg),
+								publish: () => sinks.publish(),
+								refreshSessions: () => sinks.refreshSessions(),
+								inheritModel: (preset) => sinks.inheritModel(preset),
+								// 手机不在浏览器里：四种 CLI 事件沿用老实现那条引擎级通知通道。
+								notify: (input) => sinks.notifyMobile?.(input),
+								remoteService: () => getGlobalRemoteSshService(),
+							}),
 						// Bot 私聊：本机注册表与私聊转录锚点都是宿主叶子，`agentDir` 只有组合根知道。
 						bots: () => createCoreBotChat({ agentDir: getAgentDir() }),
 						// 模式开关：转录条目（重启后恢复）/ 写工具门禁 / 提示词重载三处都要 SDK 会话句柄，适配器归宿主。
 						chatMode: (sinks) => createCoreChatModePort(sinks),
 						// 目标运行：执行 / 审查对话 + 逐轮评估全在宿主适配器里，偏好读同一份 `client-state`。
 						goalRun: (sinks) => createCoreGoalRunPort({ sinks, stateStore: sharedStateStore }),
+						// 权限预设条目：与模式开关同一棵树（转录里的 `permission/preset`），写侧归宿主。
+						presetTranscript: (sinks) => createCorePresetTranscriptPort(sinks),
 						// 工具信息：提示词覆盖表与载荷截断在宿主（内核只投影哪条工具、默认文案、是否活动）。
 						toolInfo: (sinks) => createCoreToolInfoAdapter(sinks),
 						// 随手问：转录摘取与磁盘历史读都在宿主叶子里，内核只解析会话。

@@ -1,6 +1,7 @@
 import type { SessionListScanState } from "../../session-list-scan.js";
 import type { ConversationSummary, ElsewhereRunning, ServerMessage, SessionSummary } from "../../protocol.js";
 import type { ConversationKind } from "../../kernel/conversation/index.js";
+import type { NativeCliConversation } from "../../protocol.js";
 import { conversationRowKind } from "../../conversation-rows.js";
 import { DEFAULT_CONV_TITLE } from "../../agent-formatters.js";
 import type { TransportPort } from "../../contracts/ports.js";
@@ -51,6 +52,8 @@ export function sessionSummaryOf(
 		messageCount: entry.messageCount,
 		modified: entry.updatedAt,
 		cwd: entry.cwd,
+		// CLI 转录要带引擎配置：左栏靠它把这一行当 CLI 行（reconnect / stop / 相位都得先认出它是 CLI）。
+		...(entry.nativeCli ? { nativeCli: entry.nativeCli } : {}),
 		...(isPinned?.(entry.cwd, entry.sessionFile) ? { pinned: true } : {}),
 	};
 }
@@ -99,6 +102,11 @@ export interface ConversationFrameFact {
 	updatedAt?: number;
 	/** 已有历史行代表它（`conversationRowKind` 的判据）：缺省 `false` = 宁可多一行，不让对话凭空消失。 */
 	hasHistoryRow?: boolean;
+	/**
+	 * CLI 对话的实时投影（配置 / 终端 id / 状态）：左栏靠它把运行中的 CLI 行画成在跑 / 等你回话。
+	 * 不是 CLI 对话就不给（不编默认相位）。
+	 */
+	nativeCli?: NativeCliConversation;
 }
 
 /** 运行列表的内存态（老树 `conv.pinned` / `conv.listed`）：由 `domains/sessions/pins` 合流后交进来。 */
@@ -145,6 +153,7 @@ function summaryOfConversation(
 		isStreaming: fact.isStreaming,
 		isSubagent,
 		independent: true,
+		...(fact.nativeCli ? { nativeCli: fact.nativeCli } : {}),
 		// 行归属单源：客户端不要再按 sessionFile / pinned 猜（猜错就是重复行）。
 		rowKind: conversationRowKind({
 			isStreaming: fact.isStreaming,

@@ -16,9 +16,12 @@ import type { GoalHostPorts } from "./goal-handlers.js";
 import { createDispatchHandlers, type DispatchAssembly } from "./dispatch-handlers.js";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
 import type { SnapshotConversationView, SnapshotEnvView, SnapshotView } from "../contracts/snapshot-view.js";
+import type { PresetTranscriptPort } from "../contracts/presets.js";
+import type { ChatModeState, PresetState } from "../domains/tools/index.js";
 import { createDispatchSurfaceAdapter } from "../adapters/wire/index.js";
 import type { DispatchSession } from "../engine-service.js";
-import type { SandboxInfo, WorktreeInfo } from "../protocol.js";
+import type { NativeCliConversation, SandboxInfo, WorktreeInfo } from "../protocol.js";
+import { NativeCliConversations, nativeCliConversationOf } from "../domains/native-cli/index.js";
 import { ComposerDraftsStore } from "../composer-drafts.js";
 import { Conversation, ConversationRegistry, type ConversationInit } from "../kernel/conversation/index.js";
 import { createSnapshotBuilders, SnapshotPublisher, type SnapshotBuilders } from "../domains/snapshots/index.js";
@@ -52,6 +55,12 @@ export interface ClientRuntimeOptions extends GoalHostPorts {
 	transport: TransportPort;
 	/** 对话可见面的来源；缺省用注册表里的空视图（域接上后注入）。 */
 	viewOf?: (conversation: Conversation) => SnapshotConversationView;
+	/** 预设运行态（app 层一份，与快照投影 / `selectAgentPreset` 共用）；缺省 = 两个预设 handler 同步抛。 */
+	presets?: PresetState;
+	/** 模式运行态（写工具闸门与快照投影那一份）：预设门禁要按它减工具。 */
+	chatModes?: ChatModeState;
+	/** 宿主侧的会话级权限条目读写（`server/core-preset-adapter.ts`）；缺省 = `setPermissionPreset` 同步抛。 */
+	presetTranscript?: () => PresetTranscriptPort | undefined;
 	/** 删会话文件前的路径谓词（缺省 fail-closed：一律拒绝）。 */ isAllowedPath?(path: string): boolean;
 	/** 把归一后的标题落进会话文件头（缺省只改内存）。 */
 	persistSessionTitle?(sessionFile: string, title: string): Promise<void> | void;
@@ -107,7 +116,13 @@ export interface ClientRuntimeOptions extends GoalHostPorts {
 	worktree?: () => WorktreePort | undefined;
 	/** MCP / 技能 / 市场 / 插件更新面（宿主 `core-plugin-adapter`）；缺省 = 该能力未接。 */
 	plugins?: () => PluginsPort | undefined;
-	nativeCli?: () => import("../contracts/native-cli.js").NativeCliPort | undefined; // 原生 CLI 会话面（PTY / hook / 远程文件归宿主）；缺省 = 未接。
+	/** 原生 CLI 会话面（PTY / hook / 远程文件归宿主）；缺省 = 未接。 */
+	nativeCli?: () => import("../contracts/native-cli.js").NativeCliPort | undefined;
+	/**
+	 * 内核这份 CLI 账（对话 ↔ 终端归属）；组合根持有它，`conversations` 帧才能按同一份投影状态。
+	 * 缺省 = 帧里不带 CLI 信息（CLI 行会看起来像普通会话）。
+	 */
+	nativeCliState?: import("../domains/native-cli/index.js").NativeCliConversations;
 	bots?: () => import("../contracts/bots.js").BotChatPort | undefined; // Bot 私聊的宿主面（注册表 + 转录锚点）；缺省 = 未接，`openBotChat` 同步抛。
 	/** 工具信息面（宿主 `core-tool-info-adapter`：覆盖解析 + 载荷截断）；缺省 = 未接，两个 handler 同步抛。 */
 	toolInfo?: () => import("../contracts/session.js").ToolInfoPort | undefined;
@@ -171,6 +186,10 @@ export class ClientRuntime {
 	get roots(): readonly string[] {
 		return this.workspaceRoots;
 	}
+	/** 内核这份 CLI 账：CLI 域与 `conversations` 帧读同一份（组合根建、连接期传进来）。 */
+	get nativeCliState(): NativeCliConversations | undefined {
+		return this.options.nativeCliState;
+	}
 	attachFrames(frames: ClientFrames): void {
 		this.frames = frames;
 	}
@@ -215,6 +234,11 @@ export class ClientRuntime {
 			frames: this.rebindFrames(),
 			onActivated: (id) => this.publisher.switchConversation(id),
 			noteSessionFile: (file) => this.noteSessionFile(file),
+			...(this.options.nativeCliState
+				? {
+						nativeCliOf: (conversationId: ConversationId) => this.nativeCliOf(conversationId),
+					}
+				: {}),
 			...(this.options.isAllowedPath ? { isAllowedPath: this.options.isAllowedPath } : {}),
 			notice: (level, text, textEn) => {
 				if (this.disposed || this.options.transport.isClosed()) return;
@@ -252,6 +276,33 @@ export class ClientRuntime {
 	/** 会话文件落在哪个目录，只有真正开过会话才知道（不猜 SDK 的目录布局）。 */
 	noteSessionFile(file: string | undefined): void {
 		if (file) this.historyRootPath = dirname(file);
+	}
+	/** 历史列表重扫：CLI 转录这种「不是本运行时开出来的会话」也得进列表。 */
+	refreshSessions(): void {
+		if (!this.disposed) void this.frames?.refreshSessions();
+	}
+
+	/**
+	 * 一条对话的 CLI 投影（运行列表帧用）：登记在 CLI 账上且有宿主端口才给。
+	 * 两件事分别由域（归属 / 配置 / 标题）与端口（状态）回答，这里只把两边合起来。
+	 */
+	nativeCliOf(conversationId: ConversationId): NativeCliConversation | undefined {
+		const state = this.options.nativeCliState;
+		const port = this.options.nativeCli?.();
+		const binding = state?.get(conversationId);
+		if (!binding || !port) return undefined;
+		try {
+			return nativeCliConversationOf({
+				port,
+				conversationId,
+				binding,
+				conv: this.registry.get(conversationId),
+				fallbackCwd: this.workspaceCwd,
+			});
+		} catch {
+			// 端口没接好（未装配的引擎）时帧要照常出：不因为一次投影失败把整帧打断。
+			return undefined;
+		}
 	}
 	historyRoot(): string | undefined {
 		return this.historyRootPath;

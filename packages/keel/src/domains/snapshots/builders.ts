@@ -55,6 +55,7 @@ export function buildSnapshotState(rev: number, env: SnapshotEnvView, conv: Snap
 			...(conv.queueEntries ? { entries: conv.queueEntries } : {}),
 		},
 		...(conv.errorMessage ? { errorMessage: conv.errorMessage } : {}),
+		...(conv.agentPreset ? { agentPreset: conv.agentPreset } : {}),
 		permission: conv.permission ?? null,
 		planMode: conv.delegateMode !== undefined ? conv.planMode === true : false,
 		delegateMode: conv.delegateMode === true,

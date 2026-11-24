@@ -1,8 +1,14 @@
+import { randomUUID } from "node:crypto";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
-import type { NativeCliSessionEvent } from "./native-cli-runtime.js";
+import type { RemoteSshService } from "./remote-ssh-service.js";
+import { cleanupRemoteNativeCliFiles } from "./native-cli-remote-files.js";
+import { remoteNativeCliCleanupQueue } from "./native-cli-remote-cleanup.js";
+import { prepareNativeCliSessionLaunch } from "./native-cli-session.js";
+import type { NativeCliSessionEvent, PreparedNativeCliSession } from "./native-cli-runtime.js";
 import {
 	acceptNativeCliEvent,
 	createNativeCliBinding,
+	isNativeCliStagingPath,
 	readNativeCliBinding,
 	type NativeCliBinding,
 } from "./native-cli-state.js";
@@ -27,6 +33,93 @@ export function resolveNativeCliBinding(input: {
 	return (
 		readNativeCliBinding(input.session, input.config, input.cwd) ?? createNativeCliBinding(input.config, input.cwd)
 	);
+}
+
+/**
+ * 起 CLI 的 hook 观察会话（`NativeCliRuntimeHooks.prepare` 的**唯一实现**）。
+ *
+ * 老实现内联在 `AgentService#configureNativeCliRuntime` 的 `prepare` 里，core 宿主
+ * （`server/native-cli-host.ts`）要的是逐字同一段，所以整段抽到这里，两边只调这一个函数：
+ * 绑定先落盘（观察器读到游标）→ 准备 hook/事件目录 → `nativeId` 有变化再落一次。
+ * 「绑定写哪儿」是调用方的事（老树写 `conv.session.sessionManager`，core 写 CLI 自己的转录），
+ * 所以落盘动作以 `persist` 传进来，而不是在这里判断谁持有会话。
+ */
+export async function prepareNativeCliRuntimeSession(input: {
+	config: NativeCliConfig;
+	binding: NativeCliBinding;
+	cwd: string;
+	dataDir: string;
+	signal?: AbortSignal;
+	observeOnly?: boolean;
+	onEvent(event: NativeCliSessionEvent): void;
+	/** 远端工作区才有的 SSH 服务（本地 CLI 传 `undefined`）。 */
+	service?: RemoteSshService;
+	/** 绑定落盘：谁持有会话文件谁写。 */
+	persist(binding: NativeCliBinding): void;
+}): Promise<PreparedNativeCliSession> {
+	const { binding } = input;
+	input.persist(binding);
+	const prepared = await prepareNativeCliSessionLaunch(
+		input.config,
+		{ key: binding.key, nativeId: binding.nativeId },
+		{
+			cwd: input.cwd,
+			dataDir: input.dataDir,
+			...(input.service ? { service: input.service } : {}),
+			...(input.signal ? { signal: input.signal } : {}),
+			...(binding.lastEventId ? { lastEventId: binding.lastEventId } : {}),
+			...(input.observeOnly ? { observeOnly: true } : {}),
+			onEvent: input.onEvent,
+		},
+	);
+	if (prepared.ref.nativeId) binding.nativeId = prepared.ref.nativeId;
+	input.persist(binding);
+	return prepared;
+}
+
+/**
+ * 远端暂存目录账（keep-alive 引用的上传文件）：校验单源 + 去重 + 上限。
+ * 非法路径 / 超上限一律抛（不静默丢路径），调用方负责落盘。
+ */
+export function retainNativeCliStagingPaths(binding: NativeCliBinding, paths: readonly string[]): void {
+	if (paths.some((path) => !isNativeCliStagingPath(path))) throw new Error("Invalid remote CLI staging directory");
+	const all = [...new Set([...(binding.stagingPaths ?? []), ...paths])];
+	if (all.length > 2048) throw new Error("Too many remote CLI staging directories");
+	binding.stagingPaths = all;
+}
+
+/**
+ * 进程身份账：新进程起来（`created`）或还没有 id 时发一个新的。返回 `true` = 绑定变了，调用方落盘。
+ */
+export function assignNativeCliProcessId(binding: NativeCliBinding, created: boolean): boolean {
+	if (!created && binding.processId) return false;
+	binding.processId = randomUUID();
+	return true;
+}
+
+/**
+ * 远端暂存目录的清理账：删掉的从绑定里摘掉，删不掉进重试队列（下一次打开时再试）。
+ * 只对远端工作区 + keep-alive 有意义；本地 CLI 直接返回 `[]`。
+ */
+export async function cleanupNativeCliStagingFiles(input: {
+	binding: NativeCliBinding;
+	cwd: string;
+	service: RemoteSshService | null;
+}): Promise<string[]> {
+	const paths = [...(input.binding.stagingPaths ?? [])];
+	if (!input.service || !paths.length) return [];
+	const removed: string[] = [];
+	for (let index = 0; index < paths.length; index += 32) {
+		const batch = paths.slice(index, index + 32);
+		try {
+			await cleanupRemoteNativeCliFiles(input.service, input.cwd, batch);
+			removed.push(...batch);
+		} catch {
+			remoteNativeCliCleanupQueue.enqueue(input.service, input.cwd, batch);
+		}
+	}
+	input.binding.stagingPaths = input.binding.stagingPaths?.filter((path) => !removed.includes(path));
+	return removed;
 }
 
 /**

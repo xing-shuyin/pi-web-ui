@@ -493,24 +493,22 @@ import {
 	validateNativeCliConfig,
 } from "./native-cli.js";
 import { resolveNativeCliModelConnection } from "./native-cli-model.js";
-import { prepareNativeCliSessionLaunch } from "./native-cli-session.js";
 import type { NativeCliSessionEvent } from "./native-cli-runtime.js";
+import { persistNativeCliBinding, readNativeCliBinding, type NativeCliBinding } from "./native-cli-state.js";
 import {
-	isNativeCliStagingPath,
-	persistNativeCliBinding,
-	readNativeCliBinding,
-	type NativeCliBinding,
-} from "./native-cli-state.js";
-import {
+	assignNativeCliProcessId,
+	cleanupNativeCliStagingFiles,
 	detachNativeCliTerminal,
 	mergeNativeCliStatus,
 	observerErrorStatus,
 	planNativeCliEvent,
+	prepareNativeCliRuntimeSession,
 	resolveNativeCliBinding,
+	retainNativeCliStagingPaths,
 	stopNativeCliTerminal,
 } from "./native-cli-binding.js";
+import { nativeCliTitleFromTerminalOutput } from "./native-cli-title.js";
 import { terminatePersistentRemoteNativeCli } from "./remote-cli-persistence.js";
-import { cleanupRemoteNativeCliFiles } from "./native-cli-remote-files.js";
 import { remoteNativeCliCleanupQueue } from "./native-cli-remote-cleanup.js";
 import type {
 	BgServer,
@@ -1418,23 +1416,18 @@ export class ClientSession {
 				const conv = owner();
 				if (!conv) throw new Error("CLI conversation is no longer owned by this client");
 				const binding = this.ensureNativeCliBinding(conv);
-				persistNativeCliBinding(conv.session.sessionManager, binding);
-				const prepared = await prepareNativeCliSessionLaunch(
+				// 「先落盘再准备 → nativeId 变了再落一次」是单源（core 宿主同一份）。
+				return prepareNativeCliRuntimeSession({
 					config,
-					{ key: binding.key, nativeId: binding.nativeId },
-					{
-						cwd,
-						dataDir: this.stateStore?.dataDir ?? resolve(process.env.PI_WEB_DATA_DIR ?? join(homedir(), ".pi-web")),
-						...(isRemoteWorkspaceUri(cwd) ? { service: getGlobalRemoteSshService() ?? void 0 } : {}),
-						signal,
-						lastEventId: binding.lastEventId,
-						observeOnly,
-						onEvent,
-					},
-				);
-				if (prepared.ref.nativeId) binding.nativeId = prepared.ref.nativeId;
-				persistNativeCliBinding(conv.session.sessionManager, binding);
-				return prepared;
+					binding,
+					cwd,
+					dataDir: this.stateStore?.dataDir ?? resolve(process.env.PI_WEB_DATA_DIR ?? join(homedir(), ".pi-web")),
+					signal,
+					...(observeOnly ? { observeOnly: true } : {}),
+					onEvent,
+					...(isRemoteWorkspaceUri(cwd) ? { service: getGlobalRemoteSshService() ?? void 0 } : {}),
+					persist: (next) => persistNativeCliBinding(conv.session.sessionManager, next),
+				});
 			},
 			onEvent: (terminalId, event) => {
 				const conv = owner();
@@ -1447,20 +1440,16 @@ export class ClientSession {
 			onRetainFiles: (terminalId, paths) => {
 				const conv = owner();
 				if (!conv?.nativeCli?.config.keepAlive || conv.nativeCli.terminalId !== terminalId) return;
-				if (paths.some((path) => !isNativeCliStagingPath(path)))
-					throw new Error("Invalid remote CLI staging directory");
+				// 校验/去重/上限单源（core 宿主同一份）。
 				const binding = this.ensureNativeCliBinding(conv);
-				const all = [...new Set([...(binding.stagingPaths ?? []), ...paths])];
-				if (all.length > 2048) throw new Error("Too many remote CLI staging directories");
-				binding.stagingPaths = all;
+				retainNativeCliStagingPaths(binding, paths);
 				persistNativeCliBinding(conv.session.sessionManager, binding);
 			},
 			onProcess: (terminalId, created) => {
 				const conv = owner();
 				if (conv?.nativeCli?.terminalId !== terminalId) return void 0;
 				const binding = this.ensureNativeCliBinding(conv);
-				if (created || !binding.processId) {
-					binding.processId = randomUUID();
+				if (assignNativeCliProcessId(binding, created)) {
 					if (created) void this.cleanupNativeCliResources(conv);
 					persistNativeCliBinding(conv.session.sessionManager, binding);
 				}
@@ -1537,21 +1526,15 @@ export class ClientSession {
 
 	private async cleanupNativeCliResources(conv: Conversation): Promise<void> {
 		const binding = conv.nativeCliBinding;
-		const paths = [...(binding?.stagingPaths ?? [])];
-		const service = getGlobalRemoteSshService();
-		if (!binding || !paths.length || !service || !isRemoteWorkspaceUri(conv.cwd)) return;
-		const removed: string[] = [];
-		for (let index = 0; index < paths.length; index += 32) {
-			const batch = paths.slice(index, index + 32);
-			try {
-				await cleanupRemoteNativeCliFiles(service, conv.cwd, batch);
-				removed.push(...batch);
-			} catch {
-				remoteNativeCliCleanupQueue.enqueue(service, conv.cwd, batch);
-			}
-		}
-		binding.stagingPaths = binding.stagingPaths?.filter((path) => !removed.includes(path));
-		if (this.convs.get(conv.id) === conv) persistNativeCliBinding(conv.session.sessionManager, binding);
+		if (!binding || !binding.stagingPaths?.length || !isRemoteWorkspaceUri(conv.cwd)) return;
+		// 「删得掉的挤掉、删不掉的进重试队列」单源（core 宿主同一份）。
+		const removed = await cleanupNativeCliStagingFiles({
+			binding,
+			cwd: conv.cwd,
+			service: getGlobalRemoteSshService(),
+		});
+		if (removed.length && this.convs.get(conv.id) === conv)
+			persistNativeCliBinding(conv.session.sessionManager, binding);
 	}
 
 	async controlNativeCli(
@@ -1607,36 +1590,26 @@ export class ClientSession {
 
 	private tryExtractNativeCliTitleFromTerminal(conv: Conversation): void {
 		if (!conv.nativeCli || conv.nativeCliClosed || this.disposed) return;
-		if (!isDefaultNativeCliTitle(conv.title, conv.nativeCli.config.preset, conv.nativeCli.config.executable)) return;
-		const terminalId = conv.nativeCli.terminalId;
-		const output = conv.terminals.getRawOutput?.(terminalId);
+		const output = conv.terminals.getRawOutput?.(conv.nativeCli.terminalId);
 		if (!output) return;
-		const lines = stripAnsi(output)
-			.replace(/\r(?!\n)/g, "")
-			.split("\n");
-		for (let i = lines.length - 1; i >= 0; i--) {
-			const line = lines[i].trim();
-			if (!line || line.length < 2) continue;
-			if (/^[│─┌┐└┘├┤┬┴┼═║╒╓╔╕╖╗╘╙╚╛╜╝╞╟╠╡╢╣╤╥╦╧╨╩╪╫╬·•\s_-]+$/.test(line)) continue;
-			const clean = line.replace(/^([>▶$➜%?#📎]|╭─|╰─)\s*/, "").trim();
-			if (clean.length >= 2 && !clean.startsWith("Error:") && !clean.startsWith("warning")) {
-				const title = clean.length > 30 ? `${clean.slice(0, 30)}…` : clean;
-				if (!isDefaultNativeCliTitle(title, conv.nativeCli.config.preset, conv.nativeCli.config.executable)) {
-					conv.title = title;
-					try {
-						conv.session.sessionManager?.appendSessionInfo(title);
-					} catch {}
-					try {
-						conv.session.setSessionName?.(title);
-					} catch {}
-					this.emitConversations();
-					if (conv.session.sessionFile) this.invalidateSessionInfos(conv.session.sessionFile);
-					else this.invalidateSessionInfos();
-					void this.refreshSessions();
-					break;
-				}
-			}
-		}
+		// 「自底向上找最后一行有意义输出 → 去掉提示符 → 截断」单源在叶子（core 宿主同一份）。
+		const title = nativeCliTitleFromTerminalOutput(output, {
+			title: conv.title,
+			preset: conv.nativeCli.config.preset,
+			executable: conv.nativeCli.config.executable,
+		});
+		if (!title) return;
+		conv.title = title;
+		try {
+			conv.session.sessionManager?.appendSessionInfo(title);
+		} catch {}
+		try {
+			conv.session.setSessionName?.(title);
+		} catch {}
+		this.emitConversations();
+		if (conv.session.sessionFile) this.invalidateSessionInfos(conv.session.sessionFile);
+		else this.invalidateSessionInfos();
+		void this.refreshSessions();
 	}
 
 	private notifyTerminalIdle(

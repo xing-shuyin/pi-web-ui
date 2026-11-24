@@ -74,6 +74,8 @@ export interface SessionSurfaceOptions {
 	onActivated(conversationId: ConversationId): void;
 	/** 打开转录后把「历史根」告给帧层。 */
 	noteSessionFile?(file: string | undefined): void;
+	/** CLI 对话的实时投影（配置 / 终端 id / 状态）：`conversations` 帧用它把运行中的 CLI 行画对。 */
+	nativeCliOf?(conversationId: ConversationId): import("../protocol.js").NativeCliConversation | undefined;
 	/** 允许打开哪些转录（缺省 fail-closed）。 */
 	isAllowedPath?(path: string): boolean;
 	notice(level: "info" | "warning" | "error", text: string, textEn: string): void;
@@ -130,6 +132,8 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 			const opened = options.sessions?.get(conv.id);
 			const session = opened?.session;
 			const thinkingLevel = typeof session?.thinkingLevel === "string" ? session.thinkingLevel : undefined;
+			// CLI 账与状态在宿主那边：非 CLI 对话这里恒为 `undefined`（不编相位）。
+			const nativeCli = options.nativeCliOf?.(conv.id);
 			return {
 				id: conv.id,
 				title: conv.meta.title,
@@ -139,6 +143,7 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 				isStreaming: session?.isStreaming === true || conv.phase === "running",
 				updatedAt: conv.meta.lastActiveAt,
 				hasHistoryRow: conv.meta.sessionFile !== undefined,
+				...(nativeCli ? { nativeCli } : {}),
 				...(conv.meta.parentId ? { parentId: conv.meta.parentId } : {}),
 				...(opened?.sessionId ? { sessionId: opened.sessionId } : {}),
 				...(conv.meta.sessionFile ? { sessionFile: conv.meta.sessionFile } : {}),

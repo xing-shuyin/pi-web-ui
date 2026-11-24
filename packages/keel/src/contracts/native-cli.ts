@@ -28,6 +28,11 @@ export interface NativeCliLaunched {
 	terminalId: string;
 	/** 宿主解析后的真实目录（本地绝对路径或规范化后的 SSH URI）：内核用它建对话实体。 */
 	cwd: string;
+	/**
+	 * CLI 转录文件的路径（宿主落盘的那份会话）：内核把它挂到对话实体上，于是历史列表、左栏行归属、
+	 * 重启后的打开都能拿到它。缺省 = 宿主还没落转录（对话仍然成立，只是没有磁盘历史行）。
+	 */
+	sessionFile?: string;
 }
 
 /**

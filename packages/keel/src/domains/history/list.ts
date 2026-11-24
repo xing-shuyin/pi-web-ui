@@ -1,5 +1,6 @@
 import { promises as fsPromises } from "node:fs";
 import { join } from "node:path";
+import type { NativeCliConfig } from "../../protocol.js";
 import { mapSessionsConcurrent } from "../../session-scan.js";
 import { scanSessionListInfo, type SessionListInfo, type SessionListScanState } from "../../session-list-scan.js";
 import { compareText } from "./order.js";
@@ -13,6 +14,8 @@ export interface HistoryEntry {
 	sessionFile: string;
 	/** 会话里的消息条数（`sessions` 帧要原样带着，老列表靠它判「空会话」）。 */
 	messageCount: number;
+	/** CLI 转录的引擎配置：左栏据此把这一行当 CLI 行（扫描时从转录条目里读出来）。 */
+	nativeCli?: NativeCliConfig;
 }
 
 export interface ScanHistoryInput {
@@ -46,6 +49,7 @@ function entryOf(info: SessionListInfo): HistoryEntry {
 		sessionFile: info.path,
 		// 老索引里读回来的扫描状态可能没有这个字段：缺了就按 0 条算，别出 `undefined`。
 		messageCount: info.messageCount ?? 0,
+		...(info.nativeCli ? { nativeCli: info.nativeCli } : {}),
 	};
 }
 

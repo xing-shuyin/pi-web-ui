@@ -7,6 +7,7 @@ import type {
 	UiToolApproval,
 	WorktreeInfo,
 } from "../protocol.js";
+import type { SnapshotAgentPresetView } from "./presets.js";
 
 /** 出帧时与「当前对话」无关的进程级信息。 */
 export interface SnapshotEnvView {
@@ -40,6 +41,8 @@ export interface SnapshotConversationView {
 	followUp: readonly string[];
 	queueEntries?: { steering: QueuedPromptItem[]; followUp: QueuedPromptItem[] };
 	errorMessage?: string;
+	/** 当前会话的 agent 预设（id / 本地化名 / 是否已锁）；缺省不出键。 */
+	agentPreset?: SnapshotAgentPresetView | null;
 	permission?: string | null;
 	planMode?: boolean;
 	delegateMode?: boolean;

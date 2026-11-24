@@ -13,7 +13,9 @@ import { isInsideRoots } from "../path-boundary.js";
 import { createProjectSource } from "../adapters/state/index.js";
 import { createModelMemory } from "../adapters/state/model-memory.js";
 import { conversationViewFromSession, subscribeSession } from "../adapters/sdk/view.js";
-import { ChatModeState, resolveToolLoadout } from "../domains/tools/index.js";
+import { ChatModeState, DEFAULT_AGENT_PRESET, PresetState, resolveToolLoadout } from "../domains/tools/index.js";
+import { NativeCliConversations } from "../domains/native-cli/index.js";
+import { conversationPresetViewOf, gateConversationPreset } from "./preset-handlers.js";
 import { withChatModeGates } from "../adapters/sdk/chat-mode.js";
 import { InteractionInbox } from "../domains/interactions/index.js";
 import { createApprovalWaiter, createAskUserWaiter } from "../domains/interactions/index.js";
@@ -24,8 +26,11 @@ import { createTerminalHost } from "../domains/terminals/index.js";
 import type { SubagentRuntime } from "./subagent-runtime.js";
 import { DEFAULT_PI_CAPABILITIES } from "../engine-capabilities.js";
 import type { AgentEngineCapabilities } from "../protocol.js";
+import type { MobileNotificationEvent } from "../mobile-notification-events.js";
 import { ClientRuntime } from "./client-runtime.js";
 import { SessionRegistry } from "./session-registry.js";
+import type { OpenedSession } from "../adapters/sdk/session-opener.js";
+import type { Conversation } from "../kernel/conversation/index.js";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
 import { resolvePiEngineAttach } from "./engine-mode.js";
 import { resolveServerLang, type ServerLang } from "../i18n.js";
@@ -90,6 +95,8 @@ const systemClock: ClockPort = {
  */
 export class CoreEngine implements EngineService {
 	onQuit?: () => boolean;
+	/** 手机通知回调：组合根 `wireEngineHooks` 在引擎建好后装上（内核只转发事件，不自己投递）。 */
+	onNotificationEvent?: (event: MobileNotificationEvent) => void | Promise<void>;
 	private readonly runtimes = new Map<string, ClientRuntime>();
 	/** 语言是「每客户端」的（`client-state` 里按 clientId 存 locale），不是进程级。 */
 	private readonly langs = new Map<string, ServerLang>();
@@ -150,6 +157,25 @@ export class CoreEngine implements EngineService {
 		let goalPort: GoalRunPort | undefined;
 		// 模式开关的运行态：写工具门禁与快照投影读的都是这一份（唯一切换点是 `setMode`）。
 		const chatModes = new ChatModeState();
+		// CLI 的运行态账：`newCliChat` 记、`getNativeCliConversation` / 运行列表帧读（一份账，两处投影）。
+		const cliConversations = new NativeCliConversations();
+		// 预设的运行态：`selectAgentPreset` / `setPermissionPreset` 写它，快照 `agentPreset` / `permission` 读它。
+		const presets = new PresetState();
+		/**
+		 * 会话（重新）打开时按当前预设重设一次工具集：预设只在内存里，重开会话不能回到全量。
+		 * 只对**显式选过的非标准**预设动手：`standard` 与「没选过」必须保持 SDK 从转录恢复的装载
+		 * （懒加载的 `load_tools` 不在内核手里，随便重算会把它们误减掉）。
+		 */
+		const resumeAgentPreset = (conv: Conversation, opened: OpenedSession): void => {
+			const preset = presets.agentPresetOf(conv.id);
+			if (!preset || preset === DEFAULT_AGENT_PRESET) return;
+			gateConversationPreset({
+				session: opened.session,
+				preset,
+				settings: this.stateStore.getSettingsSnapshot(clientId),
+				modes: { planMode: chatModes.planModeOf(conv.id), delegateMode: chatModes.delegateModeOf(conv.id) },
+			});
+		};
 		const inbox = new InteractionInbox(() => {});
 		const approvalWaiter = createApprovalWaiter({ inbox, transport });
 		const askWaiter = createAskUserWaiter({ inbox, transport });
@@ -189,6 +215,10 @@ export class CoreEngine implements EngineService {
 				runtime.noteSessionFile(opened.sessionFile);
 				// 转录里的模式条目是重启后能读回来的真值：会话一开就把它接回门禁状态。
 				faces.chatMode?.restore?.(conv.id);
+				// 权限预设的真值同一棵树（`permission/preset`）：读回来才与镜头一致。
+				presets.setPermission(conv.id, faces.presetTranscript?.readPermission?.(conv.id));
+				// 会话一开就按当前预设门禁工具：否则「换预设」只在切的那一瞬间真，重开会话就回到全量。
+				resumeAgentPreset(conv, opened);
 				unsubscribers.set(
 					conv.id,
 					subscribeSession(opened.session, () => runtime.publisher.request()),
@@ -248,6 +278,11 @@ export class CoreEngine implements EngineService {
 			nativeCli: () => faces.nativeCli,
 			bots: () => faces.bots,
 			chatMode: () => faces.chatMode,
+			presets,
+			chatModes,
+			presetTranscript: () => faces.presetTranscript,
+			// 内核这份 CLI 账（对话 ↔ 终端归属）：CLI 域与 `conversations` 帧共用同一份。
+			nativeCliState: cliConversations,
 			// 工具信息 / 随手问 / UI 桥：同样是宿主面，装配在 `createHostFaces` 里（这里只递 thunk）。
 			toolInfo: () => faces.toolInfo,
 			quickAskConversation: () => faces.quickAsk,
@@ -272,6 +307,15 @@ export class CoreEngine implements EngineService {
 				...conversationViewFromSession(conv, sessions.get(conv.id)?.session),
 				planMode: chatModes.planModeOf(conv.id),
 				delegateMode: chatModes.delegateModeOf(conv.id),
+				...conversationPresetViewOf({
+					conversationId: conv.id,
+					queued: conv.queues.total(),
+					session: sessions.get(conv.id)?.session,
+					settings: this.stateStore.getSettingsSnapshot(clientId),
+					presets,
+					chatModes,
+					lang: this.langOf(clientId),
+				}),
 				pendingApprovals: approvalWaiter.pendingForSnapshot(conv.id),
 			}),
 			// 环境视图是**导出值**（不是状态）：探针真值 / 设置版本随每次组帧现算，装完 pi CLI 不必重连就翻真。
@@ -311,6 +355,8 @@ export class CoreEngine implements EngineService {
 			setLang: (next) => this.langs.set(clientId, next),
 			isDisposed: () => this.runtimes.get(clientId) !== runtime,
 			applyChatMode: (kind, enabled, conversationId) => chatModes.setMode(kind, enabled, conversationId),
+			// 手机通知走引擎级回调（`wireEngineHooks` 装的 `svc.onNotificationEvent`）：内核只转发，不自己投递。
+			notifyMobile: (event) => void this.onNotificationEvent?.(event),
 		});
 		subagents = faces.subagents;
 		this.runtimes.set(clientId, runtime);

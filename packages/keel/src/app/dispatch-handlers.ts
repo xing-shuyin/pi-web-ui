@@ -36,6 +36,7 @@ import { createBotChatHandlersFor } from "./bot-chat-handlers.js";
 import { createConversationDispatchHandlers } from "./conversation-handlers.js";
 import { createExtraHandlers } from "./extra-handlers.js";
 import { createToolInfoHandlersFor } from "./tool-info-handlers.js";
+import { createPresetHandlers } from "./preset-handlers.js";
 import { createQuickAskHandlersFor } from "./quick-ask-handlers.js";
 import { createUiBridgeHandlersFor } from "./ui-bridge-handlers.js";
 import type { SessionSurface } from "./session-surface.js";
@@ -271,6 +272,8 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 
 	/** 工具信息面（`tool_info` / `tool_prompt`）：SDK 读在 `adapters/sdk/tool-inspector`，覆盖与截断在宿主端口。 */
 	const toolInfo = createToolInfoHandlersFor(runtime);
+	/** agent / 权限预设：工具集重设与提示词重载在 `adapters/sdk/preset-tools`，权限条目归宿主端口。 */
+	const presets = createPresetHandlers(runtime);
 	/** 随手问上下文读取：内核解析会话，转录摘取 / 磁盘历史在宿主端口。 */
 	const quickAsk = createQuickAskHandlersFor(runtime);
 	/** UI 桥：dialog / overlay 挂起表转给宿主那份，页面 / 手机调用的挂起表归内核。 */
@@ -358,6 +361,7 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 		...nativeCli,
 		...botChat,
 		...toolInfo,
+		...presets,
 		...quickAsk,
 		// UI 桥的 8 个分发面成员（`phoneCall` / `settleConversationCalls` / `dispose` 是面外成员，不进分发表）。
 		resolveDialog: (id, value) => bridge.resolveDialog(id, value),

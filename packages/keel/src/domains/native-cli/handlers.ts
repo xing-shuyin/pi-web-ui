@@ -10,6 +10,11 @@ export interface NativeCliHandlersOptions {
 	/** 缺省 = 未接：每个 handler 调到时同步抛 `CoreEngineNotReadyError`（thunk 是防循环装配）。 */
 	nativeCli?: () => NativeCliPort | undefined;
 	registry: ConversationRegistry<Conversation>;
+	/**
+	 * 内核这份 CLI 账；给了就由调用方持有（`conversations` 帧要按同一份账投影状态，
+	 * 否则左栏会把活着的 CLI 画成「已结束」）。
+	 */
+	state?: NativeCliConversations;
 	/** 建对话实体（内核侧的激活与出帧基线由运行时负责）。 */
 	createConversation(init: Partial<ConversationInit>): Conversation;
 	/** 当前工作区（`newCliChat` 没带 cwd 时的兜底）。 */
@@ -17,6 +22,10 @@ export interface NativeCliHandlersOptions {
 	activeConversationId(): string | undefined;
 	/** 推一帧 `conversations`：CLI 行与它的标题从这一帧出去。 */
 	pushConversations(): void;
+	/** CLI 转录落盘了：会话目录的根由它定（历史列表从这重扫）。 */
+	noteSessionFile?(file: string): void;
+	/** 重扫历史列表（新转录落盘后） */
+	refreshSessions?(): void;
 	/** 出一帧快照（状态/标题/归属变了都要）。 */
 	flushSnapshot(): void;
 	emit(msg: ServerMessage): void;
@@ -46,8 +55,50 @@ export interface NativeCliHandlers {
  * - `controlNativeCli`：归属按内核这份账判定（老实现同一句错误文案），三个动作各自真做、reject 冒泡。
  * - `getNativeCliConversation`：如实投影；没有这条 CLI 就是 `undefined`，不发明默认值。
  */
+/** 宿主需要的整套事实：配置与标题内核是唯一所有者，这里现取（用户改名后标题必须是最新值）。 */
+export function nativeCliTargetOf(input: {
+	conversationId: string;
+	binding: NativeCliBinding;
+	conv: Conversation | undefined;
+	fallbackCwd: string;
+}): NativeCliTarget {
+	return {
+		conversationId: input.conversationId,
+		terminalId: input.binding.terminalId,
+		config: input.binding.config,
+		cwd: input.conv?.meta.cwd ?? input.fallbackCwd,
+		title: input.conv?.meta.title ?? "",
+	};
+}
+
+/**
+ * 一条 CLI 对话的对外投影（**单源**）：`get_native_cli_conversation` 与 `conversations` 帧共用这一份，
+ * 否则两处各写一遍就会对「有没有状态」给出不同答案。
+ */
+export function nativeCliConversationOf(input: {
+	port: NativeCliPort;
+	conversationId: string;
+	binding: NativeCliBinding;
+	conv: Conversation | undefined;
+	fallbackCwd: string;
+}): NativeCliConversation {
+	const status = input.port.statusOf(
+		nativeCliTargetOf({
+			conversationId: input.conversationId,
+			binding: input.binding,
+			conv: input.conv,
+			fallbackCwd: input.fallbackCwd,
+		}),
+	);
+	return {
+		config: input.binding.config,
+		terminalId: input.binding.terminalId,
+		...(status ? { status } : {}),
+	};
+}
+
 export function createNativeCliHandlers(options: NativeCliHandlersOptions): NativeCliHandlers {
-	const state = new NativeCliConversations();
+	const state = options.state ?? new NativeCliConversations();
 
 	const port = (what: string): NativeCliPort => {
 		const target = options.nativeCli?.();
@@ -55,17 +106,14 @@ export function createNativeCliHandlers(options: NativeCliHandlersOptions): Nati
 		return target;
 	};
 
-	/** 宿主需要的整套事实：配置与标题内核是唯一所有者，这里现取（用户改名后标题必须是最新值）。 */
-	const targetOf = (conversationId: string, binding: NativeCliBinding): NativeCliTarget => {
-		const conv = options.registry.get(conversationId);
-		return {
+	/** 宿主需要的整套事实（单源见 `nativeCliTargetOf`）。 */
+	const targetOf = (conversationId: string, binding: NativeCliBinding): NativeCliTarget =>
+		nativeCliTargetOf({
 			conversationId,
-			terminalId: binding.terminalId,
-			config: binding.config,
-			cwd: conv?.meta.cwd ?? options.cwd(),
-			title: conv?.meta.title ?? "",
-		};
-	};
+			binding,
+			conv: options.registry.get(conversationId),
+			fallbackCwd: options.cwd(),
+		});
 
 	/** 三个动作共用：做完出一帧快照（老实现 `scheduleSnapshot()`）。失败不吞，reject 冒到 wire 层。 */
 	const run = async (work: () => void | Promise<void>): Promise<void> => {
@@ -91,10 +139,20 @@ export function createNativeCliHandlers(options: NativeCliHandlersOptions): Nati
 				cwd: cwd ?? options.cwd(),
 				title,
 			});
-			const conv = options.createConversation({ id: conversationId, cwd: started.cwd, title, kind: "cli" });
+			const conv = options.createConversation({
+				id: conversationId,
+				cwd: started.cwd,
+				title,
+				kind: "cli",
+				// 转录是宿主落的：挂到对话实体上，历史行与重启后的打开才认得它。
+				...(started.sessionFile ? { sessionFile: started.sessionFile } : {}),
+			});
+			if (started.sessionFile) options.noteSessionFile?.(started.sessionFile);
 			state.bind(conv.id, checked, started.terminalId);
 			options.pushConversations();
 			options.flushSnapshot();
+			// 新转录落盘 ⇒ 左栏历史里立刻多一行（老实现 `publishNativeCliHistory` 同一位置）。
+			options.refreshSessions?.();
 			onReady?.(conv.id);
 			return true;
 		} catch (error) {
@@ -153,8 +211,13 @@ export function createNativeCliHandlers(options: NativeCliHandlersOptions): Nati
 			const binding = state.get(id);
 			// 没这条 CLI 就是没有：不拿活跃对话的配置顶替，也不补默认状态。
 			if (!binding) return undefined;
-			const status = target.statusOf(targetOf(id, binding));
-			return { config: binding.config, terminalId: binding.terminalId, ...(status ? { status } : {}) };
+			return nativeCliConversationOf({
+				port: target,
+				conversationId: id,
+				binding,
+				conv: options.registry.get(id),
+				fallbackCwd: options.cwd(),
+			});
 		},
 	};
 }

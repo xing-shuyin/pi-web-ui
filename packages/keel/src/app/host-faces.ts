@@ -13,9 +13,11 @@ import type { SandboxPort } from "../contracts/sandbox.js";
 import type { NativeCliPort } from "../contracts/native-cli.js";
 import type { BotChatPort } from "../contracts/bots.js";
 import type { ChatModePort } from "../contracts/goals.js";
+import type { PresetTranscriptPort } from "../contracts/presets.js";
 import type { ToolInfoPort } from "../contracts/session.js";
 import type { QuickAskConversationReadPort } from "../contracts/quick-ask.js";
 import type { UiBridgePort } from "../contracts/ui-bridge.js";
+import type { MobileNotificationEvent } from "../mobile-notification-events.js";
 import type { ServerLang } from "../i18n.js";
 import type { ProjectSource } from "../adapters/state/index.js";
 import { createModelRuntimeFactory } from "../adapters/models/index.js";
@@ -84,12 +86,22 @@ export interface CoreWorkspaceSinks {
 }
 
 /**
- * 宿主实现 `NativeCliPort` 时要拼的几块：内核真正能回答的只有「这条对话的终端管理器」——
- * PTY / hook / 会话文件 / 状态机全在宿主叶子里（`server/terminals.ts`、`server/native-cli-*`）。
+ * 宿主实现 `NativeCliPort` 时要拼的几块：内核能回答的是「这条对话的终端管理器」与「出帧」——
+ * PTY / hook / 转录 / 状态机全在宿主叶子里（`server/terminals.ts`、`server/native-cli-*`）。
  */
 export interface CoreNativeCliSinks {
-	/** 每对话一支的终端管理器（宿主 `TerminalManager`；`detach` / `stop` 靠它）。 */
-	terminalOf(conversationId: string): unknown;
+	/** 每对话一支的终端管理器（宿主 `TerminalManager`）；`cwd` 只用于懒建时定工作区根。 */
+	terminalOf(conversationId: string, cwd?: string): unknown;
+	/** 出帧（宿主事件驱动的帧：`native_cli_event` / `native_cli_prompt_submitted`）。 */
+	emit(msg: ServerMessage): void;
+	/** 状态/归属变了：刷快照 + 推 `conversations` 帧。 */
+	publish(): void;
+	/** 历史列表重扫（标题写回 / 新转录落盘之后）。 */
+	refreshSessions(): void;
+	/** 「继承当前对话模型」开关：客户端设置里的开关 + 当前对话的模型，两者都只有宿主知道。 */
+	inheritModel(preset: string): { provider: string; id: string } | undefined;
+	/** 手机通知（手机不在浏览器里，只能由引擎级回调送出去）；缺省 = 不推手机。 */
+	notifyMobile?(event: Omit<MobileNotificationEvent, "clientId">): void;
 }
 
 /** 宿主实现 `ToolInfoPort` 时要拼的几块：提示词覆盖表（客户端设置里的那一份，别名归一只在宿主）。 */
@@ -104,6 +116,15 @@ export interface CoreChatModeSinks {
 	transcriptOf(conversationId?: string): ChatModeTranscript | undefined;
 	ensureTranscript(conversationId?: string): Promise<ChatModeTranscript | undefined>;
 	setMode(kind: "plan" | "delegate", enabled: boolean, conversationId?: string): void;
+}
+
+/**
+ * 宿主实现 `PresetTranscriptPort` 时要拼的几块：只要转录句柄（写 `permission/preset` / 读回）。
+ * 与 `CoreChatModeSinks` 同一处来源（`chatModeTranscriptOf`），不另开一套 SDK 句柄。
+ */
+export interface CorePresetSinks {
+	transcriptOf(conversationId?: string): ChatModeTranscript | undefined;
+	ensureTranscript(conversationId?: string): Promise<ChatModeTranscript | undefined>;
 }
 
 /** 宿主实现 `SandboxPort` 时要拼的几块：帧出口（`sandbox_diff` / notice）+ 当前工作目录。 */
@@ -178,6 +199,8 @@ export interface HostFaceFactories {
 	bots?: () => BotChatPort;
 	/** 模式开关面工厂（宿主实现 `server/core-chat-mode-adapter.ts`）；缺省 = 未接（两个 handler 同步抛）。 */
 	chatMode?: (sinks: CoreChatModeSinks) => ChatModePort;
+	/** 会话级权限预设条目面（宿主实现 `server/core-preset-adapter.ts`）；缺省 = `setPermissionPreset` 同步抛。 */
+	presetTranscript?: (sinks: CorePresetSinks) => PresetTranscriptPort;
 	/** 工具信息面工厂（宿主实现 `server/core-tool-info-adapter.ts`）；缺省 = 未接（两个 handler 同步抛）。 */
 	toolInfo?: (sinks: CoreToolInfoSinks) => ToolInfoPort;
 	/** 随手问上下文读取面工厂（宿主实现 `server/core-quick-ask-adapter.ts`）；缺省 = 未接（调用即抛）。 */
@@ -208,6 +231,8 @@ export interface HostFaceDeps extends HostFaceFactories {
 	isDisposed(): boolean;
 	/** 模式开关的唯一切换点（写工具门禁与快照投影都读它）。 */
 	applyChatMode(kind: "plan" | "delegate", enabled: boolean, conversationId?: string): void;
+	/** 引擎级手机通知回调（`svc.onNotificationEvent`）；缺省 = 不推手机。 */
+	notifyMobile?(event: MobileNotificationEvent): void;
 }
 
 /** 一个客户端连接的全部宿主面：门面拿到这一组就够接线了。 */
@@ -222,6 +247,7 @@ export interface HostFaces {
 	nativeCli: NativeCliPort | undefined;
 	bots: BotChatPort | undefined;
 	chatMode: ChatModePort | undefined;
+	presetTranscript: PresetTranscriptPort | undefined;
 	toolInfo: ToolInfoPort | undefined;
 	quickAsk: QuickAskConversationReadPort | undefined;
 	uiBridge: UiBridgePort | undefined;
@@ -255,6 +281,17 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 			return conv ? chatModeTranscriptOf(await sessions.ensure(conv)) : undefined;
 		},
 		setMode: (kind, enabled, conversationId) => deps.applyChatMode(kind, enabled, chatModeConv(conversationId)?.id),
+	});
+	// 权限预设条目与模式开关共用同一对句柄（转录里的 `permission/preset` 和 `plan/mode` 是同一棵树）。
+	const presetTranscript = deps.presetTranscript?.({
+		transcriptOf: (conversationId) => {
+			const conv = chatModeConv(conversationId);
+			return conv ? chatModeTranscriptOf(sessions.get(conv.id)) : undefined;
+		},
+		ensureTranscript: async (conversationId) => {
+			const conv = chatModeConv(conversationId);
+			return conv ? chatModeTranscriptOf(await sessions.ensure(conv)) : undefined;
+		},
 	});
 	const settingsFrame = deps.settingsFrame?.({
 		clientId,
@@ -377,7 +414,36 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 	runtime.attachFrames(frames);
 	// 宿主面：CLI 的 PTY 归每对话一支的终端管理器，Bot 私聊的注册表与转录锚点在宿主（`agentDir`）。
 	const nativeCli = deps.nativeCli?.({
-		terminalOf: (conversationId) => terminalHost.managerFor(conversationId, cwd),
+		// 管理器按对话懒建：`cwd` 传进来时用它定工作区根（CLI 对话可能不在当前工作区）。
+		terminalOf: (conversationId, cliCwd) => terminalHost.managerFor(conversationId, cliCwd ?? cwd),
+		emit: (msg) => {
+			if (!transport.isClosed()) transport.send(msg);
+		},
+		// 老实现 `scheduleSnapshot()` + `emitConversations()`：状态变了就把快照与运行列表一起推。
+		publish: () => {
+			if (runtime.isDisposed()) return;
+			runtime.publisher.request();
+			runtime.pushConversations();
+		},
+		refreshSessions: () => {
+			void frames.refreshSessions();
+		},
+		// 「继承当前对话模型」开关：开关在设置里，模型在当前对话的会话上。
+		inheritModel: (preset) => {
+			const inherit = stateStore.getSettingsSnapshot(clientId).nativeCliInheritModel as
+				Record<string, boolean | undefined> | undefined;
+			if (!inherit?.[preset]) return undefined;
+			const conv = runtime.registry.activeConv();
+			const model = conv ? sessions.get(conv.id)?.session.model : undefined;
+			const { provider, id } = (model ?? {}) as { provider?: unknown; id?: unknown };
+			return typeof provider === "string" && typeof id === "string" && provider && id ? { provider, id } : undefined;
+		},
+		...(deps.notifyMobile
+			? {
+					notifyMobile: (event: Omit<MobileNotificationEvent, "clientId">) =>
+						deps.notifyMobile?.({ ...event, clientId }),
+				}
+			: {}),
 	});
 	const bots = deps.bots?.();
 	// 连接期就把全局默认模型告诉前端（老实现 `pushDefaultModel()` 在 attach 时也推一次）。
@@ -393,6 +459,7 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 		nativeCli,
 		bots,
 		chatMode,
+		presetTranscript,
 		toolInfo,
 		quickAsk,
 		uiBridge,

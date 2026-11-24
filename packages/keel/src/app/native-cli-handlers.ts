@@ -1,7 +1,11 @@
 import type { NativeCliPort } from "../contracts/native-cli.js";
 import type { TransportPort } from "../contracts/ports.js";
 import type { Conversation, ConversationInit, ConversationRegistry } from "../kernel/conversation/index.js";
-import { createNativeCliHandlers, type NativeCliHandlers } from "../domains/native-cli/index.js";
+import {
+	createNativeCliHandlers,
+	type NativeCliConversations,
+	type NativeCliHandlers,
+} from "../domains/native-cli/index.js";
 
 export type { NativeCliHandlers };
 
@@ -18,6 +22,12 @@ export interface NativeCliRuntime {
 	readonly cwd: string;
 	/** 推一帧 `conversations`（CLI 行与标题都从这一帧出去）。 */
 	readonly pushConversations: () => void;
+	/** CLI 转录落盘了：会话目录的根由它定（历史列表的重扫依据）。 */
+	noteSessionFile?(file: string): void;
+	/** 重扫历史列表（新转录落盘后）。 */
+	refreshSessions?(): void;
+	/** 内核这份 CLI 账（由运行时持有：`conversations` 帧按同一份账投影状态）。 */
+	readonly nativeCliState?: NativeCliConversations;
 	activeConversationId(): string | undefined;
 	createConversation(init?: Partial<ConversationInit>): Conversation;
 }
@@ -36,6 +46,9 @@ export function createNativeCliHandlersFor(runtime: NativeCliRuntime): NativeCli
 		cwd: () => runtime.cwd,
 		activeConversationId: () => runtime.activeConversationId(),
 		pushConversations: () => runtime.pushConversations(),
+		...(runtime.noteSessionFile ? { noteSessionFile: (file: string) => runtime.noteSessionFile?.(file) } : {}),
+		...(runtime.refreshSessions ? { refreshSessions: () => runtime.refreshSessions?.() } : {}),
+		...(runtime.nativeCliState ? { state: runtime.nativeCliState } : {}),
 		flushSnapshot: () => runtime.publisher.request(),
 		emit: (msg) => runtime.options.transport.send(msg),
 		isClosed: () => runtime.options.transport.isClosed(),
