@@ -25,6 +25,9 @@ import { NativeCliConversations, nativeCliConversationOf } from "../domains/nati
 import { ComposerDraftsStore } from "../composer-drafts.js";
 import { Conversation, ConversationRegistry, type ConversationInit } from "../kernel/conversation/index.js";
 import { createSnapshotBuilders, SnapshotPublisher, type SnapshotBuilders } from "../domains/snapshots/index.js";
+import { statsOfSession } from "../adapters/sdk/session-stats.js";
+import { sessionDirOfBase } from "../adapters/sdk/session-persist.js";
+import { resolveWorkspaceSessionDir } from "../remote-workspace.js";
 import { TurnRunner, type TurnRunnerDeps } from "../domains/turns/index.js";
 import type { SessionListScanState } from "../session-list-scan.js";
 import { dirname, join } from "node:path";
@@ -113,6 +116,8 @@ export interface ClientRuntimeOptions extends GoalHostPorts {
 	scmCommitMessage?: () => ScmCommitMessagePort | undefined;
 	/** 斜杠命令面（宿主 `SlashCommandsService`）；缺省 = 该能力未接。 */
 	slashCommands?: () => SlashCommandsPort | undefined;
+	/** 附件面（宿主 `server/attachments.ts`）；缺省 = 附件不发（asides 会说一句 warning，不静默丢）。 */
+	attachments?: () => import("../contracts/attachments.js").AttachmentsPort | undefined;
 	/** 文件 / 目录面（宿主 `FilesService`）；缺省 = 该能力未接。 */
 	files?: () => FilesPort | undefined;
 	/** 工作区绑定（换 cwd / 换额外根）的宿主侧：目标解析与换完的收尾；缺省 = 只认本地路径。 */
@@ -257,6 +262,7 @@ export class ClientRuntime {
 				if (this.disposed || this.options.transport.isClosed()) return;
 				this.options.transport.send({ type: "notice", level, text, textEn });
 			},
+			refreshFiles: () => void this.options.files?.()?.listFiles(),
 			progress: (kind, target, phase, text, textEn) => {
 				if (this.disposed || this.options.transport.isClosed()) return;
 				this.options.transport.send({ type: "transition_progress", kind, target, phase, progress: 100, text, textEn });
@@ -265,11 +271,12 @@ export class ClientRuntime {
 		}));
 	}
 
-	/** 重绑 / 钉住 / 编辑面共用的帧出口：全量刷一帧 + 会话帧 + 项目帧。 */
+	/** 重绑 / 钉住 / 编辑面共用的帧出口：全量刷一帧 + 会话帧 + 项目帧 + 运行列表帧。 */
 	rebindFrames(): {
 		flush(forceFull?: boolean): void;
 		pushSessions(): void;
 		pushProjects(): void;
+		pushConversations(): void;
 		refreshSessionsFor(cwd: string): Promise<void>;
 	} {
 		return {
@@ -281,6 +288,9 @@ export class ClientRuntime {
 			},
 			pushProjects: () => {
 				if (!this.disposed) void this.frames?.pushProjects();
+			},
+			pushConversations: () => {
+				if (!this.disposed) this.pushConversations();
 			},
 			refreshSessionsFor: (cwd: string) => this.frames?.refreshSessionsFor?.(cwd) ?? Promise.resolve(),
 		};
@@ -317,8 +327,25 @@ export class ClientRuntime {
 			return undefined;
 		}
 	}
+	/**
+	 * 会话文件落在哪个目录（历史列表 / 检索的根）：**不靠**「本进程开过会话」才知道。
+	 *
+	 * 老实现每次扫列表都现算一次：`resolveWorkspaceSessionDir(dataDir, cwd)` →
+	 * `SessionManager.create(base).getSessionDir()`（`loadSessionInfos` 同一条公式）。
+	 * 以前只有 `noteSessionFile` 一个写点 ⇒ 连接期拿不到 root，历史列表恒空。
+	 * `noteSessionFile` 学到的目录仍作兼底（CLI 转录这种不按 cwd 落盘的会话）。
+	 */
 	historyRoot(): string | undefined {
-		return this.historyRootPath;
+		// 学到的目录优先（`noteSessionFile` = 本进程真开过会话，换 cwd 时会跟着更新），
+		// 否则再按老公式现算——两者都拿不到才算「不知道」。
+		if (this.historyRootPath) return this.historyRootPath;
+		try {
+			const base = resolveWorkspaceSessionDir(this.options.stateStore?.()?.dataDir, this.workspaceCwd);
+			return sessionDirOfBase(base) ?? undefined;
+		} catch {
+			// 算不出来（宿主没给 dataDir / SDK 目录推不出来）就用学到的那个。
+			return this.historyRootPath;
+		}
 	}
 	historyState(): Map<string, SessionListScanState> {
 		return (this.scanState ??= new Map());
@@ -368,8 +395,24 @@ export class ClientRuntime {
 				sandbox: this.sandboxInfo,
 				worktree: this.worktreeInfo,
 			},
-			conversation: conv ? (this.options.viewOf?.(conv) ?? emptyView(conv)) : null,
+			conversation: conv ? this.conversationView(conv) : null,
 		};
+	}
+
+	/**
+	 * 快照里的对话面 = 域/宿主给的投影 + 内核自己就能答的两项：
+	 * `isEphemeral`（聚合根是唯一所有者）与 `stats`（会话自己的统计）。宿主投影里带了 `stats`
+	 * （它能算分类与软上限）就以它为准，不拿内核这份半熟的覆盖回去。
+	 */
+	private conversationView(conv: Conversation): SnapshotConversationView {
+		const view = this.options.viewOf?.(conv) ?? emptyView(conv);
+		const stats = view.stats ?? this.sessionStatsOf(conv);
+		return { ...view, isEphemeral: conv.ephemeral, ...(stats ? { stats } : {}) };
+	}
+
+	private sessionStatsOf(conv: Conversation): SnapshotConversationView["stats"] {
+		const opened = this.options.sessions?.get(conv.id);
+		return opened ? statsOfSession(opened.session) : undefined;
 	}
 
 	handlers(): DispatchSession {

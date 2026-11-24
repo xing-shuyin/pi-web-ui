@@ -15,6 +15,8 @@ export interface ConversationInit {
 	title?: string;
 	parentId?: ConversationId;
 	sessionFile?: SessionFile;
+	/** 临时对话（老实现 `conv.isEphemeral`）：会话不落盘，`persist_conversation` 才转正。 */
+	ephemeral?: boolean;
 }
 
 /**
@@ -39,6 +41,7 @@ export class Conversation {
 			lastActiveAt: init.createdAt,
 			parentId: init.parentId,
 			sessionFile: init.sessionFile,
+			ephemeral: init.ephemeral === true,
 		};
 	}
 
@@ -82,6 +85,15 @@ export class Conversation {
 
 	touch(now: number): void {
 		this.meta.lastActiveAt = now;
+	}
+
+	get ephemeral(): boolean {
+		return this.meta.ephemeral === true;
+	}
+
+	/** 临时对话转正：删掉标记（唯一一处翻转；快照 / 运行列表都读它）。 */
+	markPersisted(): void {
+		delete this.meta.ephemeral;
 	}
 
 	setSessionFile(file: SessionFile | undefined): void {

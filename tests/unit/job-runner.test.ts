@@ -5,11 +5,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import { JobRegistry, type JobSnapshot } from "../../server/job-runner.js";
 
 const dirs: string[] = [];
+const registries: JobRegistry[] = [];
 
 function makeRegistry(onExit?: (job: JobSnapshot) => void): JobRegistry {
 	const dir = mkdtempSync(join(tmpdir(), "job-runner-"));
 	dirs.push(dir);
-	return new JobRegistry({ logDir: () => dir, onExit });
+	const registry = new JobRegistry({ logDir: () => dir, onExit });
+	registries.push(registry);
+	return registry;
 }
 
 async function waitFor(predicate: () => boolean, ms = 8000): Promise<void> {
@@ -23,7 +26,11 @@ async function waitFor(predicate: () => boolean, ms = 8000): Promise<void> {
 
 const node = JSON.stringify(process.execPath);
 
-afterEach(() => {
+afterEach(async () => {
+	while (registries.length > 0) {
+		const reg = registries.pop();
+		if (reg) await reg.dispose();
+	}
 	while (dirs.length > 0) {
 		const dir = dirs.pop();
 		if (dir) rmSync(dir, { recursive: true, force: true });
@@ -170,10 +177,13 @@ describe("JobRegistry（bash background 的进程内托管）", () => {
 		});
 		const uncaught: Error[] = [];
 		const onUncaught = (error: Error) => uncaught.push(error);
+		let record: { child: { stdout: NodeJS.ReadableStream }; stop: () => Promise<boolean> } | undefined;
 		try {
 			await waitFor(() => registry.tail(job.id).includes("ready"));
-			const record = (
-				registry as unknown as { jobs: Map<string, { child: { stdout: NodeJS.ReadableStream } }> }
+			record = (
+				registry as unknown as {
+					jobs: Map<string, { child: { stdout: NodeJS.ReadableStream }; stop: () => Promise<boolean> }>;
+				}
 			).jobs.get(job.id);
 			expect(record).toBeTruthy();
 			// 模拟兜底 timer 强制收场
@@ -192,8 +202,8 @@ describe("JobRegistry（bash background 的进程内托管）", () => {
 			expect(uncaught).toEqual([]);
 			expect(readFileSync(job.logPath, "utf8")).not.toContain("late-line");
 		} finally {
-			registry.kill(job.id);
-			registry.dispose();
+			await record?.stop();
+			await registry.dispose();
 		}
 	}, 30_000);
 

@@ -29,6 +29,16 @@ export interface WorkspaceSwitcherOptions {
 	/** 宿主的目标解析与收尾；缺省 = 只认本地绝对/相对路径。 */
 	host?: WorkspaceHostPort;
 	notice(level: "info" | "warning" | "error", text: string, textEn: string): void;
+	/** 切换进度（`transition_progress` 的 `kind: "cwd"` 一支）：开始/完成/失败都要告诉客户端。 */
+	progress?(kind: "cwd" | "session", target: string, phase: "done" | "error", text: string, textEn: string): void;
+	/** 换完后的文件树重列（文件域的宿主端口自己出 `files` 帧）；缺省 = 骨架不动。 */
+	refreshFiles?(): void | Promise<void>;
+}
+
+/** 换工作区失败时的用户可见文案：`set_cwd` / `/cwd` / 上传进度三条入口共用一份，不各写一句。 */
+export function workspaceSwitchFailure(error: unknown): { text: string; textEn: string } {
+	const reason = (error as Error)?.message ?? String(error);
+	return { text: `切换工作目录失败：${reason}`, textEn: `Failed to switch workspace: ${reason}` };
 }
 
 function sameRoots(a: readonly string[], b: readonly string[]): boolean {
@@ -69,10 +79,30 @@ export function createWorkspaceSwitcher(options: WorkspaceSwitcherOptions): Work
 		notice: options.notice,
 	};
 
-	/** 换完工作区的共同收尾：更新运行时状态 → 宿主收尾（失败只警告，不撤已生效的切换）。 */
-	const commit = async (target: WorkspaceTarget): Promise<void> => {
+	/**
+	 * 换工作区的唯一提交点：**先把运行时状态切过去**，再重绑会话，最后宿主收尾。
+	 *
+	 * 顺序不能再反：重绑末尾那一帧是客户端看到新工作区的唯一机会（`setWorkspace` 到它之前生效），
+	 * 先切状态才会出「新对话 + 新目录」的一帧，而不是「新对话 + 旧目录」然后再等下一次 flush
+	 * （那个 flush 还会被合并闸当成 too-soon 吞掉）。
+	 * 重绑失败 → 状态回滚 + 补一帧，旧工作区与旧会话仍然可用。
+	 */
+	const switchWorkspace = async (target: WorkspaceTarget): Promise<void> => {
+		const previousCwd = options.cwd();
+		const previousRoots = [...options.roots()];
 		const roots = options.store?.getRoots(target.cwd) ?? [];
 		options.setWorkspace(target.cwd, roots);
+		try {
+			await rebindSession(rebindCtx, {
+				cwd: target.cwd,
+				...(target.sessionCwd ? { sessionCwd: target.sessionCwd } : {}),
+			});
+		} catch (error) {
+			options.setWorkspace(previousCwd, previousRoots);
+			// 重绑自己发过一帧（带的是新 cwd）：回滚状态之后要再把客户端拨回旧工作区。
+			options.frames.flush(true);
+			throw error;
+		}
 		try {
 			await options.host?.onChanged?.(target.cwd, roots);
 		} catch (error) {
@@ -82,6 +112,15 @@ export function createWorkspaceSwitcher(options: WorkspaceSwitcherOptions): Work
 				`Workspace switched, but host post-processing failed: ${(error as Error).message}`,
 			);
 		}
+		options.progress?.(
+			"cwd",
+			target.cwd,
+			"done",
+			`已切换到工作目录：${target.cwd}`,
+			`Switched to directory: ${target.cwd}`,
+		);
+		// 文件树跟着工作区走：不重列的话客户端还画着上一个目录的文件（老实现 setCwd 末尾同样刷新）。
+		void options.refreshFiles?.();
 	};
 
 	return {
@@ -89,18 +128,21 @@ export function createWorkspaceSwitcher(options: WorkspaceSwitcherOptions): Work
 		setCwd(path: string): Promise<void> {
 			const from = options.cwd();
 			const resolveTarget = options.host?.resolveTarget ?? defaultResolveTarget;
-			return resolveTarget(path, from).then(async (target) => {
-				if (target.cwd === from) {
-					options.notice("info", `已在工作目录：${target.cwd}`, `Already in directory: ${target.cwd}`);
-					options.frames.flush(false);
-					return;
-				}
-				await rebindSession(rebindCtx, {
-					cwd: target.cwd,
-					...(target.sessionCwd ? { sessionCwd: target.sessionCwd } : {}),
+			return resolveTarget(path, from)
+				.then(async (target) => {
+					if (target.cwd === from) {
+						options.notice("info", `已在工作目录：${target.cwd}`, `Already in directory: ${target.cwd}`);
+						options.frames.flush(false);
+						return;
+					}
+					await switchWorkspace(target);
+				})
+				.catch((error: unknown) => {
+					// 失败也要出帧（老实现同口径：progress 的 error 支 + 上层自己发 notice），错误原样上抛。
+					const { text, textEn } = workspaceSwitchFailure(error);
+					options.progress?.("cwd", path.trim(), "error", text, textEn);
+					throw error;
 				});
-				await commit(target);
-			});
 		},
 
 		async setWorkspaceRoots(roots?: string[]): Promise<void> {

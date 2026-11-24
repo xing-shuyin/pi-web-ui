@@ -9,12 +9,14 @@ function options(extra: { attach?: boolean } = {}) {
 }
 
 describe("core/app · 引擎开关", () => {
-	it("只认 core，其余一律 legacy（未知值不能把用户带到未完成的实现上）", () => {
-		expect(resolvePiEngineMode({})).toBe("legacy");
-		expect(resolvePiEngineMode({ [PI_ENGINE_ENV]: "" })).toBe("legacy");
+	it("默认 keel（core），只有显式 legacy 才回老实现", () => {
+		expect(resolvePiEngineMode({})).toBe("core");
+		expect(resolvePiEngineMode({ [PI_ENGINE_ENV]: "" })).toBe("core");
 		expect(resolvePiEngineMode({ [PI_ENGINE_ENV]: "legacy" })).toBe("legacy");
-		expect(resolvePiEngineMode({ [PI_ENGINE_ENV]: " COR " })).toBe("legacy");
+		expect(resolvePiEngineMode({ [PI_ENGINE_ENV]: " LEGACY " })).toBe("legacy");
 		expect(resolvePiEngineMode({ [PI_ENGINE_ENV]: " CORE " })).toBe("core");
+		// 未知值不能把用户带到「都得重新学」的另一套语义上：回默认（core）。
+		expect(resolvePiEngineMode({ [PI_ENGINE_ENV]: "nyan" })).toBe("core");
 	});
 });
 
@@ -70,6 +72,7 @@ describe("core/app · CoreEngine 生命周期", () => {
 		await engine.attach("b", () => {});
 		expect(engine.activeConversations()).toBe(0);
 		expect(engine.pendingMessages()).toBe(0);
-		expect(a.activeConversationId?.()).toBeUndefined();
+		// 连接期先建一条空白对话（老 `ClientSession.create` 的第一条）：活动对话不为空，但在跑/排队的计数仍是 0。
+		expect(a.activeConversationId?.()).toBe("c-1");
 	});
 });

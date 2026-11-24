@@ -15,4 +15,6 @@ export interface ConversationMeta {
 	lastActiveAt: number;
 	parentId?: ConversationId;
 	sessionFile?: SessionFile;
+	/** 临时对话：会话开在内存里（不落 `.jsonl`），转正（`persist_conversation`）后才删掉标记。 */
+	ephemeral?: boolean;
 }

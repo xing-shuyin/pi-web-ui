@@ -1,10 +1,11 @@
 import type { DispatchSession, EngineService, TerminalManagerLike } from "../engine-service.js";
-import type { ServerMessage, UiServiceInfo } from "../protocol.js";
+import type { ServerMessage } from "../protocol.js";
 import { toServiceInfo, launchOrigin } from "../launch-origin.js";
 import { join as joinPath, resolve as resolveFsPath } from "node:path";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
 import type { ModelAdminPort, ModelAdminSinks } from "../contracts/model-admin.js";
-import type { InterruptedRunRecord, SettingsStorePort } from "../contracts/settings-store.js";
+import type { SettingsStorePort } from "../contracts/settings-store.js";
+import { QuiesceRejectedError } from "../contracts/quiesce.js";
 import type { PluginToolSyncPort } from "../contracts/plugin.js";
 import type { PluginAgentToolFilter } from "../adapters/tools/plugin-agent-tools.js";
 import { PluginToolsBinder } from "./plugin-tools-binder.js";
@@ -39,6 +40,16 @@ import { resolvePiEngineAttach } from "./engine-mode.js";
 import { resolveServerLang, type ServerLang } from "../i18n.js";
 import { createHostFaces, type HostFaceFactories } from "./host-faces.js";
 import { BashKills } from "../domains/background/index.js";
+import { saveInterruptedRuns } from "./interrupted-runs.js";
+import { activeConversationsOf, pendingMessagesOf, serviceStatusOf } from "./engine-status.js";
+import { initializeConnection } from "./connection-init.js";
+import {
+	applyPluginAgentTools,
+	applyPluginCommandCatalog,
+	pluginToolFilter,
+	refreshBackgroundServers,
+	type PluginRefreshHost,
+} from "./plugin-refresh.js";
 
 export { CoreEngineNotReadyError };
 /** 宿主面形状（sinks / 工厂表）住在 `host-faces.ts`，这里只做转发，宿主的 import 路径不变。 */
@@ -102,26 +113,8 @@ const systemClock: ClockPort = {
 	},
 };
 
-/**
- * 「此刻还在跑、且该被续跑」的对话 → 中断记录（老实现 `ClientSession.streamingSummaries()` 同口径）：
- * 只收正在跑的、不是子代理/子会话的对话——子代理由运行账本自己重启对账，当成普通标签页重开会重跑工具。
- * `sessionFile` 缺省就不带这一个键（续跑链路按它精确认领，空串与缺失在那边不等价）。
- */
-function interruptedRunsOf(runtime: ClientRuntime): InterruptedRunRecord[] {
-	const at = Date.now();
-	const out: InterruptedRunRecord[] = [];
-	for (const conv of runtime.registry.list()) {
-		if (conv.phase !== "running") continue;
-		if (conv.meta.kind === "subagent" || conv.meta.parentId) continue;
-		out.push({
-			title: conv.meta.title,
-			cwd: conv.meta.cwd,
-			at,
-			...(conv.meta.sessionFile ? { sessionFile: conv.meta.sessionFile } : {}),
-		});
-	}
-	return out;
-}
+/** 一条连接的帧出口（老实现的 `SinkDeliver`）：只认「往哪条 socket 发」。 */
+type FrameSender = (msg: ServerMessage) => void;
 
 /**
  * 新树的对外门面：只持有 EngineService 的生命周期与按客户端的运行时。
@@ -151,8 +144,12 @@ export class CoreEngine implements EngineService {
 	private readonly projectSource: ReturnType<typeof createProjectSource>;
 	/** 进程级模型/供应商管理面：一次引擎一份（老实现也是进程级），所有客户端共用。 */
 	private modelAdmin: ModelAdminPort | undefined;
-	/** 每个客户端的帧出口（`emit` 要广播时用）。 */
-	private readonly senders = new Map<string, (msg: ServerMessage) => void>();
+	/** 每个客户端的帧出口（`emit` 要广播时用）：**只放最新的那一个**，重连就换掉（老实现每 sink 一份基线）。 */
+	private readonly senders = new Map<string, FrameSender>();
+	/** 每个客户端此刻还活着的 socket（老实现 `sinks` 账）：最后一个走了才拆运行时。 */
+	private readonly sockets = new Map<string, Set<FrameSender>>();
+	/** 连接期初始态的重推口（老 `attachSink()` 那一次整包推）：重连时原样再跑一次。 */
+	private readonly connectFrames = new Map<string, () => void>();
 	/** 插件工具与会话的绑定账（开会话时装什么 / 目录变了怎么跟上）：一份账在本进程内，与 runtime 同寿命。 */
 	private readonly pluginTools = new PluginToolsBinder(() => this.options.pluginToolSync?.());
 
@@ -182,12 +179,23 @@ export class CoreEngine implements EngineService {
 		return this.modelAdmin;
 	}
 
-	async attach(clientId: string, send: (msg: ServerMessage) => void): Promise<DispatchSession> {
+	async attach(clientId: string, send: FrameSender): Promise<DispatchSession> {
 		if (!(this.options.attach ?? resolvePiEngineAttach())) throw new CoreEngineNotReadyError("attach");
 		const existing = this.runtimes.get(clientId);
-		if (existing) return existing.handlers();
-		this.senders.set(clientId, send);
-		const transport: TransportPort = { send, isClosed: () => !this.runtimes.has(clientId) };
+		if (existing) {
+			// 同 clientId 重连（刷新 / 重开标签页）：换到新 socket 出帧（旧 socket 不再收到帧），
+			// 并把连接期初始态重推一遍——新连接没有任何基线（老实现每 sink 一份 `SnapshotChannel`）。
+			this.bindSender(clientId, send);
+			this.connectFrames.get(clientId)?.();
+			return existing.handlers();
+		}
+		// 排空期只拒**新建**（老实现同一处：`agent-service-daemon.ts` 的 `if (this.quiesced) throw`）；
+		// 已持有运行时的客户端照常重连——排空要能观察存量，不该把正在看的页面锁在外面。
+		if (this.isQuiesced()) throw new QuiesceRejectedError("新连接被拒绝，请等服务器恢复后重试");
+		this.bindSender(clientId, send);
+		/** 一帧发给这个连接：走 `senders` 现取，重连换过 socket 之后旧 socket 就不会再收到帧。 */
+		const deliver = (msg: ServerMessage): void => this.senders.get(clientId)?.(msg);
+		const transport: TransportPort = { send: deliver, isClosed: () => !this.runtimes.has(clientId) };
 		const unsubscribers = new Map<string, () => void>();
 		const terminalHost = createTerminalHost({
 			transport,
@@ -312,7 +320,8 @@ export class CoreEngine implements EngineService {
 								runtime,
 								sessions,
 								resolveModel: (provider, id) => faces.resolveModel(provider, id),
-								emit: send,
+								// 目标运行的帧也走本连接的出口（重连后落到新 socket，不是建面时那个）。
+								emit: deliver,
 								isDisposed: () => this.runtimes.get(clientId) !== runtime,
 								getLang: () => this.langOf(clientId),
 								...(hooks?.setPlan ? { setPlan: hooks.setPlan } : {}),
@@ -333,6 +342,7 @@ export class CoreEngine implements EngineService {
 			// 宿主面（端口 + 帧出口 + 子代理）在下面统一装配：全部用 thunk 懒取，避免与运行时成环。
 			settingsFrame: () => faces.settingsFrame,
 			slashCommands: () => faces.slashCommands,
+			attachments: () => faces.attachments,
 			files: () => faces.files,
 			nativeCli: () => faces.nativeCli,
 			bots: () => faces.bots,
@@ -430,13 +440,42 @@ export class CoreEngine implements EngineService {
 		});
 		subagents = faces.subagents;
 		this.runtimes.set(clientId, runtime);
+		// A + K + B：连接期建首条空白对话、挂 quiesce 门、推初始态帧（重连时同一份重推）。
+		this.connectFrames.set(
+			clientId,
+			await initializeConnection({
+				runtime,
+				faces,
+				sessions,
+				modelAdmin: this.modelAdmin,
+				stateStore: this.stateStore,
+				clientId,
+				emit: deliver,
+				isQuiesced: () => this.isQuiesced(),
+			}),
+		);
 		return runtime.handlers();
 	}
 
-	detach(clientId: string, _send: (msg: ServerMessage) => void): void {
+	/** 记一个活着的帧出口：最新那一个负责收帧，旧的只留账（拆运行时要看还有没有活 socket）。 */
+	private bindSender(clientId: string, send: FrameSender): void {
+		const sockets = this.sockets.get(clientId);
+		if (sockets) sockets.add(send);
+		else this.sockets.set(clientId, new Set([send]));
+		this.senders.set(clientId, send);
+	}
+
+	detach(clientId: string, send: FrameSender): void {
+		const sockets = this.sockets.get(clientId);
+		if (sockets?.delete(send) && sockets.size > 0) {
+			// 还有别的 socket 活着：只把出口让给剩下的那个，运行时不动（老 `detachSink()` 也只收自己那份 sink）。
+			if (this.senders.get(clientId) === send) this.senders.set(clientId, [...sockets].at(-1)!);
+			return;
+		}
+		this.sockets.delete(clientId);
+		this.connectFrames.delete(clientId);
 		const runtime = this.runtimes.get(clientId);
-		if (!runtime) return;
-		runtime.dispose();
+		if (runtime) runtime.dispose();
 		this.runtimes.delete(clientId);
 		this.senders.delete(clientId);
 	}
@@ -451,26 +490,17 @@ export class CoreEngine implements EngineService {
 		this.recordInterruptedRuns();
 		for (const runtime of this.runtimes.values()) runtime.dispose();
 		this.runtimes.clear();
+		this.senders.clear();
+		this.sockets.clear();
+		this.connectFrames.clear();
 		this.projectSource.close();
 		this.socketCount = 0;
 		this.quiescedSince = undefined;
 	}
 
-	/**
-	 * 中断记账：把「此刻还在跑」的对话写进客户端状态的续跑列表（`client-state.json` 的 `interrupted`）。
-	 * 口径与老实现 `AgentService.recordInterruptedRuns()` 一致（只记正在跑、非子代理/子会话的对话）。
-	 * 尽力而为：写失败一律吞掉（老实现整段 try/catch），记账失败不该把停机流程拖住。
-	 */
+	/** 中断记账：把「此刻还在跑」的对话写进 `client-state.json` 的 `interrupted`（口径见 `interrupted-runs.ts`）。 */
 	recordInterruptedRuns(): void {
-		const save = this.stateStore.saveInterrupted;
-		if (!save) return;
-		for (const [clientId, runtime] of this.runtimes) {
-			const runs = interruptedRunsOf(runtime);
-			if (runs.length === 0) continue;
-			try {
-				save.call(this.stateStore, clientId, runs);
-			} catch {}
-		}
+		saveInterruptedRuns(this.stateStore, this.runtimes);
 	}
 
 	noteSocketOpen(): void {
@@ -494,95 +524,67 @@ export class CoreEngine implements EngineService {
 	}
 
 	quiesceInfo(): { quiesced: boolean; quiescedSince?: number } {
-		return this.quiescedSince === undefined
-			? { quiesced: false }
-			: { quiesced: true, quiescedSince: this.quiescedSince };
+		const at = this.quiescedSince;
+		return at === undefined ? { quiesced: false } : { quiesced: true, quiescedSince: at };
 	}
 
-	serviceStatus(): {
-		pid: number;
-		version: string;
-		cwd: string;
-		quiesced: boolean;
-		quiescedSince?: number;
-		connectedClients: number;
-		activeConversations: number;
-		pendingMessages: number;
-		service: UiServiceInfo | null;
-	} {
-		return {
-			pid: process.pid,
+	serviceStatus(): ReturnType<EngineService["serviceStatus"]> {
+		return serviceStatusOf({
 			version: this.options.version,
 			cwd: this.cwd,
-			...this.quiesceInfo(),
+			quiesce: this.quiesceInfo(),
 			connectedClients: this.socketCount,
-			activeConversations: this.activeConversations(),
-			pendingMessages: this.pendingMessages(),
+			runtimes: this.runtimes,
 			service: toServiceInfo(launchOrigin()),
-		};
+		});
 	}
 
 	activeConversations(): number {
-		let total = 0;
-		for (const runtime of this.runtimes.values()) total += runtime.streamingCount();
-		return total;
+		return activeConversationsOf(this.runtimes);
 	}
 
 	pendingMessages(): number {
-		let total = 0;
-		for (const runtime of this.runtimes.values()) total += runtime.pendingCount();
-		return total;
+		return pendingMessagesOf(this.runtimes);
 	}
 
-	/**
-	 * 插件目录变了（装上/卸下、MCP 项目工具变了）：把新一批同步进**已开的**会话。
-	 * 不能只靠「开会话时装配」：SDK 的会话工具表是创建期定的，长对话会一直拿着旧目录
-	 * （老实现 `applyPluginAgentTools()` 就是对每个客户端会话 `refreshPluginTools()`）。
-	 * 同步口没注入 = 只影响已开的会话，下一轮开会话自然跟上（不抛、不假成功）。
-	 */
+	/** 插件刷新要的窄面（运行态 / 账 / 钩子）：`plugin-refresh.ts` 只认这几个字段。 */
+	private get pluginHost(): PluginRefreshHost {
+		return {
+			runtimes: this.runtimes,
+			pluginTools: this.pluginTools,
+			...(this.pluginToolsProvider ? { pluginToolsProvider: this.pluginToolsProvider } : {}),
+			stateStore: this.stateStore,
+		};
+	}
+
+	/** 插件目录变了：把新一批同步进**已开的**会话（细目见 `plugin-refresh.ts`）。 */
 	applyPluginAgentTools(): void {
-		for (const [clientId, runtime] of this.runtimes) {
-			for (const conv of runtime.registry.list()) {
-				const opened = runtime.options.sessions?.get(conv.id);
-				if (!opened) continue;
-				this.pluginTools.syncInto(clientId, conv.id, opened.session, this.pluginToolFilter(clientId, conv));
-			}
-		}
+		applyPluginAgentTools(this.pluginHost);
 	}
 
 	/** 插件命令目录变了：重算并下发一帧 `slash_commands`（老实现 `pushSlashCommands()`，重算在宿主）。 */
 	applyPluginCommandCatalog(): void {
-		for (const runtime of this.runtimes.values()) void runtime.options.slashCommands?.()?.push();
+		applyPluginCommandCatalog(this.pluginHost);
 	}
 
-	/**
-	 * 插件常驻任务变了：重投影一帧后台任务面板（老实现 `refreshBgTasks()` = `bg.push()`，不重扫端口）。
-	 * 面板上「插件」那一类行由宿主适配器的 `pluginTasks` 源给（见 `attach` 传给 `createHostFaces` 的钩子）。
-	 */
+	/** 插件常驻任务变了：重投影一帧后台任务面板（`bg_servers`，不重扫端口）。 */
 	refreshBackgroundServers(): void {
-		for (const runtime of this.runtimes.values()) runtime.options.background?.()?.refreshBgTasks();
+		refreshBackgroundServers(this.pluginHost);
+	}
+
+	/** 一条对话要装哪些插件工具：目录 + 预设 + 两道关掉名单（口径在 `plugin-refresh.ts`）。 */
+	private pluginToolFilter(clientId: string, conv: Conversation): PluginAgentToolFilter {
+		return pluginToolFilter(this.pluginHost, clientId, conv);
 	}
 
 	/**
-	 * 一条对话要装哪些插件工具：目录（`pluginToolsProvider` 按 cwd）+ 预设 + 两道关掉名单。
-	 * 三处口径全在 `enabledPluginAgentToolDefs` 里，这里只负责「值从哪儿取」。
-	 * 类型上的 `unknown[]` → `PluginAgentTool[]` 是收窄不是搬参数：引擎契约故意不认六十个成员的插件宿主，
-	 * 形状在 `adapters/tools/plugin-agent-tools.ts` 那边收。
+	 * 换语言：整件事归这一条连接的设置面（老 `ClientSession.setLocale()`）——落盘 locale，
+	 * 同语种只重发一帧 `settings_state`，换语族才重应用。门面只递 code，不另写一份分支。
 	 */
-	private pluginToolFilter(clientId: string, conv: Conversation): PluginAgentToolFilter {
-		const settings = this.stateStore.getSettingsSnapshot(clientId);
-		const preset = this.runtimes.get(clientId)?.options.presets?.agentPresetOf(conv.id);
-		return {
-			tools: (this.pluginToolsProvider?.(conv.meta.cwd) ?? []) as PluginAgentToolFilter["tools"],
-			...(preset ? { preset } : {}),
-			disabledPluginTools: settings.disabledPluginTools,
-			disabledPlugins: settings.disabledPlugins,
-		};
-	}
-
 	async setLocale(clientId: string, locale: string): Promise<void> {
 		const code = locale.trim().slice(0, 16);
-		if (code) this.langs.set(clientId, resolveServerLang(code));
+		if (!code) return;
+		await this.runtimes.get(clientId)?.handlers().setLocale(code);
 	}
 
 	/** 当前语言：优先本次会话里刚设的，否则从 `client-state` 的 locale 推导（与老实现同口径）。 */

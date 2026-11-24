@@ -17,8 +17,15 @@ export interface OpenSessionOptions {
 	agentDir: string;
 	/** 要接着写的那份转录；缺省 = 在 `cwd` 下新建会话。 */
 	sessionFile?: string;
-	/** 本次要注册的工具名（由 `domains/tools` 的装载域给出）；缺省 = SDK 自己的默认集。 */
+	/**
+	 * 本次要注的工具名（由 `domains/tools` 的装载域给出）；缺省 = SDK 自己的默认集。
+	 */
 	tools?: readonly string[];
+	/**
+	 * 临时对话：会话开在内存里（`SessionManager.inMemory()`），一条 `.jsonl` 都不写。
+	 * 转正（`persist_conversation`）时 `persistSessionFile()` 会把内存条目整份写成正式转录。
+	 */
+	ephemeral?: boolean;
 	/**
 	 * 宿主自定义工具（审批、提问、子代理等能力的唯一入口）；缺省 = 不注册。
 	 * 类型故意收成 `unknown`：app 层不许依赖 SDK，形状在这里收回 `ToolDefinition`。
@@ -67,7 +74,9 @@ async function isExistingFile(path: string): Promise<boolean> {
 	}
 }
 
-async function openSessionManager(cwd: string, sessionFile: string | undefined): Promise<SessionManager> {
+async function openSessionManager(cwd: string, sessionFile: string | undefined, ephemeral?: boolean): Promise<SessionManager> {
+	// 临时对话：不建转录文件（SDK 只在真正 append 时落盘，`inMemory()` 连这个都关掉）。
+	if (ephemeral && sessionFile === undefined) return SessionManager.inMemory(cwd);
 	if (sessionFile === undefined) return SessionManager.create(cwd);
 	const existing = await isExistingFile(sessionFile);
 	if (!existing) throw new Error("转录文件不存在，已拒绝在别处新建来假装打开（fail-closed）");
@@ -127,7 +136,7 @@ export async function openTurnSession(opts: OpenSessionOptions): Promise<OpenedS
 
 	let manager: SessionManager;
 	try {
-		manager = await openSessionManager(cwd, sessionFile);
+		manager = await openSessionManager(cwd, sessionFile, opts.ephemeral);
 	} catch (error) {
 		throw new OpenSessionError("open-transcript", cwd, sessionFile, error);
 	}

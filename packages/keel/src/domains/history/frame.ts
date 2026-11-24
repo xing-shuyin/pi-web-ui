@@ -102,6 +102,8 @@ export interface ConversationFrameFact {
 	updatedAt?: number;
 	/** 已有历史行代表它（`conversationRowKind` 的判据）：缺省 `false` = 宁可多一行，不让对话凭空消失。 */
 	hasHistoryRow?: boolean;
+	/** 临时对话（不落盘）：一直占「运行的对话」一行，转正后才交给历史行。 */
+	isEphemeral?: boolean;
 	/**
 	 * CLI 对话的实时投影（配置 / 终端 id / 状态）：左栏靠它把运行中的 CLI 行画成在跑 / 等你回话。
 	 * 不是 CLI 对话就不给（不编默认相位）。
@@ -132,6 +134,9 @@ export interface ConversationsFrameInput {
  */
 function inRunningList(fact: ConversationFrameFact, state: ConversationFrameState, activeId: string): boolean {
 	if (state.pinned || state.listed) return true;
+	// 临时对话是用户显式开的「草稿对话」：老实现里它在切换时被保留并记成 `listed`（`displaceActive`），
+	// 所以切走之后也继续占一行，直到转正（有转录）或被关掉。
+	if (fact.isEphemeral) return true;
 	if (fact.isStreaming || fact.completionPending || fact.hasQuestion) return true;
 	if (fact.id !== activeId) return false;
 	if (fact.title !== DEFAULT_CONV_TITLE) return true;
@@ -162,9 +167,11 @@ function summaryOfConversation(
 			isSubagent,
 			parentId: fact.parentId,
 			pinned: state.pinned,
+			isEphemeral: fact.isEphemeral === true,
 			hasHistoryRow: fact.hasHistoryRow === true,
 			forceOpen,
 		}),
+		...(fact.isEphemeral ? { isEphemeral: true as const } : {}),
 		...(fact.parentId ? { parentId: fact.parentId } : {}),
 		...(fact.completionPending ? { completionPending: true as const } : {}),
 		...(fact.hasQuestion ? { hasQuestion: true as const } : {}),

@@ -43,6 +43,10 @@ export function buildSnapshotState(rev: number, env: SnapshotEnvView, conv: Snap
 		...(env.desktopDir ? { desktopDir: env.desktopDir } : {}),
 		...(env.capabilities ? { engineCapabilities: env.capabilities } : {}),
 		...(conv.sessionFile ? { sessionFile: conv.sessionFile } : {}),
+		// 临时对话标记：老实现 `isEphemeral` 每帧都带（提示条据此渲染），缺省 `false` 不省略。
+		isEphemeral: conv.isEphemeral === true,
+		// 计数投影：视图给了就用（宿主认得分类 / 软上限），没给就回落空值（`EMPTY_STATS`）。
+		stats: conv.stats ?? EMPTY_STATS,
 		messages: [...conv.messages],
 		streamingMessage: conv.streamingMessage,
 		isStreaming: conv.isStreaming,

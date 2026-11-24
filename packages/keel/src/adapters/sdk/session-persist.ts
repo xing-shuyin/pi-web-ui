@@ -78,3 +78,13 @@ export async function persistSessionFile(input: PersistSessionFileInput): Promis
 	manager.flushed = true;
 	return sessionFile;
 }
+
+/**
+ * 会话基准目录（`resolveWorkspaceSessionDir(dataDir, cwd)`）→ 真正放 `.jsonl` 的项目会话目录。
+ *
+ * 这是历史列表 / 会话检索的根：老实现每次 `loadSessionInfos` 都用同一条公式现算
+ * （`SessionManager.create(sessionBaseDir).getSessionDir()`），所以「本进程还没开过会话」也该算得出来。
+ */
+export function sessionDirOfBase(sessionBaseDir: string): string {
+	return SessionManager.create(sessionBaseDir).getSessionDir();
+}

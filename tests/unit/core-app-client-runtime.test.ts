@@ -121,7 +121,8 @@ describe("app · ClientRuntime 组合根", () => {
 			onTurnError: (_id, err) => void errors.push(err),
 		});
 		runtime.handlers().prompt("hi");
-		await Promise.resolve();
+		// prompt 现在要先过「斜杠命令」与「附件」两道闸（都是 async）：等那条链走完再断言。
+		await new Promise((r) => setTimeout(r, 0));
 		expect(errors).toHaveLength(1);
 	});
 
@@ -299,7 +300,6 @@ describe("app · 连接期帧", () => {
 
 	it("会话文件路径喂进 history 根，续扫状态复用同一份", () => {
 		const { runtime } = withFrames();
-		expect(runtime.historyRoot()).toBeUndefined();
 		runtime.noteSessionFile("/agent/sessions/--c--/s1.jsonl");
 		expect(runtime.historyRoot()).toBe("/agent/sessions/--c--");
 		expect(runtime.historyState()).toBe(runtime.historyState());
@@ -426,5 +426,42 @@ describe("app · 三个连接期零碎 handler", () => {
 		const notice = transport.sent.find((m) => m.type === "notice") as { text: string; textEn?: string } | undefined;
 		expect(notice?.text).toBe("hello");
 		expect(notice?.textEn).toBe("hello-en");
+	});
+});
+
+describe("app · 斜杠命令（D）：命中就不进模型", () => {
+	function slashRuntime(handled: boolean) {
+		const exec = vi.fn(async () => handled);
+		const feedTurn = vi.fn(async () => {});
+		const { runtime, transport } = makeRuntime({ slashCommands: () => ({ push: () => {}, exec }) });
+		// 喂轮出口只许走 `TurnRunner`：这里直接盯「有没有真的喂进去」。
+		runtime.feedTurn = feedTurn;
+		return { runtime, transport, exec, feedTurn };
+	}
+
+	it("命令命中：出帧口 flushed，文本不进模型", async () => {
+		const { runtime, transport, exec, feedTurn } = slashRuntime(true);
+		await runtime.handlers().prompt("/cwd /work");
+		expect(exec).toHaveBeenCalledTimes(1);
+		// 命令解析与语义都在宿主端口：内核把原文和动作一起递过去。
+		const [text, actions] = exec.mock.calls[0] as unknown as [string, { clientId: string }];
+		expect(text).toBe("/cwd /work");
+		expect(actions.clientId).toBe("client-1");
+		expect(feedTurn).not.toHaveBeenCalled();
+	});
+
+	it("不是命令：原样喂给模型", async () => {
+		const { runtime, exec, feedTurn } = slashRuntime(false);
+		await runtime.handlers().prompt("你好");
+		expect(exec).toHaveBeenCalledTimes(1);
+		expect(feedTurn).toHaveBeenCalledWith("你好", undefined);
+	});
+
+	it("端口没接：文本照常喂给模型（不静默吞消息）", async () => {
+		const { runtime } = makeRuntime();
+		const feedTurn = vi.fn(async () => {});
+		runtime.feedTurn = feedTurn;
+		await runtime.handlers().prompt("/help");
+		expect(feedTurn).toHaveBeenCalledWith("/help", undefined);
 	});
 });

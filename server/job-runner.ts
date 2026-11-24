@@ -412,12 +412,14 @@ export class JobRegistry {
 	}
 
 	/** 服务器退出前收场：杀整棵进程树，别留孤儿。 */
-	dispose(): void {
+	async dispose(): Promise<void> {
 		this.disposed = true;
+		const stops: Promise<boolean>[] = [];
 		for (const record of this.jobs.values()) {
 			if (record.timer) clearInterval(record.timer);
-			if (record.pid > 1) void record.stop().catch(() => {});
+			if (record.pid > 1) stops.push(record.stop().catch(() => false));
 		}
 		this.jobs.clear();
+		await Promise.allSettled(stops);
 	}
 }

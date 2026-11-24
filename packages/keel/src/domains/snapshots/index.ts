@@ -20,3 +20,4 @@ export {
 	type SnapshotPublisherOptions,
 } from "./publisher.js";
 export { buildSnapshotState, createSnapshotBuilders } from "./builders.js";
+export { snapshotFrameKey } from "./content-key.js";

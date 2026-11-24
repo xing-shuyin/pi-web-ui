@@ -13,6 +13,8 @@ export interface RebindFrames {
 	flush(forceFull?: boolean): void;
 	pushSessions?(): void | Promise<void>;
 	pushProjects?(): void | Promise<void>;
+	/** 活动对话换了：`conversations` 帧（运行列表 / 当前对话）必须同步刷，别让客户端等下一条命令。 */
+	pushConversations?(): void;
 }
 
 export type RebindNotice = (level: "info" | "warning" | "error", text: string, textEn: string) => void;
@@ -107,6 +109,7 @@ export async function rebindSession(ctx: RebindContext, request: RebindRequest):
 	ctx.registry.activate(candidate.id);
 	ctx.onActivated?.(candidate.id);
 	ctx.frames.flush(true);
+	ctx.frames.pushConversations?.();
 	void ctx.frames.pushSessions?.();
 	void ctx.frames.pushProjects?.();
 	return { conversation: candidate, ...(previous && previous.id !== candidate.id ? { displaced: previous } : {}) };

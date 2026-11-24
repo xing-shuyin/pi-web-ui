@@ -55,10 +55,12 @@ import { sdkCopies, sdkOriginNote } from "./sdk-origin.js";
 import { PROTOCOL_VERSION } from "./protocol-version.js";
 import { AgentService, workspacePath, QuiesceRejectedError, ClientSession } from "./agent-service.js";
 import { CoreEngine } from "../packages/keel/src/app/core-engine.js";
+import { isQuiesceRejection } from "../packages/keel/src/contracts/quiesce.js";
 import { resolvePiEngineMode } from "../packages/keel/src/app/engine-mode.js";
 import { createCoreModelAdmin } from "./core-model-adapter.js";
 import { createCoreSettingsAdapter } from "./core-settings-adapter.js";
 import { createCoreSlashCommands } from "./core-commands-adapter.js";
+import { createCoreAttachments } from "./core-attachments-adapter.js";
 import { createCoreFiles } from "./core-files-adapter.js";
 import { createCoreScmCommitMessage } from "./core-scm-adapter.js";
 import { createCoreWorkspace } from "./core-workspace-adapter.js";
@@ -1660,6 +1662,8 @@ function ensureEngine(engine: EngineId): EngineService {
 						remoteOpsOf: (cwd) => (isRemoteWorkspaceUri(cwd) ? createRemoteSdkOperations(cwd) : undefined),
 						settingsFrame: (sinks) => createCoreSettingsAdapter({ ...sinks, stateStore: sharedStateStore }),
 						slashCommands: (sinks) => createCoreSlashCommands(sinks),
+						// 附件：解析 / 落盘 / `<file>` 旁注全在宿主 `server/attachments.ts`，内核只交端口。
+						attachments: () => createCoreAttachments(),
 						files: (sinks) => createCoreFiles(sinks),
 						// SCM 提交信息：git 采集与一次独立推断都在宿主叶子（`server/scm-commitmsg.ts`），
 						// 模型运行时 / 凭证 / 提示词口径全归宿主；内核只转发并回一帧。
@@ -3438,7 +3442,7 @@ wss.on("connection", (ws) => {
 						service.detach(cid, send);
 					}
 					clearTimeout(slowTimer);
-					if (err instanceof QuiesceRejectedError) {
+					if (err instanceof QuiesceRejectedError || isQuiesceRejection(err)) {
 						closed = true;
 						if (ws.readyState === WebSocket.OPEN) {
 							try {

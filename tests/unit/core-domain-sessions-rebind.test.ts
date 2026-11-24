@@ -17,6 +17,9 @@ interface Harness {
 	opened: string[];
 	closed: string[];
 	flushes: (boolean | undefined)[];
+	/** 每次 flush 时的工作区（验「先把状态切过去，再出帧」）。 */
+	flushedCwds: string[];
+	conversationsPushed: number;
 	sessionsPushed: number;
 	/** 让下一次 `ensure` 失败（模拟 SDK 建不起来）。 */
 	failNextEnsure: boolean;
@@ -31,6 +34,8 @@ function harness(startCwd = "/work"): Harness {
 		opened: [],
 		closed: [],
 		flushes: [],
+		flushedCwds: [],
+		conversationsPushed: 0,
 		sessionsPushed: 0,
 		failNextEnsure: false,
 		engineRoots: { cwd: startCwd, roots: [] },
@@ -59,8 +64,12 @@ function harness(startCwd = "/work"): Harness {
 			close: (id) => void state.closed.push(id),
 		},
 		frames: {
-			flush: (forceFull) => void state.flushes.push(forceFull),
+			flush: (forceFull) => {
+				state.flushes.push(forceFull);
+				state.flushedCwds.push(state.engineRoots.cwd);
+			},
 			pushSessions: () => void (state.sessionsPushed += 1),
+			pushConversations: () => void (state.conversationsPushed += 1),
 		},
 		createConversation: (init) => {
 			const conv = conversation(init);
@@ -150,6 +159,8 @@ describe("createWorkspaceSwitcher · setCwd / setWorkspaceRoots", () => {
 		const h = harness();
 		const notices: string[] = [];
 		const changed: { cwd: string; roots: readonly string[] }[] = [];
+		const progress: string[] = [];
+		let filesRefreshed = 0;
 		const port = createWorkspaceSwitcher({
 			registry: h.registry,
 			sessions: h.ctx.sessions,
@@ -172,8 +183,10 @@ describe("createWorkspaceSwitcher · setCwd / setWorkspaceRoots", () => {
 				onChanged: (cwd, roots) => void changed.push({ cwd, roots }),
 			},
 			notice: (level, text) => void notices.push(`${level}:${text}`),
+			progress: (kind, target, phase, text) => void progress.push(`${kind}/${phase}:${text}`),
+			refreshFiles: () => void (filesRefreshed += 1),
 		});
-		return { port, h, store, notices, changed };
+		return { port, h, store, notices, changed, progress, filesRefreshed: () => filesRefreshed };
 	}
 
 	it("setCwd：宿主解析出的目标成为新工作区，并驱动一次重绑 + 宿主收尾", async () => {
@@ -182,6 +195,25 @@ describe("createWorkspaceSwitcher · setCwd / setWorkspaceRoots", () => {
 		expect(h.engineRoots.cwd).toBe("/abs/x");
 		expect(h.opened).toHaveLength(1);
 		expect(changed).toStrictEqual([{ cwd: "/abs/x", roots: [] }]);
+	});
+
+	it("setCwd：先把工作区切过去再刷帧（帧里就是新 cwd）+ 进度收口 + 文件树重列 + 运行列表帧", async () => {
+		const { port, h, progress, filesRefreshed } = switcher();
+		await port.setCwd("/x");
+		// 重绑末尾那一帧是客户端看到新工作区的机会：它必须是「新 cwd」，不能是旧目录。
+		expect(h.flushedCwds).toStrictEqual(["/abs/x"]);
+		expect(progress).toStrictEqual(["cwd/done:已切换到工作目录：/abs/x"]);
+		expect(h.conversationsPushed).toBe(1);
+		expect(filesRefreshed()).toBe(1);
+	});
+
+	it("setCwd 失败：工作区状态回滚，并把客户端拨回旧目录", async () => {
+		const { port, h } = switcher();
+		h.failNextEnsure = true;
+		await expect(port.setCwd("/x")).rejects.toThrow("SDK 建不起来");
+		expect(h.engineRoots.cwd).toBe("/work");
+		// 重绑自己发过一帧（带的是新 cwd）：回滚后必须补一帧旧目录。
+		expect(h.flushedCwds.at(-1)).toBe("/work");
 	});
 
 	it("setCwd 目标与当前一致：只发 info notice，不重绑", async () => {

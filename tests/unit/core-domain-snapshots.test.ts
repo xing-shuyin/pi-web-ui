@@ -192,14 +192,14 @@ describe("domains/snapshots · planSnapshot 决策", () => {
 });
 
 describe("domains/snapshots · SnapshotPublisher 出帧闸门", () => {
-	it("第一次 flush 出全量帧，rev 从 1 开始", () => {
+	it("第一次 flush 出全量帧，rev 从换对话那一次的版本号起", () => {
 		const { built, publisher, transport } = harness();
 		publisher.switchConversation("c1");
 		const planned = publisher.flush();
-		expect(planned).toEqual({ kind: "full", rev: 1, reason: "no-baseline" });
-		expect(built).toEqual([{ kind: "full", conversationId: "c1", rev: 1, reason: "no-baseline" }]);
-		expect(transport.frames).toEqual([{ type: "notice", level: "info", text: "full:1" }]);
-		expect(publisher.rev).toBe(1);
+		expect(planned).toEqual({ kind: "full", rev: 2, reason: "no-baseline" });
+		expect(built).toEqual([{ kind: "full", conversationId: "c1", rev: 2, reason: "no-baseline" }]);
+		expect(transport.frames).toEqual([{ type: "notice", level: "info", text: "full:2" }]);
+		expect(publisher.rev).toBe(2);
 	});
 
 	it("间隔到点后的第二次 flush 出增量，带 baseRev", () => {
@@ -208,10 +208,10 @@ describe("domains/snapshots · SnapshotPublisher 出帧闸门", () => {
 		publisher.flush();
 		clock.advance(60);
 		const planned = publisher.flush();
-		expect(planned).toEqual({ kind: "delta", rev: 2, reason: "interval" });
-		expect(built[1]).toEqual({ kind: "delta", conversationId: "c1", rev: 2, baseRev: 1, reason: "interval" });
+		expect(planned).toEqual({ kind: "delta", rev: 3, reason: "interval" });
+		expect(built[1]).toEqual({ kind: "delta", conversationId: "c1", rev: 3, baseRev: 2, reason: "interval" });
 		expect(transport.frames).toHaveLength(2);
-		expect(publisher.rev).toBe(2);
+		expect(publisher.rev).toBe(3);
 	});
 
 	it("未到间隔的 flush 被合并成 skip，不发帧也不推进 rev", () => {
@@ -219,9 +219,9 @@ describe("domains/snapshots · SnapshotPublisher 出帧闸门", () => {
 		publisher.switchConversation("c1");
 		publisher.flush();
 		clock.advance(10);
-		expect(publisher.flush()).toEqual({ kind: "skip", rev: 2, reason: "too-soon" });
+		expect(publisher.flush()).toEqual({ kind: "skip", rev: 3, reason: "too-soon" });
 		expect(transport.frames).toHaveLength(1);
-		expect(publisher.rev).toBe(1);
+		expect(publisher.rev).toBe(2);
 	});
 
 	it("没有任何变化时 flush 也 skip", () => {
@@ -229,9 +229,9 @@ describe("domains/snapshots · SnapshotPublisher 出帧闸门", () => {
 		publisher.switchConversation("c1");
 		publisher.flush();
 		clock.advance(1_000);
-		expect(publisher.flush({ changed: false })).toEqual({ kind: "skip", rev: 2, reason: "unchanged" });
+		expect(publisher.flush({ changed: false })).toEqual({ kind: "skip", rev: 3, reason: "unchanged" });
 		expect(transport.frames).toHaveLength(1);
-		expect(publisher.rev).toBe(1);
+		expect(publisher.rev).toBe(2);
 	});
 
 	it("连续 request 只排一个合并定时器，到点只出一帧", () => {
@@ -292,11 +292,12 @@ describe("domains/snapshots · SnapshotPublisher 出帧闸门", () => {
 		const { built, publisher, transport } = harness();
 		publisher.switchConversation("c1");
 		publisher.flush();
-		expect(publisher.flush({ changed: false })).toEqual({ kind: "skip", rev: 2, reason: "unchanged" });
-		expect(publisher.forceFull()).toEqual({ kind: "full", rev: 2, reason: "forced" });
+		// 出帧序号按**尝试**推进（老实现 `snapRev`）：跳过的尝试也消耗一个 rev，所以帧号会有间隙。
+		expect(publisher.flush({ changed: false })).toEqual({ kind: "skip", rev: 3, reason: "unchanged" });
+		expect(publisher.forceFull()).toEqual({ kind: "full", rev: 4, reason: "forced" });
 		expect(built).toEqual([
-			{ kind: "full", conversationId: "c1", rev: 1, reason: "no-baseline" },
-			{ kind: "full", conversationId: "c1", rev: 2, reason: "forced" },
+			{ kind: "full", conversationId: "c1", rev: 2, reason: "no-baseline" },
+			{ kind: "full", conversationId: "c1", rev: 4, reason: "forced" },
 		]);
 		expect(transport.frames).toHaveLength(2);
 	});
@@ -307,8 +308,8 @@ describe("domains/snapshots · SnapshotPublisher 出帧闸门", () => {
 		publisher.flush();
 		clock.advance(60);
 		publisher.switchConversation("c2");
-		expect(publisher.flush()).toEqual({ kind: "full", rev: 2, reason: "conversation-changed" });
-		expect(built[1]).toEqual({ kind: "full", conversationId: "c2", rev: 2, reason: "conversation-changed" });
+		expect(publisher.flush()).toEqual({ kind: "full", rev: 4, reason: "conversation-changed" });
+		expect(built[1]).toEqual({ kind: "full", conversationId: "c2", rev: 4, reason: "conversation-changed" });
 	});
 
 	it("通道已关时既不出帧也不推进 rev", () => {
@@ -326,9 +327,9 @@ describe("domains/snapshots · SnapshotPublisher 出帧闸门", () => {
 		publisher.switchConversation("c1");
 		publisher.flush();
 		clock.advance(499);
-		expect(publisher.flush()).toEqual({ kind: "skip", rev: 2, reason: "too-soon" });
+		expect(publisher.flush()).toEqual({ kind: "skip", rev: 3, reason: "too-soon" });
 		clock.advance(1);
-		expect(publisher.flush()).toEqual({ kind: "delta", rev: 2, reason: "interval" });
+		expect(publisher.flush()).toEqual({ kind: "delta", rev: 4, reason: "interval" });
 		expect(transport.frames).toHaveLength(2);
 	});
 });

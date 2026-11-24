@@ -12,6 +12,7 @@ import type { SessionListScanState } from "../session-list-scan.js";
 import type { DispatchSession } from "../engine-service.js";
 import type { ClientId } from "../contracts/ids.js";
 import type { PromptAttachment, WorktreeInfo } from "../protocol.js";
+import { DEFAULT_CLIENT_SETTINGS } from "../settings-schema.js";
 import { createProviderHandlers } from "../domains/providers/index.js";
 import { createSettingsHandlers } from "../domains/settings/index.js";
 import { createCommandHandlers } from "../domains/commands/index.js";
@@ -43,6 +44,7 @@ import { createEngineExtrasHandlersFor } from "./engine-extras-handlers.js";
 import { createUiBridgeHandlersFor } from "./ui-bridge-handlers.js";
 import type { SessionSurface } from "./session-surface.js";
 import type { ClientFrames, ClientRuntimeOptions } from "./client-runtime.js";
+import { createPromptEntry } from "./prompt-entry.js";
 
 /**
  * 分发表的装配面：`ClientRuntime` 用它认得的现成东西（选项、注册表、出帧闸、帧出口、工作区）
@@ -260,10 +262,11 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 			const opened = sessions.get(id);
 			return opened ? createSessionEditor(opened.session as unknown as EditSessionHost) : undefined;
 		},
-		// 重问只能走唯一喂轮出口（`TurnRunner.start` → `feed.ts` → `session-turns.ts`）。
-		reask: async (conv, text) => {
+		// 重问只能走唯一喂轮出口（`TurnRunner.start` → `feed.ts` → `session-turns.ts`）；附件与 `prompt` 同一条链。
+		reask: async (conv, text, attachments) => {
 			const opened = runtime.options.sessions?.get(conv.id);
 			if (!opened) throw new CoreEngineNotReadyError("turnEdits.reask");
+			await promptEntry.deliverAttachments(attachments, conv);
 			await runtime.turns.start(conv, opened.session, text);
 		},
 		whenIdle: (id) => runtime.turns.whenIdle(id),
@@ -285,6 +288,40 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 		openConversation: () => runtime.createConversation().id,
 		feed: (promptText) => runtime.feedTurn(promptText),
 		flushSnapshot: () => runtime.publisher.request(),
+	});
+
+	/**
+	 * 提示词入口（`prompt` / `new_chat` / 编辑重问共用）：斜杠命令、附件 asides、空白对话复用、出帧
+	 * 四条语义都在 `app/prompt-entry.ts` 一处；这里只把本运行时的现成东西递进去。
+	 */
+	const promptEntry = createPromptEntry({
+		clientId: runtime.options.clientId,
+		registry: runtime.registry,
+		isDisposed: () => runtime.isDisposed(),
+		...(runtime.options.sessions ? { sessions: runtime.options.sessions } : {}),
+		transport: runtime.options.transport,
+		publisher: runtime.publisher,
+		pushConversations: () => runtime.pushConversations(),
+		feedTurn: (text, queue) => runtime.feedTurn(text, queue),
+		createConversation: (init) => runtime.createConversation(init),
+		workspace: () => surface.workspace(),
+		setModel: (modelId) => models.setModel(modelId),
+		setThinking: (level) => models.setThinking(level),
+		setPlanMode: (enabled) => goals.setPlanMode(enabled),
+		// 计划模式的权威投影就在本运行时的视图里（与快照同一个源），不另读一份状态。
+		planModeOf: () => {
+			const conv = runtime.registry.activeConv();
+			return conv ? runtime.options.viewOf?.(conv)?.planMode === true : false;
+		},
+		refreshSessions: async () => {
+			if (!runtime.isDisposed()) await runtime.optionalFrames()?.refreshSessions();
+		},
+		...(runtime.options.slashCommands ? { slash: () => runtime.options.slashCommands?.() } : {}),
+		...(runtime.options.attachments ? { attachments: () => runtime.options.attachments?.() } : {}),
+		// 设置存储的唯一写者是宿主：内核只按 clientId 读快照（没有设置存储就是空设置）。
+		clientSettings: () =>
+			runtime.options.stateStore?.()?.getSettingsSnapshot(runtime.options.clientId) ?? ({} as never),
+		getLang: () => runtime.options.getLang?.() ?? "zh",
 	});
 
 	/** 原生 CLI 面（未注入即抛）。 */
@@ -345,7 +382,12 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 		// 裸 get_state（没报 since）= 客户端手上没有状态 → 必须真发全量；报了 since 走闸门。
 		respondWithSnapshot: (_send, options?: { since?: number; force?: boolean }) => {
 			if (runtime.isDisposed()) return;
-			runtime.publisher.flush({ forceFull: options?.force ?? options?.since === undefined });
+			if (options?.force === true || options?.since === undefined) {
+				runtime.publisher.flush({ forceFull: true });
+				return;
+			}
+			// 报了 rev：命中本 sink 基线且内容未变就不发，对不上就补一帧全量（`since` 由 publisher 判）。
+			runtime.publisher.flush({ forceFull: false, since: options.since });
 		},
 		getLang: () => runtime.options.getLang?.() ?? "zh",
 		emitNotice: (level: "info" | "warning" | "error", text: string, textEn?: string) => {
@@ -354,12 +396,14 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 		},
 		newChat: async (...args: Parameters<DispatchSession["newChat"]>) => {
 			if (runtime.isDisposed()) return false;
-			const [, , onReady, , botId] = args; // `botId` → `kind: "bot"`：私聊 = 普通对话 + 一个会话级 Bot 身份。
-			const conv = runtime.createConversation(botId ? { kind: "bot" } : undefined);
+			const [, ephemeral, onReady, , botId] = args; // `botId` → `kind: "bot"`：私聊 = 普通对话 + 一个会话级 Bot 身份。
+			// 临时对话（`ephemeral`）不复用空白对话：老实现同口径，它要的是一条新记录。
+			const conv = promptEntry.startNewChat(botId, ephemeral !== true);
 			onReady?.(conv.id);
 			return true;
 		},
-		prompt: (text: string, _attachments?: PromptAttachment[], queue?: boolean) => runtime.feedTurn(text, queue),
+		prompt: (text: string, attachments?: PromptAttachment[], queue?: boolean) =>
+			promptEntry.submit(text, attachments, queue),
 		resolveToolApproval: (id, decision, editedParams, reason, scope) =>
 			runtime.options.resolveToolApproval?.(id, decision, editedParams, reason, scope) ?? false,
 		resolveQuestion: (id, answers, cancelled, cancelReason) =>

@@ -1,19 +1,29 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { makeAdaptiveBashTool, makeKillableBashTool } from "../../server/bash-tool.js";
 import { JobRegistry } from "../../server/job-runner.js";
 
 const dirs: string[] = [];
+const registries: JobRegistry[] = [];
 const node = JSON.stringify(process.execPath);
 
 function makeRegistry(): JobRegistry {
 	const dir = mkdtempSync(join(tmpdir(), "bash-bg-"));
 	dirs.push(dir);
-	return new JobRegistry({ logDir: () => dir });
+	const reg = new JobRegistry({ logDir: () => dir });
+	registries.push(reg);
+	return reg;
 }
+
+afterEach(async () => {
+	while (registries.length > 0) {
+		const reg = registries.pop();
+		if (reg) await reg.dispose();
+	}
+});
 
 afterAll(() => {
 	for (const dir of dirs) rmSync(dir, { recursive: true, force: true });

@@ -80,5 +80,8 @@ export interface MessageEditSession extends Omit<TurnCapableSession, "dispose" |
 	reload(): Promise<void>;
 	/** 回滚：把会话指回原文件（= 从盘上重读，丢掉内存里的编辑）。 */
 	restoreSessionFile(sessionFile: string | undefined): void;
-	sendCustomMessage(message: TurnCustomMessage, options?: { triggerTurn?: boolean }): Promise<void>;
+	sendCustomMessage(
+		message: TurnCustomMessage,
+		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
+	): Promise<void>;
 }

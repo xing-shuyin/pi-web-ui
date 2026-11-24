@@ -80,6 +80,8 @@ export interface SessionSurfaceOptions {
 	isAllowedPath?(path: string): boolean;
 	notice(level: "info" | "warning" | "error", text: string, textEn: string): void;
 	progress?(kind: "cwd" | "session", target: string, phase: "done" | "error", text: string, textEn: string): void;
+	/** 换完工作区后重列文件树（文件域的实现自己发 `files` 帧）；缺省 = 不重列。 */
+	refreshFiles?(): void | Promise<void>;
 	/** 客户端通道是否已关（关了就只算账不出帧）。 */
 	isClosed(): boolean;
 }
@@ -143,6 +145,7 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 				isStreaming: session?.isStreaming === true || conv.phase === "running",
 				updatedAt: conv.meta.lastActiveAt,
 				hasHistoryRow: conv.meta.sessionFile !== undefined,
+				...(conv.ephemeral ? { isEphemeral: true } : {}),
 				...(nativeCli ? { nativeCli } : {}),
 				...(conv.meta.parentId ? { parentId: conv.meta.parentId } : {}),
 				...(opened?.sessionId ? { sessionId: opened.sessionId } : {}),
@@ -229,6 +232,8 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 			},
 			...(host ? { host } : {}),
 			notice: options.notice,
+			...(options.progress ? { progress: options.progress } : {}),
+			...(options.refreshFiles ? { refreshFiles: options.refreshFiles } : {}),
 		});
 		return workspace;
 	};

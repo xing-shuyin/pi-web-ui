@@ -213,8 +213,10 @@ describe("core/app · 插件命令目录与后台面板", () => {
 	it("refreshBackgroundServers 重投影面板（不重扫端口）", async () => {
 		const background = fakeBackground();
 		const { engine } = await connect({ background });
+		// 连接期初始态已经推过一次 `bg_servers`（老 `attachSink()` 里的 `bg.push()`）。
+		const before = background.refreshes;
 		engine.refreshBackgroundServers();
-		expect(background.refreshes).toBe(1);
+		expect(background.refreshes).toBe(before + 1);
 	});
 
 	it("插件常驻任务行来自引擎钩子（面板上真能看到这一类行，也停得掉）", async () => {

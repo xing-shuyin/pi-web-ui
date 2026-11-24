@@ -6,6 +6,7 @@ import type { BackgroundPort } from "../contracts/background.js";
 import type { ScmCommitMessagePort } from "../contracts/scm.js";
 import type { SettingsStorePort } from "../contracts/settings-store.js";
 import type { SlashCommandSinks, SlashCommandsPort } from "../contracts/commands.js";
+import type { AttachmentsPort } from "../contracts/attachments.js";
 import type { FilesPort } from "../contracts/files.js";
 import type { SettingsFramePort } from "../contracts/settings.js";
 import type { PluginsPort } from "../contracts/plugins.js";
@@ -209,6 +210,8 @@ export interface HostFaceFactories {
 	settingsFrame?: (sinks: CoreSettingsSinks) => SettingsFramePort;
 	/** 斜杠命令面工厂（宿主实现：`server/core-commands-adapter.ts`）；缺省 = 能力未接。 */
 	slashCommands?: (sinks: SlashCommandSinks) => SlashCommandsPort;
+	/** 附件面工厂（宿主实现：`server/core-attachments-adapter.ts`）；缺省 = 附件不发（会发一声 warning）。 */
+	attachments?: () => AttachmentsPort;
 	/** 文件面工厂（宿主实现：`server/core-files-adapter.ts`）；缺省 = 能力未接。 */
 	files?: (sinks: CoreFilesSinks) => FilesPort;
 	/**
@@ -293,6 +296,7 @@ export interface HostFaceDeps extends HostFaceFactories {
 export interface HostFaces {
 	settingsFrame: SettingsFramePort | undefined;
 	slashCommands: SlashCommandsPort | undefined;
+	attachments: AttachmentsPort | undefined;
 	files: FilesPort | undefined;
 	scmCommitMessage: ScmCommitMessagePort | undefined;
 	plugins: PluginsPort | undefined;
@@ -522,11 +526,11 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 			: {}),
 	});
 	const bots = deps.bots?.();
-	// 连接期就把全局默认模型告诉前端（老实现 `pushDefaultModel()` 在 attach 时也推一次）。
-	frames.pushDefaultModel();
+	const attachments = deps.attachments?.();
 	return {
 		settingsFrame,
 		slashCommands,
+		attachments,
 		files,
 		scmCommitMessage,
 		plugins,

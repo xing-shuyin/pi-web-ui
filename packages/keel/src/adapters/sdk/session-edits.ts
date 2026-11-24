@@ -101,6 +101,7 @@ export function createSessionEditor(host: EditSessionHost): MessageEditSession {
 					display: message.display,
 					details: message.details,
 				},
+				// `deliverAs: "nextTurn"`（附件 asides）必须原样透过去：落成旁注而不是独立回合。
 				options,
 			),
 	};

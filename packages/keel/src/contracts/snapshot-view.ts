@@ -4,6 +4,7 @@ import type {
 	SandboxInfo,
 	UiMessage,
 	UiModelInfo,
+	UiState,
 	UiToolApproval,
 	WorktreeInfo,
 } from "../protocol.js";
@@ -30,6 +31,13 @@ export interface SnapshotConversationView {
 	conversationId: string;
 	sessionId: string;
 	sessionFile?: string;
+	/** 临时对话（会话在内存里，不落 `.jsonl`）：出帧时恒给布尔值。 */
+	isEphemeral?: boolean;
+	/**
+	 * 会话统计（`UiState["stats"]`）：出帧只做投影，计数由会话 / 宿主给。
+	 * 不给就不写，组帧回落 `EMPTY_STATS`（不编数）。
+	 */
+	stats?: UiState["stats"];
 	messages: readonly UiMessage[];
 	streamingMessage: UiMessage | null;
 	isStreaming: boolean;

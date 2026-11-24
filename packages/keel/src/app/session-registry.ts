@@ -49,6 +49,8 @@ export class SessionRegistry {
 			cwd: options?.cwd ?? conv.meta.cwd,
 			agentDir: this.options.agentDir,
 			sessionFile: conv.meta.sessionFile,
+			// 临时对话：会话开在内存里，不产生 `.jsonl`（转正后才由 `persist_conversation` 落盘）。
+			...(conv.ephemeral ? { ephemeral: true } : {}),
 			tools: this.options.toolsFor?.(conv),
 			customTools: this.options.customToolsFor?.(conv),
 		});
