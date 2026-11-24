@@ -2,7 +2,10 @@
  * 建沙盒的返回值：内核只取 `path`（切工作区用），名字/拷贝计数等留给宿主自己发 notice。
  */
 export interface SandboxCreated {
-	/** 新沙盒目录的绝对路径（宿主已展开 `~`、归一化过），内核原样交给 `WorkspacePort.setCwd`。 */
+	/**
+	 * 新沙盒目录的绝对路径（宿主已展开 `~`、归一化过），内核原样交给 `WorkspacePort.setCwd`。
+	 * **空串 = 建失败**（宿主已按老口径发 `notice(error)`）：内核不切工作区、不假装成功。
+	 */
 	path: string;
 }
 
@@ -11,7 +14,18 @@ export interface SandboxCreated {
  * `switchToTarget === false` 时内核不切工作区（宿主的 projects 帧自己推），这个路径就用不上。
  */
 export interface SandboxPromoted {
+	/** 导出成功后的正式项目绝对路径；**空串 = 导出失败**（宿主已发 `notice(error)`），内核不切工作区。 */
 	targetPath: string;
+}
+
+/** 沙盒实况（内核规划「先把 owner 对话迁出沙盒」要用）：真实目录 + 源项目。 */
+export interface SandboxLocated {
+	id: string;
+	/** 沙盒真实目录（绝对路径）。 */
+	path: string;
+	name: string;
+	/** 建沙盒时的源项目（迁出时的回退位置）；空白沙盒没有。 */
+	sourcePath?: string;
 }
 
 /**
@@ -31,6 +45,11 @@ export interface SandboxPromoted {
  * 内核不 catch、不重试，错误照原样冒到 wire 层。
  */
 export interface SandboxPort {
+	/**
+	 * 查沙盒实况（缺省按当前 cwd 找）。不在注册表里返回 `undefined`——`destroy` 老口径
+	 * （目标不是沙盒时只清项目缓存 + 推 projects 帧，不算失败）靠这个判定。
+	 */
+	locate(path?: string): Promise<SandboxLocated | undefined>;
 	/** 建沙盒（可带源项目做初始拷贝），返回新沙盒的绝对路径供内核切工作区。 */
 	create(opts: { name?: string; sourcePath?: string; ephemeral?: boolean }): Promise<SandboxCreated>;
 	/** 重置沙盒（有源项目就重新同步一次）。`path` 缺省 = 宿主按当前 cwd 找沙盒。 */

@@ -1,4 +1,4 @@
-import type { FilesPort, WorkspacePort } from "../packages/keel/src/contracts/files.js";
+import type { FilesPort } from "../packages/keel/src/contracts/files.js";
 import type { ServerLang } from "../packages/keel/src/i18n.js";
 import { FilesService } from "./files-service.js";
 
@@ -30,23 +30,4 @@ export function createCoreFiles(options: CoreFilesSinks): FilesPort {
 		getUploadMaxBytes: options.getUploadMaxBytes,
 	});
 	return service;
-}
-
-/**
- * 工作区绑定面：宿主侧还没搬出「解析目标 → 校验 → 换会话 → 推帧」这条链
- * （它长在 `ClientSession.setCwd` 里，约 150 行，属 P4）。这里**显式声明未接**，
- * 让调用方拿到带名字的错误，而不是静默什么都不做。
- */
-export function createCoreWorkspaceUnavailable(): WorkspacePort {
-	const fail = (what: string): never => {
-		throw new Error(`core 引擎暂不支持${what}（工作区绑定待 P4 从 agent-service 抽出）`);
-	};
-	return {
-		async setCwd(): Promise<void> {
-			fail("切换工作目录");
-		},
-		async setWorkspaceRoots(): Promise<void> {
-			fail("设置额外工作区根");
-		},
-	};
 }

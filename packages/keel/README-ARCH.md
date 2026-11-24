@@ -52,6 +52,9 @@ W3 之后 `CoreEngine.attach()` 仍默认关闭（`CoreEngineNotReadyError`）�
 - **错误类**：`CoreEngineNotReadyError` 住在 `contracts/`（否则 `adapters` 要依赖 `app`，违反分层）。
 - **轮次**：`deliverAs` 只在 `running` 相位可用；`running` 却不传 `deliverAs` 直接拒（不静默叠轮）；退役错误不做 `instanceof` 分支，靠「全程无 catch」结构性透传。
 - **历史行**：`openIds` 只参与去重（不参与归属）；`cwd` 只筛磁盘历史行；纯磁盘历史行不带 `kind`。
+- **会话实体重绑**：四个入口（换目录 / 切会话 / 沙盒迁移 / 换工作树）共用 `domains/sessions/rebind.ts` 的 `rebindSession`；口径是**先建后拆**（候选会话开起来才拆旧的），失败回滚只清理候选——旧对话与旧会话从头到尾没被碰过。跨 `await` 只认入口处取到的活动 id。
+- **工作区**：`WorkspacePort` 的内核实现（`domains/sessions/workspace.ts`）就是重绑链；宿主只剩 `WorkspaceHostPort`（`resolveTarget` / `onChanged`）。`cs.cwd` / `cs.workspaceRoots` 是活值（`dispatch-adapter` 用取值口读），换完工作区立即生效。
+- **沙盒**：状态与写回全在宿主 `SandboxPort`；内核只做两件跨域事——建/升之后切工作区，reset/apply/destroy 前后把 cwd 在沙盒里的对话迁出去（`planSandboxLifecycle` 纯编排）。失败由宿主发 `notice(error)` 且不 reject，用空路径表示「别切工作区」。
 - **attach**：`CoreEngine.attach` 需 `PI_WEB_PI_ENGINE_ATTACH=1`；默认关闭，原因是会话实体（SDK）还没接。
 - **快照**：全量帧永远可出；增量帧拿不到 `appended` 之前降级为全量 `snapshot`（不假装增量）。
 - **设置**：域只投影已有 `normalize*` 单源的 18 个键，其余键留给后续波次，避免在域里复制归一化。

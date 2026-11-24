@@ -2,7 +2,10 @@ import type { ClientId, ConversationId } from "../contracts/ids.js";
 import type { ModelAdminPort, ModelMemoryPort } from "../contracts/model-admin.js";
 import type { SettingsFramePort } from "../contracts/settings.js";
 import type { SlashCommandsPort } from "../contracts/commands.js";
-import type { FilesPort, WorkspacePort } from "../contracts/files.js";
+import type { FilesPort } from "../contracts/files.js";
+import type { SandboxPort } from "../contracts/sandbox.js";
+import type { WorkspaceHostPort } from "../contracts/workspace.js";
+import type { SettingsStorePort } from "../contracts/settings-store.js";
 import type { WorktreePort } from "../contracts/worktree.js";
 import type { BackgroundPort } from "../contracts/background.js";
 import type { PluginsPort } from "../contracts/plugins.js";
@@ -11,6 +14,13 @@ import { createCommandHandlers, type CommandHandlers } from "../domains/commands
 import { createFilesHandlers, type FilesHandlers } from "../domains/files/index.js";
 import { createWorktreeHandlers, type WorktreeHandlers } from "../domains/worktree/index.js";
 import { createConversationStateHandlers, type ConversationStateHandlers } from "../domains/sessions/index.js";
+import type { SessionSurface } from "./session-surface.js";
+import { createSessionSurface } from "./session-surface.js";
+import {
+	createConversationDispatchHandlers,
+	emptyView,
+	type ConversationDispatchHandlers,
+} from "./conversation-handlers.js";
 import { createBackgroundHandlers, type BackgroundHandlers } from "../domains/background/index.js";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
 import type { SnapshotConversationView, SnapshotEnvView, SnapshotView } from "../contracts/snapshot-view.js";
@@ -18,23 +28,19 @@ import { createDispatchSurfaceAdapter, type DispatchHandlers } from "../adapters
 import type { DispatchSession } from "../engine-service.js";
 import type { PromptAttachment, SandboxInfo, WorktreeInfo } from "../protocol.js";
 import { ComposerDraftsStore } from "../composer-drafts.js";
-import { resolveProjectScripts } from "../project-scripts.js";
 import { Conversation, ConversationRegistry, type ConversationInit } from "../kernel/conversation/index.js";
 import { createSnapshotBuilders, SnapshotPublisher, type SnapshotBuilders } from "../domains/snapshots/index.js";
 import { createModelSwitchers, type ModelSwitchers } from "../domains/models/index.js";
 import { createProviderHandlers, type ProviderHandlers } from "../domains/providers/index.js";
 import { createSettingsHandlers, type SettingsHandlers } from "../domains/settings/index.js";
 import { TurnRunner, type TurnRunnerDeps } from "../domains/turns/index.js";
+import { createTurnsEditHandlers, type TurnsEditHandlers } from "../domains/turns/index.js";
+import { createSessionEditor, type EditSessionHost } from "../adapters/sdk/session-edits.js";
 import type { SessionListScanState } from "../session-list-scan.js";
 import { dirname, join } from "node:path";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
 import type { SessionRegistry } from "./session-registry.js";
-import {
-	deleteSessionFile,
-	dismissConversation,
-	renameConversation,
-	renameSession,
-} from "../domains/sessions/index.js";
+import { deleteSessionFile, renameSession } from "../domains/sessions/index.js";
 
 export type ClientEnvView = Omit<SnapshotEnvView, "clientId" | "cwd" | "workspaceRoots">;
 
@@ -42,6 +48,8 @@ export type ClientEnvView = Omit<SnapshotEnvView, "clientId" | "cwd" | "workspac
 export interface ClientFrames {
 	pushSettings(): void;
 	refreshSessions(): Promise<void>;
+	/** 只重扫当前项目；`targetCwd` 不是当前项目时不动（别的项目的会话目录只有宿主认得）。 */
+	refreshSessionsFor?(targetCwd: string): Promise<void>;
 	pushProjects(): Promise<void>;
 	listModels(): void;
 	/** 全局默认模型帧（`default_model`）：换默认模型后必须显式推一次。 */
@@ -92,10 +100,7 @@ export interface ClientRuntimeOptions {
 	onTurnError?: (conversationId: ConversationId, error: unknown) => void;
 	/** 模型/供应商管理面（宿主实现）；缺省 = 该能力未接，相关 handler 抛 `CoreEngineNotReadyError`。 */
 	modelAdmin?: ModelAdminPort;
-	/**
-	 * 设置帧/预设/审批规则库面（宿主实现）。用 thunk：`SettingsService` 构造期要拿本运行时
-	 * 的会话与帧出口，而运行时又把这项当成装配参数 —— 懒取才不会成环。
-	 */
+	/** 设置帧/预设/审批规则库面（宿主实现）：用 thunk 才不会与运行时的帧出口成环。 */
 	settingsFrame?: () => SettingsFramePort | undefined;
 	/** 「关闭审批」时把待审批一次性放行。 */
 	releasePendingApprovals?(reason: string): number;
@@ -109,8 +114,12 @@ export interface ClientRuntimeOptions {
 	slashCommands?: () => SlashCommandsPort | undefined;
 	/** 文件 / 目录面（宿主 `FilesService`）；缺省 = 该能力未接。 */
 	files?: () => FilesPort | undefined;
-	/** 工作区绑定（换 cwd / 换额外根）；缺省 = 该能力未接。 */
-	workspace?: () => WorkspacePort | undefined;
+	/** 工作区绑定（换 cwd / 换额外根）的宿主侧：目标解析与换完的收尾；缺省 = 只认本地路径。 */
+	workspaceHost?: () => WorkspaceHostPort | undefined;
+	/** 沙盒面（宿主 `SandboxManager`）；缺省 = 该能力未接。 */
+	sandbox?: () => SandboxPort | undefined;
+	/** 设置存储（额外根持久化 + 会话钉住）；缺省 = 这两项未接。 */
+	stateStore?: () => SettingsStorePort | undefined;
 	/** Git 工作树面（宿主 `worktree-service`）；缺省 = 该能力未接。 */
 	worktree?: () => WorktreePort | undefined;
 	/** MCP / 技能 / 市场 / 插件更新面（宿主 `core-plugin-adapter`）；缺省 = 该能力未接。 */
@@ -146,6 +155,11 @@ export class ClientRuntime {
 	private fileHandlers: FilesHandlers | undefined;
 	private worktreeHandlers: WorktreeHandlers | undefined;
 	private conversationState: ConversationStateHandlers | undefined;
+	private dispatchHandlers: ConversationDispatchHandlers | undefined;
+	private sessionSurface: SessionSurface | undefined;
+	// 当前工作区与额外根：换工作区会就地改它们（快照 / 目录类 handler 都现取）。
+	private workspaceCwd: string;
+	private workspaceRoots: readonly string[];
 	private backgroundHandlers: BackgroundHandlers | undefined;
 	private pluginHandlersCache: PluginsHandlers | undefined;
 	/** 工作树全貌：工作树域的发布口写它，刷新/删除都从这里读「当前是哪个」。 */
@@ -157,6 +171,8 @@ export class ClientRuntime {
 
 	constructor(options: ClientRuntimeOptions) {
 		this.options = options;
+		this.workspaceCwd = options.cwd;
+		this.workspaceRoots = options.workspaceRoots ?? [];
 		this.drafts = options.drafts ?? new ComposerDraftsStore(join(options.cwd, "composer-drafts.json"));
 		this.publisher = new SnapshotPublisher({
 			transport: options.transport,
@@ -169,19 +185,16 @@ export class ClientRuntime {
 	get clientId(): ClientId {
 		return this.options.clientId;
 	}
-
 	get cwd(): string {
-		return this.options.cwd;
+		return this.workspaceCwd;
 	}
-
+	get roots(): readonly string[] {
+		return this.workspaceRoots;
+	}
 	attachFrames(frames: ClientFrames): void {
 		this.frames = frames;
 	}
-
-	/**
-	 * 供应商/模型管理面的 24 个 handler：全部转发给宿主端口（`ModelAdminPort`）。
-	 * 端口未注入时逐个同步抛 `CoreEngineNotReadyError`（与注册表口径一致）。
-	 */
+	/** 供应商/模型管理面的 24 个 handler：全部转发给宿主端口，未注入即逐个同步抛 `CoreEngineNotReadyError`。 */
 	private providerHandlers(): ProviderHandlers {
 		return (this.providers ??= createProviderHandlers({
 			modelAdmin: this.options.modelAdmin,
@@ -237,8 +250,9 @@ export class ClientRuntime {
 	private worktrees(): WorktreeHandlers {
 		return (this.worktreeHandlers ??= createWorktreeHandlers({
 			worktree: () => this.options.worktree?.(),
-			workspace: () => this.options.workspace?.(),
-			cwd: () => this.registry.activeConv()?.meta.cwd ?? this.options.cwd,
+			// 换工作树 = 换工作区（老实现 `switchWorktree` 逐字就是 `setCwd`）。
+			workspace: () => this.surface().workspace(),
+			cwd: () => this.registry.activeConv()?.meta.cwd ?? this.workspaceCwd,
 			currentInfo: () => this.worktreeInfo,
 			publish: (info) => {
 				this.worktreeInfo = info;
@@ -250,10 +264,9 @@ export class ClientRuntime {
 	}
 
 	/**
-	 * MCP / 技能 / 市场 / 更新：宿主认得 mcp.json、GitHub、npm registry，内核只按位转发。
-	 * MCP 与技能变更后要重发设置帧（`settings_state` 里带 MCP 清单），帧出口在这里。
-	 */
-	private pluginHandlers(): PluginsHandlers {
+	 * MCP / 技能 / 市场 / 更新：宿主认得 mcp.json、GitHub、npm registry，内核只按位转发；
+	 * MCP 与技能变更后要重发设置帧（`settings_state` 里带 MCP 清单）。
+	 */ private pluginHandlers(): PluginsHandlers {
 		return (this.pluginHandlersCache ??= createPluginsHandlers({
 			plugins: () => this.options.plugins?.(),
 			pushSettings: () => {
@@ -262,18 +275,83 @@ export class ClientRuntime {
 		}));
 	}
 
-	/** 文件 / 目录 / 工作区绑定：13 个走 `FilesService`，2 个工作区绑定走独立窄面。 */
+	/** 文件 / 目录 / 工作区绑定：13 个走 `FilesService`，2 个工作区绑定走内核的重绑链。 */
 	private filesHandlers(): FilesHandlers {
 		return (this.fileHandlers ??= createFilesHandlers({
 			files: () => this.options.files?.(),
-			workspace: () => this.options.workspace?.(),
+			workspace: () => this.surface().workspace(),
 		}));
 	}
 
-	/**
-	 * 选模型 / 思考档 / 全局默认模型：会话取「当前对话」的那一份（换模型只影响当前对话）。
-	 * 默认模型帧由组合根提供（`pushDefaultModel`），没装配就不发（不自己造帧）。
-	 */
+	/** 对话级派发：只依赖注册表 + 帧出口 + 叶子（不碰会话实体）。 */
+	private conversationDispatch(): ConversationDispatchHandlers {
+		return (this.dispatchHandlers ??= createConversationDispatchHandlers({
+			registry: this.registry,
+			transport: this.options.transport,
+			cwd: () => this.workspaceCwd,
+			...(this.options.viewOf ? { viewOf: this.options.viewOf } : {}),
+			requestSnapshot: () => this.publisher.request(),
+			now: () => this.options.clock.now(),
+			...(this.options.isAllowedPath ? { isAllowedPath: this.options.isAllowedPath } : {}),
+			closeSession: (id) => this.options.sessions?.close(id),
+			terminalManagerFor: (id) => this.options.terminalManagerFor?.(id ?? this.registry.activeId()),
+			abortActive: async () => {
+				const conv = this.registry.activeConv();
+				const opened = conv ? this.options.sessions?.get(conv.id) : undefined;
+				await opened?.session.abort?.();
+			},
+		}));
+	}
+
+	/** 会话实体重绑面（换目录 / 切会话 / 沙盒迁移共用一份原语）：装配细节在 session-surface。 */
+	private surface(): SessionSurface {
+		return (this.sessionSurface ??= createSessionSurface({
+			clientId: this.options.clientId,
+			registry: this.registry,
+			...(this.options.sessions ? { sessions: this.options.sessions } : {}),
+			store: () => this.options.stateStore?.(),
+			workspaceHost: () => this.options.workspaceHost?.(),
+			sandbox: () => this.options.sandbox?.(),
+			cwd: () => this.workspaceCwd,
+			roots: () => this.workspaceRoots,
+			setWorkspace: (cwd, roots) => {
+				this.workspaceCwd = cwd;
+				this.workspaceRoots = roots;
+			},
+			createConversation: (init) => this.newConversation(init),
+			frames: this.rebindFrames(),
+			onActivated: (id) => this.publisher.switchConversation(id),
+			noteSessionFile: (file) => this.noteSessionFile(file),
+			...(this.options.isAllowedPath ? { isAllowedPath: this.options.isAllowedPath } : {}),
+			notice: (level, text, textEn) => {
+				if (this.disposed || this.options.transport.isClosed()) return;
+				this.options.transport.send({ type: "notice", level, text, textEn });
+			},
+			progress: (kind, target, phase, text, textEn) => {
+				if (this.disposed || this.options.transport.isClosed()) return;
+				this.options.transport.send({ type: "transition_progress", kind, target, phase, progress: 100, text, textEn });
+			},
+			isClosed: () => this.disposed || this.options.transport.isClosed(),
+		}));
+	}
+
+	/** 重绑 / 钉住 / 编辑面共用的帧出口：全量刷一帧 + 会话帧 + 项目帧。 */
+	private rebindFrames() {
+		return {
+			flush: (forceFull?: boolean) => {
+				if (!this.disposed) this.publisher.flush({ forceFull: forceFull ?? true });
+			},
+			pushSessions: () => {
+				if (!this.disposed) void this.frames?.refreshSessions();
+			},
+			pushProjects: () => {
+				if (!this.disposed) void this.frames?.pushProjects();
+			},
+			refreshSessionsFor: (cwd: string) => this.frames?.refreshSessionsFor?.(cwd) ?? Promise.resolve(),
+		};
+	}
+
+	/** 选模型 / 思考档 / 全局默认模型：会话取「当前对话」；默认模型帧由组合根提供，没装配就不发。 */
 	private modelSwitchers(): ModelSwitchers {
 		return (this.switchers ??= createModelSwitchers({
 			clientId: this.options.clientId,
@@ -303,33 +381,35 @@ export class ClientRuntime {
 	noteSessionFile(file: string | undefined): void {
 		if (file) this.historyRootPath = dirname(file);
 	}
-
 	historyRoot(): string | undefined {
 		return this.historyRootPath;
 	}
-
 	historyState(): Map<string, SessionListScanState> {
 		return (this.scanState ??= new Map());
 	}
-
-	createConversation(init?: Partial<ConversationInit>): Conversation {
+	/** 只注册不激活：候选对话由重绑原语控制何时变成活动对话。 */
+	private newConversation(init: Partial<ConversationInit>): Conversation {
 		const conv = new Conversation({
 			id: init?.id ?? `c-${this.registry.nextSeq()}`,
 			kind: init?.kind ?? "user",
 			createdAt: init?.createdAt ?? this.options.clock.now(),
 			...init,
 			clientId: this.options.clientId,
-			cwd: init?.cwd ?? this.options.cwd,
+			cwd: init?.cwd ?? this.workspaceCwd,
 		});
 		this.registry.add(conv);
+		return conv;
+	}
+
+	createConversation(init?: Partial<ConversationInit>): Conversation {
+		const conv = this.newConversation(init ?? {});
 		this.registry.activate(conv.id);
 		this.publisher.switchConversation(conv.id);
 		return conv;
 	}
 
 	activeConversationId(): string | undefined {
-		const active = this.registry.activeId();
-		return active || undefined;
+		return this.registry.activeId() || undefined;
 	}
 
 	streamingCount(): number {
@@ -340,14 +420,47 @@ export class ClientRuntime {
 		return this.registry.list().reduce((sum, conv) => sum + conv.queues.total(), 0);
 	}
 
+	/** 消息编辑面（`editMessage` / `deleteMessage` / `retryLast`）：编排在 `domains/turns/edits`，这里只交宿主口。 */
+	private turnEdits(): TurnsEditHandlers {
+		const sessions = this.options.sessions;
+		const pushSessions = this.rebindFrames().pushSessions;
+		return createTurnsEditHandlers({
+			registry: this.registry,
+			transport: this.options.transport,
+			clock: this.options.clock,
+			// 会话没开会 / 已关 = 没有条目树：`undefined` 让 handler 走「找不到」，不拿半死句柄。
+			editorOf: (id) => {
+				if (!sessions) throw new CoreEngineNotReadyError("turnEdits.editorOf");
+				const opened = sessions.get(id);
+				return opened ? createSessionEditor(opened.session as unknown as EditSessionHost) : undefined;
+			},
+			// 重问只能走唯一喂轮出口（`TurnRunner.start` → `feed.ts` → `session-turns.ts`）。
+			reask: async (conv, text) => {
+				const opened = sessions?.get(conv.id);
+				if (!opened) throw new CoreEngineNotReadyError("turnEdits.reask");
+				await this.turns.start(conv, opened.session, text);
+			},
+			whenIdle: (id) => this.turns.whenIdle(id),
+			flushSnapshot: () => void this.publisher.flush({ forceFull: false }),
+			afterReload: pushSessions,
+			sessionsChanged: pushSessions,
+			restoreModel: async (id, model) => {
+				const opened = sessions?.get(id);
+				if (opened) await opened.session.setModel?.(model);
+				this.options.onSessionModelChanged?.(id);
+			},
+			// `cancelDiscarded`（#966）未接：`SchedulerStore` 只由宿主 legacy 服务持有，没有端口。
+		});
+	}
+
 	snapshotView(): SnapshotView {
 		const conv = this.registry.activeConv();
 		return {
 			env: {
 				...this.options.env,
 				clientId: this.options.clientId,
-				cwd: this.options.cwd,
-				workspaceRoots: this.options.workspaceRoots,
+				cwd: this.workspaceCwd,
+				workspaceRoots: this.workspaceRoots,
 				// 沙盒 / 工作树是「跟着 cwd 走」的进程级状态，随每次组帧现取（不在构造期快照）。
 				sandbox: this.sandboxInfo,
 				worktree: this.worktreeInfo,
@@ -363,15 +476,14 @@ export class ClientRuntime {
 			return this.frames;
 		};
 		const handlers: DispatchHandlers = {
-			cwd: this.options.cwd,
-			workspaceRoots: this.options.workspaceRoots,
+			cwd: this.workspaceCwd,
+			workspaceRoots: this.workspaceRoots,
 			activeConversationId: () => this.activeConversationId(),
 			flushSnapshot: (forceFull?: boolean) => {
 				if (this.disposed) return;
 				this.publisher.flush({ forceFull });
 			},
-			// 裸 get_state（没报 since）= 客户端手上没有状态 → 必须真发全量；
-			// 报了 since 就走闸门的增量/跳过判定（与 legacy 的 respondWithSnapshot 同口径）。
+			// 裸 get_state（没报 since）= 客户端手上没有状态 → 必须真发全量；报了 since 就走闸门判定。
 			respondWithSnapshot: (_send, options?: { since?: number; force?: boolean }) => {
 				if (this.disposed) return;
 				this.publisher.flush({ forceFull: options?.force ?? options?.since === undefined });
@@ -404,9 +516,20 @@ export class ClientRuntime {
 			...this.commands(),
 			...this.filesHandlers(),
 			...this.worktrees(),
+			...this.surface().sandbox(),
 			...this.conversations(),
 			...this.background(),
 			...this.pluginHandlers(),
+			...this.turnEdits(),
+			// 会话实体：切转录走重绑原语（与 `setCwd` / 沙盒 / 工作树同一条链）。
+			switchSession: (path: string, sessionId?: string, independent?: boolean) =>
+				this.surface().entity().switchSession(path, sessionId, independent),
+			// 钉住：磁盘上的钉子归设置存储，刷列表按「会话自己的 cwd」推。
+			pinSession: (path: string, pinned: boolean) => this.surface().pins().pinSession(path, pinned),
+			setConversationPinned: (id: string, pinned: boolean) => this.surface().pins().setConversationPinned(id, pinned),
+			// 跨项目刷列表：钉子落在会话归属的项目上，但那个项目的会话目录只有宿主认得（SDK 布局），
+			// 所以这里只保证「当前项目」真的重扫一遍，其它项目下次打开时自然带上钉子。
+			pushSessionsForCwd: (targetCwd: string) => frames().refreshSessionsFor?.(targetCwd) ?? Promise.resolve(),
 			setModel: (modelId: string) => this.modelSwitchers().setModel(modelId),
 			setDefaultModel: (modelId: string) => this.modelSwitchers().setDefaultModel(modelId),
 			clearDefaultModel: () => this.modelSwitchers().clearDefaultModel(),
@@ -432,76 +555,14 @@ export class ClientRuntime {
 				const { title } = renameSession({ sessionFile: path, title: name });
 				await this.options.persistSessionTitle?.(path, title);
 			},
-			getTerminalManager: (conversationId?: string) =>
-				this.options.terminalManagerFor?.(conversationId ?? this.registry.activeId()) as never,
-			// 切对话：只改注册表的活动指针（会话实体归 registry，不在这里重开）。
-			switchConversation: async (id: string) => {
-				if (!this.registry.has(id)) {
-					this.options.transport.send({
-						type: "notice",
-						level: "warning",
-						text: "该对话不存在或已关闭",
-						textEn: "This conversation does not exist or is already closed",
-					});
-					return;
-				}
-				this.registry.activate(id);
-				this.publisher.request();
-			},
-			// 终端的持有者是叶子（每对话一份）：这里只回答「谁的 cwd」「哪个 id 落在谁手里」。
-			getTerminalCwd: (conversationId?: string) => {
-				const conv = conversationId ? this.registry.get(conversationId) : this.registry.activeConv();
-				return conv?.meta.cwd ?? this.options.cwd;
-			},
-			findTerminalManager: (terminalId: string, conversationId?: string) => {
-				const manager = this.options.terminalManagerFor?.(conversationId ?? this.registry.activeId());
-				// 没有「客户端级」终端管理器（那是老树的 userTerminals）：找不到就如实返回 undefined。
-				return manager && (manager as { has?: (id: string) => boolean }).has?.(terminalId) ? manager : undefined;
-			},
-			listProjectScripts: (cwd?: string) => {
-				const base =
-					(typeof cwd === "string" && cwd.trim()) || this.registry.activeConv()?.meta.cwd || this.options.cwd;
-				try {
-					const found = resolveProjectScripts(base);
-					this.options.transport.send({ type: "project_scripts", cwd: found.cwd, scripts: found.scripts });
-				} catch (err) {
-					this.options.transport.send({
-						type: "project_scripts",
-						cwd: base,
-						scripts: {},
-						error: err instanceof Error ? err.message : String(err),
-					});
-				}
-			},
-			// 计数口径与老实现逐字一致：只说「在跑几条」「还排着几条」。
-			activeConversations: () => this.registry.list().filter((conv) => conv.phase === "running").length,
-			pendingMessages: () => this.registry.list().reduce((n, conv) => n + conv.queues.total(), 0),
-			getMessagesOfConversation: (convId: string) => {
-				const conv = this.registry.get(convId);
-				if (!conv) return undefined;
-				const view = this.options.viewOf?.(conv) ?? emptyView(conv);
-				return [...view.messages];
-			},
-			renameConversation: async (id: string, name: string) => {
-				renameConversation({ registry: this.registry, conversationId: id, title: name, now: this.options.clock.now() });
-			},
-			dismissConversation: async (id: string, withFinishedSubagents?: boolean) => {
-				await dismissConversation({
-					registry: this.registry,
-					conversationId: id,
-					withFinishedSubagents,
-					now: () => this.options.clock.now(),
-					isAllowedPath: this.options.isAllowedPath,
-					closeSession: (convId) => this.options.sessions?.close(convId),
-				});
-			},
-			abort: async () => {
-				const conv = this.registry.activeConv();
-				const opened = conv ? this.options.sessions?.get(conv.id) : undefined;
-				await opened?.session.abort?.();
-			},
+			// 对话级派发（切对话 / 终端归属 / 脚本 / 计数 / 消息 / 改名 / 关闭 / 中止）：实现在 conversation-handlers。
+			...this.conversationDispatch(),
 		};
-		this.adapter = createDispatchSurfaceAdapter(handlers);
+		// 值成员走取值口：换工作区之后 `cwd` / `workspaceRoots` 立即是新值。
+		this.adapter = createDispatchSurfaceAdapter(handlers, () => ({
+			cwd: this.workspaceCwd,
+			workspaceRoots: this.workspaceRoots,
+		}));
 		return this.adapter;
 	}
 
@@ -525,6 +586,8 @@ export class ClientRuntime {
 		if (this.disposed) return;
 		this.disposed = true;
 		this.publisher.dispose();
+		// 每客户端一份的插件端口持有 MCP OAuth 的 attempt 与宿主句柄（`dispose()` 才注销）：断开时必须收口一次。
+		this.options.plugins?.()?.dispose?.();
 		this.options.sessions?.closeAll();
 		for (const conv of this.registry.list()) {
 			if (conv.acceptsTurns) conv.retire();
@@ -532,22 +595,4 @@ export class ClientRuntime {
 		}
 		this.registry.clearActive();
 	}
-}
-
-/** 会话实体还没接上时的空视图：协议字段齐全，消息为空。 */
-function emptyView(conv: Conversation): SnapshotConversationView {
-	return {
-		conversationId: conv.id,
-		sessionId: conv.meta.sessionFile ?? conv.id,
-		...(conv.meta.sessionFile ? { sessionFile: conv.meta.sessionFile } : {}),
-		messages: [],
-		streamingMessage: null,
-		isStreaming: conv.phase === "running",
-		model: null,
-		thinkingLevel: "off",
-		availableThinkingLevels: [],
-		tools: [],
-		steering: conv.queues.texts("steer"),
-		followUp: conv.queues.texts("followUp"),
-	};
 }

@@ -23,6 +23,8 @@ export function createFakeSettingsStore(): FakeSettingsStore {
 	const projectProviderKeys = new Map<string, string>();
 	const defaults = new Map<string, string>();
 	const defaultProviderKeys = new Map<string, string>();
+	const workspaceRoots = new Map<string, string[]>();
+	const pinned = new Set<string>();
 	const calls: FakeSettingsStore["calls"] = { mergeDiscovered: [], removed: [] };
 	let version = 0;
 
@@ -76,6 +78,14 @@ export function createFakeSettingsStore(): FakeSettingsStore {
 			void projectProviderKeys.set(`${clientId}|${cwd}|${provider}`, keyName),
 		deleteProjectProviderKey: (clientId, cwd, provider) =>
 			void projectProviderKeys.delete(`${clientId}|${cwd}|${provider}`),
+		getWorkspaceRoots: (clientId, cwd) => [...(workspaceRoots.get(`${clientId}|${cwd}`) ?? [])],
+		saveWorkspaceRoots: (clientId, cwd, roots) => void workspaceRoots.set(`${clientId}|${cwd}`, [...roots]),
+		setSessionPinned(cwd, sessionPath, pin) {
+			const key = `${cwd}|${sessionPath}`;
+			if (pin) pinned.add(key);
+			else pinned.delete(key);
+		},
+		isSessionPinned: (cwd, sessionPath) => pinned.has(`${cwd}|${sessionPath}`),
 		getDefaultModel: (engine) => defaults.get(engine ?? ""),
 		saveDefaultModel: (modelId, engine) => void defaults.set(engine ?? "", modelId),
 		getDefaultProviderKey: (provider) => defaultProviderKeys.get(provider),

@@ -59,7 +59,9 @@ import { resolvePiEngineMode } from "../packages/keel/src/app/engine-mode.js";
 import { createCoreModelAdmin } from "./core-model-adapter.js";
 import { createCoreSettingsAdapter } from "./core-settings-adapter.js";
 import { createCoreSlashCommands } from "./core-commands-adapter.js";
-import { createCoreFiles, createCoreWorkspaceUnavailable } from "./core-files-adapter.js";
+import { createCoreFiles } from "./core-files-adapter.js";
+import { createCoreWorkspace } from "./core-workspace-adapter.js";
+import { createCoreSandbox } from "./core-sandbox-adapter.js";
 import { createCorePlugins } from "./core-plugin-adapter.js";
 import { createCoreWorktree } from "./core-worktree-adapter.js";
 import { createCoreBackground } from "./core-background-adapter.js";
@@ -1638,7 +1640,8 @@ function ensureEngine(engine: EngineId): EngineService {
 								version: VERSION,
 								mcpProjects: () => mcpProjects,
 							}),
-						workspace: () => createCoreWorkspaceUnavailable(),
+						workspaceHost: () => createCoreWorkspace({ dataDir: DATA_DIR }),
+						sandbox: (sinks) => createCoreSandbox({ dataDir: DATA_DIR, ...sinks }),
 						worktree: () => createCoreWorktree(),
 					}) as unknown as AgentService)
 				: new AgentService(CWD, sharedStateStore);

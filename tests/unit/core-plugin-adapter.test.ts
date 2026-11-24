@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createCorePlugins } from "../../server/core-plugin-adapter.js";
+import { currentCorePluginsHandle } from "../../server/core-plugins-handle.js";
 import type { ServerMessage } from "../../server/protocol.js";
 
 function workspace() {
@@ -80,6 +81,32 @@ describe("宿主插件适配器 · 真实叶子（写 mcp.json / 技能目录 / 
 		const { adapter, sent } = makeAdapter();
 		await adapter.reloadMcp();
 		expect(kinds(sent)).toEqual(["mcp_servers", "extension_inventory_changed", "notice"]);
+	});
+
+	it("listMcpServers 与 mcp_servers 帧同源：全局 + 项目一次给全", async () => {
+		const { adapter, dirs } = makeAdapter();
+		await adapter.saveMcpServer({ name: "fs", scope: "project", command: "npx" });
+
+		const list = adapter.listMcpServers?.();
+		expect(list?.servers.map((server) => `${server.scope}:${server.name}`)).toEqual(["project:fs"]);
+		expect(list?.projectPath).toBe(join(dirs.cwd, ".pi", "mcp.json"));
+		// cwd 可以显式给（宿主句柄侧的场景）：换一个 cwd 就读不到这条项目配置。
+		expect(adapter.listMcpServers?.(join(dirs.root, "elsewhere"))?.servers).toEqual([]);
+	});
+
+	it("dispose 关掉端口并收回宿主句柄，晚装配的端口不被早退的客户端带走", async () => {
+		const first = makeAdapter();
+		const firstHandle = currentCorePluginsHandle();
+		expect(firstHandle).toBeDefined();
+
+		const second = makeAdapter();
+		const secondHandle = currentCorePluginsHandle();
+		expect(secondHandle).not.toBe(firstHandle);
+
+		first.adapter.dispose?.();
+		expect(currentCorePluginsHandle()).toBe(secondHandle);
+		second.adapter.dispose?.();
+		expect(currentCorePluginsHandle()).not.toBe(secondHandle);
 	});
 
 	it("installSkill 真写 SKILL.md 并让内核重开会话", async () => {

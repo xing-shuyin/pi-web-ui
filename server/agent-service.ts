@@ -15,7 +15,7 @@ import * as fsPromises from "node:fs/promises";
 import { DEFAULT_PI_CAPABILITIES } from "./engine-capabilities.js";
 import { existsSync, readFileSync, readdirSync, rmSync, mkdirSync, statSync, watch, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, delimiter, dirname, join, resolve } from "node:path";
+import { basename, delimiter, join, resolve } from "node:path";
 import {
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
@@ -547,6 +547,7 @@ import {
 import { fetchRemoteMcpMarket, fetchRemoteSkillMarket, fetchRemoteSkillContent } from "./market-service.js";
 import type { McpProjectRuntimeRegistry } from "./mcp-project-runtime.js";
 import { McpOAuthUi } from "./mcp-oauth-ui.js";
+import { McpInventoryWatch } from "./mcp-inventory-watch.js";
 import {
 	serializeMessage,
 	serializeStreamingMessage,
@@ -4403,9 +4404,7 @@ export class ClientSession {
 	private gitWatchCwd: string | null = null;
 	private gitDirtyTimer: ReturnType<typeof setTimeout> | null = null;
 	private watchTimer: ReturnType<typeof setTimeout> | null = null;
-	private mcpInventoryWatchers: ReturnType<typeof watch>[] = [];
-	private mcpInventoryWatchKey: string | null = null;
-	private mcpInventoryDirtyTimer: ReturnType<typeof setTimeout> | null = null;
+	private mcpInventoryWatch: McpInventoryWatch | undefined;
 
 	private readonly subagentTemplates: SubagentTemplatesStore;
 	private readonly approvalRules: ApprovalRulesStore;
@@ -10132,53 +10131,26 @@ export class ClientSession {
 		this.emit({ type: "extension_inventory_changed" });
 	}
 
-	/** #885 自动刷新：监听 global/project mcp.json（gitWatch 式防抖），变化发 extension_inventory_changed。只读，不触发 reload。 */
+	/** #885 自动刷新：监听 global/project mcp.json（gitWatch 式防抖，叶子 `mcp-inventory-watch.ts`），变化发 extension_inventory_changed。只读，不触发 reload。 */
 	watchMcpInventory(): void {
-		try {
-			const globalPath = getGlobalMcpPath(this.agentDir, this.stateStore.dataDir);
-			const projectPath = getProjectMcpPath(this.cwd);
-			const key = `${globalPath}\n${projectPath}`;
-			if (this.mcpInventoryWatchKey === key && this.mcpInventoryWatchers.length > 0) return;
-			this.unwatchMcpInventory();
-			this.mcpInventoryWatchKey = key;
-			const dirs = new Set<string>();
-			try {
-				dirs.add(dirname(globalPath));
-			} catch {}
-			try {
-				dirs.add(dirname(projectPath));
-			} catch {}
-			for (const dir of dirs) {
-				try {
-					const w = watch(dir, { persistent: false }, (_event, filename) => {
-						if (typeof filename === "string" && filename !== "mcp.json") return;
-						if (this.disposed || this.mcpInventoryDirtyTimer) return;
-						this.mcpInventoryDirtyTimer = setTimeout(() => {
-							this.mcpInventoryDirtyTimer = null;
-							if (!this.disposed) this.emit({ type: "extension_inventory_changed" });
-						}, 600);
-					});
-					w.on("error", () => this.unwatchMcpInventory());
-					this.mcpInventoryWatchers.push(w);
-				} catch {}
-			}
-		} catch {
-			this.unwatchMcpInventory();
-		}
+		this.ensureMcpInventoryWatch().watch();
 	}
 
 	unwatchMcpInventory(): void {
-		for (const w of this.mcpInventoryWatchers) {
-			try {
-				w.close();
-			} catch {}
-		}
-		this.mcpInventoryWatchers = [];
-		this.mcpInventoryWatchKey = null;
-		if (this.mcpInventoryDirtyTimer) {
-			clearTimeout(this.mcpInventoryDirtyTimer);
-			this.mcpInventoryDirtyTimer = null;
-		}
+		this.mcpInventoryWatch?.close();
+		this.mcpInventoryWatch = undefined;
+	}
+
+	/** 首次查询才建（假体上没有这个字段，取时不许默认它存在）。 */
+	private ensureMcpInventoryWatch(): McpInventoryWatch {
+		return (this.mcpInventoryWatch ??= new McpInventoryWatch({
+			paths: () => ({
+				globalPath: getGlobalMcpPath(this.agentDir, this.stateStore.dataDir),
+				projectPath: getProjectMcpPath(this.cwd),
+			}),
+			isDisposed: () => this.disposed,
+			notify: () => this.emit({ type: "extension_inventory_changed" }),
+		}));
 	}
 
 	private mcpManageToolHost(cwd: string): McpManageToolHost {

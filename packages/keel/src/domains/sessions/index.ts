@@ -16,3 +16,14 @@ export {
 	type ConversationStateHandlers,
 	type ConversationStateOptions,
 } from "./state.js";
+export {
+	rebindSession,
+	type RebindContext,
+	type RebindFrames,
+	type RebindRequest,
+	type RebindResult,
+	type RebindSessions,
+} from "./rebind.js";
+export { createWorkspaceSwitcher, type WorkspaceRootsStore, type WorkspaceSwitcherOptions } from "./workspace.js";
+export { createSessionEntityHandlers, type SessionEntityHandlers, type SessionEntityOptions } from "./entity.js";
+export { createSessionPins, type SessionPinsHandlers, type SessionPinsOptions } from "./pins.js";

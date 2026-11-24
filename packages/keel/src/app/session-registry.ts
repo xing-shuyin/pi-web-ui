@@ -40,12 +40,13 @@ export class SessionRegistry {
 		return this.byConversation.get(conversationId);
 	}
 
-	async ensure(conv: Conversation): Promise<OpenedSession> {
+	async ensure(conv: Conversation, options?: { cwd?: string }): Promise<OpenedSession> {
 		const existing = this.byConversation.get(conv.id);
 		if (existing) return existing;
 		if (!conv.acceptsTurns) throw new SessionUnavailableError(conv.id, `phase ${conv.phase}`);
 		const opened = await openTurnSession({
-			cwd: conv.meta.cwd,
+			// 远程工作区的 SDK 会话目录与 cwd 分离（`cwd` 是 URI，会话落本地镜像目录）。
+			cwd: options?.cwd ?? conv.meta.cwd,
 			agentDir: this.options.agentDir,
 			sessionFile: conv.meta.sessionFile,
 			tools: this.options.toolsFor?.(conv),

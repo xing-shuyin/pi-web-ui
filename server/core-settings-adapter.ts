@@ -1,11 +1,13 @@
 import { join } from "node:path";
 import type { SettingsFramePort } from "../packages/keel/src/contracts/settings.js";
+import type { McpServerInventory } from "../packages/keel/src/contracts/plugins.js";
 import type { CoreSettingsSinks } from "../packages/keel/src/app/core-engine.js";
 import { ApprovalRulesStore } from "../packages/keel/src/approval-rules.js";
 import { SubagentTemplatesStore } from "../packages/keel/src/subagent-templates.js";
 import { isTraditionalLocale, resolveServerLang } from "../packages/keel/src/i18n.js";
 import type { ClientStateStore } from "./client-state.js";
 import type { MarkerService } from "./marker-service.js";
+import { currentCorePluginsHandle } from "./core-plugins-handle.js";
 import { SettingsService, type SettingsHost } from "./settings-service.js";
 
 export interface CoreSettingsAdapterOptions extends CoreSettingsSinks {
@@ -21,6 +23,9 @@ export interface CoreSettingsAdapterOptions extends CoreSettingsSinks {
 
 /** 会话句柄类型从 `SettingsHost` 推导，避免在这里再描述一遍 SDK 的会话实体。 */
 type HostSession = ReturnType<SettingsHost["getSession"]>;
+
+/** 插件面未接（或客户端已退）：MCP 清单给空表，不让设置帧停在那里。 */
+const EMPTY_MCP: McpServerInventory = { servers: [], globalPath: "", projectPath: "" };
 
 /**
  * 宿主侧组合适配器：构造宿主设置叶子 `SettingsService`（设置帧 / 预设 / 审批规则 / 模板），
@@ -95,11 +100,12 @@ export function createCoreSettingsService(options: CoreSettingsAdapterOptions): 
 
 /**
  * 把 `CoreSettingsSinks` 收窄成「只认注入值」的 `SettingsHost`：设置叶子（`SettingsService`）
- * 不认识新树的会话实体，只拿到这里如实投影出来的成员。apply* / reload* 一律走空实现——
- * 对应域还没接，抛错会让 `push()` 炸。
+ * 不认识新树的会话实体，只拿到这里如实投影出来的成员。apply* 一律走空实现——
+ * 对应域还没接，抛错会让 `push()` 炸；但 `reloadSession` 与 MCP 清单不空：
+ * 它们直接复用插件面（`core-plugin-adapter.ts` 登记的宿主句柄）那一份实现。
  */
 export function createCoreSettingsHost(options: CoreSettingsAdapterOptions): SettingsHost {
-	// 新树对应域未接，待 W5：apply* / reloadSession / promptSnapshot 只回安全空值，绝不抛。
+	// 新树对应域未接，待 W5：apply* / promptSnapshot 只回安全空值，绝不抛。
 	const notWired = (): void => {};
 	return {
 		clientId: options.clientId,
@@ -112,7 +118,11 @@ export function createCoreSettingsHost(options: CoreSettingsAdapterOptions): Set
 		cwd: () => options.cwd,
 		agentDir: () => options.agentDir,
 		isStreaming: () => options.isStreaming(),
-		reloadSession: async () => {},
+		// 技能 / 扩展装或卸之后要让下一轮按新目录重建会话资源：与端口内 `installSkill` 用的是同一个函数。
+		reloadSession: async () => {
+			const plugins = currentCorePluginsHandle();
+			if (plugins) await plugins.reloadSession();
+		},
 		applyRetryOverrides: notWired,
 		applyQueueModes: notWired,
 		applyCompactionOverrides: notWired,
@@ -122,6 +132,7 @@ export function createCoreSettingsHost(options: CoreSettingsAdapterOptions): Set
 		onGoalModeDisabled: notWired,
 		onSessionsFilterChanged: notWired,
 		promptSnapshot: () => ({ full: "", texts: {}, toolsSchema: "" }),
-		getMcpServers: () => ({ servers: [], globalPath: "", projectPath: "" }),
+		// MCP 清单不自己拼路径：直读插件面投影（含连接域健康），没接插件面就是空表。
+		getMcpServers: () => currentCorePluginsHandle()?.listMcpServers() ?? EMPTY_MCP,
 	};
 }

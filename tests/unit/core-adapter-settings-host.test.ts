@@ -1,8 +1,9 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClientStateStore } from "../../server/client-state.js";
+import { createCorePlugins } from "../../server/core-plugin-adapter.js";
 import {
 	createCoreSettingsAdapter,
 	createCoreSettingsHost,
@@ -62,6 +63,23 @@ describe("宿主设置适配器（core-settings-adapter）", () => {
 
 	function settingsFrames(): UiSettingsState[] {
 		return emitted.flatMap((msg) => (msg.type === "settings_state" ? [msg.settings] : []));
+	}
+
+	/** 真的插件面（会写 mcp.json / 技能目录），并顺带登记设置帧要读的宿主句柄。 */
+	function makePlugins(cwd: string, overrides: Partial<Parameters<typeof createCorePlugins>[0]> = {}) {
+		return createCorePlugins({
+			agentDir: join(dir, "agent"),
+			dataDir: join(dir, "data"),
+			version: "9.9.9",
+			emit: emitFrame,
+			isDisposed: () => false,
+			getCwd: () => cwd,
+			getLang: () => "en",
+			reloadSession: async () => {},
+			getDisabledPlugins: () => [],
+			setDisabledPlugins: async () => {},
+			...overrides,
+		});
 	}
 
 	it("host 如实投影注入的 clientId / stateStore / emit / cwd / agentDir", () => {
@@ -221,5 +239,44 @@ describe("宿主设置适配器（core-settings-adapter）", () => {
 		frame.push();
 		// 默认模板存储 = stateStore.dataDir/subagent-templates.json：帧里因此非空。
 		expect(settingsFrames()[0].subagentTemplates.length).toBeGreaterThan(0);
+	});
+
+	it("settings_state.mcpServers 投影插件面的真清单（不再恒空）", () => {
+		const cwd = join(dir, "work");
+		mkdirSync(join(cwd, ".pi"), { recursive: true });
+		writeFileSync(
+			join(cwd, ".pi", "mcp.json"),
+			JSON.stringify({ mcpServers: { fs: { command: "npx", args: ["-y", "mcp-fs"] } } }),
+			"utf8",
+		);
+		const plugins = makePlugins(cwd);
+		try {
+			const frame = createCoreSettingsAdapter(options({ cwd }));
+			frame.push();
+			expect(settingsFrames()[0].mcpServers?.map((s) => `${s.scope}:${s.name}`)).toEqual(["project:fs"]);
+		} finally {
+			plugins.dispose?.();
+		}
+	});
+
+	it("reloadSession 接的是插件面那一份实现（装完技能走同一条重载）", async () => {
+		const reload = vi.fn(async () => {});
+		const plugins = makePlugins(dir, { reloadSession: reload });
+		try {
+			const host = createCoreSettingsHost(options());
+			await host.reloadSession();
+			expect(reload).toHaveBeenCalledTimes(1);
+			// 端口自己的技能安装路径用的是同一个函数：两条入口不能各接一套。
+			await plugins.installSkill("demo-skill", "project", "# demo");
+			expect(reload).toHaveBeenCalledTimes(2);
+		} finally {
+			plugins.dispose?.();
+		}
+	});
+
+	it("插件面未接时 reloadSession 与 MCP 清单都给安全空值", async () => {
+		const host = createCoreSettingsHost(options());
+		await expect(host.reloadSession()).resolves.toBeUndefined();
+		expect(host.getMcpServers?.()).toEqual({ servers: [], globalPath: "", projectPath: "" });
 	});
 });

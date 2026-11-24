@@ -1,0 +1,119 @@
+import { resolve } from "node:path";
+import { CoreEngineNotReadyError } from "../../contracts/core-engine-errors.js";
+import type { Conversation, ConversationRegistry } from "../../kernel/conversation/index.js";
+import { restoreWorkspaceUriFromSessionDir } from "../../remote-workspace.js";
+import { readCwdFromSessionHeader } from "../../session-search.js";
+import type { RebindFrames, RebindRequest, RebindResult } from "./rebind.js";
+
+export interface SessionEntityOptions {
+	registry: ConversationRegistry<Conversation>;
+	/** 重绑原语（`rebindSession` 绑定上下文后的调用口）；缺省 = 该能力未接。 */
+	rebind?: (request: RebindRequest) => Promise<RebindResult>;
+	frames: RebindFrames;
+	/** 当前工作区：转录 header 里读不出 cwd 时用它兜底。 */
+	cwd(): string;
+	/** 允许打开哪些转录（缺省 fail-closed：一律拒绝）。装配层按 `agentDir/sessions` 注入。 */
+	isAllowedPath?(path: string): boolean;
+	/** 已开会话的 `sessionId`（客户端可以只给 id 不给路径）。 */
+	openSessionIdOf?(conversationId: string): string | undefined;
+	/** 打开成功后把「历史根 = 这份转录所在目录」交给出帧层。 */
+	noteSessionFile?(file: string | undefined): void;
+	notice(level: "info" | "warning" | "error", text: string, textEn: string): void;
+	/** 进度帧（客户端据此收起切换蒙层）：`done` 才落定，`error` 明确失败。 */
+	progress?(kind: "cwd" | "session", target: string, phase: "done" | "error", text: string, textEn: string): void;
+}
+
+export interface SessionEntityHandlers {
+	switchSession(path: string, sessionId?: string, independent?: boolean): Promise<void>;
+}
+
+/** 会话 header 里的真实 cwd（远程工作区 URI 会先还原）；读不出来就用当前工作区兜底。 */
+async function ownerCwdOf(sessionFile: string, fallback: string): Promise<string> {
+	try {
+		const headerCwd = restoreWorkspaceUriFromSessionDir((await readCwdFromSessionHeader(resolve(sessionFile))) ?? "");
+		return headerCwd || fallback;
+	} catch {
+		return fallback;
+	}
+}
+
+/**
+ * 会话实体入口：`switchSession`（打开一份转录并把工作区切过去）。
+ *
+ * 它与 `setCwd` / 换工作树 / 沙盒共用同一个重绑原语，区别只在「目标从哪来」：
+ * 换目录看路径，切会话看转录 header 里的 cwd。`independent` 是客户端的「常驻行」提示，
+ * 内核没有对应状态（左栏归属由 `conversation-rows` 的单源裁定），这里明确不参与。
+ */
+export function createSessionEntityHandlers(options: SessionEntityOptions): SessionEntityHandlers {
+	const rebindOf = (what: string): ((request: RebindRequest) => Promise<RebindResult>) => {
+		const rebind = options.rebind;
+		if (!rebind) throw new CoreEngineNotReadyError(what);
+		return rebind;
+	};
+	const progress = options.progress;
+
+	/** 已经开着的对话直接用（老口径：同一份转录不重复建，避免两个写者）。 */
+	const reuse = (conversation: Conversation, target: string): void => {
+		options.registry.activate(conversation.id);
+		options.noteSessionFile?.(target);
+		options.frames.flush(true);
+		void options.frames.pushSessions?.();
+		progress?.("session", target, "done", "会话加载完成", "Session loaded");
+	};
+
+	return {
+		// 不用 `async` 包：端口缺失的抛错必须是**同步**的（wire 层这里是 `void` 调用，不能变成 unhandled）。
+		switchSession(path: string, sessionId?: string, _independent?: boolean): Promise<void> {
+			const rebind = rebindOf("switchSession");
+			const wanted = (sessionId ?? "").trim();
+			const trimmed = (path ?? "").trim();
+			if (!trimmed) {
+				// 只给 id：本进程里开着的会话可以直接切过去，没开着的需要路径（按 id 找盘上的转录是宿主知识）。
+				const opened = wanted
+					? options.registry.list().find((conv) => options.openSessionIdOf?.(conv.id) === wanted)
+					: undefined;
+				if (opened) {
+					reuse(opened, opened.meta.sessionFile ?? wanted);
+					return Promise.resolve();
+				}
+				options.notice(
+					"warning",
+					wanted ? `未找到会话：${wanted}` : "缺少会话路径",
+					wanted ? `Session not found: ${wanted}` : "Session path is missing",
+				);
+				options.frames.flush(false);
+				return Promise.resolve();
+			}
+
+			const target = resolve(trimmed);
+			const isAllowedPath = options.isAllowedPath;
+			if (isAllowedPath && !isAllowedPath(target)) {
+				options.notice(
+					"error",
+					"只能打开会话目录中的对话记录",
+					"Only transcripts inside the session directory can be opened",
+				);
+				options.frames.flush(false);
+				return Promise.resolve();
+			}
+			const holder = options.registry.bySessionFile(target);
+			if (holder) {
+				reuse(holder, target);
+				return Promise.resolve();
+			}
+
+			const fallback = options.cwd();
+			return ownerCwdOf(target, fallback).then(async (cwd) => {
+				try {
+					await rebind({ cwd, sessionFile: target });
+					options.noteSessionFile?.(target);
+					progress?.("session", target, "done", "会话加载完成", "Session loaded");
+				} catch (error) {
+					const message = (error as Error).message;
+					progress?.("session", target, "error", `会话加载失败：${message}`, `Failed to load session: ${message}`);
+					options.notice("error", `打开会话失败：${message}`, `Failed to open session: ${message}`);
+				}
+			});
+		},
+	};
+}

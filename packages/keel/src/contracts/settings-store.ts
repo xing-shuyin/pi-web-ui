@@ -39,6 +39,14 @@ export interface SettingsStorePort {
 	getProjectProviderKey(clientId: string, cwd: string, provider: string): string | undefined;
 	saveProjectProviderKey(clientId: string, cwd: string, provider: string, keyName: string): void;
 	deleteProjectProviderKey(clientId: string, cwd: string, provider: string): void;
+	/** 额外工作区根的持久化（`client-state` 按「客户端 + cwd」记账）：换工作区要读回它。 */
+	getWorkspaceRoots(clientId: string, cwd: string): string[];
+	saveWorkspaceRoots(clientId: string, cwd: string, roots: string[]): void;
+
+	/** 会话钉住（历史行 📌）：按会话自己 header 的 cwd 记账，跨项目不串台。 */
+	setSessionPinned(cwd: string, sessionPath: string, pinned: boolean): void;
+	isSessionPinned(cwd: string, sessionPath: string): boolean;
+
 	getDefaultModel(engine?: string): string | undefined;
 	saveDefaultModel(modelId: string, engine?: string): void;
 	getDefaultProviderKey(provider: string): string | undefined;

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { WebSocket } from "ws";
-import type { ClientMessage, ServerMessage } from "./protocol.js";
+import type { ClientMessage, ServerMessage, UiMcpServer } from "./protocol.js";
 import type { DispatchSession } from "./engine-service.js";
 import type { PluginManager } from "./plugins.js";
 import { buildPluginJobArgs, inspectInstallSpec, type PluginInstaller } from "./plugin-installer.js";
@@ -9,6 +9,8 @@ import { syncPluginCatalog } from "./plugin-catalog-sync.js";
 import type { ServerLang } from "./i18n.js";
 import { collectExtensionInventory, mcpServersToInput } from "./extension-inventory.js";
 import { getSdkBuiltinExtensionFactories } from "./sdk-builtin-extensions.js";
+import { currentCorePluginsHandle } from "./core-plugins-handle.js";
+import { McpInventoryWatch } from "./mcp-inventory-watch.js";
 
 export interface PluginDispatchContext {
 	pluginMgr: PluginManager;
@@ -33,6 +35,62 @@ export interface PluginDispatchContext {
 	pushPluginPermissions: () => void;
 	reloadPluginsAndPush: (lang: () => ServerLang) => Promise<void>;
 	confirmPluginInstallHelper: (items: Array<{ id: string; source: string }>) => Promise<boolean>;
+}
+
+/** `extension_inventory` 的 MCP 监听：`DispatchSession` 自己不带 watch 时按客户端现装一份。 */
+interface InventoryWatchEntry {
+	watch: McpInventoryWatch;
+	send: (msg: ServerMessage) => void;
+}
+const inventoryWatches = new Map<string, InventoryWatchEntry>();
+
+/**
+ * MCP 清单：会话自带（老树 `listMcpServers`）优先，否则走宿主句柄（core 端口登记的那一份投影）。
+ * 两路都只读配置 + 连接域健康，不新建连接。
+ */
+function readDispatchMcpServers(cs: DispatchSession | undefined): UiMcpServer[] {
+	try {
+		const list = (cs as unknown as { listMcpServers?: (cwd?: string) => { servers: UiMcpServer[] } })?.listMcpServers;
+		if (typeof list === "function") return list.call(cs).servers ?? [];
+	} catch {
+		return [];
+	}
+	return currentCorePluginsHandle()?.listMcpServers().servers ?? [];
+}
+
+/** 首次查询即启动监听（只读，`gitWatch` 式防抖）：路径取自同一份清单，不另外拼。 */
+function watchDispatchMcpInventory(
+	clientId: string | undefined,
+	cs: DispatchSession | undefined,
+	send: (msg: ServerMessage) => void,
+): void {
+	try {
+		const own = (cs as unknown as { watchMcpInventory?: () => void })?.watchMcpInventory;
+		if (typeof own === "function") {
+			own.call(cs);
+			return;
+		}
+	} catch {
+		return;
+	}
+	if (!currentCorePluginsHandle()) return;
+	const key = clientId ?? "";
+	const existing = inventoryWatches.get(key);
+	if (existing) {
+		existing.send = send;
+		existing.watch.watch();
+		return;
+	}
+	const watch = new McpInventoryWatch({
+		paths: () => {
+			const list = currentCorePluginsHandle()?.listMcpServers();
+			return { globalPath: list?.globalPath ?? "", projectPath: list?.projectPath ?? "" };
+		},
+		isDisposed: () => false,
+		notify: () => inventoryWatches.get(key)?.send({ type: "extension_inventory_changed" }),
+	});
+	inventoryWatches.set(key, { watch, send });
+	watch.watch();
 }
 
 export function handlePluginMessage(msg: ClientMessage, ctx: PluginDispatchContext): boolean {
@@ -329,7 +387,6 @@ export function handlePluginMessage(msg: ClientMessage, ctx: PluginDispatchConte
 					const settingsLike = (
 						cs as unknown as {
 							settingsSvc?: { current: { disabledExtensions?: unknown; disabledPlugins?: unknown } };
-							listMcpServers?: () => { servers: import("./protocol.js").UiMcpServer[] };
 						}
 					)?.settingsSvc?.current;
 					const disabledExtensions = Array.isArray(settingsLike?.disabledExtensions)
@@ -338,18 +395,8 @@ export function handlePluginMessage(msg: ClientMessage, ctx: PluginDispatchConte
 					const disabledPlugins = Array.isArray(settingsLike?.disabledPlugins)
 						? (settingsLike.disabledPlugins as string[])
 						: [];
-					let mcpServers: import("./protocol.js").UiMcpServer[] = [];
-					try {
-						const maybeList = (
-							cs as unknown as { listMcpServers?: () => { servers: import("./protocol.js").UiMcpServer[] } }
-						)?.listMcpServers;
-						if (typeof maybeList === "function") mcpServers = maybeList.call(cs).servers ?? [];
-					} catch {
-						mcpServers = [];
-					}
-					try {
-						(cs as unknown as { watchMcpInventory?: () => void })?.watchMcpInventory?.();
-					} catch {}
+					const mcpServers = readDispatchMcpServers(cs);
+					watchDispatchMcpInventory(clientId, cs, send);
 					const { entries, errors } = await collectExtensionInventory({
 						getSdkBuiltins: () =>
 							sdkBuiltins.map((b) => ({ name: b.name, replaceable: b.replaceable, hidden: b.hidden })),

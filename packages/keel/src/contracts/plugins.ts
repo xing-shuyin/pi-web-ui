@@ -7,6 +7,16 @@ export type McpOAuthMessage = Extract<
 >;
 
 /**
+ * MCP 清单的宿主投影：全局 + 项目两份 `mcp.json`，附带连接域给出的健康。
+ * `settings_state.mcp` 与 `extension_inventory` 的 MCP 段都读这一份，不在别处另拼路径。
+ */
+export interface McpServerInventory {
+	servers: UiMcpServer[];
+	globalPath: string;
+	projectPath: string;
+}
+
+/**
  * MCP / 技能 / 市场 / 插件更新 / 更新中心（宿主能力）。
  *
  * 实现全在宿主叶子：`server/mcp-manager.ts`（mcp.json 读写）、`server/mcp-project-runtime.ts`（连接域）、
@@ -39,4 +49,12 @@ export interface PluginsPort {
 	checkPluginUpdates(manual?: boolean): Promise<void>;
 	checkUpdate(): Promise<void>;
 	checkUpdatesAll(force?: boolean): Promise<void>;
+
+	/**
+	 * MCP 清单（只读）：宿主侧没有 `PluginsPort` 句柄的地方（设置帧 / 扩展清单）靠它取同一份投影。
+	 * `cwd` 缺省 = 当前对话的目录（项目作用域跟着它走）。
+	 */
+	listMcpServers?(cwd?: string): McpServerInventory;
+	/** 端口收尾（客户端断开）：关掉本端口持有的授权流程，别把 attempt 留在进程里。 */
+	dispose?(): void;
 }

@@ -9,9 +9,11 @@ import type { SettingsFramePort } from "../contracts/settings.js";
 import type { BackgroundPort } from "../contracts/background.js";
 import type { SettingsStorePort } from "../contracts/settings-store.js";
 import type { SlashCommandSinks, SlashCommandsPort } from "../contracts/commands.js";
-import type { FilesPort, WorkspacePort } from "../contracts/files.js";
+import type { FilesPort } from "../contracts/files.js";
 import type { WorktreePort } from "../contracts/worktree.js";
 import type { PluginsPort } from "../contracts/plugins.js";
+import type { WorkspaceHostPort } from "../contracts/workspace.js";
+import type { SandboxPort } from "../contracts/sandbox.js";
 import type { RemoteSdkOperationsFactory } from "../contracts/remote-ops.js";
 import { isInsideRoots } from "../path-boundary.js";
 import { createProjectSource } from "../adapters/state/index.js";
@@ -54,8 +56,11 @@ export interface CoreEngineOptions {
 	slashCommands?: (sinks: SlashCommandSinks) => SlashCommandsPort;
 	/** 文件面工厂（宿主实现：`server/core-files-adapter.ts`）；缺省 = 能力未接。 */
 	files?: (sinks: CoreFilesSinks) => FilesPort;
-	/** 工作区绑定面工厂；缺省 = 能力未接。 */
-	workspace?: () => WorkspacePort;
+	/** 工作区绑定面工厂（宿主实现 `server/core-workspace-adapter.ts`：目标解析 + 换完后的宿主收尾）；
+	 * 缺省 = 内核只认本地路径（`~` 展开 + 相对路径 + stat 目录校验）。 */
+	workspaceHost?: (sinks: CoreWorkspaceSinks) => WorkspaceHostPort;
+	/** 沙盒面工厂（宿主实现 `server/core-sandbox-adapter.ts`）；缺省 = 能力未接。 */
+	sandbox?: (sinks: CoreSandboxSinks) => SandboxPort;
 	/** Git 工作树面工厂（宿主实现：`server/core-worktree-adapter.ts`）；缺省 = 能力未接。 */
 	worktree?: () => WorktreePort;
 	/**
@@ -115,14 +120,26 @@ export interface CorePluginsSinks {
 	setDisabledPlugins(next: string[]): Promise<void>;
 }
 
-/** 宿主实现 `FilesPort` 时要拼的几块：帧出口 + 工作区线径根。 */
-export interface CoreFilesSinks {
+/** 宿主实现 `FilesPort` 时要拼的几块：帧出口 + 工作区线径根。 */ export interface CoreFilesSinks {
 	emit(msg: ServerMessage): void;
 	isDisposed(): boolean;
 	getCwd(): string;
 	getActiveCwd(): string;
 	getLang?: () => ServerLang;
 	getUploadMaxBytes?: () => number;
+}
+
+/** 宿主实现 `WorkspaceHostPort` 时要拼的几块：当前工作目录（相对路径的基准）。 */
+export interface CoreWorkspaceSinks {
+	getCwd(): string;
+}
+
+/** 宿主实现 `SandboxPort` 时要拼的几块：帧出口（`sandbox_diff` / notice）+ 当前工作目录。 */
+export interface CoreSandboxSinks {
+	emit(msg: ServerMessage): void;
+	isDisposed(): boolean;
+	getCwd(): string;
+	getLang(): ServerLang;
 }
 
 /**
@@ -263,6 +280,8 @@ export class CoreEngine implements EngineService {
 		const runtime = new ClientRuntime({
 			clientId,
 			cwd: this.cwd,
+			// 额外工作区根是持久化状态（`client-state` 按「客户端 + cwd」记账）：连接期就带回来。
+			workspaceRoots: this.stateStore.getWorkspaceRoots(clientId, this.cwd),
 			clock: systemClock,
 			transport,
 			sessions,
@@ -288,7 +307,9 @@ export class CoreEngine implements EngineService {
 			files: () => files,
 			plugins: () => plugins,
 			background: () => background,
-			workspace: () => this.options.workspace?.(),
+			sandbox: () => sandbox,
+			stateStore: () => this.stateStore,
+			workspaceHost: () => workspaceHost,
 			worktree: () => this.options.worktree?.(),
 			commandCwd: () => runtime.registry.activeConv()?.meta.cwd ?? this.cwd,
 			commandsPathOf: this.options.commandsPathOf,
@@ -370,6 +391,14 @@ export class CoreEngine implements EngineService {
 			activeConversationId: () => runtime.registry.activeId(),
 			cleanupMinutes: () => this.stateStore.getSettings(clientId).bgAutoCleanupMin ?? 0,
 		});
+		// 沙盒 / 工作区宿主面都是「每客户端一份」（帧出口跟着连接走）。
+		const sandbox = this.options.sandbox?.({
+			emit: (msg) => transport.send(msg),
+			isDisposed: () => this.runtimes.get(clientId) !== runtime,
+			getCwd: () => runtime.registry.activeConv()?.meta.cwd ?? runtime.cwd,
+			getLang: () => this.langOf(clientId),
+		});
+		const workspaceHost = this.options.workspaceHost?.({ getCwd: () => runtime.cwd });
 		const modelPusher = createModelPusher({
 			transport,
 			agentDir: this.options.agentDir ?? this.cwd,
@@ -390,15 +419,22 @@ export class CoreEngine implements EngineService {
 				if (!transport.isClosed()) transport.send({ type: "default_model", modelId });
 			},
 			pushProjects: async () => {
-				await pushProjects({ transport, clientId, cwd: this.cwd, source: this.projectSource });
+				await pushProjects({ transport, clientId, cwd: runtime.cwd, source: this.projectSource });
 			},
 			refreshSessions: async () => {
 				const root = runtime.historyRoot();
+				const cwd = runtime.cwd;
 				if (!root) {
-					transport.send({ type: "sessions", sessions: [], cwd: this.cwd });
+					transport.send({ type: "sessions", sessions: [], cwd });
 					return;
 				}
-				await refreshSessions({ root, cwd: this.cwd, transport, state: runtime.historyState() });
+				const pinned = { isPinned: (owner: string, file: string) => this.stateStore.isSessionPinned(owner, file) };
+				await refreshSessions({ root, cwd, transport, state: runtime.historyState(), ...pinned });
+			},
+			// 钉子落在会话归属的项目上：只有目标就是当前项目时才重扫（别的项目的会话目录只有宿主认得）。
+			refreshSessionsFor: async (targetCwd: string) => {
+				if (resolveFsPath(targetCwd) !== resolveFsPath(runtime.cwd)) return;
+				await frames.refreshSessions();
 			},
 			listModels: () => {
 				void modelPusher.push();

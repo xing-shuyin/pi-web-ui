@@ -16,6 +16,8 @@ export const DISPATCH_VALUE_MEMBERS = ["cwd", "workspaceRoots"] as const satisfi
 export type DispatchHandlers = Pick<DispatchSession, NonFunctionMember> &
 	Partial<Record<DispatchFunctionMember, DispatchHandler>>;
 
+export type DispatchValueMembers = Pick<DispatchSession, NonFunctionMember>;
+
 function isValueMember(member: DispatchSessionMember): member is NonFunctionMember {
 	return (DISPATCH_VALUE_MEMBERS as readonly string[]).includes(member);
 }
@@ -24,8 +26,22 @@ function notImplemented(member: DispatchSessionMember): never {
 	throw new CoreEngineNotReadyError(`dispatch.${member}`);
 }
 
-export function createDispatchSurfaceAdapter(handlers: DispatchHandlers): DispatchSession {
-	const surface: Record<string, unknown> = { cwd: handlers.cwd, workspaceRoots: handlers.workspaceRoots };
+/**
+ * 值成员（`cwd` / `workspaceRoots`）**每次现读**：换工作区之后宿主拿到的必须是新目录，
+ * 否则附件 / 文件 / SCM 还会按旧根解析。所以可以给一个取值口，而不是在构造期抄一份。
+ */
+export function createDispatchSurfaceAdapter(
+	handlers: DispatchHandlers,
+	values?: () => DispatchValueMembers,
+): DispatchSession {
+	const surface: Record<string, unknown> = {};
+	for (const member of DISPATCH_VALUE_MEMBERS) {
+		Object.defineProperty(surface, member, {
+			get: () => (values ? values()[member] : handlers[member]),
+			enumerable: true,
+			configurable: false,
+		});
+	}
 	for (const member of DISPATCH_SURFACE) {
 		if (isValueMember(member)) continue;
 		surface[member] = handlers[member] ?? (() => notImplemented(member));

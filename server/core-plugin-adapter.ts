@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { McpOAuthMessage, PluginsPort } from "../packages/keel/src/contracts/plugins.js";
+import type { McpOAuthMessage, McpServerInventory, PluginsPort } from "../packages/keel/src/contracts/plugins.js";
 import type { CorePluginsSinks } from "../packages/keel/src/app/core-engine.js";
 import type { McpScope, ServerMessage, UiMcpServer, UiPluginUpdateInfo } from "./protocol.js";
 import type { McpBridge } from "./mcp-bridge.js";
@@ -27,6 +27,7 @@ import {
 } from "./update-check.js";
 import { collectInstalledEngineTargets } from "./engine-probe.js";
 import { isBundledInUse, sdkCopies } from "./sdk-origin.js";
+import { publishCorePluginsHandle, releaseCorePluginsHandle } from "./core-plugins-handle.js";
 
 /** 适配器只用 MCP 运行时的两个方法：结构面比整个注册表窄，单测不必造一个注册表。 */
 export interface CoreMcpProjectRuntime {
@@ -74,6 +75,8 @@ export function createCorePlugins(options: CorePluginsAdapterOptions): PluginsPo
 			dataDir: options.dataDir,
 			bridge: projects()?.peekBridge(cwd),
 		});
+	/** 端口与宿主句柄共用的那一份投影：`cwd` 缺省取本客户端活动对话的目录。 */
+	const listMcpServers = (cwd?: string): McpServerInventory => listServers(cwd ?? options.getCwd());
 	const broadcastMcpServers = (cwd: string): void => {
 		const data = listServers(cwd);
 		emit({
@@ -90,6 +93,11 @@ export function createCorePlugins(options: CorePluginsAdapterOptions): PluginsPo
 		scope === "global" ? join(options.agentDir, "skills") : join(options.getCwd(), ".pi", "skills");
 
 	const oauth = new McpOAuthUi();
+	// 设置帧与扩展清单没有端口句柄，靠这一次登记拿到同一份 listMcpServers / reloadSession。
+	const handle = publishCorePluginsHandle({
+		listMcpServers,
+		reloadSession: () => options.reloadSession(),
+	});
 	const notifiedPluginUpdates = new Set<string>();
 	let lastPluginUpdates: UiPluginUpdateInfo[] = [];
 	let updatesAllCache: { at: number; items: UpdateItem[] } | null = null;
@@ -169,6 +177,14 @@ export function createCorePlugins(options: CorePluginsAdapterOptions): PluginsPo
 	};
 
 	return {
+		listMcpServers,
+
+		/** 客户端断开：关掉本端口的授权流程，并收回宿主句柄（别把 attempt 与闭包留在进程里）。 */
+		dispose(): void {
+			oauth.dispose();
+			releaseCorePluginsHandle(handle);
+		},
+
 		async saveMcpServer(server: UiMcpServer, prevName?: string, prevScope?: McpScope): Promise<void> {
 			const cwd = options.getCwd();
 			const res = await saveMcpServerFile({

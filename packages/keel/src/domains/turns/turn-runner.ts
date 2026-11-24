@@ -27,11 +27,25 @@ type SettledOutcome = "done" | "failed";
  */
 export class TurnRunner {
 	private readonly streaming = new Set<string>();
+	private readonly idleWaiters = new Map<string, Array<() => void>>();
 
 	constructor(private readonly deps: TurnRunnerDeps) {}
 
 	isStreaming(conversationId: string): boolean {
 		return this.streaming.has(conversationId);
+	}
+
+	/**
+	 * 等这个对话正在跑的这一轮真的收尾（相位回到 idle）。`abort()` 之后 SDK 已经是 idle，
+	 * 但回合的结算在喂轮 promise 的 `finally` 里：编辑重问要等它落地，否则会撞上「相位还在跑」。
+	 */
+	whenIdle(conversationId: string): Promise<void> {
+		if (!this.streaming.has(conversationId)) return Promise.resolve();
+		return new Promise<void>((resolve) => {
+			const waiters = this.idleWaiters.get(conversationId) ?? [];
+			waiters.push(resolve);
+			this.idleWaiters.set(conversationId, waiters);
+		});
 	}
 
 	async start(
@@ -82,7 +96,14 @@ export class TurnRunner {
 
 	private setStreaming(conversationId: ConversationId, streaming: boolean, at: number): void {
 		if (streaming) this.streaming.add(conversationId);
-		else this.streaming.delete(conversationId);
+		else {
+			this.streaming.delete(conversationId);
+			const waiters = this.idleWaiters.get(conversationId);
+			if (waiters) {
+				this.idleWaiters.delete(conversationId);
+				for (const resolve of waiters) resolve();
+			}
+		}
 		this.deps.events?.onStreamingChanged?.(conversationId, streaming, at);
 	}
 
