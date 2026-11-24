@@ -103,9 +103,9 @@ describe("prepareRemoteNativeCliPaste", () => {
 			{ path: "/project/src" },
 			{ path: "ssh://alice@host/project/readme.md" },
 		]);
-		expect(result.text).toContain('File path: "/project/real.ts" (lines 2-7)');
-		expect(result.text).toContain('Directory path: "/project/src"');
-		expect(result.text).toContain('File path: "/project/readme.md"');
+		expect(result.text).toContain("@real.ts:2-7");
+		expect(result.text).toContain("@src/");
+		expect(result.text).toContain("@readme.md");
 		expect(result.text).not.toContain("ssh://");
 		expect(service.sftpWriteFile).not.toHaveBeenCalled();
 	});
@@ -113,7 +113,7 @@ describe("prepareRemoteNativeCliPaste", () => {
 	it("accepts workspaces whose own root is a symlink", async () => {
 		realpaths.set("/project", "/srv/repo");
 		realpaths.set("/project/file", "/srv/repo/file");
-		expect((await prepare([{ path: "file" }])).text).toContain('"/srv/repo/file"');
+		expect((await prepare([{ path: "file" }])).text).toContain("/srv/repo/file");
 	});
 
 	it.each([
@@ -142,7 +142,7 @@ describe("prepareRemoteNativeCliPaste", () => {
 
 	it("requires explicit server authorization for outside absolute references", async () => {
 		expect((await prepare([{ path: "/extra/file" }], "Read", { allowAbsolutePaths: true })).text).toContain(
-			'"/extra/file"',
+			"@/extra/file",
 		);
 		realpaths.set("/project/link", "/outside/file");
 		await expect(prepare([{ path: "link" }], "Read", { allowAbsolutePaths: true })).rejects.toThrow(/symlink escapes/);

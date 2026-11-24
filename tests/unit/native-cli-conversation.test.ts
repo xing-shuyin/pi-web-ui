@@ -1065,4 +1065,51 @@ describe("native CLI conversations", () => {
 		manager.appendCustomEntry("webui/native-cli", { version: 99, config });
 		expect(() => readNativeCliConfig(manager)).toThrow("Unsupported");
 	});
+
+	it("supports custom initial title and automatically updates title from first user prompt or terminal output", async () => {
+		const cs = client();
+		expect(await cs.newCliChat(config, undefined, undefined, "Custom CLI Title")).toBe(true);
+		const customCli = cs.conv;
+		expect(customCli.title).toBe("Custom CLI Title");
+
+		// New CLI with default title (agy preset)
+		expect(await cs.newCliChat({ preset: "agy", executable: process.execPath })).toBe(true);
+		const cli = cs.conv;
+		expect(cli.title).toBe("agy CLI");
+
+		// Update title from input (composer paste)
+		cs.updateNativeCliTitleFromInput(cli.id, "帮我优化这个排序算法的代码实现\n\n另外支持降序");
+		expect(cli.title).toBe("帮我优化这个排序算法的代码实现");
+		expect(SessionManager.open(cli.session.sessionFile).getSessionName()).toBe("帮我优化这个排序算法的代码实现");
+
+		// Subsequent input does not overwrite title
+		cs.updateNativeCliTitleFromInput(cli.id, "第二条消息不应该覆盖标题");
+		expect(cli.title).toBe("帮我优化这个排序算法的代码实现");
+
+		// Renaming conversation updates live title and session on disk
+		await cs.renameConversation(cli.id, "用户手动重命名的任务");
+		expect(cli.title).toBe("用户手动重命名的任务");
+		expect(SessionManager.open(cli.session.sessionFile).getSessionName()).toBe("用户手动重命名的任务");
+	});
+
+	it("extracts title from terminal output on submitted event when title is still default", async () => {
+		const cs = client();
+		expect(await cs.newCliChat({ preset: "agy", executable: process.execPath })).toBe(true);
+		const cli = cs.conv;
+		expect(cli.title).toBe("agy CLI");
+
+		// Simulate terminal output
+		const terminalId = cli.nativeCli.terminalId;
+		const termEntry = (cli.terminals as any).terms.get(terminalId);
+		if (termEntry) {
+			termEntry.output = "╭─ agy\n│\n> fix the login button styling issue\n";
+		}
+
+		// Trigger submitted event from hook
+		const report = preparations[preparations.length - 1].ctx.onEvent;
+		report({ type: "submitted", eventId: "submit-1" });
+
+		expect(cli.title).toBe("fix the login button styling i…");
+		expect(SessionManager.open(cli.session.sessionFile).getSessionName()).toBe("fix the login button styling i…");
+	});
 });

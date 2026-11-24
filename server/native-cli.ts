@@ -1,6 +1,6 @@
 import { existsSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, isAbsolute, posix, relative, resolve, sep } from "node:path";
 import type { NativeCliConfig, PromptAttachment, ServerMessage } from "./protocol.js";
 import { isUploadDataTooLong, uploadLimitBytes, type UploadLimits } from "./payload-limits.js";
 import { CLIENT_ID_PATTERN, saveUpload, uploadsRoot } from "./uploads.js";
@@ -20,6 +20,20 @@ import {
 export { NATIVE_CLI_ENTRY, parseNativeCliMetadata, validateNativeCliConfig };
 
 const CONTROL_CHARACTERS = /[\x00-\x1f\x7f-\x9f]/;
+
+export function isDefaultNativeCliTitle(title: string, preset?: string, executable?: string): boolean {
+	const trimmed = title.trim();
+	if (!trimmed) return true;
+	if (preset) {
+		const presetLower = preset.toLowerCase();
+		if (trimmed.toLowerCase() === `${presetLower} cli`) return true;
+	}
+	if (executable) {
+		const exeName = basename(executable).toLowerCase();
+		if (trimmed.toLowerCase() === exeName) return true;
+	}
+	return /^(agy|claude|pi|codex|dsh|custom)\s+cli$/i.test(trimmed);
+}
 
 export function readNativeCliConfig(manager: Pick<SessionManager, "getEntries">): NativeCliConfig | undefined {
 	const entry = [...manager.getEntries()]
@@ -109,6 +123,50 @@ function assertWithin(root: string, path: string): void {
 		throw new Error("Attachment is outside the allowed directory");
 }
 
+export interface FormatCliFileTargetOptions {
+	isDirectory?: boolean;
+	lines?: { start: number; end: number };
+	isPosix?: boolean;
+	forceAbsolute?: boolean;
+}
+
+export function formatCliFileTarget(absPath: string, cwd: string, options?: FormatCliFileTargetOptions): string {
+	const p = options?.isPosix
+		? posix
+		: {
+				relative: (from: string, to: string) => relative(from, to).replace(/\\/g, "/"),
+				isAbsolute: (path: string) => isAbsolute(path),
+			};
+	const normalizedAbs = absPath.replace(/\\/g, "/");
+	const normalizedCwd = cwd.replace(/\\/g, "/");
+
+	const rel = options?.forceAbsolute ? "" : p.relative(normalizedCwd, normalizedAbs);
+	const isInsideCwd = !options?.forceAbsolute && !rel.startsWith("..") && !p.isAbsolute(rel);
+
+	let target: string;
+	if (isInsideCwd) {
+		target = rel || ".";
+		if (options?.isDirectory && !target.endsWith("/")) {
+			target += "/";
+		}
+	} else {
+		target = normalizedAbs;
+		if (options?.isDirectory && !target.endsWith("/")) {
+			target += "/";
+		}
+	}
+
+	if (options?.lines) {
+		const { start, end } = options.lines;
+		target += `:${start}${start !== end ? `-${end}` : ""}`;
+	}
+
+	if (/[\s"'`$*?~#&;|<>()\[\]{}]/.test(target)) {
+		return `@"${target.replace(/"/g, '\\"')}"`;
+	}
+	return `@${target}`;
+}
+
 export function prepareNativeCliPaste(
 	data: unknown,
 	attachments: PromptAttachment[] | undefined,
@@ -122,7 +180,10 @@ export function prepareNativeCliPaste(
 	if (!CLIENT_ID_PATTERN.test(context.clientId)) throw new Error("Invalid upload client identity");
 	const maxBytes = uploadLimitBytes(context.settings, "chat");
 	let uploadBytes = 0;
-	const parts = [sanitizeNativeCliPaste(data)];
+	const parts: string[] = [];
+	const dataText = sanitizeNativeCliPaste(data);
+	if (dataText.trim()) parts.push(dataText);
+	const refTokens: string[] = [];
 	for (const att of attachments ?? []) {
 		if (!att || typeof att !== "object") throw new Error("Invalid native CLI attachment");
 		if (att.mode && !["reference", "inline", "lines", "quote"].includes(att.mode))
@@ -130,6 +191,10 @@ export function prepareNativeCliPaste(
 		if (att.mode === "quote") {
 			if (typeof att.quote?.text !== "string" || att.quote.text.length > MAX_NATIVE_CLI_PASTE)
 				throw new Error("Invalid native CLI text quote");
+			if (refTokens.length > 0) {
+				parts.push(refTokens.join(" "));
+				refTokens.length = 0;
+			}
 			parts.push(`Quoted text:\n${sanitizeNativeCliPaste(att.quote.text)}`);
 			continue;
 		}
@@ -168,18 +233,27 @@ export function prepareNativeCliPaste(
 			if (!stats.isFile() && !stats.isDirectory()) throw new Error("Native CLI attachment is not a file or directory");
 			if (stats.isDirectory()) pathKind = "Directory";
 		}
-		let location = JSON.stringify(abs);
-		if (att.mode === "lines") {
+		const lines = att.mode === "lines" ? att.lines : undefined;
+		if (lines) {
 			if (
-				!Number.isSafeInteger(att.lines?.start) ||
-				!Number.isSafeInteger(att.lines?.end) ||
-				att.lines!.start < 1 ||
-				att.lines!.end < att.lines!.start
+				!Number.isSafeInteger(lines.start) ||
+				!Number.isSafeInteger(lines.end) ||
+				lines.start < 1 ||
+				lines.end < lines.start
 			)
 				throw new Error("Invalid native CLI attachment line range");
-			location += ` (lines ${att.lines!.start}-${att.lines!.end})`;
 		}
-		parts.push(`${pathKind} path: ${location}`);
+		const isUpload = att.fileData !== undefined || att.imageData !== undefined || att.uploadPath !== undefined;
+		refTokens.push(
+			formatCliFileTarget(abs, cwd, {
+				isDirectory: pathKind === "Directory",
+				lines,
+				forceAbsolute: isUpload,
+			}),
+		);
+	}
+	if (refTokens.length > 0) {
+		parts.push(refTokens.join(" "));
 	}
 	const text = parts.filter(Boolean).join("\n\n");
 	if (!text.trim()) throw new Error("Native CLI prompt is empty");

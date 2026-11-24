@@ -117,7 +117,7 @@ describe("native CLI readable references", () => {
 		expect(exportedText(result)).toBe(text);
 		expect(result.mimeType).toBe("text/plain");
 		const paste = prepareNativeCliPaste("Read the reference", [result], root, context);
-		expect(paste).toContain(JSON.stringify(result.uploadPath));
+		expect(paste).toContain(result.uploadPath?.replace(/\\/g, "/"));
 		expect(paste).not.toContain("原始引文");
 		expect(Buffer.byteLength(paste)).toBeLessThan(MAX_NATIVE_CLI_PASTE);
 	});

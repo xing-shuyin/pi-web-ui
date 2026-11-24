@@ -139,7 +139,11 @@ describe("native CLI conversation display", () => {
 		expect(getComposerTarget()).toBeNull();
 		expect(composeToComposer({ text: "other view" })).toBe(false);
 	});
-	it("forwards original clipboard files while leaving ordinary text paste native", () => {
+	it("forwards original clipboard files while leaving ordinary text paste native for fallback presets or non-images", () => {
+		render({
+			nativeCli: { terminalId: "cli-a", config: { preset: "dsh" } },
+			cwd: "D:\\project",
+		});
 		const file = new File(["image"], "paste.png", { type: "image/png" });
 		const event = new Event("paste", { bubbles: true, cancelable: true });
 		Object.defineProperty(event, "clipboardData", {
@@ -153,6 +157,31 @@ describe("native CLI conversation display", () => {
 		act(() => container.querySelector("[data-terminal]")!.dispatchEvent(textEvent));
 		expect(textEvent.defaultPrevented).toBe(false);
 	});
+	it.each(["agy", "claude", "pi"] as const)(
+		"sends Ctrl+V directly to terminal for local %s with image paste to trigger native clipboard image handling",
+		(preset) => {
+			render({
+				nativeCli: { terminalId: "cli-a", config: { preset } },
+				cwd: "D:\\project",
+			});
+			const file = new File(["image"], "paste.png", { type: "image/png" });
+			const event = new Event("paste", { bubbles: true, cancelable: true });
+			Object.defineProperty(event, "clipboardData", {
+				value: { items: [{ kind: "file", getAsFile: () => file }], files: [file] },
+			});
+			act(() => container.querySelector("[data-terminal]")!.dispatchEvent(event));
+			expect(event.defaultPrevented).toBe(true);
+			expect(props.onAddFiles).not.toHaveBeenCalled();
+			expect(props.send).toHaveBeenCalledWith({
+				type: "terminal_input",
+				terminalId: "cli-a",
+				conversationId: "conv-a",
+				ownerKind: "conversation",
+				data: "\x16",
+			});
+			expect(display.focus).toHaveBeenCalled();
+		},
+	);
 	it("restarts an exited CLI only on an explicit action with its original identity", () => {
 		render({
 			chat: {

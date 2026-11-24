@@ -38,6 +38,17 @@ export function requestNativeCliChat(
 	config: NativeCliConfig,
 	cwd?: string,
 	timeoutMs = cwd?.trim().startsWith("ssh://") ? 120_000 : 30_000,
+	title?: string,
 ): Promise<string | null> {
-	return requestChat(send, (requestId) => ({ type: "new_cli_chat", config, cwd, requestId }), timeoutMs);
+	return requestChat(
+		send,
+		(requestId) => ({
+			type: "new_cli_chat",
+			config,
+			cwd,
+			requestId,
+			...(title?.trim() ? { title: title.trim() } : {}),
+		}),
+		timeoutMs,
+	);
 }

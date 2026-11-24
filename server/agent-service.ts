@@ -487,6 +487,7 @@ import {
 import { createPromptBaseObservers, readPromptBase } from "./prompt-base-store.js";
 import {
 	NATIVE_CLI_ENTRY,
+	isDefaultNativeCliTitle,
 	persistNativeCliConfig,
 	readNativeCliConfig,
 	validateNativeCliConfig,
@@ -557,7 +558,7 @@ import {
 } from "./serialize.js";
 import type { ModelRetryRecord } from "./model-error.js";
 import { classifyModelError, modelErrorReport } from "./model-error.js";
-import { loadCommands, saveCommandsFile, TerminalManager } from "./terminals.js";
+import { loadCommands, queryTerminalOutput, saveCommandsFile, TerminalManager } from "./terminals.js";
 
 const SNAPSHOT_INTERVAL_MS = 60;
 const HOME_WIRE = homedir().replace(/\\/g, "/");
@@ -1521,6 +1522,9 @@ export class ClientSession {
 			error: event.type === "error" ? event.message : void 0,
 		});
 		if (event.type === "submitted") {
+			if (isDefaultNativeCliTitle(conv.title, conv.nativeCli.config.preset, conv.nativeCli.config.executable)) {
+				this.tryExtractNativeCliTitleFromTerminal(conv);
+			}
 			if (this.convs.get(conv.id) === conv)
 				this.emit({
 					type: "native_cli_prompt_submitted",
@@ -1531,7 +1535,13 @@ export class ClientSession {
 				});
 			return;
 		}
-		if (event.type === "working" || (event.type === "done" && event.aborted)) return;
+		if (event.type === "working") {
+			if (isDefaultNativeCliTitle(conv.title, conv.nativeCli.config.preset, conv.nativeCli.config.executable)) {
+				this.tryExtractNativeCliTitleFromTerminal(conv);
+			}
+			return;
+		}
+		if (event.type === "done" && event.aborted) return;
 		if (this.convs.get(conv.id) !== conv || this.disposed) return;
 		// Only the four terminal kinds fan out to clients and mobile. tool / notification / compact /
 		// subagent / end stay status-only until the protocol carries them, so a new hook event can
@@ -1594,6 +1604,64 @@ export class ClientSession {
 			await terminatePersistentRemoteNativeCli(service, conv.cwd, this.ensureNativeCliBinding(conv).key);
 		}
 		await conv.terminals.stopNativeCli(conv.nativeCli.terminalId);
+	}
+
+	updateNativeCliTitleFromInput(conversationId: string, text: string): void {
+		const conv = this.convs.get(conversationId);
+		if (!conv?.nativeCli || conv.nativeCliClosed || this.disposed) return;
+		if (!isDefaultNativeCliTitle(conv.title, conv.nativeCli.config.preset, conv.nativeCli.config.executable)) return;
+		const trimmed = (text ?? "").trim();
+		if (!trimmed) return;
+		const firstLine = trimmed.split("\n")[0].trim();
+		const clean = firstLine.replace(/^[@📎#]+\s*/, "").trim() || firstLine;
+		const title = clean.length > 30 ? `${clean.slice(0, 30)}…` : clean;
+		if (!title || isDefaultNativeCliTitle(title, conv.nativeCli.config.preset, conv.nativeCli.config.executable))
+			return;
+		conv.title = title;
+		try {
+			conv.session.sessionManager?.appendSessionInfo(title);
+		} catch {}
+		try {
+			conv.session.setSessionName?.(title);
+		} catch {}
+		this.emitConversations();
+		if (conv.session.sessionFile) this.invalidateSessionInfos(conv.session.sessionFile);
+		else this.invalidateSessionInfos();
+		void this.refreshSessions();
+	}
+
+	private tryExtractNativeCliTitleFromTerminal(conv: Conversation): void {
+		if (!conv.nativeCli || conv.nativeCliClosed || this.disposed) return;
+		if (!isDefaultNativeCliTitle(conv.title, conv.nativeCli.config.preset, conv.nativeCli.config.executable)) return;
+		const terminalId = conv.nativeCli.terminalId;
+		const output = conv.terminals.getRawOutput?.(terminalId);
+		if (!output) return;
+		const lines = stripAnsi(output)
+			.replace(/\r(?!\n)/g, "")
+			.split("\n");
+		for (let i = lines.length - 1; i >= 0; i--) {
+			const line = lines[i].trim();
+			if (!line || line.length < 2) continue;
+			if (/^[│─┌┐└┘├┤┬┴┼═║╒╓╔╕╖╗╘╙╚╛╜╝╞╟╠╡╢╣╤╥╦╧╨╩╪╫╬·•\s_-]+$/.test(line)) continue;
+			const clean = line.replace(/^([>▶$➜%?#📎]|╭─|╰─)\s*/, "").trim();
+			if (clean.length >= 2 && !clean.startsWith("Error:") && !clean.startsWith("warning")) {
+				const title = clean.length > 30 ? `${clean.slice(0, 30)}…` : clean;
+				if (!isDefaultNativeCliTitle(title, conv.nativeCli.config.preset, conv.nativeCli.config.executable)) {
+					conv.title = title;
+					try {
+						conv.session.sessionManager?.appendSessionInfo(title);
+					} catch {}
+					try {
+						conv.session.setSessionName?.(title);
+					} catch {}
+					this.emitConversations();
+					if (conv.session.sessionFile) this.invalidateSessionInfos(conv.session.sessionFile);
+					else this.invalidateSessionInfos();
+					void this.refreshSessions();
+					break;
+				}
+			}
+		}
 	}
 
 	private notifyTerminalIdle(
@@ -13045,7 +13113,12 @@ export class ClientSession {
 		}
 	}
 
-	async newCliChat(config: NativeCliConfig, cwd?: string, onReady?: (id: string) => void): Promise<boolean> {
+	async newCliChat(
+		config: NativeCliConfig,
+		cwd?: string,
+		onReady?: (id: string) => void,
+		initialTitle?: string,
+	): Promise<boolean> {
 		if (this.quiesceBlocked()) return false;
 		let terminals: TerminalManager | undefined;
 		let runtime: AgentSessionRuntime | undefined;
@@ -13110,7 +13183,9 @@ export class ClientSession {
 			created = conv;
 			conv.cwd = targetCwd;
 			conv.nativeCli = { config: checked, terminalId: `cli-${id}` };
-			conv.title = checked.preset === "custom" ? basename(checked.executable!) : `${checked.preset} CLI`;
+			const explicitTitle = initialTitle?.trim();
+			conv.title =
+				explicitTitle || (checked.preset === "custom" ? basename(checked.executable!) : `${checked.preset} CLI`);
 			conv.listed = true;
 			conv.independent = true;
 			this.pendingNativeCliConversations.set(id, conv);
@@ -15340,10 +15415,14 @@ export class ClientSession {
 			if (!conv) return;
 			conv.title = trimmed;
 			try {
-				conv.session.setSessionName(trimmed);
+				conv.session.sessionManager?.appendSessionInfo(trimmed);
+			} catch {}
+			try {
+				conv.session.setSessionName?.(trimmed);
 			} catch {}
 			this.emitConversations();
-			this.invalidateSessionInfos();
+			if (conv.session.sessionFile) this.invalidateSessionInfos(conv.session.sessionFile);
+			else this.invalidateSessionInfos();
 			await this.refreshSessions();
 		} catch (err) {
 			this.emit({

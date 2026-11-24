@@ -587,6 +587,9 @@ export function handleTerminalMessage(
 						cleanupRetained = false;
 						throw new Error("Native CLI terminal exited or was restarted before this prompt was ready");
 					}
+					if (msg.conversationId) {
+						cs.updateNativeCliTitleFromInput?.(msg.conversationId, typeof msg.data === "string" ? msg.data : text);
+					}
 					context.send({
 						type: "terminal_cli_paste_result",
 						requestId: msg.requestId,
@@ -709,7 +712,7 @@ export function handleSessionLifecycleMessage(
 				}
 				const pending =
 					msg.type === "new_cli_chat"
-						? cs.newCliChat?.(msg.config, msg.cwd, acknowledge)
+						? cs.newCliChat?.(msg.config, msg.cwd, acknowledge, msg.title)
 						: cs.newChat(msg.preset, msg.ephemeral, acknowledge, msg.independent, msg.botId);
 				await Promise.resolve(pending);
 			}).then(

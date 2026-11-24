@@ -1476,6 +1476,7 @@ export type ClientMessage =
 			config: NativeCliConfig;
 			cwd?: string;
 			requestId?: string;
+			title?: string;
 	  }
 	| {
 			/**
@@ -2834,11 +2835,10 @@ export interface ProviderKeyInfo {
 /** ONE RUNNING conversation (each runs its own session in parallel). The
  *  list is GLOBAL across projects — a background run from another workspace
  *  stays visible until it is opened and left without continuing — and holds
- *  every conversation displaced to the background while still streaming
- *  (background-finish keeps them listed, opening-and-leaving-without-
- *  continuing removes them), PLUS the ACTIVE conversation once it has content
- *  (issue #140: the chat you are looking at must not be missing from the list;
- *  a blank new chat stays out). cwd lets the client group by project. */
+ *  every streaming conversation displaced to the background (background-finish
+ *  keeps them listed; opening and leaving without continuing removes them),
+ *  PLUS the ACTIVE one once it has content (issue #140: the chat you are
+ *  looking at must not be missing; a blank new chat stays out). cwd groups. */
 export interface ConversationSummary {
 	nativeCli?: NativeCliConversation;
 	independent?: boolean;

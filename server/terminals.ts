@@ -1772,6 +1772,10 @@ export class TerminalManager {
 		return entry && !entry.exited && !entry.nativeCliRun?.stopping && entry.nativeCli ? this.info(entry) : undefined;
 	}
 
+	getRawOutput(id: string): string | undefined {
+		return this.terms.get(id)?.output;
+	}
+
 	pasteNativeCli(id: string, data: string): boolean {
 		if (!this.getNativeCliTerminal(id) || typeof data !== "string") return false;
 		const text = sanitizeNativeCliPaste(data);

@@ -128,13 +128,18 @@ describe("planNativeCliReferences", () => {
 				{ path: "", uploadPath: restored.abs },
 			]);
 			const text = prepareNativeCliPaste(plan.text, plan.attachments, workspace, { clientId, settings: {} });
-			expect(text).toContain(`File path: ${JSON.stringify(realpathSync(join(workspace, "source.ts")))} (lines 2-3)`);
-			expect(text).toContain(`Directory path: ${JSON.stringify(realpathSync(join(workspace, "folder")))}`);
-			const paths = [...text.matchAll(/^File path: ("(?:[^"\\]|\\.)*")/gm)].map((match) => JSON.parse(match[1]));
-			expect(paths).toHaveLength(4);
-			expect(readFileSync(paths[1])).toEqual(Buffer.from([1, 2, 3]));
-			expect(readFileSync(paths[2])).toHaveLength(0);
-			expect(readFileSync(paths[3], "utf8")).toBe("existing");
+			expect(text).toContain("@source.ts:2-3");
+			expect(text).toContain("@folder/");
+			const tokens = [...text.matchAll(/@(".*?"|[^\s]+)/g)].map((m) => {
+				const raw = m[1];
+				return raw.startsWith('"') ? JSON.parse(raw) : raw;
+			});
+			expect(tokens[0]).toBe("source.ts:2-3");
+			expect(tokens[1]).toBe("folder/");
+			expect(tokens).toHaveLength(5);
+			expect(readFileSync(tokens[2])).toEqual(Buffer.from([1, 2, 3]));
+			expect(readFileSync(tokens[3])).toHaveLength(0);
+			expect(readFileSync(tokens[4], "utf8")).toBe("existing");
 			expect(text.endsWith("\n")).toBe(false);
 		} finally {
 			vi.unstubAllEnvs();

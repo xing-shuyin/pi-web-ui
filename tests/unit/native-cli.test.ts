@@ -16,6 +16,8 @@ import { handleTerminalMessage } from "../../server/dispatch-domain-handlers.js"
 import type { DispatchSession } from "../../server/engine-service.js";
 import {
 	MAX_NATIVE_CLI_PASTE,
+	formatCliFileTarget,
+	isDefaultNativeCliTitle,
 	prepareNativeCliPaste,
 	resolveNativeCliLaunch,
 	validateNativeCliConfig,
@@ -524,23 +526,26 @@ describe("native CLI prompt paste and attachments", () => {
 			root,
 			ctx,
 		);
-		const paths = [...text.matchAll(/File path: ("(?:[^"\\]|\\.)*")/g)].map((match) => JSON.parse(match[1]) as string);
-		expect(paths[0]).toBe(file);
-		expect(text).toContain("(lines 1-2)");
-		expect(readFileSync(paths[1], "utf8")).toBe("image bytes");
-		expect(readFileSync(paths[2], "utf8")).toBe("upload bytes");
+		expect(text).toContain("@project.txt:1-2");
+		const tokens = [...text.matchAll(/@(".*?"|[^\s]+)/g)].map((m) => {
+			const raw = m[1];
+			return raw.startsWith('"') ? JSON.parse(raw) : raw;
+		});
+		expect(tokens[0]).toBe("project.txt:1-2");
+		const photoPath = tokens[1];
+		const uploadPath = tokens[2];
+		expect(readFileSync(photoPath, "utf8")).toBe("image bytes");
+		expect(readFileSync(uploadPath, "utf8")).toBe("upload bytes");
 		expect(text).toContain("Quoted text:\nquoted text");
 		expect(text).not.toContain("imageData");
-		expect(prepareNativeCliPaste("restore", [{ path: "", uploadPath: paths[1] }], root, ctx)).toContain(
-			JSON.stringify(paths[1]),
-		);
+		expect(prepareNativeCliPaste("restore", [{ path: "", uploadPath: photoPath }], root, ctx)).toContain(photoPath);
 	});
 	it("uses the resolved instance data directory instead of an unrelated environment upload root", () => {
 		const dataDir = join(root, "explicit-instance-data");
 		const upload = saveUpload("cli-test", "materialized.txt", Buffer.from("materialized reference"), dataDir);
 		const ctx = { ...context(), dataDir };
 		expect(prepareNativeCliPaste("read", [{ path: "", uploadPath: upload.abs }], root, ctx)).toContain(
-			JSON.stringify(upload.abs),
+			upload.abs.replace(/\\/g, "/"),
 		);
 		const inline = prepareNativeCliPaste(
 			"read",
@@ -548,17 +553,16 @@ describe("native CLI prompt paste and attachments", () => {
 			root,
 			ctx,
 		);
-		const savedPath = JSON.parse(inline.split("File path: ")[1]);
-		expect(savedPath.startsWith(dataDir)).toBe(true);
+		const match = inline.match(/@(".*?"|[^\s]+)/);
+		const savedPath = match![1].startsWith('"') ? JSON.parse(match![1]) : match![1];
+		expect(savedPath.startsWith(dataDir.replace(/\\/g, "/"))).toBe(true);
 		expect(readFileSync(savedPath, "utf8")).toBe("inline");
 	});
 
 	it("accepts workspace directories as directory paths while uploaded references remain files only", () => {
 		const directory = join(root, "source");
 		mkdirSync(directory);
-		expect(prepareNativeCliPaste("inspect", [{ path: "source" }], root, context())).toContain(
-			`Directory path: ${JSON.stringify(directory)}`,
-		);
+		expect(prepareNativeCliPaste("inspect", [{ path: "source" }], root, context())).toContain("@source/");
 		const saved = saveUpload("cli-test", "placeholder.txt", Buffer.from("file"));
 		const uploadedDirectory = join(saved.abs, "..", "directory");
 		mkdirSync(uploadedDirectory);
@@ -580,8 +584,9 @@ describe("native CLI prompt paste and attachments", () => {
 			cwd,
 			ctx,
 		);
-		expect(text).toContain(`File path: ${JSON.stringify(file)} (lines 2-3)`);
-		expect(text).toContain(`Directory path: ${JSON.stringify(extra)}`);
+		expect(text).toContain(file.replace(/\\/g, "/"));
+		expect(text).toContain(":2-3");
+		expect(text).toContain(extra.replace(/\\/g, "/"));
 		expect(() => prepareNativeCliPaste("inspect", [{ path: "../extra-root/outside.txt" }], cwd, ctx)).toThrow(
 			/outside/,
 		);
@@ -608,9 +613,10 @@ describe("native CLI prompt paste and attachments", () => {
 			root,
 			context(),
 		);
-		const paths = [...text.matchAll(/File path: ("(?:[^"\\\\]|\\\\.)*")/g)].map(
-			(match) => JSON.parse(match[1]) as string,
-		);
+		const paths = [...text.matchAll(/@(".*?"|[^\s]+)/g)].map((m) => {
+			const raw = m[1];
+			return raw.startsWith('"') ? JSON.parse(raw) : raw;
+		});
 		expect(readFileSync(paths[0])).toHaveLength(0);
 		expect(readFileSync(paths[1], "utf8")).toBe("a");
 	});
@@ -669,5 +675,80 @@ describe("native CLI prompt paste and attachments", () => {
 		handleTerminalMessage(request, cs, ctx);
 		expect(ctx.send).toHaveBeenLastCalledWith(expect.objectContaining({ ok: false }));
 		expect(existsSync(join(root, "data", "uploads"))).toBe(false);
+	});
+});
+
+describe("formatCliFileTarget", () => {
+	it("formats project-relative files with @ prefix", () => {
+		expect(formatCliFileTarget("/workspace/src/app.ts", "/workspace", { isPosix: true })).toBe("@src/app.ts");
+	});
+
+	it("formats files with line numbers", () => {
+		expect(
+			formatCliFileTarget("/workspace/src/app.ts", "/workspace", {
+				isPosix: true,
+				lines: { start: 10, end: 20 },
+			}),
+		).toBe("@src/app.ts:10-20");
+		expect(
+			formatCliFileTarget("/workspace/src/app.ts", "/workspace", {
+				isPosix: true,
+				lines: { start: 10, end: 10 },
+			}),
+		).toBe("@src/app.ts:10");
+	});
+
+	it("formats directories with trailing slash", () => {
+		expect(
+			formatCliFileTarget("/workspace/src/components", "/workspace", {
+				isPosix: true,
+				isDirectory: true,
+			}),
+		).toBe("@src/components/");
+		expect(
+			formatCliFileTarget("/workspace/src/components/", "/workspace", {
+				isPosix: true,
+				isDirectory: true,
+			}),
+		).toBe("@src/components/");
+	});
+
+	it("quotes targets containing spaces or shell special characters", () => {
+		expect(
+			formatCliFileTarget("/workspace/my folder/file with spaces.ts", "/workspace", {
+				isPosix: true,
+				lines: { start: 1, end: 5 },
+			}),
+		).toBe('@"my folder/file with spaces.ts:1-5"');
+		expect(
+			formatCliFileTarget('/workspace/file"with"quotes.ts', "/workspace", {
+				isPosix: true,
+			}),
+		).toBe('@"file\\"with\\"quotes.ts"');
+	});
+
+	it("formats external paths as absolute targets", () => {
+		expect(formatCliFileTarget("/external/path/file.ts", "/workspace", { isPosix: true })).toBe(
+			"@/external/path/file.ts",
+		);
+	});
+
+	it("honors forceAbsolute even for files inside cwd", () => {
+		expect(
+			formatCliFileTarget("/workspace/src/app.ts", "/workspace", {
+				isPosix: true,
+				forceAbsolute: true,
+			}),
+		).toBe("@/workspace/src/app.ts");
+	});
+
+	it("identifies default CLI placeholder titles across presets", () => {
+		expect(isDefaultNativeCliTitle("agy CLI")).toBe(true);
+		expect(isDefaultNativeCliTitle("claude CLI")).toBe(true);
+		expect(isDefaultNativeCliTitle("pi CLI")).toBe(true);
+		expect(isDefaultNativeCliTitle("custom CLI")).toBe(true);
+		expect(isDefaultNativeCliTitle("  ")).toBe(true);
+		expect(isDefaultNativeCliTitle("my custom task")).toBe(false);
+		expect(isDefaultNativeCliTitle("fix the bug in login", "agy")).toBe(false);
 	});
 });

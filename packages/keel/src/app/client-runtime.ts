@@ -482,7 +482,7 @@ export class ClientRuntime {
 				if (this.disposed) return;
 				this.publisher.flush({ forceFull });
 			},
-			// 裸 get_state（没报 since）= 客户端手上没有状态 → 必须真发全量；报了 since 就走闸门判定。
+			// 裸 get_state（没报 since）= 客户端手上没有状态 → 必须真发全量；报了 since 走闸门。
 			respondWithSnapshot: (_send, options?: { since?: number; force?: boolean }) => {
 				if (this.disposed) return;
 				this.publisher.flush({ forceFull: options?.force ?? options?.since === undefined });
@@ -541,8 +541,7 @@ export class ClientRuntime {
 				const conv = partial.conversationId ? this.registry.get(partial.conversationId) : this.registry.activeConv();
 				if (!conv || conv.meta.kind === "subagent") return;
 				conv.setApprovalPolicy({ allowAll: partial.allowAll, categories: partial.categories });
-				// 帧通道还没装配（客户端未 attach）时，写入照样成立；推帧只在有出口时做。
-				this.frames?.pushSettings();
+				this.frames?.pushSettings(); // 帧通道还没装配（未 attach）时写入照样成立，推帧只在有出口时做。
 				this.publisher.request();
 			},
 			deleteSession: async (path: string) => {

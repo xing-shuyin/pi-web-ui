@@ -8,6 +8,7 @@ import { collectClipboardFiles } from "../clipboard-files";
 import { randomUuid } from "../uuid";
 import { useT } from "../i18n";
 import { isNativeCliRemoteCwd } from "../native-cli";
+import { isLoopbackAccess } from "../workspace-file-url";
 import { requestNativeCliControl, type NativeCliControlAction } from "../native-cli-events";
 import { TermXterm, type TermXtermHandle } from "./TermXterm";
 
@@ -33,6 +34,8 @@ const phaseKeys = {
 	exited: "nativeCliSession.exited",
 	error: "nativeCliSession.error",
 } as const;
+
+export const NATIVE_IMAGE_CLIPBOARD_PRESETS = new Set<string>(["agy", "claude", "pi"]);
 
 export function nativeCliDisplayPhase(status: NativeCliStatus): NativeCliStatus["phase"] {
 	if (!status.nativeEvents && ["working", "waiting_input", "waiting_approval"].includes(status.phase)) return "running";
@@ -185,7 +188,23 @@ export function NativeCliPanel({
 				if (!files.length) return;
 				event.preventDefault();
 				event.stopPropagation();
-				if (!readOnly) void onAddFiles(files);
+				if (readOnly) return;
+				const isNativeClipboardSupported =
+					NATIVE_IMAGE_CLIPBOARD_PRESETS.has(nativeCli.config.preset) &&
+					!isNativeCliRemoteCwd(cwd) &&
+					isLoopbackAccess();
+				if (isNativeClipboardSupported && files.some((f) => f.type.startsWith("image/"))) {
+					send({
+						type: "terminal_input",
+						terminalId: nativeCli.terminalId,
+						conversationId,
+						ownerKind: "conversation",
+						data: "\x16",
+					});
+					handle.current?.focus();
+					return;
+				}
+				void onAddFiles(files);
 			}}
 		>
 			<div className="native-cli-session-status" role="status" aria-live="polite">

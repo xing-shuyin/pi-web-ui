@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { open, realpath, stat } from "node:fs/promises";
 import { isAbsolute, posix, relative, resolve, sep } from "node:path";
-import { MAX_NATIVE_CLI_PASTE, sanitizeNativeCliPaste } from "./native-cli.js";
+import { formatCliFileTarget, MAX_NATIVE_CLI_PASTE, sanitizeNativeCliPaste } from "./native-cli.js";
 import { isUploadDataTooLong, uploadLimitBytes, type UploadLimits } from "./payload-limits.js";
 import type { PromptAttachment } from "./protocol.js";
 import { parseRemoteWorkspaceUri, shellQuotePosix, type RemoteSshService } from "./remote-ssh-service.js";
@@ -156,7 +156,10 @@ export async function prepareRemoteNativeCliPaste(
 		? AbortSignal.any([config.signal, AbortSignal.timeout(OPERATION_TIMEOUT_MS)])
 		: AbortSignal.timeout(OPERATION_TIMEOUT_MS);
 	signal.throwIfAborted();
-	const parts = [sanitizeNativeCliPaste(data)];
+	const parts: string[] = [];
+	const dataText = sanitizeNativeCliPaste(data);
+	if (dataText.trim()) parts.push(dataText);
+	const refTokens: string[] = [];
 	const paths: string[] = [];
 	const uploads: Array<{ path: string; bytes: Buffer }> = [];
 	let bytes = 0;
@@ -183,6 +186,10 @@ export async function prepareRemoteNativeCliPaste(
 		if (attachment.mode === "quote") {
 			if (typeof attachment.quote?.text !== "string" || attachment.quote.text.length > MAX_NATIVE_CLI_PASTE)
 				throw new Error("Invalid native CLI text quote");
+			if (refTokens.length > 0) {
+				parts.push(refTokens.join(" "));
+				refTokens.length = 0;
+			}
 			parts.push(`Quoted text:\n${sanitizeNativeCliPaste(attachment.quote.text)}`);
 			continue;
 		}
@@ -245,18 +252,26 @@ export async function prepareRemoteNativeCliPaste(
 			if (!stats.isFile && !stats.isDirectory) throw new Error("Remote CLI attachment is not a file or directory");
 			if (stats.isDirectory) kind = "Directory";
 		}
-		let location = JSON.stringify(path);
-		if (attachment.mode === "lines") {
+		const lines = attachment.mode === "lines" ? attachment.lines : undefined;
+		if (lines) {
 			if (
-				!Number.isSafeInteger(attachment.lines?.start) ||
-				!Number.isSafeInteger(attachment.lines?.end) ||
-				attachment.lines!.start < 1 ||
-				attachment.lines!.end < attachment.lines!.start
+				!Number.isSafeInteger(lines.start) ||
+				!Number.isSafeInteger(lines.end) ||
+				lines.start < 1 ||
+				lines.end < lines.start
 			)
 				throw new Error("Invalid native CLI attachment line range");
-			location += ` (lines ${attachment.lines!.start}-${attachment.lines!.end})`;
 		}
-		parts.push(`${kind} path: ${location}`);
+		refTokens.push(
+			formatCliFileTarget(path, workspace.remotePath, {
+				isDirectory: kind === "Directory",
+				lines,
+				isPosix: true,
+			}),
+		);
+	}
+	if (refTokens.length > 0) {
+		parts.push(refTokens.join(" "));
 	}
 	const text = parts.filter(Boolean).join("\n\n");
 	if (!text.trim()) throw new Error("Native CLI prompt is empty");

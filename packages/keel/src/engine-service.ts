@@ -88,7 +88,13 @@ export interface DispatchSession {
 	): Promise<boolean | void>;
 	/** 打开某个 Bot 的私聊：默认回到同一个对话，`fresh` 才新开一条（见 device-center/bot-chat.ts）。 */
 	openBotChat?(botId: string, opts?: { fresh?: boolean }): Promise<boolean>;
-	newCliChat?(config: NativeCliConfig, cwd?: string, onReady?: (id: string) => void): Promise<boolean>;
+	newCliChat?(
+		config: NativeCliConfig,
+		cwd?: string,
+		onReady?: (id: string) => void,
+		initialTitle?: string,
+	): Promise<boolean>;
+	updateNativeCliTitleFromInput?(conversationId: string, text: string): void;
 	controlNativeCli?(conversationId: string, terminalId: string, action: "detach" | "reconnect" | "stop"): Promise<void>;
 	getNativeCliConversation?(conversationId?: string): import("./protocol.js").NativeCliConversation | undefined;
 	deleteMessage?(messageId: string, conversationId?: string): Promise<void>;
