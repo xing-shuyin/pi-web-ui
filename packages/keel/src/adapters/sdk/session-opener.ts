@@ -77,6 +77,41 @@ async function openSessionManager(cwd: string, sessionFile: string | undefined):
 	return openSessionManagerAsync(sessionFile);
 }
 
+export interface BranchFileOptions {
+	/** 被派生的转录（必须已落盘）。 */
+	sessionFile: string;
+	/** 分叉点条目 id：新转录只保留「根 → 该条目」这条路径。 */
+	leafId: string;
+}
+
+/**
+ * `forkSession` 的 SDK 窄口：从现有转录派生一份**新**转录，返回新文件路径。
+ *
+ * 语义逐字就是 `SessionManager.createBranchedSession(leafId)`：写一份新文件（新 session id，头部
+ * `parentSession` 指向原文件），原文件一个字节都不动。**必须用新开的 manager**——
+ * `createBranchedSession()` 会把 manager 自己改成新会话（`this.sessionFile` 换掉），用活动会话的
+ * manager 等于把原对话迁走，下一次 append 就写进新文件 = 两个对话同时写一份转录。
+ *
+ * 位置参数（`messageId` / `position`）在调用方解析成 `leafId`：消息 → 条目单源在 `domains/turns/entries`，
+ * 这里只认条目 id（SDK 不认 UI 消息 id）。
+ */
+export async function createBranchFile(options: BranchFileOptions): Promise<string> {
+	const source = resolve(options.sessionFile);
+	if (!(await isExistingFile(source))) {
+		throw new Error(`源转录不存在，已拒绝派生（fail-closed）：${source}`);
+	}
+	// 版本门禁在 `openSessionManagerAsync` 里（读首行即判，不把看不懂的转录按新语义再盘一遍）。
+	const manager = await openSessionManagerAsync(source);
+	const branch = manager.createBranchedSession(options.leafId);
+	if (!branch) throw new Error(`SDK 没有为分叉写出新转录（内存会话不支持派生）：${source}`);
+	if (!(await isExistingFile(branch))) {
+		// 分支路径上没有 user/assistant 消息时 SDK 只算路径、不落盘：显式拒绝，别把空路径当成功。
+		throw new Error(`分叉路径上没有消息，SDK 未落盘任何内容：${branch}`);
+	}
+	assertSupportedTranscriptVersion(branch);
+	return branch;
+}
+
 /**
  * 新树里唯一建/开 SDK 会话的入口：返回窄面 `TurnCapableSession`，宿主拿到的会话一律先过
  * `guardSession()`（否则 dispose 之后退役记账不生效，#958）。

@@ -26,6 +26,9 @@ export interface SettingsStorePort {
 	/** 客户端状态的只读投影（`projects` 缺省是空数组）。 */
 	get(clientId: string): ClientState;
 	saveLocale(clientId: string, locale: string): void;
+	/** 目标审查偏好：目标运行在宿主，偏好本身是客户端状态，唯一写者仍是 `client-state.json`。 */
+	getGoalPrefs(clientId: string): ClientState["goalPrefs"];
+	saveGoalPrefs(clientId: string, prefs: ClientState["goalPrefs"]): void;
 
 	/** 项目最近列表的写回（扫盘发现的项目灌进 store，墓碑与排序规则在 store 里）。 */
 	mergeDiscoveredProjects(projects: { path: string; lastUsed: number }[]): void;

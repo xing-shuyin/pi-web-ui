@@ -26,4 +26,13 @@ export {
 } from "./rebind.js";
 export { createWorkspaceSwitcher, type WorkspaceRootsStore, type WorkspaceSwitcherOptions } from "./workspace.js";
 export { createSessionEntityHandlers, type SessionEntityHandlers, type SessionEntityOptions } from "./entity.js";
-export { createSessionPins, type SessionPinsHandlers, type SessionPinsOptions } from "./pins.js";
+export {
+	ConversationPinIndex,
+	createSessionPins,
+	mergePinState,
+	type ConversationPinState,
+	type SessionPinsHandlers,
+	type SessionPinsOptions,
+} from "./pins.js";
+export { createSessionForks, type SessionForkHandlers, type SessionForkOptions } from "./fork.js";
+export { createSessionRollbacks, type SessionRollbackHandlers, type SessionRollbackOptions } from "./rollback.js";

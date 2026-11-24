@@ -25,6 +25,7 @@ export function createFakeSettingsStore(): FakeSettingsStore {
 	const defaultProviderKeys = new Map<string, string>();
 	const workspaceRoots = new Map<string, string[]>();
 	const pinned = new Set<string>();
+	const goalPrefs = new Map<string, NonNullable<ClientState["goalPrefs"]>>();
 	const calls: FakeSettingsStore["calls"] = { mergeDiscovered: [], removed: [] };
 	let version = 0;
 
@@ -60,6 +61,11 @@ export function createFakeSettingsStore(): FakeSettingsStore {
 		get: (clientId) => stateOf(clientId),
 		saveLocale(clientId, locale) {
 			stateOf(clientId).locale = locale;
+		},
+		getGoalPrefs: (clientId) => goalPrefs.get(clientId),
+		saveGoalPrefs: (clientId, prefs) => {
+			if (prefs) goalPrefs.set(clientId, { ...prefs });
+			else goalPrefs.delete(clientId);
 		},
 		mergeDiscoveredProjects(projects) {
 			calls.mergeDiscovered.push(projects);

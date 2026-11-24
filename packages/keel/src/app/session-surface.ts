@@ -1,14 +1,35 @@
 import type { ClientId, ConversationId, SessionFile } from "../contracts/ids.js";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
+import type { ForkEvidencePort } from "../contracts/fork.js";
+import type { TransportPort } from "../contracts/ports.js";
+import type { MessageEditSession } from "../contracts/turns.js";
 import type { WorkspacePort } from "../contracts/files.js";
 import type { SandboxPort } from "../contracts/sandbox.js";
 import type { SettingsStorePort } from "../contracts/settings-store.js";
 import type { WorkspaceHostPort } from "../contracts/workspace.js";
 import type { Conversation, ConversationKind, ConversationRegistry } from "../kernel/conversation/index.js";
-import { createSessionEntityHandlers, type SessionEntityHandlers } from "../domains/sessions/entity.js";
-import { createSessionPins, type SessionPinsHandlers } from "../domains/sessions/pins.js";
+import { createSessionEditor, type EditSessionHost } from "../adapters/sdk/session-edits.js";
+import { createBranchFile } from "../adapters/sdk/session-opener.js";
+import {
+	pushConversations as pushConversationsFrame,
+	type ConversationFrameFact,
+	type ConversationsFrameInput,
+} from "../domains/history/frame.js";
+import {
+	ConversationPinIndex,
+	createSessionEntityHandlers,
+	createSessionForks,
+	createSessionPins,
+	createSessionRollbacks,
+	mergePinState,
+	type SessionEntityHandlers,
+	type SessionForkHandlers,
+	type SessionPinsHandlers,
+	type SessionRollbackHandlers,
+} from "../domains/sessions/index.js";
 import { rebindSession, type RebindFrames } from "../domains/sessions/rebind.js";
 import { createWorkspaceSwitcher } from "../domains/sessions/workspace.js";
+import { findTurnBaseEntryId, resolveEntry, undeletedContextEntries } from "../domains/turns/entries.js";
 import { createSandboxHandlers, type SandboxHandlers } from "../domains/sandbox/index.js";
 import type { SessionRegistry } from "./session-registry.js";
 
@@ -30,6 +51,10 @@ export interface SessionSurfaceOptions {
 	workspaceHost?: () => WorkspaceHostPort | undefined;
 	/** 沙盒面；缺省 = 该能力未接。 */
 	sandbox?: () => SandboxPort | undefined;
+	/** 出帧通道（`conversations` 帧要真发出去）；缺省 = 只算内存态、不出帧。 */
+	transport?: () => TransportPort | undefined;
+	/** 外置证据搬运（宿主 `context-evidence`）；缺省 = 派生时只搬转录本体。 */
+	evidence?: () => ForkEvidencePort | undefined;
 	/** 当前工作区与额外根（换工作区会就地改它们）。 */
 	cwd(): string;
 	roots(): readonly string[];
@@ -64,18 +89,85 @@ export interface SessionSurface {
 	entity(): SessionEntityHandlers;
 	/** `pinSession` / `setConversationPinned`。 */
 	pins(): SessionPinsHandlers;
+	/** `forkSession`：在指定消息处分叉出新会话并切过去。 */
+	forks(): SessionForkHandlers;
+	/** `rollbackSession`：叶指针改到某条条目 + 重载（不换会话）。 */
+	rollbacks(): SessionRollbackHandlers;
+	/** `conversations` 帧（钉住 / listed 的内存态就在这里出）。 */
+	conversations(): SessionConversations;
 	/** 沙盒 7 个。 */
 	sandbox(): SandboxHandlers;
+}
+
+export interface SessionConversations {
+	/** 推一帧 `conversations`：钉住变了、激活变了、轮次结算了都要推。 */
+	push(): void;
 }
 
 /**
  * 会话实体重绑面的装配：老树把这段（约 200 行）绑在 `ClientSession` 上，这里单独一处，
  * 让 `ClientRuntime` 只留「谁来调用」，不再跟着长。
  *
- * 四个入口（换目录 / 切会话 / 沙盒迁移 / 换工作树）共用 `rebindSession` 一份原语。
+ * 四个入口（换目录 / 切会话 / 沙盒迁移 / 换工作树）共用 `rebindSession` 一份原语；
+ * `forkSession` / `rollbackSession` 也挂在这里（两者都要条目树，入口只能在这层接）。
  */
 export function createSessionSurface(options: SessionSurfaceOptions): SessionSurface {
 	const registry = options.registry;
+	/** 运行列表内存态：钉住面与 `conversations` 帧共用同一份（不能两处各记一套）。 */
+	const pinIndex = new ConversationPinIndex();
+	/** 已开会话 → 条目树窄面；会话没接时不了（handler 同步抛，不拿半死句柄）。 */
+	const editorOf = (conversationId: ConversationId): MessageEditSession | undefined => {
+		const opened = options.sessions?.get(conversationId);
+		return opened ? createSessionEditor(opened.session as unknown as EditSessionHost) : undefined;
+	};
+	const entryIdOf = (editor: MessageEditSession, messageId: string): string | undefined =>
+		resolveEntry(undeletedContextEntries(editor.contextEntries()), editor.uiIds(), messageId)?.id;
+	const baseEntryIdOf = (editor: MessageEditSession, entryId: string): string | null =>
+		findTurnBaseEntryId((id) => editor.entry(id), entryId);
+
+	const facts = (list: readonly Conversation[]): ConversationFrameFact[] =>
+		list.map((conv) => {
+			const opened = options.sessions?.get(conv.id);
+			const session = opened?.session;
+			const thinkingLevel = typeof session?.thinkingLevel === "string" ? session.thinkingLevel : undefined;
+			return {
+				id: conv.id,
+				title: conv.meta.title,
+				cwd: conv.meta.cwd,
+				kind: conv.meta.kind,
+				messageCount: Array.isArray(session?.messages) ? session.messages.length : 0,
+				isStreaming: session?.isStreaming === true || conv.phase === "running",
+				updatedAt: conv.meta.lastActiveAt,
+				hasHistoryRow: conv.meta.sessionFile !== undefined,
+				...(conv.meta.parentId ? { parentId: conv.meta.parentId } : {}),
+				...(opened?.sessionId ? { sessionId: opened.sessionId } : {}),
+				...(conv.meta.sessionFile ? { sessionFile: conv.meta.sessionFile } : {}),
+				...(thinkingLevel ? { thinkingLevel } : {}),
+			};
+		});
+
+	/** 内存态 + 磁盘钉子合流（合流规则只在 `mergePinState` 一处）。 */
+	const stateOf = (conversationId: string): ReturnType<typeof mergePinState> => {
+		const conv = registry.get(conversationId);
+		const store = options.store?.();
+		const file = conv?.meta.sessionFile;
+		const stored = store && conv && file ? store.isSessionPinned(conv.meta.cwd, file) : false;
+		return mergePinState(pinIndex.stateOf(conversationId), stored);
+	};
+
+	const conversationFrame = (): ConversationsFrameInput => {
+		const list = registry.list();
+		// 退役 / 被换掉的对话不再占内存态（只保留磁盘钉子，重开时自动恢复）。
+		pinIndex.retain(new Set(list.map((conv) => conv.id)));
+		return { conversations: facts(list), activeId: registry.activeId(), stateOf };
+	};
+
+	const pushConversations = (): void => {
+		const transport = options.transport?.();
+		// 通道没接 = 只算内存态（钉住仍然成立），不把「没有出口」当成已经发出去了。
+		if (!transport || options.isClosed()) return;
+		pushConversationsFrame({ ...conversationFrame(), transport });
+	};
 	const sessionsOf = (): SessionSurfaceSessions => {
 		const sessions = options.sessions;
 		if (!sessions) throw new CoreEngineNotReadyError("sessions");
@@ -104,6 +196,8 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 	let workspace: WorkspacePort | undefined;
 	let entity: SessionEntityHandlers | undefined;
 	let pins: SessionPinsHandlers | undefined;
+	let forks: SessionForkHandlers | undefined;
+	let rollbacks: SessionRollbackHandlers | undefined;
 	let sandbox: SandboxHandlers | undefined;
 
 	const switcher = (): WorkspacePort => {
@@ -157,8 +251,38 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 				frames: options.frames,
 				cwd: options.cwd,
 				notice: options.notice,
+				pins: pinIndex,
+				pushConversations,
 				refreshSessionsFor: (cwd) => (options.isClosed() ? undefined : options.frames.refreshSessionsFor?.(cwd)),
 			})),
+
+		forks: () =>
+			(forks ??= createSessionForks({
+				registry,
+				rebind,
+				...(options.sessions ? { editorOf } : {}),
+				entryIdOf,
+				baseEntryIdOf,
+				// SDK 窄口：派生必须用新开的 manager（否则会把活动会话迁到新文件）。
+				createBranchFile,
+				...(options.evidence ? { evidence: options.evidence } : {}),
+				markListed: (id) => pinIndex.markListed(id),
+				flushSnapshot: () => options.frames.flush(false),
+				notice: options.notice,
+			})),
+
+		rollbacks: () =>
+			(rollbacks ??= createSessionRollbacks({
+				registry,
+				...(options.sessions ? { editorOf } : {}),
+				entryIdOf,
+				// 重载后：快照与运行列表帧都过期了（消息条数变了）。
+				afterReload: pushConversations,
+				flushSnapshot: () => options.frames.flush(false),
+				notice: options.notice,
+			})),
+
+		conversations: () => ({ push: pushConversations }),
 
 		sandbox: () =>
 			(sandbox ??= createSandboxHandlers({

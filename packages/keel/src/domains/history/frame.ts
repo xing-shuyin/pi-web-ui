@@ -1,5 +1,8 @@
 import type { SessionListScanState } from "../../session-list-scan.js";
-import type { ServerMessage, SessionSummary } from "../../protocol.js";
+import type { ConversationSummary, ElsewhereRunning, ServerMessage, SessionSummary } from "../../protocol.js";
+import type { ConversationKind } from "../../kernel/conversation/index.js";
+import { conversationRowKind } from "../../conversation-rows.js";
+import { DEFAULT_CONV_TITLE } from "../../agent-formatters.js";
 import type { TransportPort } from "../../contracts/ports.js";
 import { scanHistory, type HistoryEntry } from "./list.js";
 
@@ -73,4 +76,127 @@ export async function refreshSessions(input: RefreshSessionsInput): Promise<Refr
 		);
 	}
 	return { entries: scanned.entries, states: scanned.states };
+}
+
+/** 本进程一个对话的行事实（`ConversationMeta` + 已开会的会话统计）：帧只读这些，不碰 SDK。 */
+export interface ConversationFrameFact {
+	id: string;
+	title: string;
+	cwd: string;
+	kind: ConversationKind;
+	parentId?: string;
+	sessionId?: string;
+	sessionFile?: string;
+	messageCount: number;
+	isStreaming: boolean;
+	completionPending?: boolean;
+	hasQuestion?: boolean;
+	thinkingLevel?: string;
+	updatedAt?: number;
+	/** 已有历史行代表它（`conversationRowKind` 的判据）：缺省 `false` = 宁可多一行，不让对话凭空消失。 */
+	hasHistoryRow?: boolean;
+}
+
+/** 运行列表的内存态（老树 `conv.pinned` / `conv.listed`）：由 `domains/sessions/pins` 合流后交进来。 */
+export interface ConversationFrameState {
+	pinned: boolean;
+	listed: boolean;
+}
+
+export interface ConversationsFrameInput {
+	/** 本进程的对话（注册表序，帧里按这个顺序出）。 */
+	conversations: readonly ConversationFrameFact[];
+	/** 当前活动对话（老树 `activeId`，无活动对话时是空串）。 */
+	activeId: string;
+	/** 运行列表内存态：缺省 = 未钉住、未列入。 */
+	stateOf?(conversationId: string): ConversationFrameState | undefined;
+	/** 其它设备 / 客户端上正在跑的对话（宿主知道）：不给就不出这个键。 */
+	elsewhere?: readonly ElsewhereRunning[];
+}
+
+/**
+ * 运行列表的入选判定（老 `shownInRunningList`）：钉住 / 已列入 / 在生成或等你回话，
+ * 或「就是当前对话且已经有内容」。**入选与行归属是两件事**：行归属仍只由 `conversationRowKind` 裁定。
+ */
+function inRunningList(fact: ConversationFrameFact, state: ConversationFrameState, activeId: string): boolean {
+	if (state.pinned || state.listed) return true;
+	if (fact.isStreaming || fact.completionPending || fact.hasQuestion) return true;
+	if (fact.id !== activeId) return false;
+	if (fact.title !== DEFAULT_CONV_TITLE) return true;
+	return fact.messageCount > 0;
+}
+
+/** 一条对话 → `ConversationSummary`：控件字段缺了就不写（协议里都是可选的），不编造。 */
+function summaryOfConversation(
+	fact: ConversationFrameFact,
+	state: ConversationFrameState,
+	forceOpen: boolean,
+): ConversationSummary {
+	const isSubagent = fact.kind === "subagent";
+	return {
+		id: fact.id,
+		title: fact.title,
+		cwd: fact.cwd,
+		messageCount: fact.messageCount,
+		isStreaming: fact.isStreaming,
+		isSubagent,
+		independent: true,
+		// 行归属单源：客户端不要再按 sessionFile / pinned 猜（猜错就是重复行）。
+		rowKind: conversationRowKind({
+			isStreaming: fact.isStreaming,
+			completionPending: fact.completionPending,
+			hasQuestion: fact.hasQuestion,
+			isSubagent,
+			parentId: fact.parentId,
+			pinned: state.pinned,
+			hasHistoryRow: fact.hasHistoryRow === true,
+			forceOpen,
+		}),
+		...(fact.parentId ? { parentId: fact.parentId } : {}),
+		...(fact.completionPending ? { completionPending: true as const } : {}),
+		...(fact.hasQuestion ? { hasQuestion: true as const } : {}),
+		...(fact.sessionId ? { sessionId: fact.sessionId } : {}),
+		...(fact.sessionFile ? { sessionFile: fact.sessionFile } : {}),
+		...(fact.thinkingLevel ? { thinkingLevel: fact.thinkingLevel } : {}),
+		...(fact.updatedAt ? { modified: fact.updatedAt } : {}),
+		...(state.pinned ? { pinned: true as const } : {}),
+	};
+}
+
+/**
+ * `conversations` 帧（左侧「运行的对话」）：在原有 `sessions` 帧边上补**钉住 / listed** 语义，
+ * 不另开一份列表形状——行归属仍由 `conversationRowKind` 裁定，`pinned` 来自运行列表内存态。
+ *
+ * 入选集合 = 老 `shownInRunningList` ∪「已入选对话的父行」（子代理要挂到父行下面，父行即使
+ * 没内容也得占一行，那一行用 `forceOpen` 强制 `open`）。
+ */
+export function buildConversationsFrame(input: ConversationsFrameInput): ServerMessage {
+	const stateOf = (id: string): ConversationFrameState => input.stateOf?.(id) ?? { pinned: false, listed: false };
+	const visible = new Set<string>();
+	const parents = new Set<string>();
+	for (const fact of input.conversations) {
+		if (!inRunningList(fact, stateOf(fact.id), input.activeId)) continue;
+		visible.add(fact.id);
+		if (fact.parentId) parents.add(fact.parentId);
+	}
+	const conversations: ConversationSummary[] = [];
+	for (const fact of input.conversations) {
+		const forced = parents.has(fact.id);
+		if (!forced && !visible.has(fact.id)) continue;
+		conversations.push(summaryOfConversation(fact, stateOf(fact.id), forced));
+	}
+	const elsewhere = input.elsewhere ?? [];
+	return {
+		type: "conversations",
+		conversations,
+		activeId: input.activeId,
+		...(elsewhere.length > 0 ? { elsewhere: [...elsewhere] } : {}),
+	};
+}
+
+/** 推一帧 `conversations`：通道已关时只算不发送（状态照样返回给调用方）。 */
+export function pushConversations(input: ConversationsFrameInput & { transport: TransportPort }): ServerMessage {
+	const frame = buildConversationsFrame(input);
+	if (!input.transport.isClosed()) input.transport.send(frame);
+	return frame;
 }

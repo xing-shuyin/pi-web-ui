@@ -12,13 +12,13 @@
 
 ## 现在到哪一步
 
-| 阶段   | 内容                                                                                | 状态                                                                 |
-| ------ | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| **P0** | 包骨架 + 依赖清单守卫（本目录）                                                     | ✅                                                                   |
-| P1     | 把 30 个随包模块物理搬进 `src/`，`src/index.ts` 的桥删掉                            | ✅ 63 个（29 + `protocol` + 33 个连带叶子），老位置留 shim           |
-| P2     | 剩下 4 个（settings / terminals / tool-manager / client-state）反转成端口，宿主注入 | ✅ 依赖 10 → **0**（`SettingsStorePort` / `SettingsFramePort` 落地） |
-| P3     | 补齐 165 个 handler（B1~B8）                                                        | 🚧 已真实现 137 / 165（B1~B7 + P4 重绑链）；剩余 28 见下表与 B8 清单 |
-| P5     | 发布 `@earendil-works/keel`，主应用改成版本依赖；启用 npm workspaces                | 未开始                                                               |
+| 阶段   | 内容                                                                                | 状态                                                                                           |
+| ------ | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| **P0** | 包骨架 + 依赖清单守卫（本目录）                                                     | ✅                                                                                             |
+| P1     | 把 30 个随包模块物理搬进 `src/`，`src/index.ts` 的桥删掉                            | ✅ 63 个（29 + `protocol` + 33 个连带叶子），老位置留 shim                                     |
+| P2     | 剩下 4 个（settings / terminals / tool-manager / client-state）反转成端口，宿主注入 | ✅ 依赖 10 → **0**（`SettingsStorePort` / `SettingsFramePort` 落地）                           |
+| P3     | 补齐 165 个 handler（B1~B8）                                                        | 🚧 已真实现 146 / 165（B1~B7 + P4）；剩余 19：目标运行/模式开关 5、终端/Bot 组 7、显式不支持 7 |
+| P5     | 发布 `@earendil-works/keel`，主应用改成版本依赖；启用 npm workspaces                | 未开始                                                                                         |
 
 ## handler 进度
 
@@ -40,6 +40,8 @@
 | **P4**  | 会话实体重绑组                                                    | 6       | 可用                | `rebindSession` 单原语（先建后拆、失败真回滚）：`setCwd` / `setWorkspaceRoots` / `switchSession` / `pinSession` / `setConversationPinned` / `pushSessionsForCwd` |
 | —       | 引擎预设 6 + `setClaudePermissionMode`                            | 0       | 显式不支持          | 依赖 `tool-manager` 目录 / SDK 分支写入 / claude driver，退到 B8/P4                                                                                              |
 | **B7**  | 消息编辑 / 删除 / 重试                                            | 3       | 可用                | `domains/turns/edits` + `adapters/sdk/session-edits`（截断→重问/摘条/补发）；失败真回滚 + 相位回收                                                               |
+| **B7**  | 目标 / 计划 / 委派                                                | 6       | 可用                | 计划落 `plans.json`（按会话 id 记账）+ `plan_updated` 帧；目标偏好落 `client-state.json`（`SettingsStorePort`）+ `goal_status`；交接走唯一喂轮出口               |
+| —       | 目标运行 3 + 模式开关 2                                           | 0       | 待宿主适配器        | 端口已在 `contracts/goals.ts` 冻结：`GoalRunPort`（执行/审查对话 + 逐轮续跑）与 `ChatModePort`（转录模式条目 + 工具门禁）；未注入一律同步抛                      |
 | —       | `forkSession` / `rollbackSession`                                 | 0       | 待 P4               | 只差一个 SDK 窄口：`forkSession` 要 `ForkPort.createBranchFile`；`rollbackSession` 要 `TurnCapableSession.branchTo`（见下）                                      |
 | —       | `setConversationPinned` 内存态                                    | 0       | 待 conversations 帧 | 磁盘钉子已真（`settings-store`）；左侧「运行中列表」的内存态要等 `conversations` 帧生产者                                                                        |
 | —       | `getUserTerminalManager`                                          | 0       | 待 P4               | 老树是「客户端级终端」，keel 只有「每对话一份」                                                                                                                  |

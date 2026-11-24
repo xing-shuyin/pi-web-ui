@@ -21,6 +21,7 @@ import {
 	emptyView,
 	type ConversationDispatchHandlers,
 } from "./conversation-handlers.js";
+import { createGoalHandlersFor, type GoalHandlers } from "./goal-handlers.js";
 import { createBackgroundHandlers, type BackgroundHandlers } from "../domains/background/index.js";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
 import type { SnapshotConversationView, SnapshotEnvView, SnapshotView } from "../contracts/snapshot-view.js";
@@ -161,6 +162,7 @@ export class ClientRuntime {
 	private workspaceCwd: string;
 	private workspaceRoots: readonly string[];
 	private backgroundHandlers: BackgroundHandlers | undefined;
+	private goalHandlersCache: GoalHandlers | undefined;
 	private pluginHandlersCache: PluginsHandlers | undefined;
 	/** 工作树全貌：工作树域的发布口写它，刷新/删除都从这里读「当前是哪个」。 */
 	private worktreeInfo: WorktreeInfo | null = null;
@@ -194,16 +196,14 @@ export class ClientRuntime {
 	attachFrames(frames: ClientFrames): void {
 		this.frames = frames;
 	}
-	/** 供应商/模型管理面的 24 个 handler：全部转发给宿主端口，未注入即逐个同步抛 `CoreEngineNotReadyError`。 */
-	private providerHandlers(): ProviderHandlers {
+	/** 供应商/模型管理面的 24 个 handler：全部转发给宿主端口，未注入即逐个同步抛 `CoreEngineNotReadyError`。 */ private providerHandlers(): ProviderHandlers {
 		return (this.providers ??= createProviderHandlers({
 			modelAdmin: this.options.modelAdmin,
 			getLang: () => this.options.getLang?.() ?? "zh",
 		}));
 	}
 
-	/** 设置/预设/审批规则：端口是 thunk（`SettingsService` 反过来要拿本运行时）。 */
-	private settings(): SettingsHandlers {
+	/** 设置/预设/审批规则：端口是 thunk（`SettingsService` 反过来要拿本运行时）。 */ private settings(): SettingsHandlers {
 		return (this.settingsHandlers ??= createSettingsHandlers({
 			settings: () => this.options.settingsFrame?.(),
 			transport: this.options.transport,
@@ -223,15 +223,13 @@ export class ClientRuntime {
 		}));
 	}
 
-	/** 后台任务：进程树 kill / 端口 diff / job 登记 / 每条 notice 全在宿主，内核只按位转交。 */
-	private background(): BackgroundHandlers {
+	/** 后台任务：进程树 kill / 端口 diff / job 登记 / 每条 notice 全在宿主，内核只按位转交。 */ private background(): BackgroundHandlers {
 		return (this.backgroundHandlers ??= createBackgroundHandlers({
 			background: () => this.options.background?.(),
 		}));
 	}
 
-	/** 会话状态：队列摘除 / 草稿 / 子代理收口——全是聚合根 + 草稿叶子的内存操作。 */
-	private conversations(): ConversationStateHandlers {
+	/** 会话状态：队列摘除 / 草稿 / 子代理收口——全是聚合根 + 草稿叶子的内存操作。 */ private conversations(): ConversationStateHandlers {
 		return (this.conversationState ??= createConversationStateHandlers({
 			clientId: this.options.clientId,
 			registry: this.registry,
@@ -246,8 +244,7 @@ export class ClientRuntime {
 		}));
 	}
 
-	/** 工作树：`git worktree` 的细节全在宿主，内核只编排「删当前树先回退 cwd → 刷帧」。 */
-	private worktrees(): WorktreeHandlers {
+	/** 工作树：`git worktree` 的细节全在宿主，内核只编排「删当前树先回退 cwd → 刷帧」。 */ private worktrees(): WorktreeHandlers {
 		return (this.worktreeHandlers ??= createWorktreeHandlers({
 			worktree: () => this.options.worktree?.(),
 			// 换工作树 = 换工作区（老实现 `switchWorktree` 逐字就是 `setCwd`）。
@@ -263,10 +260,8 @@ export class ClientRuntime {
 		}));
 	}
 
-	/**
-	 * MCP / 技能 / 市场 / 更新：宿主认得 mcp.json、GitHub、npm registry，内核只按位转发；
-	 * MCP 与技能变更后要重发设置帧（`settings_state` 里带 MCP 清单）。
-	 */ private pluginHandlers(): PluginsHandlers {
+	/** MCP / 技能 / 市场 / 更新：宿主认得 mcp.json、GitHub、npm registry，内核只按位转发；变更后要重发设置帧。 */
+	private pluginHandlers(): PluginsHandlers {
 		return (this.pluginHandlersCache ??= createPluginsHandlers({
 			plugins: () => this.options.plugins?.(),
 			pushSettings: () => {
@@ -275,16 +270,14 @@ export class ClientRuntime {
 		}));
 	}
 
-	/** 文件 / 目录 / 工作区绑定：13 个走 `FilesService`，2 个工作区绑定走内核的重绑链。 */
-	private filesHandlers(): FilesHandlers {
+	/** 文件 / 目录 / 工作区绑定：13 个走 `FilesService`，2 个工作区绑定走内核的重绑链。 */ private filesHandlers(): FilesHandlers {
 		return (this.fileHandlers ??= createFilesHandlers({
 			files: () => this.options.files?.(),
 			workspace: () => this.surface().workspace(),
 		}));
 	}
 
-	/** 对话级派发：只依赖注册表 + 帧出口 + 叶子（不碰会话实体）。 */
-	private conversationDispatch(): ConversationDispatchHandlers {
+	/** 对话级派发：只依赖注册表 + 帧出口 + 叶子（不碰会话实体）。 */ private conversationDispatch(): ConversationDispatchHandlers {
 		return (this.dispatchHandlers ??= createConversationDispatchHandlers({
 			registry: this.registry,
 			transport: this.options.transport,
@@ -303,13 +296,13 @@ export class ClientRuntime {
 		}));
 	}
 
-	/** 会话实体重绑面（换目录 / 切会话 / 沙盒迁移共用一份原语）：装配细节在 session-surface。 */
-	private surface(): SessionSurface {
+	/** 会话实体重绑面（换目录 / 切会话 / 沙盒迁移共用一份原语）：装配细节在 session-surface。 */ private surface(): SessionSurface {
 		return (this.sessionSurface ??= createSessionSurface({
 			clientId: this.options.clientId,
 			registry: this.registry,
 			...(this.options.sessions ? { sessions: this.options.sessions } : {}),
 			store: () => this.options.stateStore?.(),
+			transport: () => this.options.transport, // 运行列表帧（`conversations`）的出口：没有它只能算内存态、不出帧。
 			workspaceHost: () => this.options.workspaceHost?.(),
 			sandbox: () => this.options.sandbox?.(),
 			cwd: () => this.workspaceCwd,
@@ -335,8 +328,7 @@ export class ClientRuntime {
 		}));
 	}
 
-	/** 重绑 / 钉住 / 编辑面共用的帧出口：全量刷一帧 + 会话帧 + 项目帧。 */
-	private rebindFrames() {
+	/** 重绑 / 钉住 / 编辑面共用的帧出口：全量刷一帧 + 会话帧 + 项目帧。 */ private rebindFrames() {
 		return {
 			flush: (forceFull?: boolean) => {
 				if (!this.disposed) this.publisher.flush({ forceFull: forceFull ?? true });
@@ -351,8 +343,7 @@ export class ClientRuntime {
 		};
 	}
 
-	/** 选模型 / 思考档 / 全局默认模型：会话取「当前对话」；默认模型帧由组合根提供，没装配就不发。 */
-	private modelSwitchers(): ModelSwitchers {
+	/** 选模型 / 思考档 / 全局默认模型：会话取「当前对话」；默认模型帧由组合根提供，没装配就不发。 */ private modelSwitchers(): ModelSwitchers {
 		return (this.switchers ??= createModelSwitchers({
 			clientId: this.options.clientId,
 			cwd: this.options.cwd,
@@ -415,13 +406,11 @@ export class ClientRuntime {
 	streamingCount(): number {
 		return this.registry.list().filter((conv) => conv.phase === "running").length;
 	}
-
 	pendingCount(): number {
 		return this.registry.list().reduce((sum, conv) => sum + conv.queues.total(), 0);
 	}
 
-	/** 消息编辑面（`editMessage` / `deleteMessage` / `retryLast`）：编排在 `domains/turns/edits`，这里只交宿主口。 */
-	private turnEdits(): TurnsEditHandlers {
+	/** 消息编辑面（`editMessage` / `deleteMessage` / `retryLast`）：编排在 `domains/turns/edits`，这里只交宿主口。 */ private turnEdits(): TurnsEditHandlers {
 		const sessions = this.options.sessions;
 		const pushSessions = this.rebindFrames().pushSessions;
 		return createTurnsEditHandlers({
@@ -451,6 +440,16 @@ export class ClientRuntime {
 			},
 			// `cancelDiscarded`（#966）未接：`SchedulerStore` 只由宿主 legacy 服务持有，没有端口。
 		});
+	}
+
+	/** 目标 / 计划 / 委派：计划落 `plans.json`、偏好落 `client-state.json`，运行面归宿主端口（未注入即抛）。 */ private goals(): GoalHandlers {
+		return (this.goalHandlersCache ??= createGoalHandlersFor({
+			options: this.options,
+			registry: this.registry,
+			openConversation: () => this.createConversation().id,
+			feed: (promptText) => this.prompt(promptText),
+			flushSnapshot: () => this.publisher.request(),
+		}));
 	}
 
 	snapshotView(): SnapshotView {
@@ -521,14 +520,17 @@ export class ClientRuntime {
 			...this.background(),
 			...this.pluginHandlers(),
 			...this.turnEdits(),
-			// 会话实体：切转录走重绑原语（与 `setCwd` / 沙盒 / 工作树同一条链）。
+			...this.goals(),
+			// 会话实体：切转录 / 钉子 / 分叉 / 回滚（磁盘钉子归设置存储，帧只刷当前项目）。
 			switchSession: (path: string, sessionId?: string, independent?: boolean) =>
 				this.surface().entity().switchSession(path, sessionId, independent),
-			// 钉住：磁盘上的钉子归设置存储，刷列表按「会话自己的 cwd」推。
 			pinSession: (path: string, pinned: boolean) => this.surface().pins().pinSession(path, pinned),
 			setConversationPinned: (id: string, pinned: boolean) => this.surface().pins().setConversationPinned(id, pinned),
-			// 跨项目刷列表：钉子落在会话归属的项目上，但那个项目的会话目录只有宿主认得（SDK 布局），
-			// 所以这里只保证「当前项目」真的重扫一遍，其它项目下次打开时自然带上钉子。
+			forkSession: (messageId: string, position?: "before" | "at", conversationId?: string) =>
+				this.surface().forks().forkSession(messageId, position, conversationId),
+			rollbackSession: (messageId: string, conversationId?: string) =>
+				this.surface().rollbacks().rollbackSession(messageId, conversationId),
+			// 跨项目刷列表：钉子落在会话归属项目上，但那个项目目录只有宿主认得，这里只重扫当前项目。
 			pushSessionsForCwd: (targetCwd: string) => frames().refreshSessionsFor?.(targetCwd) ?? Promise.resolve(),
 			setModel: (modelId: string) => this.modelSwitchers().setModel(modelId),
 			setDefaultModel: (modelId: string) => this.modelSwitchers().setDefaultModel(modelId),
