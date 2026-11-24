@@ -496,13 +496,19 @@ import { resolveNativeCliModelConnection } from "./native-cli-model.js";
 import { prepareNativeCliSessionLaunch } from "./native-cli-session.js";
 import type { NativeCliSessionEvent } from "./native-cli-runtime.js";
 import {
-	acceptNativeCliEvent,
-	createNativeCliBinding,
 	isNativeCliStagingPath,
 	persistNativeCliBinding,
 	readNativeCliBinding,
 	type NativeCliBinding,
 } from "./native-cli-state.js";
+import {
+	detachNativeCliTerminal,
+	mergeNativeCliStatus,
+	observerErrorStatus,
+	planNativeCliEvent,
+	resolveNativeCliBinding,
+	stopNativeCliTerminal,
+} from "./native-cli-binding.js";
 import { terminatePersistentRemoteNativeCli } from "./remote-cli-persistence.js";
 import { cleanupRemoteNativeCliFiles } from "./native-cli-remote-files.js";
 import { remoteNativeCliCleanupQueue } from "./native-cli-remote-cleanup.js";
@@ -1389,9 +1395,12 @@ export class ClientSession {
 
 	private ensureNativeCliBinding(conv: Conversation): NativeCliBinding {
 		if (!conv.nativeCli) throw new Error("Not a native CLI conversation");
-		return (conv.nativeCliBinding ??=
-			readNativeCliBinding(conv.session.sessionManager, conv.nativeCli.config, conv.cwd) ??
-			createNativeCliBinding(conv.nativeCli.config, conv.cwd));
+		// 绑定读法单源在叶子 `native-cli-binding.ts`（core 适配器同一份）：缓存 → 会话文件 → 新建。
+		return (conv.nativeCliBinding ??= resolveNativeCliBinding({
+			config: conv.nativeCli.config,
+			cwd: conv.cwd,
+			session: conv.session.sessionManager,
+		}));
 	}
 
 	private configureNativeCliRuntime(conversationId: string, manager: TerminalManager, fallback?: Conversation): void {
@@ -1462,8 +1471,8 @@ export class ClientSession {
 
 	private updateNativeCliStatus(conv: Conversation, patch: Partial<NativeCliStatus>): void {
 		if (!conv.nativeCli) return;
-		const status = { phase: "starting", updatedAt: Date.now(), ...conv.nativeCli.status, ...patch } as NativeCliStatus;
-		if (status.error) status.error = status.error.replace(/[\x00-\x1f\x7f-\x9f]/g, " ").slice(0, 512);
+		// 合并/净化单源在叶子（core 适配器的状态账用同一份）。
+		const status = mergeNativeCliStatus(conv.nativeCli.status, patch);
 		conv.nativeCli = { ...conv.nativeCli, status };
 		if (status.phase === "exited") void this.cleanupNativeCliResources(conv);
 		if (this.convs.get(conv.id) === conv) {
@@ -1475,56 +1484,30 @@ export class ClientSession {
 	private handleNativeCliEvent(conv: Conversation, event: NativeCliSessionEvent): void {
 		if (!conv.nativeCli || conv.nativeCliClosed || this.disposed) return;
 		if (event.type === "error" && event.code === "event_observer") {
-			this.updateNativeCliStatus(conv, {
-				nativeEvents: false,
-				error: event.message,
-				activity: void 0,
-				phase: conv.terminals.getNativeCliTerminal(conv.nativeCli.terminalId)
-					? "running"
-					: (conv.nativeCli.status?.phase ?? "disconnected"),
-			});
+			const alive = Boolean(conv.terminals.getNativeCliTerminal(conv.nativeCli.terminalId));
+			this.updateNativeCliStatus(
+				conv,
+				observerErrorStatus(conv.nativeCli.status, { message: event.message, terminalAlive: alive }),
+			);
 			return;
 		}
 		const binding = this.ensureNativeCliBinding(conv);
-		const synthetic = event.type === "error" && event.code === "process_exit";
-		if (
-			event.type !== "working" &&
-			!acceptNativeCliEvent(
-				binding,
-				event.eventId,
-				!synthetic && (event.type !== "session" || Boolean(event.cursor)),
-				event.type === "session" ? event.cursor : event.eventId,
-			)
-		)
-			return;
-		if (event.type === "session") binding.nativeId = event.nativeId;
-		if (event.type !== "working") persistNativeCliBinding(conv.session.sessionManager, binding);
-		if (event.type === "session") {
-			this.updateNativeCliStatus(conv, { sessionId: event.nativeId, resumable: true });
-			return;
-		}
-		const activity =
-			event.type === "working" || event.type === "submitted"
-				? "working"
-				: event.type === "question"
-					? "waiting_input"
-					: event.type === "approval"
-						? "waiting_approval"
-						: "idle";
-		const phase = conv.nativeCli.status?.phase;
-		const disconnected = phase === "disconnected" || phase === "exited";
-		this.updateNativeCliStatus(conv, {
-			phase: disconnected ? phase : activity === "idle" ? "running" : activity,
-			activity,
-			lastActivityAt: Date.now(),
-			updatedAt: Date.now(),
-			...(synthetic ? {} : { nativeEvents: true }),
-			error: event.type === "error" ? event.message : void 0,
+		// 判定（去重/游标/状态补丁/标题回填/四种可广播事件）单源在叶子；副作用留在这里。
+		const plan = planNativeCliEvent({
+			event,
+			binding,
+			current: conv.nativeCli.status,
+			titleIsDefault: isDefaultNativeCliTitle(
+				conv.title,
+				conv.nativeCli.config.preset,
+				conv.nativeCli.config.executable,
+			),
 		});
-		if (event.type === "submitted") {
-			if (isDefaultNativeCliTitle(conv.title, conv.nativeCli.config.preset, conv.nativeCli.config.executable)) {
-				this.tryExtractNativeCliTitleFromTerminal(conv);
-			}
+		if (!plan) return;
+		if (plan.persist) persistNativeCliBinding(conv.session.sessionManager, binding);
+		if (plan.status) this.updateNativeCliStatus(conv, plan.status);
+		if (plan.refreshTitle) this.tryExtractNativeCliTitleFromTerminal(conv);
+		if (plan.submitted) {
 			if (this.convs.get(conv.id) === conv)
 				this.emit({
 					type: "native_cli_prompt_submitted",
@@ -1535,28 +1518,17 @@ export class ClientSession {
 				});
 			return;
 		}
-		if (event.type === "working") {
-			if (isDefaultNativeCliTitle(conv.title, conv.nativeCli.config.preset, conv.nativeCli.config.executable)) {
-				this.tryExtractNativeCliTitleFromTerminal(conv);
-			}
-			return;
-		}
-		if (event.type === "done" && event.aborted) return;
+		if (!plan.kind) return;
 		if (this.convs.get(conv.id) !== conv || this.disposed) return;
 		// Only the four terminal kinds fan out to clients and mobile. tool / notification / compact /
 		// subagent / end stay status-only until the protocol carries them, so a new hook event can
 		// never be emitted as an unknown kind.
-		const kind =
-			event.type === "approval" || event.type === "done" || event.type === "error" || event.type === "question"
-				? event.type
-				: undefined;
-		if (!kind) return;
 		const sessionId = conv.session.sessionId;
-		this.notifyMobile(conv, kind, `${binding.key}:${event.eventId}`);
+		this.notifyMobile(conv, plan.kind, `${binding.key}:${event.eventId}`);
 		this.emit({
 			type: "native_cli_event",
 			eventId: `${sessionId}:${binding.key}:${event.eventId}`,
-			kind,
+			kind: plan.kind,
 			conversationId: conv.id,
 			sessionId,
 			occurredAt: Date.now(),
@@ -1590,7 +1562,7 @@ export class ClientSession {
 		const conv = this.convs.get(conversationId);
 		if (!conv?.nativeCli || conv.nativeCli.terminalId !== terminalId)
 			throw new Error("CLI terminal does not belong to this conversation");
-		if (action === "detach") conv.terminals.detachNativeCli(terminalId);
+		if (action === "detach") detachNativeCliTerminal(conv.terminals, terminalId);
 		else if (action === "reconnect") await this.startNativeCliTerminal(conv);
 		else await this.stopNativeCliConversation(conv);
 		this.scheduleSnapshot();
@@ -1598,12 +1570,15 @@ export class ClientSession {
 
 	private async stopNativeCliConversation(conv: Conversation): Promise<void> {
 		if (!conv.nativeCli) return;
-		if (conv.nativeCli.config.keepAlive && !conv.terminals.hasPersistentNativeCli(conv.nativeCli.terminalId)) {
-			const service = getGlobalRemoteSshService();
-			if (!service) throw new Error("SSH service is unavailable; remote stop could not be confirmed");
-			await terminatePersistentRemoteNativeCli(service, conv.cwd, this.ensureNativeCliBinding(conv).key);
-		}
-		await conv.terminals.stopNativeCli(conv.nativeCli.terminalId);
+		await stopNativeCliTerminal(conv.terminals, {
+			terminalId: conv.nativeCli.terminalId,
+			keepAlive: Boolean(conv.nativeCli.config.keepAlive),
+			confirmRemote: async () => {
+				const service = getGlobalRemoteSshService();
+				if (!service) throw new Error("SSH service is unavailable; remote stop could not be confirmed");
+				await terminatePersistentRemoteNativeCli(service, conv.cwd, this.ensureNativeCliBinding(conv).key);
+			},
+		});
 	}
 
 	updateNativeCliTitleFromInput(conversationId: string, text: string): void {

@@ -15,6 +15,8 @@ import type { PluginsPort } from "../contracts/plugins.js";
 import type { WorkspaceHostPort } from "../contracts/workspace.js";
 import type { SandboxPort } from "../contracts/sandbox.js";
 import type { RemoteSdkOperationsFactory } from "../contracts/remote-ops.js";
+import type { NativeCliPort } from "../contracts/native-cli.js";
+import type { BotChatPort } from "../contracts/bots.js";
 import { isInsideRoots } from "../path-boundary.js";
 import { createProjectSource } from "../adapters/state/index.js";
 import { createModelMemory } from "../adapters/state/model-memory.js";
@@ -86,6 +88,10 @@ export interface CoreEngineOptions {
 	}) => TerminalManagerLike;
 	/** 自定义命令文件的路径解析（远程工作区落会话目录）；缺省由运行时拼本地路径。 */
 	commandsPathOf?: (workspaceRoot: string) => string;
+	/** 原生 CLI 会话面工厂（宿主实现 `server/core-native-cli-adapter.ts`）；缺省 = 能力未接。 */
+	nativeCli?: (sinks: CoreNativeCliSinks) => NativeCliPort;
+	/** Bot 私聊面工厂（宿主实现 `server/core-bot-adapter.ts`）；缺省 = 未接（`openBotChat` 同步抛）。 */
+	bots?: () => BotChatPort;
 	/** 远程工作区的 SDK 文件操作（宿主实现）；缺省 = 全是本地工具。 */
 	remoteOpsOf?: RemoteSdkOperationsFactory;
 	/** 换完模型后的宿主收尾（压缩预留重算 / 插件通知）：C 类能力一律留在宿主。 */
@@ -132,6 +138,15 @@ export interface CorePluginsSinks {
 /** 宿主实现 `WorkspaceHostPort` 时要拼的几块：当前工作目录（相对路径的基准）。 */
 export interface CoreWorkspaceSinks {
 	getCwd(): string;
+}
+
+/**
+ * 宿主实现 `NativeCliPort` 时要拼的几块：内核真正能回答的只有「这条对话的终端管理器」——
+ * PTY / hook / 会话文件 / 状态机全在宿主叶子里（`server/terminals.ts`、`server/native-cli-*`）。
+ */
+export interface CoreNativeCliSinks {
+	/** 每对话一支的终端管理器（宿主 `TerminalManager`；`detach` / `stop` 靠它）。 */
+	terminalOf(conversationId: string): unknown;
 }
 
 /** 宿主实现 `SandboxPort` 时要拼的几块：帧出口（`sandbox_diff` / notice）+ 当前工作目录。 */
@@ -277,6 +292,9 @@ export class CoreEngine implements EngineService {
 			},
 		});
 		let subagents: SubagentRuntime | undefined;
+		// 两个宿主面都要等终端归属 / 帧出口就位才建（工厂拿到的是本客户端的现成东西）；先声明再接线。
+		let nativeCliPort: NativeCliPort | undefined;
+		let botsPort: BotChatPort | undefined;
 		const runtime = new ClientRuntime({
 			clientId,
 			cwd: this.cwd,
@@ -305,6 +323,8 @@ export class CoreEngine implements EngineService {
 			settingsFrame: () => settingsFrame,
 			slashCommands: () => slashCommands,
 			files: () => files,
+			nativeCli: () => nativeCliPort,
+			bots: () => botsPort,
 			plugins: () => plugins,
 			background: () => background,
 			sandbox: () => sandbox,
@@ -441,6 +461,11 @@ export class CoreEngine implements EngineService {
 			},
 		};
 		runtime.attachFrames(frames);
+		// 宿主面：CLI 的 PTY 归每对话一支的终端管理器，Bot 私聊的注册表与转录锚点在宿主（`agentDir`）。
+		nativeCliPort = this.options.nativeCli?.({
+			terminalOf: (conversationId) => terminalHost.managerFor(conversationId, this.cwd),
+		});
+		botsPort = this.options.bots?.();
 		// 连接期就把全局默认模型告诉前端（老实现 `pushDefaultModel()` 在 attach 时也推一次）。
 		frames.pushDefaultModel();
 		this.runtimes.set(clientId, runtime);

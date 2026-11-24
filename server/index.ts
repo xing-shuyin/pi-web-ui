@@ -65,6 +65,8 @@ import { createCoreSandbox } from "./core-sandbox-adapter.js";
 import { createCorePlugins } from "./core-plugin-adapter.js";
 import { createCoreWorktree } from "./core-worktree-adapter.js";
 import { createCoreBackground } from "./core-background-adapter.js";
+import { asCoreNativeCliTerminals, createCoreNativeCli } from "./core-native-cli-adapter.js";
+import { createCoreBotChat } from "./core-bot-adapter.js";
 import { ClientStateStore } from "./client-state.js";
 import { isAbsoluteWirePath, wireToAbs } from "./files-service.js";
 import { WS_MAX_PAYLOAD_BYTES } from "./payload-limits.js";
@@ -1643,6 +1645,12 @@ function ensureEngine(engine: EngineId): EngineService {
 						workspaceHost: () => createCoreWorkspace({ dataDir: DATA_DIR }),
 						sandbox: (sinks) => createCoreSandbox({ dataDir: DATA_DIR, ...sinks }),
 						worktree: () => createCoreWorktree(),
+						// 原生 CLI：内核只持有账（身份 / 标题 / 归属），PTY、hook、会话文件那套运行时还在老树，
+						// 所以只交出终端归属；没接的口（start / reconnect / statusOf / applyTitle）调用即抛并说明缺什么。
+						nativeCli: (sinks) =>
+							createCoreNativeCli({ terminalOf: (id) => asCoreNativeCliTerminals(sinks.terminalOf(id)) }),
+						// Bot 私聊：本机注册表与私聊转录锚点都是宿主叶子，`agentDir` 只有组合根知道。
+						bots: () => createCoreBotChat({ agentDir: getAgentDir() }),
 					}) as unknown as AgentService)
 				: new AgentService(CWD, sharedStateStore);
 		for (let i = 0; i < sharedSocketCount; i++) piServiceInstance.noteSocketOpen();

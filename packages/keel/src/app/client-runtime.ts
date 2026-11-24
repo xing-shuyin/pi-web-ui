@@ -22,6 +22,9 @@ import {
 	type ConversationDispatchHandlers,
 } from "./conversation-handlers.js";
 import { createGoalHandlersFor, type GoalHandlers } from "./goal-handlers.js";
+import { createNativeCliHandlersFor } from "./native-cli-handlers.js";
+import { createBotChatHandlersFor } from "./bot-chat-handlers.js";
+import { createTerminalHandlers } from "../domains/terminals/index.js";
 import { createBackgroundHandlers, type BackgroundHandlers } from "../domains/background/index.js";
 import type { ClockPort, TransportPort } from "../contracts/ports.js";
 import type { SnapshotConversationView, SnapshotEnvView, SnapshotView } from "../contracts/snapshot-view.js";
@@ -66,14 +69,11 @@ export interface ClientRuntimeOptions {
 	transport: TransportPort;
 	/** 对话可见面的来源；缺省用注册表里的空视图（域接上后注入）。 */
 	viewOf?: (conversation: Conversation) => SnapshotConversationView;
-	/** 删会话文件前的路径谓词（缺省 fail-closed：一律拒绝）。 */
-	isAllowedPath?(path: string): boolean;
+	/** 删会话文件前的路径谓词（缺省 fail-closed：一律拒绝）。 */ isAllowedPath?(path: string): boolean;
 	/** 把归一后的标题落进会话文件头（缺省只改内存）。 */
 	persistSessionTitle?(sessionFile: string, title: string): Promise<void> | void;
-	/** 终端管理器来源（缺省 = 终端能力未接）。 */
-	terminalManagerFor?(conversationId: string): unknown;
-	/** 当前语言（notice/工具文案用）。 */
-	getLang?(): string;
+	/** 终端管理器来源（缺省 = 终端能力未接）。 */ terminalManagerFor?(conversationId: string): unknown;
+	/** 当前语言（notice/工具文案用）。 */ getLang?(): string;
 	/** 前端回包：审批。返回 true = 真的结算了这一条。 */
 	resolveToolApproval?(
 		id: string,
@@ -103,8 +103,7 @@ export interface ClientRuntimeOptions {
 	modelAdmin?: ModelAdminPort;
 	/** 设置帧/预设/审批规则库面（宿主实现）：用 thunk 才不会与运行时的帧出口成环。 */
 	settingsFrame?: () => SettingsFramePort | undefined;
-	/** 「关闭审批」时把待审批一次性放行。 */
-	releasePendingApprovals?(reason: string): number;
+	/** 「关闭审批」时把待审批一次性放行。 */ releasePendingApprovals?(reason: string): number;
 	/** 输入框草稿存储；缺省按 `cwd` 建一份（真实部署由组合根传 dataDir 下的路径）。 */
 	drafts?: ComposerDraftsStore;
 	/** 自定义命令文件落哪（远程工作区落会话目录是宿主知识）；缺省 = `<cwd>/.pi/commands.json`。 */
@@ -125,6 +124,8 @@ export interface ClientRuntimeOptions {
 	worktree?: () => WorktreePort | undefined;
 	/** MCP / 技能 / 市场 / 插件更新面（宿主 `core-plugin-adapter`）；缺省 = 该能力未接。 */
 	plugins?: () => PluginsPort | undefined;
+	nativeCli?: () => import("../contracts/native-cli.js").NativeCliPort | undefined; // 原生 CLI 会话面（PTY / hook / 远程文件归宿主）；缺省 = 未接。
+	bots?: () => import("../contracts/bots.js").BotChatPort | undefined; // Bot 私聊的宿主面（注册表 + 转录锚点）；缺省 = 未接，`openBotChat` 同步抛。
 	/** `listCommands` / `saveCommands` 读写的目录（跟随当前对话的 cwd）。 */
 	commandCwd?: () => string;
 	/** 项目/全局模型记忆 + 供应商 key pin（宿主设置存储）；缺省 = 不落盘。 */
@@ -135,15 +136,11 @@ export interface ClientRuntimeOptions {
 	onSessionModelChanged?(conversationId: ConversationId): void;
 }
 
-/**
- * 一个客户端（浏览器标签）的全部运行态：对话注册表 + 出帧 + 分发表。
- * 跨域能力只在这里装配，域之间互不认识；`DispatchSession` 的宽度收敛在 `handlers()`。
- */
+/** 一个客户端（浏览器标签）的全部运行态：对话注册表 + 出帧 + 分发表（跨域能力只在这里装配，域之间互不认识）。 */
 export class ClientRuntime {
 	readonly registry = new ConversationRegistry<Conversation>();
 	readonly publisher: SnapshotPublisher;
 	readonly turns: TurnRunner;
-	private readonly options: ClientRuntimeOptions;
 	private disposed = false;
 	private adapter: DispatchSession | undefined;
 	private frames: ClientFrames | undefined;
@@ -158,21 +155,17 @@ export class ClientRuntime {
 	private conversationState: ConversationStateHandlers | undefined;
 	private dispatchHandlers: ConversationDispatchHandlers | undefined;
 	private sessionSurface: SessionSurface | undefined;
-	// 当前工作区与额外根：换工作区会就地改它们（快照 / 目录类 handler 都现取）。
-	private workspaceCwd: string;
+	private workspaceCwd: string; // 当前工作区与额外根：换工作区会就地改它们（快照 / 目录类 handler 都现取）。
 	private workspaceRoots: readonly string[];
 	private backgroundHandlers: BackgroundHandlers | undefined;
 	private goalHandlersCache: GoalHandlers | undefined;
 	private pluginHandlersCache: PluginsHandlers | undefined;
-	/** 工作树全貌：工作树域的发布口写它，刷新/删除都从这里读「当前是哪个」。 */
-	private worktreeInfo: WorktreeInfo | null = null;
-	/** 沙盒全貌：`null` = 当前工作区不是沙盒（沙盒适配器接线后由宿主写）。 */
-	private sandboxInfo: SandboxInfo | null = null;
-	/** 输入框草稿：不传就按 `dataDir/composer-drafts.json` 建（构造不读盘，首次访问才读）。 */
-	private readonly drafts: ComposerDraftsStore;
+	private worktreeInfo: WorktreeInfo | null = null; // 工作树全貌：工作树域的发布口写它，刷新/删除都从这里读「当前是哪个」。
+	/** 沙盒全貌：`null` = 不是沙盒（宿主写）。 */ private sandboxInfo: SandboxInfo | null = null;
+	/** 输入框草稿：不传就按 `dataDir/composer-drafts.json` 建（构造不读盘，首次访问才读）。 */ private readonly drafts: ComposerDraftsStore;
+	/** `conversations` 帧出口。 */ readonly pushConversations = () => this.surface().conversations().push();
 
-	constructor(options: ClientRuntimeOptions) {
-		this.options = options;
+	constructor(readonly options: ClientRuntimeOptions) {
 		this.workspaceCwd = options.cwd;
 		this.workspaceRoots = options.workspaceRoots ?? [];
 		this.drafts = options.drafts ?? new ComposerDraftsStore(join(options.cwd, "composer-drafts.json"));
@@ -260,8 +253,7 @@ export class ClientRuntime {
 		}));
 	}
 
-	/** MCP / 技能 / 市场 / 更新：宿主认得 mcp.json、GitHub、npm registry，内核只按位转发；变更后要重发设置帧。 */
-	private pluginHandlers(): PluginsHandlers {
+	/** MCP / 技能 / 市场 / 更新：宿主认得 mcp.json、GitHub、npm registry，内核只按位转发；变更后要重发设置帧。 */ private pluginHandlers(): PluginsHandlers {
 		return (this.pluginHandlersCache ??= createPluginsHandlers({
 			plugins: () => this.options.plugins?.(),
 			pushSettings: () => {
@@ -296,7 +288,7 @@ export class ClientRuntime {
 		}));
 	}
 
-	/** 会话实体重绑面（换目录 / 切会话 / 沙盒迁移共用一份原语）：装配细节在 session-surface。 */ private surface(): SessionSurface {
+	/** 会话实体重绑面（换目录 / 切会话 / 沙盒迁移共用一份原语）：装配细节在 session-surface。 */ surface(): SessionSurface {
 		return (this.sessionSurface ??= createSessionSurface({
 			clientId: this.options.clientId,
 			registry: this.registry,
@@ -452,6 +444,9 @@ export class ClientRuntime {
 		}));
 	}
 
+	/** 原生 CLI 面（未注入即抛）。 */ private nativeCli = () => createNativeCliHandlersFor(this);
+	/** Bot 私聊入口（未注入即抛）。 */ private botChat = createBotChatHandlersFor(this);
+	/** 设置帧（还没 attach 就不发，等连接期那一次）。 */ readonly pushSettings = () => this.frames?.pushSettings();
 	snapshotView(): SnapshotView {
 		const conv = this.registry.activeConv();
 		return {
@@ -492,9 +487,10 @@ export class ClientRuntime {
 				if (this.disposed) return;
 				this.options.transport.send({ type: "notice", level, text, ...(textEn ? { textEn } : {}) });
 			},
-			newChat: async (_preset?: string, _ephemeral?: boolean, onReady?: (id: string) => void) => {
+			newChat: async (...args: Parameters<DispatchSession["newChat"]>) => {
 				if (this.disposed) return false;
-				const conv = this.createConversation();
+				const [, , onReady, , botId] = args; // `botId` → `kind: "bot"`：私聊 = 普通对话 + 一个会话级 Bot 身份。
+				const conv = this.createConversation(botId ? { kind: "bot" } : undefined);
 				onReady?.(conv.id);
 				return true;
 			},
@@ -521,6 +517,9 @@ export class ClientRuntime {
 			...this.pluginHandlers(),
 			...this.turnEdits(),
 			...this.goals(),
+			...this.nativeCli(),
+			...this.botChat,
+			...createTerminalHandlers(),
 			// 会话实体：切转录 / 钉子 / 分叉 / 回滚（磁盘钉子归设置存储，帧只刷当前项目）。
 			switchSession: (path: string, sessionId?: string, independent?: boolean) =>
 				this.surface().entity().switchSession(path, sessionId, independent),
