@@ -18,6 +18,7 @@ import type { PresetTranscriptPort } from "../contracts/presets.js";
 import type { ToolInfoPort } from "../contracts/session.js";
 import type { QuickAskConversationReadPort } from "../contracts/quick-ask.js";
 import type { UiBridgePort } from "../contracts/ui-bridge.js";
+import type { DshPatchPort, EnginePermissionModePort } from "../contracts/engine-extras.js";
 import type { MobileNotificationEvent } from "../mobile-notification-events.js";
 import type { ServerLang } from "../i18n.js";
 import type { ProjectSource } from "../adapters/state/index.js";
@@ -108,6 +109,16 @@ export interface CoreNativeCliSinks {
 /** 宿主实现 `ToolInfoPort` 时要拼的几块：提示词覆盖表（客户端设置里的那一份，别名归一只在宿主）。 */
 export interface CoreToolInfoSinks {
 	toolPromptOverrides(): Record<string, UiToolPromptOverride> | undefined;
+}
+
+/**
+ * 宿主实现「引擎专属面」时要拼的几块：只有这条连接是谁。
+ *
+ * 两个端口都不是 pi 引擎的语义（DSH 补丁 / claude driver 权限模式），所以「当前跑的是哪个引擎」
+ * 只有宿主能回答（`resolveClientEngine`）：内核拿到端口就转发，不猜、也不拦。
+ */
+export interface CoreEngineExtrasSinks {
+	clientId: string;
 }
 
 /** 宿主实现 `ChatModePort` 时要拼的几块：转录句柄（写条目 / 读回恢复）、门禁状态切换、帧出口。 */
@@ -227,6 +238,16 @@ export interface HostFaceFactories {
 	 * 缺省 = 未接：4 个 dialog/overlay handler 同步抛，`env.piConfigured` / `env.piAgentInstalled` 退回 `false`。
 	 */
 	uiBridge?: (clientId: string, send?: (msg: ServerMessage) => void) => UiBridgePort | undefined;
+	/**
+	 * DSH 补丁管理面工厂（宿主实现 `server/core-engine-extras-adapter.ts`，包 `DshClientSession` 六个现有方法）；
+	 * 缺省 = 未接（六个 handler 同步抛）。非 dsh 引擎上调到时由宿主回可读错，不静默假成功。
+	 */
+	dshPatches?: (sinks: CoreEngineExtrasSinks) => DshPatchPort;
+	/**
+	 * 引擎自带权限模式面工厂（同一个宿主适配器，包 `UniversalSession.setClaudePermissionMode`）；
+	 * 缺省 = 未接（`setClaudePermissionMode` 同步抛）。非 claude 引擎上调到时由宿主回可读错。
+	 */
+	enginePermissionMode?: (sinks: CoreEngineExtrasSinks) => EnginePermissionModePort;
 }
 
 /** 装配宿主面要的本客户端现成东西：运行时、会话、帧出口、终端归属、语言、设置存储与全局标量。 */
@@ -269,6 +290,8 @@ export interface HostFaces {
 	toolInfo: ToolInfoPort | undefined;
 	quickAsk: QuickAskConversationReadPort | undefined;
 	uiBridge: UiBridgePort | undefined;
+	dshPatches: DshPatchPort | undefined;
+	enginePermissionMode: EnginePermissionModePort | undefined;
 	modelPusher: ModelPusher;
 	subagents: SubagentRuntime;
 	/** 已经接到运行时上的帧出口（`attachFrames` 在装配里就做完了）。 */
@@ -399,6 +422,10 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 	const quickAsk = deps.quickAsk?.();
 	// UI 桥（每客户端一份）：dialog / overlay 表归宿主那份 `WebUIContext`，页面 / 手机挂起表归内核。
 	const uiBridge = deps.uiBridge?.(clientId, (msg) => transport.send(msg));
+	// 引擎专属面（DSH 补丁 / claude 权限模式）：这两个端口本来就不是本引擎的语义，
+	// 「这条连接跑的是哪个引擎」只有宿主答得上来，所以只把 clientId 递进去，判定在适配器里。
+	const dshPatches = deps.dshPatches?.({ clientId });
+	const enginePermissionMode = deps.enginePermissionMode?.({ clientId });
 	const modelPusher = createModelPusher({
 		transport,
 		agentDir,
@@ -492,6 +519,8 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 		toolInfo,
 		quickAsk,
 		uiBridge,
+		dshPatches,
+		enginePermissionMode,
 		modelPusher,
 		subagents,
 		frames,

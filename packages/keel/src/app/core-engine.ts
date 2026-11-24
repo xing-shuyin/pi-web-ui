@@ -42,6 +42,7 @@ export { CoreEngineNotReadyError };
 export type {
 	CoreBackgroundSinks,
 	CoreChatModeSinks,
+	CoreEngineExtrasSinks,
 	CoreFilesSinks,
 	CoreNativeCliSinks,
 	CorePluginsSinks,
@@ -293,6 +294,9 @@ export class CoreEngine implements EngineService {
 			toolInfo: () => faces.toolInfo,
 			quickAskConversation: () => faces.quickAsk,
 			uiBridge: () => faces.uiBridge,
+			// 引擎专属面（DSH 补丁 / claude 权限模式）：内核只有转发，判定在宿主适配器里。
+			dshPatches: () => faces.dshPatches,
+			enginePermissionMode: () => faces.enginePermissionMode,
 			plugins: () => faces.plugins,
 			background: () => faces.background,
 			bashKills,
@@ -350,6 +354,8 @@ export class CoreEngine implements EngineService {
 			toolInfo: this.options.toolInfo,
 			quickAsk: this.options.quickAsk,
 			uiBridge: this.options.uiBridge,
+			dshPatches: this.options.dshPatches,
+			enginePermissionMode: this.options.enginePermissionMode,
 			clientId,
 			cwd: this.cwd,
 			agentDir: this.options.agentDir ?? this.cwd,

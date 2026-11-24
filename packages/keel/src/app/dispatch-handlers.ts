@@ -39,6 +39,7 @@ import { createExtraHandlers } from "./extra-handlers.js";
 import { createToolInfoHandlersFor } from "./tool-info-handlers.js";
 import { createPresetHandlers } from "./preset-handlers.js";
 import { createQuickAskHandlersFor } from "./quick-ask-handlers.js";
+import { createEngineExtrasHandlersFor } from "./engine-extras-handlers.js";
 import { createUiBridgeHandlersFor } from "./ui-bridge-handlers.js";
 import type { SessionSurface } from "./session-surface.js";
 import type { ClientFrames, ClientRuntimeOptions } from "./client-runtime.js";
@@ -297,6 +298,8 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 	const presets = createPresetHandlers(runtime);
 	/** 随手问上下文读取：内核解析会话，转录摘取 / 磁盘历史在宿主端口。 */
 	const quickAsk = createQuickAskHandlersFor(runtime);
+	/** 引擎专属面（DSH 补丁 6 + claude 权限模式 1）：只有转发，宿主端口未注入即同步抛。 */
+	const engineExtras = createEngineExtrasHandlersFor(runtime);
 	/** UI 桥：dialog / overlay 挂起表转给宿主那份，页面 / 手机调用的挂起表归内核。 */
 	const bridge = createUiBridgeHandlersFor(runtime);
 
@@ -385,6 +388,7 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 		...toolInfo,
 		...presets,
 		...quickAsk,
+		...engineExtras,
 		// UI 桥的 8 个分发面成员（`phoneCall` / `settleConversationCalls` / `dispose` 是面外成员，不进分发表）。
 		resolveDialog: (id, value) => bridge.resolveDialog(id, value),
 		handleTuiOverlayInput: (id, data) => bridge.handleTuiOverlayInput(id, data),

@@ -139,6 +139,10 @@ export interface ClientRuntimeOptions extends GoalHostPorts {
 	quickAskConversation?: () => import("../contracts/quick-ask.js").QuickAskConversationReadPort | undefined;
 	/** UI 桥（宿主 `core-ui-bridge-adapter`：dialog/overlay 表 + 装 CLI + 探针）；缺省 = 未接。 */
 	uiBridge?: () => import("../contracts/ui-bridge.js").UiBridgePort | undefined;
+	/** DSH 补丁管理面（宿主 `core-engine-extras-adapter`，包 `DshClientSession` 那六个方法）；缺省 = 未接，六个 handler 同步抛。 */
+	dshPatches?: () => import("../contracts/engine-extras.js").DshPatchPort | undefined;
+	/** 引擎自带权限模式（同一个适配器，包 `universal-session` 的入口）；缺省 = 未接，`setClaudePermissionMode` 同步抛。 */
+	enginePermissionMode?: () => import("../contracts/engine-extras.js").EnginePermissionModePort | undefined;
 	/** `listCommands` / `saveCommands` 读写的目录（跟随当前对话的 cwd）。 */
 	commandCwd?: () => string;
 	/** 项目/全局模型记忆 + 供应商 key pin（宿主设置存储）；缺省 = 不落盘。 */

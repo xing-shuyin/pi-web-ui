@@ -73,6 +73,7 @@ import { createCoreGoalRunPort } from "./core-goal-run-adapter.js";
 import { createCorePresetTranscriptPort } from "./core-preset-adapter.js";
 import { createCoreToolInfoAdapter } from "./core-tool-info-adapter.js";
 import { createCoreQuickAskAdapter } from "./core-quick-ask-adapter.js";
+import { createCoreDshPatches, createCoreEnginePermissionMode } from "./core-engine-extras-adapter.js";
 import { CoreUiBridges } from "./core-ui-bridge-adapter.js";
 import { WebUIContext } from "./webui-context.js";
 import { ClientStateStore } from "./client-state.js";
@@ -1704,6 +1705,21 @@ function ensureEngine(engine: EngineId): EngineService {
 						quickAsk: () => createCoreQuickAskAdapter(),
 						// UI 桥：装 pi CLI 的进程归宿主，探针真值读宿主环境（`env.piConfigured` / `piAgentInstalled`）。
 						uiBridge: (clientId, send) => coreUiBridges.portOf(clientId, coreWebUiOf(clientId, send)),
+						// 引擎专属面（DSH 补丁 6 + claude 权限模式）：都不是 pi 引擎的语义，内核只转发；
+						// 这里包的是老派发路径本来就用的**同一个会话对象**（`EngineService.get(clientId)`，即 legacy 里的 `cs`），
+						// 不替它起引擎；引擎不对 / 没这会话时就地回可读错（不静默假成功）。
+						dshPatches: (sinks) =>
+							createCoreDshPatches({
+								clientId: sinks.clientId,
+								engine: () => resolveClientEngine(sinks.clientId),
+								session: () => dshServiceInstance?.get(sinks.clientId),
+							}),
+						enginePermissionMode: (sinks) =>
+							createCoreEnginePermissionMode({
+								clientId: sinks.clientId,
+								engine: () => resolveClientEngine(sinks.clientId),
+								session: () => claudeServiceInstance?.get(sinks.clientId),
+							}),
 					}) as unknown as AgentService)
 				: new AgentService(CWD, sharedStateStore);
 		for (let i = 0; i < sharedSocketCount; i++) piServiceInstance.noteSocketOpen();
