@@ -213,6 +213,18 @@ export class ClientRuntime {
 	get nativeCliState(): NativeCliConversations | undefined {
 		return this.options.nativeCliState;
 	}
+	get chatModes(): ChatModeState | undefined {
+		return this.options.chatModes;
+	}
+	get sessions(): SessionRegistry | undefined {
+		return this.options.sessions;
+	}
+	get transport(): TransportPort {
+		return this.options.transport;
+	}
+	getLang(): string {
+		return this.options.getLang?.() ?? "zh";
+	}
 	attachFrames(frames: ClientFrames): void {
 		this.frames = frames;
 	}
@@ -379,6 +391,15 @@ export class ClientRuntime {
 		this.registry.activate(conv.id);
 		this.publisher.switchConversation(conv.id);
 		return conv;
+	}
+
+	openChildConversation(init: { parentId: string; title: string; cwd?: string }): Conversation {
+		return this.newConversation({
+			kind: "subagent",
+			parentId: init.parentId,
+			title: init.title,
+			cwd: init.cwd,
+		});
 	}
 
 	activeConversationId(): string | undefined {

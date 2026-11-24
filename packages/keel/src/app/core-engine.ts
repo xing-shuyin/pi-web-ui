@@ -368,6 +368,7 @@ export class CoreEngine implements EngineService {
 				...conversationViewFromSession(conv, sessions.get(conv.id)?.session),
 				planMode: chatModes.planModeOf(conv.id),
 				delegateMode: chatModes.delegateModeOf(conv.id),
+				delegateConvId: chatModes.delegateConvIdOf(conv.id),
 				...conversationPresetViewOf({
 					conversationId: conv.id,
 					queued: conv.queues.total(),

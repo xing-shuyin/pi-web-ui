@@ -46,6 +46,7 @@ export interface PromptEntryDeps {
 	/** 计划模式的当前值（与快照同一个投影源）。 */
 	planModeOf(): boolean;
 	refreshSessions(): Promise<void>;
+	dispatchDelegate?(text: string): Promise<boolean>;
 	slash?: () => SlashCommandsPort | undefined;
 	attachments?: () => AttachmentsPort | undefined;
 	/** 客户端设置快照（附件 asides 的视觉桥接 / 上传上限读它；缺省 = 空设置）。 */
@@ -136,6 +137,7 @@ export function createPromptEntry(deps: PromptEntryDeps): PromptEntry {
 	// 两个入口互引（`/new <提示>` 的首条提示要再走一遍斜杠解析）：用函数声明把顺序交给提升。
 	async function submit(text: string, attachments?: PromptAttachment[], queue?: boolean): Promise<void> {
 		if (await execSlash(text)) return;
+		if (deps.dispatchDelegate && (await deps.dispatchDelegate(text))) return;
 		// 附件先落进会话（老实现同序：asides → `sendCustomMessage(nextTurn)` → 喂轮）。
 		await deliverAttachments(attachments);
 		await deps.feedTurn(text, queue);

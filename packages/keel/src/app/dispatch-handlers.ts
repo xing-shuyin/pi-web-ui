@@ -45,6 +45,7 @@ import { createUiBridgeHandlersFor } from "./ui-bridge-handlers.js";
 import type { SessionSurface } from "./session-surface.js";
 import type { ClientFrames, ClientRuntimeOptions } from "./client-runtime.js";
 import { createPromptEntry } from "./prompt-entry.js";
+import { dispatchToDelegate } from "./delegate-dispatch.js";
 
 /**
  * 分发表的装配面：`ClientRuntime` 用它认得的现成东西（选项、注册表、出帧闸、帧出口、工作区）
@@ -74,6 +75,7 @@ export interface DispatchRuntime {
 	/** 会话实体重绑面（换目录 / 切会话 / 沙盒迁移共用一份原语）。 */
 	surface(): SessionSurface;
 	createConversation(init?: Partial<ConversationInit>): Conversation;
+	openChildConversation(init: { parentId: string; title: string; cwd?: string }): Conversation;
 	activeConversationId(): string | undefined;
 	historyRoot(): string | undefined;
 	historyState(): ReadonlyMap<string, SessionListScanState>;
@@ -322,6 +324,20 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 		clientSettings: () =>
 			runtime.options.stateStore?.()?.getSettingsSnapshot(runtime.options.clientId) ?? ({} as never),
 		getLang: () => runtime.options.getLang?.() ?? "zh",
+		dispatchDelegate: (text) =>
+			dispatchToDelegate(
+				{
+					registry: runtime.registry,
+					sessions: runtime.options.sessions,
+					turns: runtime.turns,
+					chatModes: runtime.options.chatModes,
+					publisher: runtime.publisher,
+					transport: runtime.options.transport,
+					getLang: () => runtime.options.getLang?.() ?? "zh",
+					openChildConversation: (init) => runtime.openChildConversation(init),
+				},
+				text,
+			),
 	});
 
 	/** 原生 CLI 面（未注入即抛）。 */

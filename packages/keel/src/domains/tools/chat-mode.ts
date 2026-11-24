@@ -11,9 +11,10 @@ export type ChatModeKind = "plan" | "delegate";
 interface ModeRecord {
 	plan: boolean;
 	delegate: boolean;
+	delegateConvId?: string | null;
 }
 
-const OFF: ModeRecord = { plan: false, delegate: false };
+const OFF: ModeRecord = { plan: false, delegate: false, delegateConvId: null };
 
 export class ChatModeState {
 	private readonly byConversation = new Map<string, ModeRecord>();
@@ -31,10 +32,24 @@ export class ChatModeState {
 		return this.modeOf("delegate", conversationId);
 	}
 
+	delegateConvIdOf(conversationId?: string): string | null {
+		if (!conversationId) return null;
+		return this.byConversation.get(conversationId)?.delegateConvId ?? null;
+	}
+
+	setDelegateConvId(conversationId: string, delegateConvId: string | null): void {
+		const current = this.byConversation.get(conversationId) ?? OFF;
+		this.byConversation.set(conversationId, { ...current, delegateConvId });
+	}
+
 	/** 唯一切换点：门禁的 thunk 与出帧的投影都读这里，写完就是全局生效。 */
 	setMode(kind: ChatModeKind, enabled: boolean, conversationId?: string): void {
 		if (!conversationId) return;
 		const current = this.byConversation.get(conversationId) ?? OFF;
-		this.byConversation.set(conversationId, { ...current, [kind]: enabled });
+		this.byConversation.set(conversationId, {
+			...current,
+			[kind]: enabled,
+			...(kind === "delegate" && !enabled ? { delegateConvId: null } : {}),
+		});
 	}
 }
