@@ -56,7 +56,7 @@ import { PROTOCOL_VERSION } from "./protocol-version.js";
 import { AgentService, workspacePath, QuiesceRejectedError, ClientSession } from "./agent-service.js";
 import { CoreEngine } from "../packages/keel/src/app/core-engine.js";
 import { isQuiesceRejection } from "../packages/keel/src/contracts/quiesce.js";
-import { resolvePiEngineMode } from "../packages/keel/src/app/engine-mode.js";
+import { resolvePiEngineAttach, resolvePiEngineMode } from "../packages/keel/src/app/engine-mode.js";
 import { createCoreModelAdmin } from "./core-model-adapter.js";
 import { createCoreSettingsAdapter } from "./core-settings-adapter.js";
 import { createCoreSlashCommands } from "./core-commands-adapter.js";
@@ -1648,6 +1648,11 @@ function ensureEngine(engine: EngineId): EngineService {
 		return dshServiceInstance;
 	}
 	if (!piServiceInstance) {
+		// 启动时就落一行：哪个编排层在跑、能不能接客户端（排查「我用的到底是哪版」的第一现场）。
+		console.log(
+			`[engine] pi → ${resolvePiEngineMode() === "core" ? "keel (packages/keel)" : "legacy (server/agent-service)"}` +
+				(resolvePiEngineAttach() ? "" : " · attach off"),
+		);
 		piServiceInstance =
 			resolvePiEngineMode() === "core"
 				? // 新引擎（keel）实现 EngineService 但仍有 AgentService 专属调用点待清零，类型面暂借 legacy。
