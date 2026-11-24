@@ -16,9 +16,11 @@ import { createModelMemory } from "../adapters/state/model-memory.js";
 import { conversationViewFromSession } from "../adapters/sdk/view.js";
 import {
 	chatFromPlugin,
+	mcpProjectCwds,
 	notifyPluginModelChange,
 	pickPluginClient,
 	readConversationForPlugins,
+	refreshMcpProject,
 	subscribePluginSessionEvents,
 } from "./plugin-engine-hooks.js";
 import type {
@@ -201,6 +203,7 @@ export class CoreEngine implements EngineService {
 		const inbox = new InteractionInbox(() => {});
 		const approvalWaiter = createApprovalWaiter({ inbox, transport });
 		const askWaiter = createAskUserWaiter({ inbox, transport });
+		const mcpReleases = new Map<string, () => void>();
 		const sessions = new SessionRegistry({
 			agentDir: this.options.agentDir ?? this.cwd,
 			// 工具装载域决定注册哪些工具；注册表只转发，不给默认值。
@@ -242,6 +245,11 @@ export class CoreEngine implements EngineService {
 				// 不进 `withChatModeGates`：老实现也不把插件工具当写工具门禁，它们自己的 pre 钩子在那之后跑。
 				...this.pluginTools.defsFor(clientId, conv.id, this.pluginToolFilter(clientId, conv)),
 			],
+			prepare: async (conv) => {
+				const release = this.options.mcpProjects?.()?.retain(conv.meta.cwd);
+				if (release) mcpReleases.set(conv.id, release);
+				await this.options.mcpProjects?.()?.prepare(conv.meta.cwd);
+			},
 			onOpened: (conv, opened) => {
 				runtime.noteSessionFile(opened.sessionFile);
 				// 转录里的模式条目是重启后能读回来的真值：会话一开就把它接回门禁状态。
@@ -264,6 +272,8 @@ export class CoreEngine implements EngineService {
 				);
 			},
 			onClosed: (conversationId) => {
+				mcpReleases.get(conversationId)?.();
+				mcpReleases.delete(conversationId);
 				unsubscribers.get(conversationId)?.();
 				unsubscribers.delete(conversationId);
 				// 会话没了，插件工具的基线也失效：留着它，下次同步会拿一份过期名单去摘工具。
@@ -310,9 +320,7 @@ export class CoreEngine implements EngineService {
 			answerQuestion: async (id, answers, cancelled, cancelReason) => {
 				askWaiter.answer(id, answers, cancelled, cancelReason);
 			},
-			persistSessionTitle: async (sessionFile, title) => {
-				await renameSessionFile({ sessionFile, title });
-			},
+			persistSessionTitle: (sessionFile, title) => void renameSessionFile({ sessionFile, title }),
 			// 宿主面（端口 + 帧出口 + 子代理）在下面统一装配：全部用 thunk 懒取，避免与运行时成环。
 			settingsFrame: () => faces.settingsFrame,
 			slashCommands: () => faces.slashCommands,
@@ -487,23 +495,18 @@ export class CoreEngine implements EngineService {
 	noteSocketOpen(): void {
 		this.socketCount += 1;
 	}
-
 	noteSocketClose(): void {
 		this.socketCount = Math.max(0, this.socketCount - 1);
 	}
-
 	isQuiesced(): boolean {
 		return this.quiescedSince !== undefined;
 	}
-
 	quiesce(): void {
 		this.quiescedSince ??= Date.now();
 	}
-
 	unquiesce(): void {
 		this.quiescedSince = undefined;
 	}
-
 	quiesceInfo(): { quiesced: boolean; quiescedSince?: number } {
 		const at = this.quiescedSince;
 		return at === undefined ? { quiesced: false } : { quiesced: true, quiescedSince: at };
@@ -523,7 +526,6 @@ export class CoreEngine implements EngineService {
 	activeConversations(): number {
 		return activeConversationsOf(this.runtimes);
 	}
-
 	pendingMessages(): number {
 		return pendingMessagesOf(this.runtimes);
 	}
@@ -542,18 +544,12 @@ export class CoreEngine implements EngineService {
 	applyPluginAgentTools(): void {
 		applyPluginAgentTools(this.pluginHost);
 	}
-
-	/** 插件命令目录变了：重算并下发一帧 `slash_commands`（老实现 `pushSlashCommands()`，重算在宿主）。 */
 	applyPluginCommandCatalog(): void {
 		applyPluginCommandCatalog(this.pluginHost);
 	}
-
-	/** 插件常驻任务变了：重投影一帧后台任务面板（`bg_servers`，不重扫端口）。 */
 	refreshBackgroundServers(): void {
 		refreshBackgroundServers(this.pluginHost);
 	}
-
-	/** 一条对话要装哪些插件工具：目录 + 预设 + 两道关掉名单（口径在 `plugin-refresh.ts`）。 */
 	private pluginToolFilter(clientId: string, conv: Conversation): PluginAgentToolFilter {
 		return pluginToolFilter(this.pluginHost, clientId, conv);
 	}
@@ -588,6 +584,12 @@ export class CoreEngine implements EngineService {
 	}
 	private notifyPluginModelChange(clientId: string, conversationId: string): void {
 		notifyPluginModelChange(this, this.pluginModelKeys, this.runtimes, clientId, conversationId);
+	}
+	mcpProjectCwds(): string[] {
+		return mcpProjectCwds(this.runtimes);
+	}
+	refreshMcpProject(cwd: string): void {
+		refreshMcpProject(this.runtimes, cwd);
 	}
 	getCapabilities(): AgentEngineCapabilities {
 		return DEFAULT_PI_CAPABILITIES;

@@ -1684,6 +1684,7 @@ function ensureEngine(engine: EngineId): EngineService {
 								version: VERSION,
 								mcpProjects: () => mcpProjects,
 							}),
+						mcpProjects: () => mcpProjects,
 						// 插件工具「装进已开会话」：SDK 的会话工具表只能创建期组，就地刷新要用宿主那份
 						// `syncPluginToolsIntoSession`（`server/plugins.ts` 的单源，不在这里重写一遍）。
 						pluginToolSync: () => createCorePluginToolSync(),

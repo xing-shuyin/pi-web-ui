@@ -7,6 +7,7 @@ export interface SessionRegistryOptions {
 	toolsFor?(conversation: Conversation): readonly string[] | undefined;
 	/** 开会话时注册哪些自定义工具；由 app 层按对话装配。 */
 	customToolsFor?(conversation: Conversation): readonly unknown[] | undefined;
+	prepare?(conversation: Conversation): Promise<void>;
 	onOpened?(conversation: Conversation, opened: OpenedSession): void;
 	onClosed?(conversationId: string): void;
 }
@@ -44,6 +45,7 @@ export class SessionRegistry {
 		const existing = this.byConversation.get(conv.id);
 		if (existing) return existing;
 		if (!conv.acceptsTurns) throw new SessionUnavailableError(conv.id, `phase ${conv.phase}`);
+		await this.options.prepare?.(conv);
 		const opened = await openTurnSession({
 			// 远程工作区的 SDK 会话目录与 cwd 分离（`cwd` 是 URI，会话落本地镜像目录）。
 			cwd: options?.cwd ?? conv.meta.cwd,

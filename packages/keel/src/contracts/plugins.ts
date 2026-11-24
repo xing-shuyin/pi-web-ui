@@ -55,6 +55,14 @@ export interface PluginsPort {
 	 * `cwd` 缺省 = 当前对话的目录（项目作用域跟着它走）。
 	 */
 	listMcpServers?(cwd?: string): McpServerInventory;
+	/** 广播当前工作区的一帧 `mcp_servers`（重载 / 工具变动时推给客户端）。 */
+	broadcastMcpServers?(cwd?: string): void;
 	/** 端口收尾（客户端断开）：关掉本端口持有的授权流程，别把 attempt 留在进程里。 */
 	dispose?(): void;
+}
+
+/** MCP 项目连接域窄面（宿主 McpProjectRuntimeRegistry 的对应物）。 */
+export interface CoreMcpProjectsPort {
+	retain(cwd: string): () => void;
+	prepare(cwd: string): Promise<unknown>;
 }

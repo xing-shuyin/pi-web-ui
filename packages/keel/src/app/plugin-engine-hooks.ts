@@ -367,3 +367,24 @@ export async function chatFromPlugin(
 	void runtime.handlers().prompt(text);
 	return { conversationId: conv.id, clientId, sessionId: conv.meta.sessionFile ?? conv.id, runId };
 }
+
+export function mcpProjectCwds(runtimes: ReadonlyMap<string, ClientRuntime>): string[] {
+	const set = new Set<string>();
+	for (const runtime of runtimes.values()) {
+		set.add(runtime.cwd);
+		for (const conv of runtime.registry.list()) {
+			set.add(conv.meta.cwd);
+		}
+	}
+	return [...set];
+}
+
+export function refreshMcpProject(runtimes: ReadonlyMap<string, ClientRuntime>, cwd: string): void {
+	const key = (p: string) => (process.platform === "win32" ? p.toLowerCase() : p);
+	const target = key(cwd);
+	for (const runtime of runtimes.values()) {
+		if (key(runtime.cwd) !== target) continue;
+		runtime.options.plugins?.()?.broadcastMcpServers?.(cwd);
+		runtime.pushSettings();
+	}
+}

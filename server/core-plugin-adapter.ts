@@ -178,6 +178,7 @@ export function createCorePlugins(options: CorePluginsAdapterOptions): PluginsPo
 
 	return {
 		listMcpServers,
+		broadcastMcpServers: (cwd) => broadcastMcpServers(cwd ?? options.getCwd()),
 
 		/** 客户端断开：关掉本端口的授权流程，并收回宿主句柄（别把 attempt 与闭包留在进程里）。 */
 		dispose(): void {

@@ -9,6 +9,7 @@ import type { GoalRunSinks } from "../domains/goals/index.js";
 import type { ServerLang } from "../i18n.js";
 import type { HostFaceFactories } from "./host-faces.js";
 import type { TerminalManagerLike } from "../engine-service.js";
+import type { CoreMcpProjectsPort } from "../contracts/plugins.js";
 
 export type {
 	CoreBackgroundSinks,
@@ -60,4 +61,6 @@ export interface CoreEngineOptions extends HostFaceFactories {
 	 * 这里不是能力门禁：没注入就只是「没有这个钩子」，不抛 `CoreEngineNotReadyError`。
 	 */
 	pluginToolSync?: () => PluginToolSyncPort | undefined;
+	/** MCP 项目运行时（宿主 `McpProjectRuntimeRegistry`）：开会话时 retain/prepare，关会话时释放。 */
+	mcpProjects?: () => CoreMcpProjectsPort | undefined;
 }
