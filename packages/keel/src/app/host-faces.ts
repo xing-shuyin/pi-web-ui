@@ -409,9 +409,11 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 		getLang: () => langOf(),
 		reloadSession: async () => {
 			const conv = runtime.registry.activeConv();
-			// 技能目录只在开会话时扫描，SDK 没有 reload 口：关掉会话，下一轮按新目录重开。
 			if (!conv || conv.phase === "running") return;
-			sessions.close(conv.id);
+			const opened = sessions.get(conv.id);
+			if (opened?.session && typeof (opened.session as any).reload === "function") {
+				await (opened.session as any).reload();
+			}
 		},
 		getDisabledPlugins: () => stateStore.getSettingsSnapshot(clientId).disabledPlugins,
 		setDisabledPlugins: async (next: string[]) => {

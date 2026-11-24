@@ -5,10 +5,41 @@ import type { CoreSettingsSinks } from "../packages/keel/src/app/core-engine.js"
 import { ApprovalRulesStore } from "../packages/keel/src/approval-rules.js";
 import { SubagentTemplatesStore } from "../packages/keel/src/subagent-templates.js";
 import { isTraditionalLocale, resolveServerLang } from "../packages/keel/src/i18n.js";
-import type { ClientStateStore } from "./client-state.js";
+import { normalizeRetryMaxAttempts, normalizeSkillList, type ClientStateStore } from "./client-state.js";
 import type { MarkerService } from "./marker-service.js";
 import { currentCorePluginsHandle } from "./core-plugins-handle.js";
 import { SettingsService, type SettingsHost } from "./settings-service.js";
+import { applyQueueModesToSession } from "./queue-modes.js";
+import { contextWindowOf, modelKeyOf } from "./agent-formatters.js";
+import { DEFAULT_COMPACTION_RESERVE_TOKENS, effectiveSoftCap, softCapReserveFor } from "./soft-cap.js";
+import {
+	applyAgentToolsGating,
+	effectiveDisabledAgentTools,
+	normalizeLazyOnDemandList,
+	lazyLoadingDisabledTools,
+	presetShowsSkillCatalog,
+} from "../packages/keel/src/tool-catalog.js";
+import { LOAD_TOOLS_TOOL_NAME } from "../packages/keel/src/tool-names.js";
+import {
+	applyToolPromptOverrides,
+	effectiveToolPrompt,
+	toolPromptOverrideOf,
+	type ToolPromptSessionLike,
+} from "./tool-prompt-overrides.js";
+import {
+	BUILTIN_SOUL,
+	buildToolsSchemaText,
+	resolveSectionTexts,
+	type PromptComposerInputs,
+	type ToolSchemaEntry,
+} from "./prompt-composer.js";
+import { renderMainCompose } from "./prompt-assembler.js";
+import { readPromptBase } from "./prompt-base-store.js";
+import { fillSkillContents } from "./skill-content-filler.js";
+import { formatCwdForPrompt } from "./remote-ssh-service.js";
+import { isRemoteWorkspaceUri, restoreWorkspaceUriFromSessionDir } from "../packages/keel/src/remote-workspace.js";
+import { getPkgRoot } from "./pkg-info.js";
+import { appendConstraints, buildPlatformConstraints } from "./platform-constraints.js";
 
 export interface CoreSettingsAdapterOptions extends CoreSettingsSinks {
 	/** 设置落盘（`client-state.json` 的唯一写入者）：宿主进程里共用一个实例。 */
@@ -98,15 +129,215 @@ export function createCoreSettingsService(options: CoreSettingsAdapterOptions): 
 	return { service, stateStore: options.stateStore, clientId: options.clientId };
 }
 
+function computePromptSnapshot(options: CoreSettingsAdapterOptions): {
+	full: string;
+	texts: Record<string, string>;
+	toolsSchema: string;
+} {
+	try {
+		let session: any;
+		try {
+			session = options.getSession();
+		} catch {
+			return { full: "", texts: {}, toolsSchema: "" };
+		}
+		if (!session) return { full: "", texts: {}, toolsSchema: "" };
+
+		const cwd = options.cwd;
+		const settings = options.stateStore.getSettings(options.clientId);
+		const active: string[] = typeof session.getActiveToolNames === "function" ? session.getActiveToolNames() : [];
+		const schemaEntries: ToolSchemaEntry[] = [];
+		for (const name of active) {
+			const def = session.getToolDefinition?.(name);
+			if (!def) continue;
+			const eff = effectiveToolPrompt(def, toolPromptOverrideOf(settings.toolPromptOverrides, name));
+			schemaEntries.push({
+				name,
+				description: eff.description,
+				parameters: def.parameters,
+			});
+		}
+		const toolsSchema = buildToolsSchemaText(schemaEntries);
+
+		const loader = session.resourceLoader;
+		const preset = settings.defaultAgentPreset ?? "standard";
+		const promptBase = readPromptBase(loader);
+		const realCwd = restoreWorkspaceUriFromSessionDir(cwd);
+
+		const onDemandList = normalizeLazyOnDemandList(settings.toolOnDemandTools);
+		const lazyOn = settings.toolLazyLoading === true && onDemandList.length > 0;
+		const catalogNames: string[] =
+			typeof session.getAllTools === "function" ? session.getAllTools().map((t: any) => t.name) : active;
+		const snippets: Record<string, string> = {};
+		for (const name of catalogNames) {
+			const def = session.getToolDefinition?.(name);
+			if (!def) continue;
+			const ov = toolPromptOverrideOf(settings.toolPromptOverrides, name);
+			const eff = effectiveToolPrompt(def, ov);
+			if (eff.promptSnippet && eff.promptSnippet.trim() && (lazyOn || ov?.promptSnippet)) {
+				snippets[name] = eff.promptSnippet.trim();
+			}
+		}
+
+		const rawSkills =
+			loader?.getSkills?.()?.skills?.map((s: any) => ({
+				name: s.name,
+				description: s.description ?? "",
+				filePath: s.filePath ?? "",
+			})) ?? [];
+		const showSkills = presetShowsSkillCatalog(preset);
+		const effectiveSkills = showSkills
+			? fillSkillContents(rawSkills, settings.skillsFullText, {
+					maxFileBytes: settings.skillsMaxFileBytes,
+					maxTotalBytes: settings.skillsFullTextMaxBytes,
+				})
+			: [];
+
+		const inputs: PromptComposerInputs = {
+			cwd: formatCwdForPrompt(realCwd),
+			systemPromptFile: promptBase.soul || undefined,
+			builtinSoul: BUILTIN_SOUL,
+			selectedTools: active,
+			toolSnippets: snippets,
+			...(lazyOn ? { lazy: true, catalogTools: catalogNames } : {}),
+			pluginDocs: join(getPkgRoot(), "docs", "architecture-plugins.md"),
+			pluginSdk: join(getPkgRoot(), "plugin-sdk"),
+			pluginsDir: join(options.stateStore.dataDir, "plugins"),
+			appendFiles: [...promptBase.append],
+			markersGuidance: options.markers?.buildGuidance?.() ?? "",
+			lang: options.lang.get(),
+			contextFiles: loader?.getAgentsFiles?.()?.agentsFiles ?? [],
+			skills: effectiveSkills,
+			skillsFullText: showSkills ? normalizeSkillList(settings.skillsFullText) : [],
+			skillsCatalogMaxDesc: settings.skillsCatalogMaxDesc,
+			skillsCatalogShowLocation: settings.skillsCatalogShowLocation,
+			skillsCatalogBudget: settings.skillsCatalogBudget,
+		};
+
+		const texts = resolveSectionTexts(inputs);
+		const rendered = renderMainCompose(inputs, {
+			promptTemplate: settings.promptTemplate,
+			promptOverrides: settings.promptOverrides,
+			promptDisabled: settings.promptDisabled ?? [],
+			preset,
+			disabledToolCount: effectiveDisabledAgentTools(settings).length,
+			isLazy: lazyOn,
+			hasSkills: effectiveSkills.length > 0,
+			hasSkillsFullText: (settings.skillsFullText?.length ?? 0) > 0,
+		});
+
+		const constraints = buildPlatformConstraints({
+			remoteCwd: isRemoteWorkspaceUri(realCwd) ? realCwd : undefined,
+			planMode: false,
+			delegateMode: false,
+			planPrompt: { mode: settings.planModePromptMode, custom: settings.planModePrompt },
+		});
+		const full = rendered ? appendConstraints(rendered, constraints) : (session.systemPrompt ?? "");
+
+		return { texts, full, toolsSchema };
+	} catch {
+		return { full: "", texts: {}, toolsSchema: "" };
+	}
+}
+
 /**
  * 把 `CoreSettingsSinks` 收窄成「只认注入值」的 `SettingsHost`：设置叶子（`SettingsService`）
- * 不认识新树的会话实体，只拿到这里如实投影出来的成员。apply* 一律走空实现——
- * 对应域还没接，抛错会让 `push()` 炸；但 `reloadSession` 与 MCP 清单不空：
- * 它们直接复用插件面（`core-plugin-adapter.ts` 登记的宿主句柄）那一份实现。
+ * 不认识新树的会话实体，只拿到这里如实投影出来的成员。
  */
 export function createCoreSettingsHost(options: CoreSettingsAdapterOptions): SettingsHost {
-	// 新树对应域未接，待 W5：apply* / promptSnapshot 只回安全空值，绝不抛。
-	const notWired = (): void => {};
+	const applyRetry = (): void => {
+		try {
+			const sess = options.getSession() as any;
+			const settings = options.stateStore.getSettings(options.clientId);
+			const n = normalizeRetryMaxAttempts(settings.retryMaxAttempts);
+			sess?.settingsManager?.applyOverrides?.({ retry: { maxRetries: n } });
+		} catch {}
+	};
+
+	const applyQueue = (): void => {
+		try {
+			const sess = options.getSession() as any;
+			if (sess) {
+				const settings = options.stateStore.getSettings(options.clientId);
+				applyQueueModesToSession(sess, settings);
+			}
+		} catch {}
+	};
+
+	const applyCompaction = (): void => {
+		try {
+			const sess = options.getSession() as any;
+			if (sess) {
+				const s = options.stateStore.getSettings(options.clientId);
+				let reserve = DEFAULT_COMPACTION_RESERVE_TOKENS;
+				try {
+					const cw = contextWindowOf(sess);
+					if (cw > 0) {
+						const cap = effectiveSoftCap(s.softCapTokens, s.softCapByModel, modelKeyOf(sess));
+						let keepRecent = 0;
+						try {
+							keepRecent = sess.settingsManager?.getCompactionKeepRecentTokens?.(sess.model) ?? 0;
+						} catch {
+							keepRecent = 0;
+						}
+						reserve = softCapReserveFor(cw, cap, keepRecent) ?? DEFAULT_COMPACTION_RESERVE_TOKENS;
+					}
+				} catch {}
+				sess.settingsManager?.applyOverrides?.({ compaction: { reserveTokens: reserve } });
+			}
+		} catch {}
+	};
+
+	const applyCodemode = (): void => {
+		try {
+			const sess = options.getSession() as any;
+			if (sess) {
+				const s = options.stateStore.getSettings(options.clientId);
+				const mode = s.codemodeMode ?? "on";
+				const inlineBudget = s.codemodeInlineBudget ?? 3000;
+				sess.settingsManager?.applyOverrides?.({ codemode: { mode, inlineBudget } });
+			}
+		} catch {}
+	};
+
+	const applyToolGating = (): void => {
+		try {
+			const sess = options.getSession() as any;
+			if (!sess) return;
+			const settings = options.stateStore.getSettings(options.clientId);
+			const targetPreset = settings.defaultAgentPreset ?? "standard";
+			const disabled = new Set(effectiveDisabledAgentTools(settings));
+			const lazyOn =
+				settings.toolLazyLoading === true && normalizeLazyOnDemandList(settings.toolOnDemandTools).length > 0;
+			let loadedNames: string[] = [];
+			if (lazyOn) {
+				const only = new Set(normalizeLazyOnDemandList(settings.toolOnDemandTools));
+				const allTools = typeof sess.getAllTools === "function" ? sess.getAllTools().map((t: any) => t.name) : [];
+				for (const name of lazyLoadingDisabledTools(allTools, [], undefined, only)) {
+					disabled.add(name);
+				}
+			} else {
+				disabled.add(LOAD_TOOLS_TOOL_NAME);
+			}
+			applyAgentToolsGating(sess, [...disabled], targetPreset, {
+				forceActive: lazyOn && targetPreset !== "ask" ? [LOAD_TOOLS_TOOL_NAME, ...loadedNames] : [],
+			});
+			const sessionOverrides: Record<string, any> = {};
+			for (const [k, v] of Object.entries(settings.toolPromptOverrides ?? {})) {
+				sessionOverrides[k] = { ...v, promptGuidelines: [] };
+			}
+			applyToolPromptOverrides(sess as unknown as ToolPromptSessionLike, sessionOverrides);
+		} catch {}
+	};
+
+	const applySessionOverrides = (): void => {
+		applyQueue();
+		applyRetry();
+		applyCompaction();
+		applyCodemode();
+		applyToolGating();
+	};
+
 	return {
 		clientId: options.clientId,
 		stateStore: options.stateStore,
@@ -122,16 +353,24 @@ export function createCoreSettingsHost(options: CoreSettingsAdapterOptions): Set
 		reloadSession: async () => {
 			const plugins = currentCorePluginsHandle();
 			if (plugins) await plugins.reloadSession();
+			applySessionOverrides();
 		},
-		applyRetryOverrides: notWired,
-		applyQueueModes: notWired,
-		applyCompactionOverrides: notWired,
-		applyCodemodeOverrides: notWired,
-		applySessionOverrides: notWired,
-		applyToolGating: notWired,
-		onGoalModeDisabled: notWired,
-		onSessionsFilterChanged: notWired,
-		promptSnapshot: () => ({ full: "", texts: {}, toolsSchema: "" }),
+		applyRetryOverrides: applyRetry,
+		applyQueueModes: applyQueue,
+		applyCompactionOverrides: applyCompaction,
+		applyCodemodeOverrides: applyCodemode,
+		applySessionOverrides: applySessionOverrides,
+		applyToolGating,
+		onGoalModeDisabled: () => {},
+		onSessionsFilterChanged: () => {},
+		promptSnapshot: () => computePromptSnapshot(options),
+		getMarkerState: options.markers
+			? () => ({
+					disabledMarkers: [...options.markers!.current.disabledMarkers],
+					markers: options.markers!.listForUi(),
+				})
+			: undefined,
+		getLocale: () => options.stateStore.get(options.clientId).locale,
 		// MCP 清单不自己拼路径：直读插件面投影（含连接域健康），没接插件面就是空表。
 		getMcpServers: () => currentCorePluginsHandle()?.listMcpServers() ?? EMPTY_MCP,
 	};

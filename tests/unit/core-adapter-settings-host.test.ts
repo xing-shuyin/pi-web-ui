@@ -120,7 +120,11 @@ describe("宿主设置适配器（core-settings-adapter）", () => {
 		for (const name of functions) expect(typeof host[name]).toBe("function");
 		expect(typeof host.clientId).toBe("string");
 		expect(host.stateStore).toBeInstanceOf(ClientStateStore);
-		expect(host.promptSnapshot()).toEqual({ full: "", texts: {}, toolsSchema: "" });
+		const snap = host.promptSnapshot();
+		expect(typeof snap.full).toBe("string");
+		expect(snap.full).toContain("# Core Engineering Principles");
+		expect(typeof snap.texts).toBe("object");
+		expect(typeof snap.toolsSchema).toBe("string");
 		expect(host.getMcpServers?.()).toEqual({ servers: [], globalPath: "", projectPath: "" });
 	});
 
@@ -175,9 +179,9 @@ describe("宿主设置适配器（core-settings-adapter）", () => {
 		expect(settings.skills.map((skill) => skill.name)).toEqual(["demo"]);
 		expect(settings.mcpServers).toEqual([]);
 		expect(settings.subagentDefaultTemplates.length).toBeGreaterThan(0);
-		// 空实现只能给空值：提示词快照域还没接（W5），帧里不许出现编造的系统提示词。
-		expect(settings.effectiveSystemPrompt).toBe("");
-		expect(settings.toolsSchema).toBe("");
+		// promptSnapshot 已接上（P1）：帧里如实带上有效系统提示词。
+		expect(settings.effectiveSystemPrompt).toContain("# Core Engineering Principles");
+		expect(typeof settings.toolsSchema).toBe("string");
 	});
 
 	it("重复 push() 不抛异常，每次都重算一帧", () => {
