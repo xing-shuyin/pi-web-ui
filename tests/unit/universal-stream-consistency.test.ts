@@ -8,6 +8,7 @@ import type { AgentEventSink } from "../../server/universal/driver-base.js";
 import type { ServerMessage, UiState } from "../../server/protocol.js";
 import { applyMessageDelta } from "../../web/src/message-delta.js";
 import { _chatReducerForTest } from "../../web/src/use-chat.js";
+import { applySnapshotFrame } from "../helpers/snapshot-frames.js";
 
 describe("Universal multi-step stream / snapshot consistency (#801)", () => {
 	let dir: string;
@@ -49,17 +50,25 @@ describe("Universal multi-step stream / snapshot consistency (#801)", () => {
 			send: (wire) => {
 				const msg = structuredClone(wire);
 				frames.push(msg);
-				if (msg.type === "snapshot") {
+				// 全量与增量都折（出帧策略是单源：纯追加就走 `snapshot_delta`）。
+				if (msg.type === "snapshot" || msg.type === "snapshot_delta") {
+					const folded = applySnapshotFrame(ui, msg);
+					if (folded.mismatch) {
+						mismatches.push({ kind: "baseRev", msg });
+						return;
+					}
+					const next = folded.state;
+					if (!next) return;
 					if (
 						ui?.streamingMessage &&
-						msg.state.streamingMessage?.id === ui.streamingMessage.id &&
-						JSON.stringify(ui.streamingMessage.content) !== JSON.stringify(msg.state.streamingMessage.content)
+						next.streamingMessage?.id === ui.streamingMessage.id &&
+						JSON.stringify(ui.streamingMessage.content) !== JSON.stringify(next.streamingMessage.content)
 					) {
 						const old = ui.streamingMessage.content.filter((b) => b.type !== "toolCall");
-						const next = msg.state.streamingMessage.content.filter((b) => b.type !== "toolCall");
-						if (JSON.stringify(old) !== JSON.stringify(next)) mismatches.push({ old, next });
+						const after = next.streamingMessage.content.filter((b) => b.type !== "toolCall");
+						if (JSON.stringify(old) !== JSON.stringify(after)) mismatches.push({ old, next: after });
 					}
-					ui = msg.state;
+					ui = next;
 				} else if (msg.type === "message_delta" && msg.conversationId === ui?.conversationId) {
 					ui = applyMessageDelta(ui, msg);
 				}

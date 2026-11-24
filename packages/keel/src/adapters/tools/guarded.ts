@@ -4,7 +4,7 @@ import {
 	createWriteToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { withToolGuard, type AskApprovalFn } from "../../tool-guards.js";
+import { withToolGuard, makeLateToolGuard, type AskApprovalFn, type ToolGuardHook } from "../../tool-guards.js";
 import type { ServerLang } from "../../i18n.js";
 import type { RemoteSdkOperationsFactory } from "../../contracts/remote-ops.js";
 import type { BashAbortRegistry } from "../../contracts/background.js";
@@ -17,6 +17,12 @@ export interface GuardedToolOptions {
 	conversationId?: () => string | undefined;
 	/** 对话级 bash 中止表（内核 `BashKills`）：缺省 = 没有可中止的句柄（`abortBash` 恒报没在跑）。 */
 	bashKills?: BashAbortRegistry;
+	/**
+	 * 插件 pre/post 守卫的来源（= 引擎钩子 `svc.toolGuard`，组合根在引擎建好后装上，所以要 getter 而不是值）。
+	 * 缺省 / 返回 `undefined` = **没有守卫**（不是错误）：工具照旧执行，只是插件看不到这一次调用。
+	 * 钩子抛错也不阻断执行（`withToolGuard` 内部 catch 成 allow）——插件坏掉不能把用户的操作卡死。
+	 */
+	guard?: () => ToolGuardHook | undefined;
 }
 
 /**
@@ -68,8 +74,10 @@ export function createGuardedBuiltinTools(
 		remoteOps ? { operations: remoteOps.write as never } : undefined,
 	);
 	const edit = createEditToolDefinition(options.cwd, remoteOps ? { operations: remoteOps.edit as never } : undefined);
+	// 插件守卫只在宿主装了 `toolGuard` 时才包一层：没装 = 连包装都不加（不为「空守卫」付一层 await）。
+	const guard = options.guard ? makeLateToolGuard(options.guard) : undefined;
 	const common = {
-		guard: undefined,
+		guard,
 		conversationId: options.conversationId,
 		getLang: options.getLang,
 		cwd: options.cwd,

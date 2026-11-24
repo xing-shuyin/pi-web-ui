@@ -9,8 +9,8 @@ import {
 	type UniversalConversation,
 } from "../../server/universal/index.js";
 import type { ServerMessage, SessionSearchResult, UiMessage } from "../../server/protocol.js";
+import { foldSnapshotFrames } from "../helpers/snapshot-frames.js";
 
-type SnapshotMsg = Extract<ServerMessage, { type: "snapshot" }>;
 type SearchResultsMsg = Extract<ServerMessage, { type: "session_search_results" }>;
 
 describe("Universal Agent 底座核心优化单测", () => {
@@ -44,11 +44,11 @@ describe("Universal Agent 底座核心优化单测", () => {
 
 			await session.newChat(undefined, true);
 
-			const latestSnapshot = sentMessages.filter((m): m is SnapshotMsg => m.type === "snapshot").pop();
+			const latestSnapshot = foldSnapshotFrames(sentMessages);
 			expect(latestSnapshot).toBeDefined();
-			expect(latestSnapshot?.state.isEphemeral).toBe(true);
+			expect(latestSnapshot?.isEphemeral).toBe(true);
 
-			const ephemeralConvId = latestSnapshot!.state.conversationId;
+			const ephemeralConvId = latestSnapshot!.conversationId;
 
 			expect(store.loadConversation(tempDir, ephemeralConvId)).toBeNull();
 
@@ -56,8 +56,8 @@ describe("Universal Agent 底座核心优化单测", () => {
 			expect(store.loadConversation(tempDir, ephemeralConvId)).toBeNull();
 
 			session.flushSnapshot();
-			const afterPromptSnapshot = sentMessages.filter((m): m is SnapshotMsg => m.type === "snapshot").pop();
-			expect(afterPromptSnapshot?.state.isEphemeral).toBe(true);
+			const afterPromptSnapshot = foldSnapshotFrames(sentMessages);
+			expect(afterPromptSnapshot?.isEphemeral).toBe(true);
 
 			session.dispose();
 		});
@@ -76,8 +76,8 @@ describe("Universal Agent 底座核心优化单测", () => {
 			});
 
 			await session.newChat(undefined, true);
-			const ephemeralSnapshot = sentMessages.filter((m): m is SnapshotMsg => m.type === "snapshot").pop();
-			const convId = ephemeralSnapshot!.state.conversationId;
+			const ephemeralSnapshot = foldSnapshotFrames(sentMessages);
+			const convId = ephemeralSnapshot!.conversationId;
 
 			await session.prompt("临时对话要保存的内容");
 			expect(store.loadConversation(tempDir, convId)).toBeNull();
@@ -89,8 +89,8 @@ describe("Universal Agent 底座核心优化单测", () => {
 			expect(loadedFromDisk?.isEphemeral).toBe(false);
 			expect(loadedFromDisk?.messages.length).toBeGreaterThan(0);
 
-			const persistedSnapshot = sentMessages.filter((m): m is SnapshotMsg => m.type === "snapshot").pop();
-			expect(persistedSnapshot?.state.isEphemeral).toBe(false);
+			const persistedSnapshot = foldSnapshotFrames(sentMessages);
+			expect(persistedSnapshot?.isEphemeral).toBe(false);
 
 			await session.persistConversation(convId);
 			const noticeMsg = sentMessages.filter((m) => m.type === "notice").pop();
@@ -193,8 +193,8 @@ describe("Universal Agent 底座核心优化单测", () => {
 			await session.prompt("第二轮问题");
 
 			session.flushSnapshot();
-			const baseSnapshot = sentMessages.filter((m): m is SnapshotMsg => m.type === "snapshot").pop();
-			const originalMessages: UiMessage[] = baseSnapshot!.state.messages;
+			const baseSnapshot = foldSnapshotFrames(sentMessages);
+			const originalMessages: UiMessage[] = baseSnapshot!.messages;
 			expect(originalMessages.length).toBeGreaterThanOrEqual(2);
 
 			const secondUserMsg = originalMessages.filter((m: UiMessage) => m.role === "user")[1];
@@ -202,11 +202,11 @@ describe("Universal Agent 底座核心优化单测", () => {
 
 			await session.forkSession(secondUserMsg.id, "before");
 
-			const forkedSnapshot = sentMessages.filter((m): m is SnapshotMsg => m.type === "snapshot").pop();
+			const forkedSnapshot = foldSnapshotFrames(sentMessages);
 			expect(forkedSnapshot).toBeDefined();
-			expect(forkedSnapshot!.state.conversationId).not.toBe(baseSnapshot!.state.conversationId);
+			expect(forkedSnapshot!.conversationId).not.toBe(baseSnapshot!.conversationId);
 
-			const forkedMessages: UiMessage[] = forkedSnapshot!.state.messages;
+			const forkedMessages: UiMessage[] = forkedSnapshot!.messages;
 			expect(forkedMessages.some((m: UiMessage) => m.id === secondUserMsg.id)).toBe(false);
 
 			const firstUserMsg = originalMessages.filter((m: UiMessage) => m.role === "user")[0];
@@ -232,8 +232,8 @@ describe("Universal Agent 底座核心优化单测", () => {
 			await session.prompt("历史提问 2");
 
 			session.flushSnapshot();
-			const origSnapshot = sentMessages.filter((m): m is SnapshotMsg => m.type === "snapshot").pop();
-			const userMsgs = origSnapshot!.state.messages.filter((m: UiMessage) => m.role === "user");
+			const origSnapshot = foldSnapshotFrames(sentMessages);
+			const userMsgs = origSnapshot!.messages.filter((m: UiMessage) => m.role === "user");
 			const targetMsg = userMsgs[1];
 
 			const fork = vi.spyOn(driver, "forkSession");
@@ -248,11 +248,11 @@ describe("Universal Agent 底座核心优化单测", () => {
 			expect(send.mock.calls[0][0]).not.toContain("历史提问 2");
 
 			session.flushSnapshot();
-			const editedSnapshot = sentMessages.filter((m): m is SnapshotMsg => m.type === "snapshot").pop();
+			const editedSnapshot = foldSnapshotFrames(sentMessages);
 			expect(editedSnapshot).toBeDefined();
-			expect(editedSnapshot!.state.conversationId).toBe(origSnapshot!.state.conversationId);
+			expect(editedSnapshot!.conversationId).toBe(origSnapshot!.conversationId);
 
-			const newMsgs: UiMessage[] = editedSnapshot!.state.messages;
+			const newMsgs: UiMessage[] = editedSnapshot!.messages;
 			const newUsers = newMsgs.filter((m: UiMessage) => m.role === "user");
 			expect(newUsers.length).toBe(2);
 			expect(newUsers[0].content).toEqual([{ type: "text", text: "历史提问 1" }]);
@@ -277,28 +277,28 @@ describe("Universal Agent 底座核心优化单测", () => {
 			});
 
 			session.flushSnapshot();
-			const initSnap = sentMessages.filter((m): m is SnapshotMsg => m.type === "snapshot").pop();
-			const convAId = initSnap!.state.conversationId;
+			const initSnap = foldSnapshotFrames(sentMessages);
+			const convAId = initSnap!.conversationId;
 
 			session.saveDraft(convAId, "未发送的草稿 A", 123456);
 
 			session.flushSnapshot();
-			const snapWithDraftA = sentMessages.filter((m): m is SnapshotMsg => m.type === "snapshot").pop();
-			expect(snapWithDraftA?.state.draft).toEqual({ text: "未发送的草稿 A", ts: 123456 });
+			const snapWithDraftA = foldSnapshotFrames(sentMessages);
+			expect(snapWithDraftA?.draft).toEqual({ text: "未发送的草稿 A", ts: 123456 });
 
 			await session.newChat();
-			const snapConvB = sentMessages.filter((m): m is SnapshotMsg => m.type === "snapshot").pop();
-			const convBId = snapConvB!.state.conversationId;
-			expect(snapConvB?.state.draft).toBeNull();
+			const snapConvB = foldSnapshotFrames(sentMessages);
+			const convBId = snapConvB!.conversationId;
+			expect(snapConvB?.draft).toBeNull();
 
 			await session.switchConversation(convAId);
-			const snapBackToA = sentMessages.filter((m): m is SnapshotMsg => m.type === "snapshot").pop();
-			expect(snapBackToA?.state.draft).toEqual({ text: "未发送的草稿 A", ts: 123456 });
+			const snapBackToA = foldSnapshotFrames(sentMessages);
+			expect(snapBackToA?.draft).toEqual({ text: "未发送的草稿 A", ts: 123456 });
 
 			await session.prompt("直接发送");
 			session.flushSnapshot();
-			const snapAfterSend = sentMessages.filter((m): m is SnapshotMsg => m.type === "snapshot").pop();
-			expect(snapAfterSend?.state.draft).toBeNull();
+			const snapAfterSend = foldSnapshotFrames(sentMessages);
+			expect(snapAfterSend?.draft).toBeNull();
 
 			session.dispose();
 		});

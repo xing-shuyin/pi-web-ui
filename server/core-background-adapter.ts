@@ -84,6 +84,8 @@ export function createCoreBackground(options: { dataDir: string } & CoreBackgrou
 	bg.start();
 
 	return {
+		refreshBgTasks: () => bg.push(),
+
 		listBgServers: () => bg.listAndPush(),
 
 		async killBackgroundServer(port: number | undefined, taskId?: string): Promise<boolean> {

@@ -41,6 +41,8 @@ import {
 } from "../universal/universal-attachments.js";
 import type { ProjectRunnerInfo, SessionOwnerInfo } from "../agent-service.js";
 import type { EngineService } from "../engine-service.js";
+import { buildSnapshotProduct, SnapshotSinkSet } from "../snapshot-sinks.js";
+import type { SnapshotProduct } from "../snapshot-channel.js";
 import { bilingual, pick, resolveServerLang, type ServerLang } from "../i18n.js";
 import { ModelAdminService } from "../model-admin.js";
 import { normalizeToolInfo, unsupportedToolInfo } from "../tool-info.js";
@@ -316,13 +318,16 @@ export class DshClientSession {
 	private goalPrefs = { reviewModel: null as string | null, maxRounds: 2, locked: false };
 
 	private sinks = new Set<(msg: ServerMessage) => void>();
+	/**
+	 * 出帧闸（每 sink 一份基线，判定全在 `snapshot-channel`）：本类只产 `SnapshotProduct`。
+	 * 按实例持有而不是模块级——`send` 在引擎热切换时会被复用，基线跨引擎串用会错发增量。
+	 */
+	private readonly snapshots = new SnapshotSinkSet(() => this.sinks);
 	private pendingNotices: ServerMessage[] = [];
 	private readonly sessionDrafts = new Map<string, { text: string; ts: number }>();
 	private snapshotTimer: ReturnType<typeof setTimeout> | null = null;
 	private snapRev = 0;
 	private version = 0;
-	private emittedMessages: UiMessage[] | null = null;
-	private emittedRev = 0;
 	private disposed = false;
 	private switchingWorkspace = false;
 	private workspaceGeneration = 0;
@@ -1454,36 +1459,24 @@ export class DshClientSession {
 
 	private emitSnapshotNow(forceFull = false): void {
 		if (this.disposed) return;
-		const conv = this.conv;
-		const cur = [...conv.messages];
-		const prev = this.emittedMessages;
-		const rev = ++this.snapRev;
-		let incremental = !forceFull && prev !== null && this.emittedRev > 0 && prev.length <= cur.length;
-		if (incremental && prev) {
-			for (let i = 0; i < prev.length; i++) {
-				if (prev[i] !== cur[i]) {
-					incremental = false;
-					break;
-				}
-			}
-		}
-		this.emittedMessages = cur;
-		this.emittedRev = rev;
-		if (incremental && prev) {
-			this.emit({
-				type: "snapshot_delta",
-				conversationId: this.activeId,
-				rev,
-				baseRev: this.emittedRev - 1,
-				appended: cur.slice(prev.length),
-				state: this.buildLightState(rev),
-			});
-		} else {
-			this.emit({
-				type: "snapshot",
-				state: { ...this.buildLightState(rev), messages: cur },
-			});
-		}
+		// 全量 / 增量的判定与拼帧都在闸里（每 sink 一份基线）；这里只报「这一帧是什么内容」。
+		this.snapshots.push(this.snapshotProduct(), { force: forceFull });
+	}
+
+	/** 一帧的输入：内容只在这里算一次，所有 sink 共用这一份（各 sink 只决定发不发 / 发哪种）。 */
+	private snapshotProduct(): SnapshotProduct {
+		return buildSnapshotProduct(this.buildLightState(++this.snapRev), [...this.conv.messages]);
+	}
+
+	/**
+	 * 应答一次「把状态给我」：请求是 per-connection 的，只给提出请求的那个 sink 出帧，
+	 * 并按它自报的 `since` 判增量（不信任 `since`：对不上就回全量）。
+	 */
+	respondWithSnapshot(send: (msg: ServerMessage) => void, options: { since?: number; force?: boolean } = {}): void {
+		if (this.disposed) return;
+		// 没报 `since` = 客户端声明「我手上没有状态」：这一帧必须真发全量。
+		const force = options.force ?? options.since === undefined;
+		if (this.snapshots.pushTo(send, this.snapshotProduct(), { ...options, force }) === null) this.flushSnapshot(force);
 	}
 
 	private guessSessionFile(conv: DshConversation): string | undefined {

@@ -7,6 +7,8 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { DispatchSession, TerminalManagerLike } from "../engine-service.js";
+import { buildSnapshotProduct, SnapshotSinkSet } from "../snapshot-sinks.js";
+import type { SnapshotProduct } from "../snapshot-channel.js";
 import type {
 	ClientMessage,
 	CommandDef,
@@ -114,6 +116,12 @@ import {
 
 const SNAPSHOT_INTERVAL_MS = 60;
 
+/** 把一份完整状态拆成「出帧闸要的输入」：light 参与内容键，messages 单独走（全量带上 / 增量切片）。 */
+function snapshotProductOf(state: UiState): SnapshotProduct {
+	const { messages, ...light } = state;
+	return buildSnapshotProduct(light, messages);
+}
+
 function clampThinkingLevelToSupported(supported: string[], current: string): string {
 	if (supported.includes(current)) return current;
 	const order = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -132,6 +140,13 @@ export class UniversalSession implements DispatchSession {
 	public cwd: string;
 	private readonly clientId: string;
 	private readonly sinks = new Set<(msg: ServerMessage) => void>();
+	/**
+	 * 出帧闸（每 sink 一份基线，判定全在 `snapshot-channel`）：本类只产 `SnapshotProduct`。
+	 * 按实例持有而不是模块级——`send` 在引擎热切换时会被复用，基线跨引擎串用会错发增量。
+	 */
+	private readonly snapshots = new SnapshotSinkSet(() => this.sinks);
+	/** 合帧窗口内有人要求整包（消息正文原地变了，增量装不下）时置位，出帧时清零。 */
+	private pendingFullFrame = false;
 	private readonly store: UniversalSessionStore;
 	private readonly stateStore?: ClientStateStore;
 	private readonly driver: BaseAgentDriver;
@@ -637,7 +652,8 @@ export class UniversalSession implements DispatchSession {
 		this.bg.push();
 		void this.refreshSessions();
 		void this.pushProjects();
-		this.flushSnapshot(true);
+		// 新 sink 没有基线，第一帧本来就是全量；不必（也不该）拿 `force` 把全场都顶成整包。
+		this.flushSnapshot();
 	}
 
 	detachSink(send: (msg: ServerMessage) => void): void {
@@ -656,8 +672,30 @@ export class UniversalSession implements DispatchSession {
 		}
 	}
 
-	flushSnapshot(_forceFull = false): void {
+	flushSnapshot(forceFull = false): void {
 		if (this.disposed) return;
+		this.pushSnapshot(this.nextSnapshotState(), forceFull);
+	}
+
+	/**
+	 * 应答一次「把状态给我」：请求是 per-connection 的，只给提出请求的那个 sink 出帧，
+	 * 并按它自报的 `since` 判增量（不信任 `since`：对不上就回全量）。
+	 */
+	respondWithSnapshot(send: (msg: ServerMessage) => void, options: { since?: number; force?: boolean } = {}): void {
+		if (this.disposed) return;
+		const state = this.nextSnapshotState();
+		// 没报 `since` = 客户端声明「我手上没有状态」：这一帧必须真发全量。
+		const force = options.force ?? options.since === undefined;
+		if (this.snapshots.pushTo(send, snapshotProductOf(state), { ...options, force }) === null)
+			this.pushSnapshot(state, force);
+	}
+
+	/** 出帧：全量 / 增量的判定与拼帧都在闸里（每 sink 一份基线），这里只报「这一帧是什么内容」。 */
+	private pushSnapshot(state: UiState, forceFull: boolean): void {
+		this.snapshots.push(snapshotProductOf(state), { force: forceFull });
+	}
+
+	private nextSnapshotState(): UiState {
 		this.rev++;
 		this.version++;
 
@@ -677,6 +715,11 @@ export class UniversalSession implements DispatchSession {
 					? Math.min(100, Math.round((convStats.contextUsage.tokens / win) * 100))
 					: null,
 		};
+		// 帧里的 `messages` 必须是**出帧那一刻**的快照（`conv.messages` 会继续长，模块外可能延后序列化）。
+		const messages =
+			this.turnConvId === conv.id && this.pendingToolResults.length > 0
+				? [...conv.messages, ...this.pendingToolResults]
+				: [...conv.messages];
 		const state: UiState = {
 			clientId: this.clientId,
 			cwd: this.cwd,
@@ -684,10 +727,7 @@ export class UniversalSession implements DispatchSession {
 			sessionFile: conv.id,
 			conversationId: conv.id,
 			rev: this.rev,
-			messages:
-				this.turnConvId === conv.id && this.pendingToolResults.length > 0
-					? [...conv.messages, ...this.pendingToolResults]
-					: conv.messages,
+			messages,
 			streamingMessage: !this.turnConvId || this.turnConvId === conv.id ? this.streamingMessage : null,
 			isStreaming: !this.turnConvId || this.turnConvId === conv.id ? this.isStreaming : false,
 			turnTiming: conv.turnTiming ?? null,
@@ -729,19 +769,21 @@ export class UniversalSession implements DispatchSession {
 				contextUsage,
 			},
 		};
-
-		this.send({ type: "snapshot", state });
+		return state;
 	}
 
 	getCapabilities() {
 		return this.driver.getEngineCapabilities?.() ?? DEFAULT_UNIVERSAL_CAPABILITIES;
 	}
 
-	private scheduleThrottledSnapshot(): void {
+	private scheduleThrottledSnapshot(forceFull = false): void {
+		this.pendingFullFrame ||= forceFull;
 		if (this.snapshotTimer) return;
 		this.snapshotTimer = setTimeout(() => {
 			this.snapshotTimer = null;
-			this.flushSnapshot();
+			const force = this.pendingFullFrame;
+			this.pendingFullFrame = false;
+			this.flushSnapshot(force);
 		}, SNAPSHOT_INTERVAL_MS);
 	}
 
@@ -3221,7 +3263,9 @@ export class UniversalSession implements DispatchSession {
 					assistantMsg.content.push({ type: "thinking", thinking: delta });
 				}
 				if (this.activeConvId === convId) {
-					this.scheduleThrottledSnapshot();
+					// 子代理把 delta **原地**写进已入列的那条消息（不像主回合走 `streamingMessage`）：
+					// 增量帧装不下这种变化（`appended` 只会是空的），只能要一帧整包。
+					this.scheduleThrottledSnapshot(true);
 				}
 			},
 			onTextDelta: (delta: string) => {
@@ -3233,7 +3277,7 @@ export class UniversalSession implements DispatchSession {
 					assistantMsg.content.push({ type: "text", text: delta });
 				}
 				if (this.activeConvId === convId) {
-					this.scheduleThrottledSnapshot();
+					this.scheduleThrottledSnapshot(true);
 				}
 			},
 			onToolStart: (callId: string, toolName: string, args: Record<string, unknown>) => {
@@ -3245,7 +3289,7 @@ export class UniversalSession implements DispatchSession {
 				};
 				assistantMsg.content.push(toolBlock);
 				if (this.activeConvId === convId) {
-					this.scheduleThrottledSnapshot();
+					this.scheduleThrottledSnapshot(true);
 				}
 			},
 			onToolEnd: (callId: string, result: { output?: string; error?: string }) => {
@@ -3259,7 +3303,8 @@ export class UniversalSession implements DispatchSession {
 				};
 				conv.messages.push(toolMsg);
 				if (this.activeConvId === convId) {
-					this.scheduleThrottledSnapshot();
+					// 同一个合帧窗口里前面可能已经有过原地追写，所以这里也要求整包。
+					this.scheduleThrottledSnapshot(true);
 				}
 			},
 			onTurnComplete: (meta?: AgentTurnMeta) => {

@@ -11,6 +11,9 @@ type Call = [name: string, ...args: unknown[]];
 function fakeBackground(overrides: Partial<BackgroundPort> = {}): { port: BackgroundPort; calls: Call[] } {
 	const calls: Call[] = [];
 	const port: BackgroundPort = {
+		refreshBgTasks: () => {
+			calls.push(["refreshBgTasks"]);
+		},
 		listBgServers: async () => {
 			calls.push(["listBgServers"]);
 		},

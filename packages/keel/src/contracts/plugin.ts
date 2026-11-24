@@ -100,3 +100,26 @@ export interface QuickAskConversationSnapshot {
 	cwd?: string;
 	messages: { role: "user" | "assistant"; content: string }[];
 }
+
+/**
+ * 插件工具「装进已经开着的会话」的宿主能力（单源：宿主 `syncPluginToolsIntoSession`）。
+ *
+ * 为什么必须是端口而不是内核自己写：SDK 的会话工具表只在**创建期**组（`createAgentSessionFromServices`
+ * 的 `customTools` 一旦建好就不再重读），改插件目录之后要就地改 `_customTools` 再 `_refreshToolRegistry()`
+ * ——这已经踩在 SDK 的私有字段上，而宿主里早就有一份能用的实现（`server/plugins.ts`，pi 引擎一直在用）。
+ * 内核再写一份 = 两套私有字段假设，SDK 一动两边各自坏。
+ *
+ * 缺省（宿主没注入）= 插件工具只在开会话时装配，已开的会话**不会被就地刷新**；不是错误，等下一轮开
+ * 会话自然生效（`PluginAgentTools.defsFor` 每次开会话都重算）。
+ */
+export interface PluginToolSyncPort {
+	/**
+	 * 把 `defs` 同步进 `session` 的工具表，并把上一批里已经不在 `defs` 里的名字摘掉。
+	 * 返回本次生效的工具名集合；宿主拿不到 SDK 私有口（字段/刷新函数都不在）时返回 `null`（调用方据此保持原样）。
+	 */
+	syncIntoSession(
+		session: unknown,
+		defs: readonly unknown[],
+		prevNames: ReadonlySet<string>,
+	): ReadonlySet<string> | null;
+}

@@ -2,7 +2,7 @@
  * 后台任务面（宿主能力）。
  *
  * 面板上「后台任务」里其实是三类行：端口行（`BgServerTracker` 靠端口 diff 认出来的 AI 起服务）、
- * bash background 的 job 行（`JobRegistry` 显式登记，不监听端口也能看见）、插件常驻任务行。
+ * bash background 的 job 行（`JobRegistry` 显式登记，不监听端口也能看见）、插件常驻任务行（`pluginTasks`）。
  * 实现就是宿主现成的 `server/bg-servers.ts`（`BgServerTracker`）+ `server/job-runner.ts`（`JobRegistry`），
  * 两者已经由 `AgentService` 装配成一份能出帧的状态（`this.bg` / `this.jobs` / `pluginStopBgTask`）。
  * 宿主侧适配器：`server/core-background-adapter.ts`（接线时新增）。
@@ -21,6 +21,14 @@
  * 所以那张表（`BashAbortRegistry`）与「中止 + 出回执」的编排也归内核，宿主没有任何可做的事。
  */
 export interface BackgroundPort {
+	/**
+	 * 插件常驻任务变了：只重投影一帧 `bg_servers`（**不**重扫端口）。老实现 `refreshBgTasks()` = `bg.push()`。
+	 * 与 `listBgServers()` 的区别是真实的：后者要扫监听端口（`snapshotListeningPorts` = 子进程），
+	 * 插件任务变动却只是内存里的行变了——不为此扫一遍端口。
+	 * 出帧：宿主（`bg_servers`）。失败：不抛。
+	 */
+	refreshBgTasks(): void;
+
 	/**
 	 * 重算端口行（进程没了就摘掉）并下发一帧 `bg_servers`。老实现 `bg.listAndPush()`。
 	 * 出帧：宿主（`bg_servers`）。失败：端口 reject 则冒泡（老实现不抛）。

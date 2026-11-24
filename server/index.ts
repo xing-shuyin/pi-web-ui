@@ -64,6 +64,7 @@ import { createCoreScmCommitMessage } from "./core-scm-adapter.js";
 import { createCoreWorkspace } from "./core-workspace-adapter.js";
 import { createCoreSandbox } from "./core-sandbox-adapter.js";
 import { createCorePlugins } from "./core-plugin-adapter.js";
+import { createCorePluginToolSync } from "./core-plugin-tool-sync-adapter.js";
 import { createCoreWorktree } from "./core-worktree-adapter.js";
 import { createCoreBackground } from "./core-background-adapter.js";
 import { asCoreNativeCliTerminals, createCoreNativeCli } from "./core-native-cli-adapter.js";
@@ -1674,6 +1675,9 @@ function ensureEngine(engine: EngineId): EngineService {
 								version: VERSION,
 								mcpProjects: () => mcpProjects,
 							}),
+						// 插件工具「装进已开会话」：SDK 的会话工具表只能创建期组，就地刷新要用宿主那份
+						// `syncPluginToolsIntoSession`（`server/plugins.ts` 的单源，不在这里重写一遍）。
+						pluginToolSync: () => createCorePluginToolSync(),
 						workspaceHost: () => createCoreWorkspace({ dataDir: DATA_DIR }),
 						sandbox: (sinks) => createCoreSandbox({ dataDir: DATA_DIR, ...sinks }),
 						worktree: () => createCoreWorktree(),

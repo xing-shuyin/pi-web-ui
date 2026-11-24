@@ -7,6 +7,7 @@ import { UniversalSessionStore } from "../../server/universal/session-store.js";
 import { ClaudeCodeDriver } from "../../server/universal/drivers/claude-code.js";
 import { ClientStateStore } from "../../server/client-state.js";
 import type { ServerMessage, UiState } from "../../server/protocol.js";
+import { foldSnapshotFrames } from "../helpers/snapshot-frames.js";
 
 describe("Claude 引擎模型切换与状态联动", () => {
 	let testAgentDir: string;
@@ -41,13 +42,11 @@ describe("Claude 引擎模型切换与状态联动", () => {
 		session.flushSnapshot(true);
 		await session.listModels();
 
-		const snapshots = emitted.filter((m): m is Extract<ServerMessage, { type: "snapshot" }> => m.type === "snapshot");
 		const modelsMsg = emitted.find((m): m is Extract<ServerMessage, { type: "models" }> => m.type === "models");
 
-		expect(snapshots.length).toBeGreaterThan(0);
+		// 出帧策略是单源：纯追加 / 仅 light 变化都发 `snapshot_delta`，所以按客户端规矩折帧。
+		const latestState: UiState = foldSnapshotFrames(emitted)!;
 		expect(modelsMsg).toBeDefined();
-
-		const latestState: UiState = snapshots[snapshots.length - 1].state;
 		expect(latestState.model).toBeDefined();
 
 		const currentModelId = `${latestState.model!.provider}/${latestState.model!.id}`;
@@ -73,15 +72,13 @@ describe("Claude 引擎模型切换与状态联动", () => {
 		});
 
 		await session.listModels();
-		emitted.length = 0;
+		// 不清空帧队列：增量帧要接着前面的基线折（清空后第一帧是 delta，折不出状态）。
 
 		await session.setModel("claude-code/sonnet");
 
-		const snapshots = emitted.filter((m): m is Extract<ServerMessage, { type: "snapshot" }> => m.type === "snapshot");
 		const notices = emitted.filter((m): m is Extract<ServerMessage, { type: "notice" }> => m.type === "notice");
 
-		expect(snapshots.length).toBeGreaterThan(0);
-		const state: UiState = snapshots[snapshots.length - 1].state;
+		const state: UiState = foldSnapshotFrames(emitted)!;
 
 		expect(state.model?.id).toBe("sonnet");
 		expect(state.model?.provider).toBe("claude-code");
@@ -131,12 +128,10 @@ describe("Claude 引擎模型切换与状态联动", () => {
 		expect(custom).toBeDefined();
 		expect(custom?.provider).toBe("my-proxy");
 
-		emitted.length = 0;
+		// 不清空帧队列：增量帧要接着前面的基线折（清空后第一帧是 delta，折不出状态）。
 		await session.setModel("my-proxy/claude-3-7-sonnet");
 
-		const snapshots = emitted.filter((m): m is Extract<ServerMessage, { type: "snapshot" }> => m.type === "snapshot");
-		expect(snapshots.length).toBeGreaterThan(0);
-		const state: UiState = snapshots[snapshots.length - 1].state;
+		const state: UiState = foldSnapshotFrames(emitted)!;
 
 		expect(state.model?.id).toBe("claude-3-7-sonnet");
 		expect(state.model?.provider).toBe("my-proxy");
@@ -204,10 +199,7 @@ describe("Claude 引擎模型切换与状态联动", () => {
 			expect(sentPromptText).toBe("你好，请帮我分析一下代码");
 			expect(session.isStreaming).toBe(true);
 
-			const promptSnapshots = emitted.filter(
-				(m): m is Extract<ServerMessage, { type: "snapshot" }> => m.type === "snapshot",
-			);
-			const firstState = promptSnapshots[promptSnapshots.length - 1].state;
+			const firstState = foldSnapshotFrames(emitted)!;
 			expect(firstState.messages.length).toBe(1);
 			expect(firstState.messages[0].role).toBe("user");
 			expect(firstState.messages[0].content).toEqual([{ type: "text", text: "你好，请帮我分析一下代码" }]);
@@ -235,10 +227,7 @@ describe("Claude 引擎模型切换与状态联动", () => {
 			expect(session.isStreaming).toBe(false);
 
 			session.flushSnapshot(true);
-			const finalSnapshots = emitted.filter(
-				(m): m is Extract<ServerMessage, { type: "snapshot" }> => m.type === "snapshot",
-			);
-			const finalState = finalSnapshots[finalSnapshots.length - 1].state;
+			const finalState = foldSnapshotFrames(emitted)!;
 			expect(finalState.messages.length).toBe(3);
 
 			const assistantMsg = finalState.messages[1];
@@ -299,8 +288,7 @@ describe("Claude 引擎模型切换与状态联动", () => {
 			expect(lastTurnModel).toBe("claude-code/sonnet");
 
 			session.flushSnapshot(true);
-			const snapshots = emitted.filter((m): m is Extract<ServerMessage, { type: "snapshot" }> => m.type === "snapshot");
-			const finalState = snapshots[snapshots.length - 1].state;
+			const finalState = foldSnapshotFrames(emitted)!;
 
 			expect(finalState.messages.length).toBe(4);
 			expect(finalState.messages[0].content).toEqual([{ type: "text", text: "第一轮问题" }]);

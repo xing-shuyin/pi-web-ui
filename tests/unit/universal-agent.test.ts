@@ -12,6 +12,7 @@ import {
 } from "../../server/universal/index.js";
 import "../../server/markers/index.js";
 import type { ServerMessage } from "../../server/protocol.js";
+import { foldSnapshotFrames } from "../helpers/snapshot-frames.js";
 
 describe("Universal Agent 底座体系单测", () => {
 	let tempDir: string;
@@ -233,10 +234,11 @@ describe("Universal Agent 底座体系单测", () => {
 			expect(deltas.length).toBeGreaterThan(0);
 
 			session.flushSnapshot();
-			const finalSnapshot = sentMessages.filter((m) => m.type === "snapshot").pop();
-			expect(finalSnapshot).toBeDefined();
-			if (finalSnapshot && finalSnapshot.type === "snapshot") {
-				const msgs = finalSnapshot.state.messages;
+			// 出帧策略是单源：纯追加发 `snapshot_delta`，所以要按客户端规矩把两种帧折起来看最终状态。
+			const finalState = foldSnapshotFrames(sentMessages);
+			expect(finalState).not.toBeNull();
+			if (finalState) {
+				const msgs = finalState.messages;
 				expect(msgs.length).toBeGreaterThanOrEqual(3);
 
 				const userMsg = msgs.find((m) => m.role === "user");

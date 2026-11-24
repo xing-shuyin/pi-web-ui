@@ -1,5 +1,5 @@
 import { resolve as resolveFsPath } from "node:path";
-import type { ServerMessage, UiApprovalPolicyState, UiToolPromptOverride } from "../protocol.js";
+import type { ServerMessage, UiApprovalPolicyState, UiToolPromptOverride, BgServer } from "../protocol.js";
 import type { Conversation } from "../kernel/conversation/index.js";
 import type { TransportPort } from "../contracts/ports.js";
 import type { BackgroundPort } from "../contracts/background.js";
@@ -158,6 +158,13 @@ export interface CoreBackgroundSinks {
 	getCwd(): string;
 	activeConversationId(): string;
 	cleanupMinutes(): number;
+	/**
+	 * 插件常驻任务行（引擎钩子 `svc.pluginBgTasksProvider`）：面板上第三类行。
+	 * 缺省 = 面板上没有这一类行（不是错误）。
+	 */
+	pluginTasks?(): BgServer[];
+	/** 停一个插件常驻任务（引擎钩子 `svc.pluginStopBgTask`）；缺省 = 这类行停不掉。 */
+	stopBgTask?(taskId: string): boolean;
 }
 
 /**
@@ -271,6 +278,15 @@ export interface HostFaceDeps extends HostFaceFactories {
 	applyChatMode(kind: "plan" | "delegate", enabled: boolean, conversationId?: string): void;
 	/** 引擎级手机通知回调（`svc.onNotificationEvent`）；缺省 = 不推手机。 */
 	notifyMobile?(event: MobileNotificationEvent): void;
+	/**
+	 * 插件命令目录（引擎钩子 `svc.pluginCommandsProvider`）：`slash_commands` 帧里「插件」那一类行的源。
+	 * 缺省 = 命令面板里没有插件命令（不伪造）。
+	 */
+	pluginCommands?(): readonly unknown[];
+	/** 插件常驻任务行（引擎钩子 `svc.pluginBgTasksProvider`）：后台面板第三类行。 */
+	pluginTasks?(): BgServer[];
+	/** 停一个插件常驻任务（引擎钩子 `svc.pluginStopBgTask`）。 */
+	stopBgTask?(taskId: string): boolean;
 }
 
 /** 一个客户端连接的全部宿主面：门面拿到这一组就够接线了。 */
@@ -359,6 +375,8 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 			const conv = runtime.registry.activeConv();
 			return conv ? sessions.get(conv.id)?.session : undefined;
 		},
+		// 插件命令归宿主（`pluginMgr.listCommands()`），内核只把引擎钩子的值原样透过去（合并去重在宿主）。
+		...(deps.pluginCommands ? { pluginCommands: () => deps.pluginCommands?.() ?? [] } : {}),
 	});
 	const files = deps.files?.({
 		emit: (msg) => transport.send(msg),
@@ -405,6 +423,9 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 		getCwd: () => runtime.registry.activeConv()?.meta.cwd ?? cwd,
 		activeConversationId: () => runtime.registry.activeId(),
 		cleanupMinutes: () => stateStore.getSettings(clientId).bgAutoCleanupMin ?? 0,
+		// 插件常驻任务行与「停掉它」的句柄都是引擎钩子（`pluginBgTasksProvider` / `pluginStopBgTask`）。
+		...(deps.pluginTasks ? { pluginTasks: () => deps.pluginTasks?.() ?? [] } : {}),
+		...(deps.stopBgTask ? { stopBgTask: (taskId: string) => deps.stopBgTask?.(taskId) ?? false } : {}),
 	});
 	// 沙盒 / 工作区宿主面都是「每客户端一份」（帧出口跟着连接走）。
 	const sandbox = deps.sandbox?.({

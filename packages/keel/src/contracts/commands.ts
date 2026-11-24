@@ -18,4 +18,11 @@ export interface SlashCommandSinks {
 	emit(msg: import("../protocol.js").ServerMessage): void;
 	cwd(): string;
 	getSession(): unknown;
+	/**
+	 * 插件注册的命令（老实现 `pluginCommandsProvider` = `pluginMgr.listCommands()`）。
+	 * 类型故意是 `unknown[]`：命令定义有 20 多个字段且归宿主（`server/plugins.ts` 的 `PluginCommandDef`），
+	 * 内核只把它原样递给宿主自己的 `SlashCommandsService`（合并去重也在那边）。
+	 * 缺省 = 命令面板里没有插件那一类行（不伪造）。
+	 */
+	pluginCommands?(): readonly unknown[];
 }

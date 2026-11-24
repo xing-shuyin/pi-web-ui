@@ -2,6 +2,18 @@ import type { ClientState } from "../projects-schema.js";
 import type { ClientSettings, SharedSettingsChange } from "../settings-schema.js";
 
 /**
+ * 一条「中断时还在跑」的记录（`client-state.json` 里 `interrupted` 的元素）。
+ * 形状与宿主 `ClientStateStore.saveInterrupted` 的入参逐字一致：`sessionFile` 在续跑时用来精确认领
+ * （`dropInterrupted` 按它剔除），`at` 决定是不是「刚断的」（超过 TTL 只提示、不自动重跑）。
+ */
+export interface InterruptedRunRecord {
+	title: string;
+	cwd: string;
+	at: number;
+	sessionFile?: string;
+}
+
+/**
  * 设置存储（宿主 `ClientStateStore` 的窄面）。
  *
  * 实现只在宿主：`server/client-state.ts` 是 `client-state.json` 的唯一写入者（归一化、版本号递增、
@@ -49,6 +61,15 @@ export interface SettingsStorePort {
 	/** 会话钉住（历史行 📌）：按会话自己 header 的 cwd 记账，跨项目不串台。 */
 	setSessionPinned(cwd: string, sessionPath: string, pinned: boolean): void;
 	isSessionPinned(cwd: string, sessionPath: string): boolean;
+
+	/**
+	 * 中断记账（重启续跑列表的源）：一轮正在跑时进程被停，`recordInterruptedRuns()` 把当时还在跑的会话
+	 * 写进来，重启后由续跑链路读回。签名与宿主 `ClientStateStore.saveInterrupted` 逐字一致。
+	 *
+	 * 可选的理由：这是「尽力而为」的旁路记账（老实现整段 try/catch 兜住），不是能力依赖；
+	 * 宿主没实现 = 不记账，别为了它把 `SettingsStorePort` 变成硬依赖。
+	 */
+	saveInterrupted?(clientId: string, list: InterruptedRunRecord[]): void;
 
 	getDefaultModel(engine?: string): string | undefined;
 	saveDefaultModel(modelId: string, engine?: string): void;
