@@ -143,3 +143,55 @@ DSH 补丁 6 与 `setClaudePermissionMode` 在 pi 连接上调到会回可读错
 4. **P5/P6**（Bot 投影 + 孤儿移交）→ 这两块是真正的新能力，建议单独排期
 5. 追平后：把 `resolvePiEngineMode` 的 `legacy` 分支标成 deprecated，再进 P5 发布
    （`packages/keel/MIGRATION-PLAN.md` 的 P5~P6）
+
+## 8. 用子代理的方式（本会话实操，建议照搬）
+
+这一轮迁移几乎全靠子代理推进（单批 2~3 个并行）。**这套流程本身是交付物的一部分**，照做能省大量返工。
+
+### 8.1 分工：共享文件只能有一个主人
+
+- `app/core-engine.ts` / `app/client-runtime.ts` / `app/host-faces.ts` / `server/index.ts` 是**所有轨都想改**的地方。
+  做法：指定**一个轨独占**，其它轨只交「可粘贴 patch（目标文件 + 行号 + 代码）」，由调度方合并。
+- 域文件按目录切（`domains/goals/**` vs `domains/turns/**` vs `domains/sandbox/**`），互不重叠。
+- 并行度 2~3；超过 3 个时冲突收益比会反转。
+
+### 8.2 任务书必须有的六段
+
+1. **背景 + 根因证据**（`文件:行`，让代理不用重新调研）
+2. **你的文件面（独占）** —— 明确列出
+3. **绝对不能改** —— 尤其是别的轨正在写的文件、`protocol.ts`、`web/src/**`、别的会话的文件
+4. **验收命令**（可复跑的那几行）
+5. **止损线**（做不动就回退该项并写清差哪一行接口，**不许写空实现**）
+6. **回报格式**（逐项：改法/文件行数/实测输出/未做项）
+
+### 8.3 铁律要写进每一份任务书（代理不会自动遵守）
+
+- 不改 `server/protocol.ts` / `PROTOCOL_VERSION` / `packages/keel/src/protocol.ts`（4123/4124）
+- 不放宽 `core-boundaries`；单文件 ≤600 行（守卫按 `split("\n")`）；tab 缩进；import 带 `.js`
+- **不为兼容留第二套实现**：要搬就搬、要包就包
+- 端口未注入 → handler **同步抛** `CoreEngineNotReadyError`
+- `appDepsOf` 必须仍为 **0**
+- **不 commit、禁 `git add -A`**
+
+### 8.4 调度方必须自己复验（不要信「绿了」）
+
+每批回来至少自己跑一遍：`npm run typecheck` + `npx vitest run` + `node .scratch/app-deps.mjs`（看实测输出，
+不是看断言）+ `gen-core-{dispatch-surface,ownership}.mjs --check` + `prettier --check` + `npm run lint`。
+本会话就靠这一步抓到过「代理说绿了，但 `protocol.ts` 预算超了 1 行」「`OWNERSHIP.md` 过期」这类。
+
+### 8.5 先分诊，再派实现轨
+
+冒烟从 42/98 起步时，**第一个子代理只做只读分诊**（跑两轮 core/legacy 冒烟取差集 → 16 个根因表），
+之后三条实现轨各自对着根因表干活，一次就把 42 推到 61。比让代理自己边查边改快得多。
+
+### 8.6 停止条件（踩过）
+
+代理上下文 >600k 且**连续两轮输出同一句话**（在反复读同一批文件）→ 直接 `conversation stop`，
+把它已改的东西留住（`git status` 确认），换一个**范围更小**的新代理接手。
+本会话的 `smoke-lane-c` 就是这样卡在 G/I/J 上，停掉后由主会话补完接线。
+
+### 8.7 一次踩坑的教训：`git add -A` 会吞掉别人的改动
+
+工作区里同时有**另一个会话**在改 `web/src/**`（问卷队列、终端抽屉直角）。本会话一次 `git add -A`
+把它们卷进了 keel 提交，事后用 `git reset --soft HEAD~1` 拆成独立提交（`c635a5dc`）。
+**结论**：提交前先 `git status` 逐文件确认归属；跨会话协作时只 `git add <显式路径>`。
