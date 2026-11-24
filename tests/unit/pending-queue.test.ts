@@ -89,10 +89,25 @@ describe("concurrent tool approvals", () => {
 			root!.render(createElement(ToolApprovalDialog, { approvals, mode: "queue", activeConversationId: "conv-other" })),
 		);
 		expect(document.querySelector(".approval-modal")).toBeNull();
+		expect(container.querySelector(".question-queue-list"), "别的对话的审批不占住本对话输入框上方").toBeNull();
 		act(() =>
 			root!.render(createElement(ToolApprovalDialog, { approvals, mode: "queue", activeConversationId: "conv-b" })),
 		);
 		expect(document.querySelector(".approval-modal")?.textContent).toContain("Conversation b");
+	});
+	it("all and manual keep listing approvals from other conversations", () => {
+		const container = document.createElement("div");
+		document.body.append(container);
+		root = createRoot(container);
+		const approvals = [approval("a")];
+		act(() =>
+			root!.render(createElement(ToolApprovalDialog, { approvals, mode: "manual", activeConversationId: "conv-b" })),
+		);
+		expect(container.querySelectorAll(".question-queue-summary")).toHaveLength(1);
+		act(() =>
+			root!.render(createElement(ToolApprovalDialog, { approvals, mode: "all", activeConversationId: "conv-b" })),
+		);
+		expect(document.querySelector(".approval-modal")?.textContent).toContain("Conversation a");
 	});
 	it("keeps the open editor stable, defers without rejecting, and routes approval to its original ID", () => {
 		const a = approval("a"),

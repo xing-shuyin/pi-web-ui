@@ -1,5 +1,6 @@
 import { appSend } from "../app-globals";
 import { useT } from "../i18n";
+import { presentablePending } from "../pending-queue";
 import {
 	isCurrentQuestion,
 	questionProjectLabel,
@@ -27,7 +28,11 @@ export function QuestionQueue({ questions, activeConversationId, currentCwd, mod
 	};
 	return (
 		<PendingQueue
-			items={questions.filter((q) => q.audience === "user")}
+			items={presentablePending(
+				questions.filter((q) => q.audience === "user"),
+				activeConversationId,
+				mode,
+			)}
 			itemKey={questionQueueKey}
 			title={t("questionQueueTitle")}
 			summary={(q) => (

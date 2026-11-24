@@ -90,6 +90,12 @@ describe("question queue compatibility and modes", () => {
 			conversationTitle: "Ship it",
 			cwd: "E:/proj-b",
 		});
+		const sibling = request({
+			id: "sibling",
+			conversationId: "project-c-conv",
+			conversationTitle: "Later",
+			cwd: "E:/proj-c",
+		});
 		expect(questionProjectLabel(foreign, "E:/proj-a/")).toBe("proj-b");
 		expect(questionProjectLabel(foreign, "E:/proj-b")).toBeUndefined();
 		expect(questionProjectLabel(request(), "E:/proj-a")).toBeUndefined();
@@ -102,13 +108,12 @@ describe("question queue compatibility and modes", () => {
 				mode: "queue",
 			}),
 		);
-		expect(queued.querySelector(".question-queue-dialog")).toBeNull();
-		expect(queued.querySelector(".question-queue-summary .question-conv-title")?.textContent).toBe("proj-b");
+		expect(queued.textContent).toBe("");
 		act(() => root!.unmount());
 
 		const opened = mount(
 			createElement(QuestionQueue, {
-				questions: [foreign],
+				questions: [foreign, sibling],
 				activeConversationId: "project-a-conv",
 				currentCwd: "E:/proj-a",
 				mode: "all",
@@ -116,6 +121,36 @@ describe("question queue compatibility and modes", () => {
 		);
 		expect(opened.querySelector(".question-queue-dialog")).not.toBeNull();
 		expect(opened.querySelector(".dialog-head .question-conv-title")?.textContent).toBe("proj-b");
+		expect(opened.querySelector(".question-queue-summary .question-conv-title")?.textContent).toBe("proj-c");
+	});
+
+	it("队列模式只排本对话的问卷，别的对话的问卷不进本对话的画面", () => {
+		const mine = request({ id: "mine", conversationId: "active" });
+		const child = request({ id: "child", conversationId: "sub-agent", rootConversationId: "active" });
+		const foreign = request({ id: "foreign", conversationId: "elsewhere", conversationTitle: "别处" });
+		const container = mount(
+			createElement(QuestionQueue, {
+				questions: [foreign, child, mine],
+				activeConversationId: "active",
+				mode: "queue",
+			}),
+		);
+		expect(container.querySelector(".question-queue-dialog")).not.toBeNull();
+		const summaries = [...container.querySelectorAll(".question-queue-summary")].map((el) => el.textContent);
+		expect(summaries).toHaveLength(1);
+		expect(summaries[0]).toContain("Choose");
+		expect(container.textContent).not.toContain("别处");
+
+		act(() => root!.unmount());
+		const manual = mount(
+			createElement(QuestionQueue, {
+				questions: [foreign, child, mine],
+				activeConversationId: "active",
+				mode: "manual",
+			}),
+		);
+		expect(manual.querySelector(".question-queue-dialog")).toBeNull();
+		expect(manual.querySelectorAll(".question-queue-summary")).toHaveLength(3);
 	});
 	it("defers without cancelling, keeps drafts, and reopens manually with owner-scoped answers", () => {
 		const sent: unknown[] = [];

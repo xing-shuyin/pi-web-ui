@@ -4,6 +4,7 @@ import { FiAlertTriangle, FiCheck, FiCheckCircle, FiEdit3, FiLayers, FiX } from 
 import { appSend } from "../app-globals";
 import { isZhLocale, useI18n, useT } from "../i18n";
 import { renderHighlightedCommand } from "../bash-danger";
+import { presentablePending } from "../pending-queue";
 import { questionWaitTime } from "../question-queue";
 import { useOverlayZIndex } from "../overlay-stack";
 import type { UiToolApproval } from "../types";
@@ -25,7 +26,7 @@ export function ToolApprovalDialog({
 	const t = useT();
 	return (
 		<PendingQueue
-			items={approvals}
+			items={presentablePending(approvals, activeConversationId, mode)}
 			itemKey={(item) => `${item.owner ?? "local"}:${item.id}`}
 			title={t("toolApprovalTitle")}
 			summary={(item) => (
