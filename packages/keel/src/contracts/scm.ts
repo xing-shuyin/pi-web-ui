@@ -18,6 +18,15 @@
 /** 生成结果：失败也是回执（老实现从不 reject，前端只认这一帧）。 */
 export type ScmCommitMessageResult = { ok: true; text: string } | { ok: false; error: string };
 
+/**
+ * 端口未注入（宿主没接这条能力）时的回执文案：内核唯一能自己给的一句。
+ *
+ * 正常部署走宿主端口（文案按 `lang` 由宿主给），这一句只覆盖「装配漏了 / 引擎不支持」——
+ * 不给它的话 `scm_commitmsg` 只能抛给分发层记日志，前端等成空转（`scm_data` 一帧都没有）。
+ */
+export const SCM_COMMITMSG_UNWIRED =
+	"生成提交信息不可用：宿主未接入 SCM 端口 / Commit-message generation unavailable: host SCM port not wired";
+
 export interface ScmCommitMessageInput {
 	/** 采集改动的工作目录（当前对话的 cwd）。 */
 	cwd: string;

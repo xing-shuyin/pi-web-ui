@@ -39,24 +39,30 @@ export function noScmCommitModelMessage(lang: ServerLang): string {
  *
  * 老实现直接拿 `conv.session?.model`（就是同一个 SDK 模型对象）；core 的会话模型在 keel 里，
  * 宿主只知道 provider/id，所以这里按 id 从**宿主自己的**模型运行时里取——凭证与目录都归它。
+ *
+ * `runtime` 是 thunk：**先选型、后建运行时**。没模型时不该去碰 SDK（建不出来/目录坏了都不影响
+ * 「先在顶栏选择模型」这条回执），也免得把一个失败的建实例挂在缓存上。
  */
 export async function generateScmCommitMessageForCurrent(opts: {
 	cwd: string;
 	/** 当前对话正在用的模型（没选过 = undefined → 「先在顶栏选择模型」）。 */
 	model: { provider: string; id: string } | undefined;
-	runtime: ScmCommitRuntime;
+	/** 懒取宿主模型运行时（只有真要推断时才调）。 */
+	runtime: () => Promise<ScmCommitRuntime>;
 	lang: ServerLang;
 	promptMode?: "append" | "replace";
 	customPrompt?: string;
 	timeoutMs?: number;
 }): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
 	const { cwd, model, runtime, lang, promptMode, customPrompt, timeoutMs } = opts;
-	const resolved = model ? runtime.getModel?.(model.provider, model.id) : undefined;
+	if (!model) return { ok: false, error: noScmCommitModelMessage(lang) };
+	const resolvedRuntime = await runtime();
+	const resolved = resolvedRuntime.getModel?.(model.provider, model.id);
 	if (!resolved) return { ok: false, error: noScmCommitModelMessage(lang) };
 	return generateScmCommitMessage({
 		cwd,
 		model: resolved,
-		runtime,
+		runtime: resolvedRuntime,
 		lang,
 		...(promptMode ? { promptMode } : {}),
 		...(customPrompt ? { customPrompt } : {}),

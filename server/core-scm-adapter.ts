@@ -22,16 +22,24 @@ export interface CoreScmCommitMessageOptions {
  *
  * 模型运行时与凭证是宿主知识：懒建一份（`ModelRuntime` 读 `agentDir` 下的 `auth.json` / `models.json`），
  * 内核既不认识它，也拿不到它。选型走 sink 里报的「当前对话正在用的模型」。
+ *
+ * 不缓存**失败**的建实例：凭证坏了、目录还在写，下一次生成应该重试——挂着一个 rejected promise
+ * 会让这条面在进程重启前永远只能回同样的错（`core-model-adapter` 的预热同一个口径）。
  */
 export function createCoreScmCommitMessage(
 	options: CoreScmCommitMessageOptions & CoreScmCommitMessageSinks,
 ): ScmCommitMessagePort {
 	let runtime: Promise<ModelRuntime> | undefined;
-	const runtimeOf = (): Promise<ModelRuntime> =>
-		(runtime ??= ModelRuntime.create({
+	const runtimeOf = (): Promise<ModelRuntime> => {
+		runtime ??= ModelRuntime.create({
 			authPath: join(options.agentDir, "auth.json"),
 			modelsPath: join(options.agentDir, "models.json"),
-		}));
+		}).catch((error: unknown) => {
+			runtime = undefined;
+			throw error;
+		});
+		return runtime;
+	};
 
 	return {
 		async generateCommitMessage(input) {
@@ -40,7 +48,8 @@ export function createCoreScmCommitMessage(
 			return generateScmCommitMessageForCurrent({
 				cwd: input.cwd,
 				model: options.sessionModel(),
-				runtime: await runtimeOf(),
+				// thunk：没选模型时压根不建运行时（「先选模型」这条回执不依赖 SDK 能不能起来）。
+				runtime: runtimeOf,
 				lang: options.getLang(),
 				promptMode: settings.scmCommitMsgPromptMode === "replace" ? "replace" : "append",
 				customPrompt: settings.scmCommitMsgPrompt ?? "",

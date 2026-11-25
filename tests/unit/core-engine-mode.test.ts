@@ -63,7 +63,9 @@ describe("core/app · CoreEngine 生命周期", () => {
 		expect(engine.get("c1")).toBe(cs);
 		expect(engine.serviceStatus().connectedClients).toBe(0);
 		engine.detach("c1", () => {});
-		expect(engine.get("c1")).toBeUndefined();
+		// 期望变（P6）：最后一个 socket 走了只标离线、运行时留宽限期供重连 / 认领
+		//（老 `agent-service-daemon.ts` 的 `detach()` 同口径：非 canvas / device-task 不真拆），所以还是同一份运行时。
+		expect(engine.get("c1")).toBe(cs);
 	});
 
 	it("activeConversations / pendingMessages 汇总各客户端运行时", async () => {

@@ -1,4 +1,5 @@
 export { ChatModeState, type ChatModeKind } from "./chat-mode.js";
+export { applyBotToolGate, botToolGateHostOf, type BotToolGateHost } from "./bot-face.js";
 export { resolveActiveToolNames, type ToolGatingInput } from "./gating.js";
 export {
 	appendLoadedTools,

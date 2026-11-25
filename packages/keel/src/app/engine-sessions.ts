@@ -1,4 +1,6 @@
 import {
+	applyBotToolGate,
+	botToolGateHostOf,
 	DEFAULT_AGENT_PRESET,
 	resolveToolLoadout,
 	type ChatModeState,
@@ -73,6 +75,31 @@ export function createEngineSessionRegistry(deps: EngineSessionDeps): SessionReg
 		});
 	};
 
+	/**
+	 * 执行客户端是不是一次 Bot 执行（设备任务）：是就拿到它的工具面。
+	 * 按 `conv.meta.clientId`（对话转手后归新客户端）解析，与 ask / pageCall 同一口径。
+	 */
+	const botFaceOf = (conv: Conversation) => {
+		const current = conv.meta.clientId;
+		const targetClientId = typeof current === "string" && current.length > 0 ? current : deps.clientId;
+		return deps.bots?.()?.toolFace?.({ clientId: targetClientId });
+	};
+
+	/**
+	 * Bot 执行的活动工具集 = 白名单 ∩ 全部工具（老 `applyToolGating` 的 Bot 早返回）。
+	 *
+	 * 拿不到工具面的写口就什么也不做：真实的 SDK 会话一定有那三件套（`presetToolHostOf` 靠的是
+	 * 同一批方法），没有写口的只可能是假体/半成品会话——那种会话本来就没有可放行的工具表，
+	 * 在这里抛错只会先在注册表里留一个已 dispose 的脏会话项（`onOpened` 排在登记之后）。
+	 */
+	const gateBotTools = (conv: Conversation, opened: OpenedSession): void => {
+		const face = botFaceOf(conv);
+		if (!face) return;
+		const host = botToolGateHostOf(opened.session);
+		if (!host) return;
+		applyBotToolGate({ host, face });
+	};
+
 	return new SessionRegistry({
 		agentDir: deps.agentDir,
 		toolsFor: () => resolveToolLoadout({ switches: deps.stateStore.getSettingsSnapshot(deps.clientId) }).tools,
@@ -133,6 +160,8 @@ export function createEngineSessionRegistry(deps: EngineSessionDeps): SessionReg
 				},
 			),
 			...deps.pluginTools.defsFor(deps.clientId, conv.id, deps.pluginToolFilter(deps.clientId, conv)),
+			// Bot 执行专属工具（`device_collab`）：老实现 `...(botExecution ? [makeDeviceCollabTool()] : [])`。
+			...(botFaceOf(conv)?.tools() ?? []),
 		],
 		botSessionDir: (botId) => deps.bots?.()?.sessionDir?.(botId),
 		bindBotSession: async (conv, opened) => {
@@ -188,6 +217,8 @@ export function createEngineSessionRegistry(deps: EngineSessionDeps): SessionReg
 			faces.chatMode?.restore?.(conv.id);
 			deps.presets.setPermission(conv.id, faces.presetTranscript?.readPermission?.(conv.id));
 			resumeAgentPreset(conv, opened);
+			// Bot 执行的门禁排在预设之后：白名单是最终口径（老实现的早返回）。
+			gateBotTools(conv, opened);
 			unsubscribers.set(
 				conv.id,
 				subscribePluginSessionEvents({

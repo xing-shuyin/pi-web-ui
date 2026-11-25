@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ServerMessage } from "../../server/protocol.js";
-import { CoreEngineNotReadyError } from "../../packages/keel/src/contracts/core-engine-errors.js";
-import type { ScmCommitMessagePort, ScmCommitMessageResult } from "../../packages/keel/src/contracts/scm.js";
+import {
+	SCM_COMMITMSG_UNWIRED,
+	type ScmCommitMessagePort,
+	type ScmCommitMessageResult,
+} from "../../packages/keel/src/contracts/scm.js";
 import { createScmHandlers } from "../../packages/keel/src/domains/scm/index.js";
 
 /**
@@ -84,9 +87,37 @@ describe("scmGenCommitMessage · 转发 + 发帧", () => {
 });
 
 describe("scmGenCommitMessage · 端口未注入", () => {
-	it("同步抛 CoreEngineNotReadyError（不是 rejected promise，也不发半帧）", () => {
+	it("照样回一帧 ok:false（不抛、不留空等）：分发层 `void` 调用，抛了前端一帧都收不到", async () => {
 		const { handlers, frames } = harness(undefined);
-		expect(() => handlers.scmGenCommitMessage(3)).toThrow(CoreEngineNotReadyError);
+		await expect(handlers.scmGenCommitMessage(3)).resolves.toBeUndefined();
+		expect(frames).toEqual([
+			{ type: "scm_data", reqId: 3, kind: "commitmsg", ok: false, error: SCM_COMMITMSG_UNWIRED },
+		]);
+	});
+
+	it("端口 cherry-pick 不到（thunk 回 undefined）也不抛；通道已关就不出帧", async () => {
+		const frames: ServerMessage[] = [];
+		const handlers = createScmHandlers({
+			scm: () => undefined,
+			transport: { send: (msg) => frames.push(msg), isClosed: () => true },
+			cwd: () => "/work/project",
+		});
+		await expect(handlers.scmGenCommitMessage(5)).resolves.toBeUndefined();
 		expect(frames).toEqual([]);
+	});
+
+	it("cwd 取值自己炸了也回帧（不把异常攼到分发层）", async () => {
+		const frames: ServerMessage[] = [];
+		const handlers = createScmHandlers({
+			scm: () => okPort("feat: x"),
+			transport: { send: (msg) => frames.push(msg), isClosed: () => false },
+			cwd: () => {
+				throw new Error("no active conversation");
+			},
+		});
+		await expect(handlers.scmGenCommitMessage(11)).resolves.toBeUndefined();
+		expect(frames).toEqual([
+			{ type: "scm_data", reqId: 11, kind: "commitmsg", ok: false, error: "no active conversation" },
+		]);
 	});
 });

@@ -5,10 +5,25 @@
 
 ## 0. 一句话状态
 
-pi 的默认引擎**已从 legacy（`AgentService`）翻到 keel（`CoreEngine`）**。
-**P1 ~ P6 批次已全数完工并提交**（最新提交 `b1cf2109`：`feat(keel): complete P6 takeover, orphan and subagent coordination`）。
-单元测试全绿（15831 ✓）。冒烟已大幅追平至 **96/98**（legacy 基线 96/98）。
-当前仅剩最后的 **P7（2 个待定用例）**，见 §4。
+pi 的默认引擎**已是 keel（`CoreEngine`）**；**分发面 185/185、P1~P7 批次全部落地**。
+
+**但「全量冒烟」与「单用例」给出的数不一致，必须先弄清再往下做**：
+
+| 口径                                         | 结果                                                        |
+| -------------------------------------------- | ----------------------------------------------------------- |
+| `npx vitest run`                             | **15847 ✓ / 0 ✗ / 53 ○**                                    |
+| `node tests/run-smoke.mjs`（全量，本机两次） | **81/98**、**80/98**                                        |
+| 单个用例单跑（`--no-build <name>`）          | scm-features ✅ 19/19 · device-project-collaboration ✅ 1/1 |
+
+即：P7 两条单独跑都绿，但**全量跑仍有 17~18 条红**（title/命名、provider key、常驻执行对话、
+subagent thinking、extension session_start、message-window/history 系列）。两种可能：
+(a) 全量并行下的互相干扰（端口/遗留 server/data dir，历史上 `conv-cwd` 就有这毛病）；
+(b) 这两天的批次里有真回归（`historyRoot()` 改成「学到的目录优先」、`connectFrames` 生命周期、
+出帧扇出都能影响上述用例）。
+
+**下一步第一件事**：`node tests/run-smoke.mjs --jobs=1` 复跑一次。若全绿 → 就是并行干扰，给 runner
+加隔离（独立 data dir / 端口段）或标记串行；若仍红 → 直接对这 17 条重新分诊（`.scratch/smoke-triage.md`
+的套路照用：两轮 core/legacy 差集 + 日志证据）。
 
 ## 1. 开关（回滚只要一条环境变量）
 

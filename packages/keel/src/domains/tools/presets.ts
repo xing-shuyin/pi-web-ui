@@ -107,7 +107,8 @@ export function agentPresetOf(input: { preset?: string; settings?: ClientSetting
  *
  * 与老实现 `applyToolGating`（`agentService:10762`）的**同一批**来源：设置里的开关、
  * 计划模式 / 审查者模式的写工具闸门，再交给 `applyAgentToolsGating` 做「减法 + 预设白名单」。
- * 差的那几项（插件工具注册表同步、Bot 工具、子代理白名单、懒加载已加载集、终端只读 schema）
+ * Bot 执行的那一支**不走这里**：白名单是最终口径、且要早返回（见 `bot-face.ts`）。
+ * 还差的几项（插件工具注册表同步、子代理白名单、懒加载已加载集、终端只读 schema）
  * 见报告「未做项」——它们是别的域的状态，内核还没有对应持有者。
  */
 export function presetGateDisabledTools(input: {

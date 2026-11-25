@@ -114,7 +114,8 @@ export class CoreEngine implements EngineService {
 	private readonly projectSource: ReturnType<typeof createProjectSource>;
 	/** 进程级模型/供应商管理面：一次引擎一份（老实现也是进程级），所有客户端共用。 */
 	private modelAdmin: ModelAdminPort | undefined;
-	/** 每个客户端的帧出口（`emit` 要广播时用）：**只放最新的那一个**，重连就换掉（老实现每 sink 一份基线）。 */
+	/** 每个客户端的帧出口（进程级广播用，如模型/供应商面）：**只放最新的那一个**，重连就换掉。会话帧不走这里，
+	 * 走 `deliverTo()` 扇出到该 clientId 此刻活着的**每个** socket（老 `emit()` 扇出到 `sinks` 的口径）。 */
 	private readonly senders = new Map<string, FrameSender>();
 	/** 每个客户端此刻还活着的 socket（老实现 `sinks` 账）：最后一个走了才拆运行时。 */
 	private readonly sockets = new Map<string, Set<FrameSender>>();
@@ -154,8 +155,9 @@ export class CoreEngine implements EngineService {
 		this.clearOffline(clientId);
 		const existing = this.runtimes.get(clientId);
 		if (existing) {
-			// 同 clientId 重连（刷新 / 重开标签页）：换到新 socket 出帧（旧 socket 不再收到帧），
-			// 并把连接期初始态重推一遍——新连接没有任何基线（老实现每 sink 一份 `SnapshotChannel`）。
+			// 同 clientId 重连（刷新 / 重开标签页）：把新 socket 记成最新出口，并把连接期初始态重推一遍——
+			// 新连接没有任何基线（老 `attachSink()` 也是每挂一个 sink 就整包推）。
+			// 同一 clientId 此刻还活着的旧 socket 同样收到这批：那是老 `emit()` 的扇出口径（镜像，不是被换掉的连接）。
 			this.bindSender(clientId, send);
 			this.connectFrames.get(clientId)?.();
 			existing.publisher.flush({ forceFull: true });
@@ -268,7 +270,7 @@ export class CoreEngine implements EngineService {
 		}
 	}
 
-	/** 记一个活着的帧出口：最新那一个负责收帧，旧的只留账（拆运行时要看还有没有活 socket）。 */
+	/** 记一个活着的帧出口：最新的记进 `senders`（进程级广播用），全部留账（拆连接要看还有没有活 socket）。 */
 	private bindSender(clientId: string, send: FrameSender): void {
 		const sockets = this.sockets.get(clientId);
 		if (sockets) sockets.add(send);
@@ -284,15 +286,21 @@ export class CoreEngine implements EngineService {
 			return;
 		}
 		this.sockets.delete(clientId);
-		this.connectFrames.delete(clientId);
 		this.senders.delete(clientId);
 		const runtime = this.runtimes.get(clientId);
-		if (!runtime) return;
+		if (!runtime) {
+			this.connectFrames.delete(clientId);
+			return;
+		}
 		const shouldDispose = handleClientDetach(clientId, runtime, this.offlineSince, this.offlineTimers, () => {
 			this.notifyExternalRunning(clientId);
 		});
 		if (shouldDispose) {
 			this.runtimes.delete(clientId);
+			// 重推初始态的口子跟着**运行时**走：运行时拆了才丢。留宽限期时不能丢——
+			// 刷新页面就是「detach → 同 clientId 重连」，重连分支只调这个闭包；丢了它，
+			// 新 socket 只能收到一帧快照，`settings_state` / `dsh_presets` / `default_model` 全缺。
+			this.connectFrames.delete(clientId);
 			this.askWaiters.delete(clientId);
 			this.clearOffline(clientId);
 			runtime.dispose();

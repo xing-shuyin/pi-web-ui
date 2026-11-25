@@ -34,7 +34,7 @@ const QUIESCE_NOTICE: ServerMessage = {
 export interface QuiesceGate {
 	/** 引擎此刻是否在排空。必须是 thunk：判定发生在**调用时**，不在装配时快照。 */
 	isQuiesced(): boolean;
-	/** 一帧发给本连接（走 `senders` 现取，重连后仍是新 socket）。 */
+	/** 一帧发给本连接（`deliverTo`：该 clientId 此刻活着的每个 socket 都收——老 `emit()` 扇出到 `sinks` 的口径）。 */
 	emit(msg: ServerMessage): void;
 }
 
@@ -54,6 +54,7 @@ function applyQuiesceGate(session: DispatchSession, gate: QuiesceGate): void {
 		if (!gate.isQuiesced()) return false;
 		gate.emit(QUIESCE_NOTICE);
 		// 老实现同一收尾：拒绝后立刻刷一帧快照，让前端看到「已拒」而不是干等一个永远不来的回合。
+		// 发不发归出帧闸判（内容没变就不重复发——老 `SnapshotChannel.push()` 同口径），这里不强制全量。
 		session.flushSnapshot();
 		return true;
 	};
@@ -127,7 +128,7 @@ export interface ConnectFrameInput {
 	modelAdmin: ModelAdminPort | undefined;
 	stateStore: SettingsStorePort;
 	clientId: string;
-	/** 一帧发给本连接（走 `senders` 现取：重连换过 socket 之后旧 socket 不会再收到帧）。 */
+	/** 一帧发给本连接（`deliverTo`：该 clientId 此刻活着的每个 socket 都收——老 `emit()` 扇出到 `sinks` 的口径）。 */
 	emit(msg: ServerMessage): void;
 }
 

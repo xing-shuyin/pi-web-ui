@@ -1,4 +1,5 @@
 import type { BotChatPort, BotChatTarget } from "../packages/keel/src/contracts/bots.js";
+import { deviceTaskToolFace } from "./device-center/bot-tool-face.js";
 import {
 	BOT_CHAT_ENTRY,
 	BOT_EXECUTION_ENTRY,
@@ -30,6 +31,8 @@ export function createCoreBotChat(input: { agentDir: string }): BotChatPort {
 		},
 		latestTranscript: (botId: string, cwd: string) => latestBotChatTranscript(input.agentDir, botId, cwd),
 		sessionDir: (botId: string) => botChatSessionDir(input.agentDir, botId),
+		// 设备任务执行的工具面（白名单 + `device_collab`）：按执行客户端解析，不是私聊那条。
+		toolFace: (toolInput) => deviceTaskToolFace(toolInput),
 		async bindTranscriptSession(bindInput) {
 			let botId = bindInput.botId;
 			const executionAnchor = readBotExecutionAnchor(bindInput.entries as any);

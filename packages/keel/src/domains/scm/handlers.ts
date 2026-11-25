@@ -1,10 +1,9 @@
-import { CoreEngineNotReadyError } from "../../contracts/core-engine-errors.js";
 import type { TransportPort } from "../../contracts/ports.js";
-import type { ScmCommitMessagePort, ScmCommitMessageResult } from "../../contracts/scm.js";
+import { SCM_COMMITMSG_UNWIRED, type ScmCommitMessagePort, type ScmCommitMessageResult } from "../../contracts/scm.js";
 import type { ServerMessage } from "../../protocol.js";
 
 export interface ScmHandlersOptions {
-	/** 缺省 = 未接：`scmGenCommitMessage` 调到时同步抛 `CoreEngineNotReadyError`。 */
+	/** 缺省 = 未接：回一帧 `ok: false`（文案 `SCM_COMMITMSG_UNWIRED`），不抛。 */
 	scm?: () => ScmCommitMessagePort | undefined;
 	transport: TransportPort;
 	/** 采集改动的工作目录（当前对话的 cwd，与 `scmQuery` 同一口径）。 */
@@ -22,33 +21,42 @@ export interface ScmHandlers {
  *
  * 帧形状与 `scmQuery` 那四支同一支 `scm_data`（`kind: "commitmsg"`）：老实现就是
  * `send({ type: "scm_data", reqId, kind: "commitmsg", ok, …extra })`，回执只有一个出口。
- * 端口自己抛错也不让前端空等：照样回一帧 `ok: false`（老实现 `fail()` 分支同口径）。
+ * **三条失败路径都给帧**：端口自己抛错、端口没注入、宿主回 `ok: false`（没模型 / 干净工作区 / 超时）——
+ * 前端永远等得到回执；不发帧只允许一种情况：`isClosed()`（通道都关了）。
  */
 export function createScmHandlers(options: ScmHandlersOptions): ScmHandlers {
-	const port = (what: string): ScmCommitMessagePort => {
+	/**
+	 * 解析端口：宿主没接（含装配漏了那一行）也**不抛**——`scm_commitmsg` 的契约是「必回一帧」，
+	 * 抛给分发层只会被记一行日志，前端那边就是一帧都没有（`scm_data` 永不到）。
+	 */
+	const port = (what: string): ScmCommitMessagePort | undefined => {
 		const target = options.scm?.();
-		if (!target) throw new CoreEngineNotReadyError(what);
+		if (!target) console.warn(`[core] ${what}: ${SCM_COMMITMSG_UNWIRED}`);
 		return target;
 	};
 	const send = (msg: ServerMessage): void => {
 		if (options.transport.isClosed()) return;
 		options.transport.send(msg);
 	};
-	const generate = async (target: ScmCommitMessagePort, reqId: number): Promise<void> => {
-		const cwd = options.cwd();
+	const generate = async (reqId: number): Promise<void> => {
 		let result: ScmCommitMessageResult;
-		try {
-			result = await target.generateCommitMessage({ cwd });
-		} catch (error) {
-			result = { ok: false, error: error instanceof Error ? error.message : String(error) };
+		const target = port("scmGenCommitMessage");
+		if (!target) {
+			result = { ok: false, error: SCM_COMMITMSG_UNWIRED };
+		} else {
+			try {
+				result = await target.generateCommitMessage({ cwd: options.cwd() });
+			} catch (error) {
+				result = { ok: false, error: error instanceof Error ? error.message : String(error) };
+			}
 		}
 		send({ type: "scm_data", reqId, kind: "commitmsg", ...result });
 	};
 
 	return {
-		// 同步方法体：端口解析在**调用时**发生（未注入 → 同步抛，不变 rejected promise）。
+		// 不管端口在不在，这个方法都只 resolve、不 reject（分发层 `void` 调用，reject = 无声）。
 		scmGenCommitMessage(reqId: number): Promise<void> {
-			return generate(port("scmGenCommitMessage"), reqId);
+			return generate(reqId);
 		},
 	};
 }

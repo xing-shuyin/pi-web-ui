@@ -303,6 +303,8 @@ export function assembleClient(ctx: ClientAssemblyContext): {
 		nativeCli: options.nativeCli,
 		bots: options.bots,
 		chatMode: options.chatMode,
+		// SCM 提交信息面：**这张表就是宿主面的总闸**，漏一行 = 端口永远 undefined（`scmGenCommitMessage` 恒抛）。
+		scmCommitMessage: options.scmCommitMessage,
 		toolInfo: options.toolInfo,
 		quickAsk: options.quickAsk,
 		uiBridge: options.uiBridge,

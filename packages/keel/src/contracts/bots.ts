@@ -39,6 +39,26 @@ export interface BotChatSessionBinding {
 	warningNotice?: { text: string; textEn: string };
 }
 
+/**
+ * Bot 执行的工具面（老实现 `agent-service.ts` 的 `botExecution` 那一支反转成端口）。
+ *
+ * 两件事必须一起交出去，因为它们是**同一个**能力快照的两半：
+ * - **注册白名单**：老实现 `applyToolGating`（`agentService:10746`）的 Bot 分支直接
+ *   `setActiveToolsByName(getAllTools().filter(bot.allowsToolRegistration))` 后早返回 ——
+ *   Bot 的白名单就是最终口径，不再叠预设 / 开关 / 懒加载；
+ * - **专属工具**：老实现 `...(botExecution ? [makeDeviceCollabTool()] : [])`（`agentService:5628`）——
+ *   这条件白名单之外还有「只有 Bot 执行才存在」的工具。
+ *
+ * 内核**不复制**这套判定：白名单与专属工具都由宿主 `server/device-center/bot-execution.ts`
+ * 的单源持有（它才知道这次执行的 Bot 版本、衰减、计划模式与撤销状态）。
+ */
+export interface BotToolFace {
+	/** 注册相位的白名单（老 `allowsToolRegistration(name)`）；实现方**不得抛**（撤销 = 拒绝）。 */
+	allows(name: string): boolean;
+	/** Bot 执行专属的宿主工具（`device_collab`）；老实现只在这一支注册它。 */
+	tools(): readonly unknown[];
+}
+
 export interface BotChatPort {
 	/**
 	 * 本机 Bot 注册表里的当前记录（停用 / 删除 → `undefined`，调用方据此发「已不可用」）。
@@ -72,4 +92,14 @@ export interface BotChatPort {
 	 * 已开的私聊遇到 Bot 改过配置（`revision` 变了）时按**当前**配置重绑能力快照。
 	 */
 	rebindIfStale?(conversationId: ConversationId, botId: string, target: BotChatTarget): Promise<void>;
+
+	/**
+	 * 这个**执行客户端**（设备任务跑在 `device-task-*` 客户端上）是不是一次 Bot 执行：
+	 * 是就交出工具面，不是（普通 UI 客户端）就交 `undefined` → 内核走普通门禁。
+	 *
+	 * 为什么按 `clientId` 而不是按对话：设备任务的 Bot 能力是 `registerBotExecution` 挂在**执行客户端**
+	 * 上的（一轮一 `release`），对话只是它开出来的会话；私聊那条按 `botId` 解析的是另一件事。
+	 * 缺省 = 不注入：内核不会因为宿主没接这个口就把工具集清空。
+	 */
+	toolFace?(input: { clientId: string }): BotToolFace | undefined;
 }

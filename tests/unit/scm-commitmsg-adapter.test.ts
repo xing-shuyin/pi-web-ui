@@ -39,16 +39,19 @@ function fakeRuntime(overrides: Partial<ScmCommitRuntime> & { text?: string } = 
 }
 
 describe("generateScmCommitMessageForCurrent · 选型", () => {
-	it("没选模型：回「先在顶栏选择模型」，压根不碰模型运行时", async () => {
-		const { runtime, seen } = fakeRuntime();
+	it("没选模型：回「先在顶栏选择模型」，连模型运行时都不建（thunk 不被调）", async () => {
+		let created = 0;
 		const result = await generateScmCommitMessageForCurrent({
 			cwd: "/nowhere",
 			model: undefined,
-			runtime,
+			runtime: async () => {
+				created++;
+				return fakeRuntime().runtime;
+			},
 			lang: "zh",
 		});
 		expect(result).toEqual({ ok: false, error: noScmCommitModelMessage("zh") });
-		expect(seen).toEqual([]);
+		expect(created).toBe(0);
 	});
 
 	it("模型运行时里没有这个 id：同一句「先选模型」（不拿别的东西凑）", async () => {
@@ -56,7 +59,7 @@ describe("generateScmCommitMessageForCurrent · 选型", () => {
 		const result = await generateScmCommitMessageForCurrent({
 			cwd: "/nowhere",
 			model: { provider: "p", id: "m" },
-			runtime,
+			runtime: async () => runtime,
 			lang: "en",
 		});
 		expect(result).toEqual({ ok: false, error: noScmCommitModelMessage("en") });
@@ -76,7 +79,7 @@ describe.skipIf(!hasGit)("generateScmCommitMessageForCurrent · happy path（真
 			const result = await generateScmCommitMessageForCurrent({
 				cwd: dir,
 				model: { provider: "my-provider", id: "my-model" },
-				runtime,
+				runtime: async () => runtime,
 				lang: "zh",
 				promptMode: "append",
 				customPrompt: "",
@@ -107,7 +110,7 @@ describe.skipIf(!hasGit)("generateScmCommitMessageForCurrent · happy path（真
 			const result = await generateScmCommitMessageForCurrent({
 				cwd: dir,
 				model: { provider: "p", id: "m" },
-				runtime,
+				runtime: async () => runtime,
 				lang: "zh",
 				promptMode: "replace",
 				customPrompt: "只写一句中文",
