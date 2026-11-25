@@ -5,9 +5,10 @@
 
 ## 0. 一句话状态
 
-pi 的默认引擎**已从 legacy（`AgentService`）翻到 keel（`CoreEngine`）**，但冒烟还没追平：
-**61/98**（翻转前 legacy 基线 96/98）。单元测试已全绿。剩下的都是「core 模式缺行为」，
-清单在 §4，已定位到文件与行，不需要重新分诊。
+pi 的默认引擎**已从 legacy（`AgentService`）翻到 keel（`CoreEngine`）**。
+**P1 ~ P6 批次已全数完工并提交**（最新提交 `b1cf2109`：`feat(keel): complete P6 takeover, orphan and subagent coordination`）。
+单元测试全绿（15831 ✓）。冒烟已大幅追平至 **96/98**（legacy 基线 96/98）。
+当前仅剩最后的 **P7（2 个待定用例）**，见 §4。
 
 ## 1. 开关（回滚只要一条环境变量）
 
@@ -23,94 +24,46 @@ pi 的默认引擎**已从 legacy（`AgentService`）翻到 keel（`CoreEngine`�
 ```bash
 npm run typecheck                     # 6 个 tsconfig，当前 0 错误
 npx vitest run                        # 当前 15831 ✓ / 0 ✗ / 53 ○（1 个 clock flake 见 §6）
-node tests/run-smoke.mjs              # 当前 61/98
+node tests/run-smoke.mjs              # 当前 ~96/98（基线 96/98）
 PI_WEB_PI_ENGINE=legacy node tests/run-smoke.mjs   # 基线 95~96/98（对照用）
 node .scratch/app-deps.mjs            # keel 对宿主模块依赖：必须是 0
 node scripts/gen-core-dispatch-surface.mjs --check  # 185 成员
 node scripts/gen-core-ownership.mjs --check
+npm run lint                          # 0 错误
 ```
 
-冒烟支持按名跑单个用例：`node tests/run-smoke.mjs slash-commands-test ...`。
+冒烟支持按名跑单个用例：`node tests/run-smoke.mjs --no-build <test-name>`。
 
-## 3. 本批已完成（三层）
+## 3. 已完成批次（P1 ~ P6 全部落地）
 
-### 3.1 分发面 185/185，零 unsupported
+1. **P1 组合根 notWired 组**（`bd363c79`）：
+   `server/core-settings-adapter.ts` 补齐 `promptSnapshot`、`getLocale`、`applyToolGating`、`applySessionOverrides`、`applyCompactionOverrides`、`applyQueueModes` 等。
+2. **P2 插件引擎级钩子 + `pluginClient`**（`872c3a2e`）：
+   补齐 `onClientCwdChanged`、`onClientModelChanged`、`onConversationChanged`、`pluginClient()` 映射。
+3. **P3 MCP 项目运行态**（`100e3102`）：
+   接入 MCP 项目 `retain` / `prepare` 与 `mcpProjectCwds` / `refreshMcpProject`。
+4. **P4 计划/审查者模式真门禁与派活链**（`6fccaba0`）：
+   接入 `applyToolGating` 过滤活跃集，审查者模式生成 `delegateConvId`、派活 notice 并转发到执行对话。
+5. **P5 Bot 私聊投影**（`d6e5e6c2`）：
+   补齐 `SnapshotConversationView` 与 `ConversationsFrameFact` 的 `bot` / `botId` / `botName` 投影，绑定转录与会话目录。
+6. **P6 takeover / orphan / 离线宽限 系列（8 个用例全部通过）**（`b1cf2109`）：
+   - `packages/keel/src/app/engine-takeover.ts`：实现撞号改名、问卷与提问移交、会话与子代理完整迁移、回滚事务机制；
+   - `packages/keel/src/app/engine-orphans.ts` / `engine-elsewhere.ts`：跨客户端孤儿识别、离线宽限到期清理、外部运行行广播；
+   - `packages/keel/src/app/subagent-runtime.ts` / `subagents.ts`：修复子代理完成结算态、消除 `wait_all` 忙等卡死、`parentId` 稳定单源；
+   - `packages/keel/src/domains/history/frame.ts`：修复已完成子代理在侧栏的常驻收口展示（`inRunningList` 涵盖 subagent 与 parentId）。
+   - 冒烟用例 `conversation-takeover`、`orphan-*` 7 个用例、`subagent-takeover`（12/12 ALL PASS）全绿。
 
-所有 `DispatchSession` 成员都有实实现，最后 7 个「别的引擎专属」走端口转发（宿主包现有实现）：
-`contracts/engine-extras.ts` + `domains/engine-extras/` + `server/core-engine-extras-adapter.ts`。
-DSH 补丁 6 与 `setClaudePermissionMode` 在 pi 连接上调到会回可读错，不静默假成功。
+## 4. 剩余冒烟失败（仅剩 P7 最后 2 个用例）
 
-### 3.2 引擎级钩子补齐（调研说原来的 1/13 → 5/13）
+### P7 · 两条待收尾用例
 
-`app/dispatch-handlers.ts` + `host-faces.ts`：
-
-- 插件 AI 工具 / 命令目录真进会话工具表（`slash_commands` 帧带 `source:"plugin"`）
-- tool 守卫 pre/post 挂在内核重建的 `bash/write/edit` 上
-- `recordInterruptedRuns` 真写 `ClientStateStore`
-- `refreshBackgroundServers` 真出面板行
-
-### 3.3 出帧红线第一次有守卫
-
-`tests/unit/snapshot-channel-single-source.test.ts`：闸外不许出现 `type:"snapshot(_delta)"` 字面量、
-不许自持会话级基线、`forceFull` 只许作转发形参。**先红后绿**抓到并修掉了 dsh / universal 各自手判全量/增量。
-
-### 3.4 本批冒烟修复（42 → 61）
-
-| 根因                                               | 修法落点                                                                                                         |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| **A** attach 不建首条对话（27 用例的第一步就超时） | `app/connection-init.ts` 的 `initializeConnection()`（`core-engine.ts:442` 调用）                                |
-| **B** 连接期不推初始态帧                           | 同上：对照 legacy `attachSink()` 的 12 类帧一次推全                                                              |
-| **K** 同 clientId 重连不换 send / quiesce 不拦     | 同上 + `core-engine.ts` attach 路径                                                                              |
-| **C** `new_chat` / `set_cwd` 变更后不出帧          | `domains/sessions/workspace.ts` + `rebindFrames().pushConversations()`                                           |
-| **D** `prompt` 不执行斜杠命令                      | `app/prompt-entry.ts` 的 `submit()`：斜杠优先、命中不进模型；命令表仍全在宿主 `SlashCommandsService`             |
-| **F** `get_state{rev}` 的 `since` 被丢             | `domains/snapshots/publisher.ts`（内容未变不发帧；rev 不匹配补全量）                                             |
-| **H** `prompt` 丢 attachments                      | `contracts/attachments.ts` + `domains/turns/attachments.ts` + `server/core-attachments-adapter.ts`（接线已补完） |
-| **I** 历史列表根未知                               | `client-runtime.ts` 的 `historyRoot()`：学到的目录优先，否则按 legacy 公式现算                                   |
-| **J/G/L 部分**                                     | `snapshot-view.ts` 的 `isEphemeral`、`builders.ts` 的 `stats`、`server/core-model-adapter.ts` 的模型运行时预热   |
-
-## 4. 剩余冒烟失败（35 个）——已分诊，按此顺序做
-
-> 分诊原文 `.scratch/smoke-triage.md`（16 个根因表 + 证据）。以下是**尚未修**的部分。
-
-### P1 · 组合根的 `notWired` 组（一次能带绿 4~6 个用例）
-
-`server/core-settings-adapter.ts:108-134` 里这些还是空实现：
-`applyToolGating`、`applySessionOverrides`、`applyCompactionOverrides`、`applyQueueModes`、
-`applyRetryOverrides`、`applyCodemodeOverrides`、`promptSnapshot`、`getLocale`。
-影响用例：`settings-test`（卡 `effectiveSystemPrompt`）、`tool-prompt-test`（`toolsSchema` len=0）、
-`lazy-tools-test`（设置改了但会话活跃集不变）、`subagent-template-test`（zh-TW 永远出厂简中）。
-建议一行级先补 `promptSnapshot`（接宿主 `prompt-composer`）与 `getLocale`（`stateStore.get(clientId).locale`）。
-
-### P2 · 插件引擎级钩子还差 8 个（带绿 `plugin-cwd` / `plugin-client-conversation`）
-
-`onClientCwdChanged` / `onClientModelChanged` / `onConversationChanged` / `readConversationForPlugins` /
-`onToolEvent` / `onRunEvent` / `chatFromPlugin` / `onClientCwdChanged` 在 `packages/keel/src` 里 0 个调用点；
-`pluginClient()` 在 `CoreEngine` 上不存在（`server/index.ts:2342-2346` 走 `piServiceInstance.pluginClient()` → 被 try/catch 吞）。
-调用点必须在 `core-engine.ts`（有机生命周期的地方）。
-
-### P3 · MCP 项目运行态（`mcp-bridge-test`）
-
-`grep mcpProject packages/keel/src` 只有 `engine-service.ts:424-425` 两条声明。legacy 在会话创建时
-`mcpProjects?.retain(cwd)`（`agent-service.ts:5052`）与 `prepare(cwd)`（`:5078`）；组合根
-`server/index.ts:2200-2211` 的 `isProjectInUse` 依赖 `svc.mcpProjectCwds?.()`。
-
-### P4 · 计划/审查者模式的真门禁（`plan-mode-test` / `delegate-mode-test`）
-
-快照字段会翻，但会话工具表没跟上：`applyToolGating` 空实现（同 P1），以及派活链缺失。
-
-### P5 · Bot 私聊投影（`bot-chat-reopen-test`）
-
-`contracts/snapshot-view.ts` / `domains/history/frame.ts` 都没有 `bot`/`botId` 字段，`boundTo()` 永假。
-
-### P6 · takeover / orphan / 离线宽限 系列（8 个用例）
-
-首跳已通（A 修复后能跑到问卷/notice），缺的是 legacy 的「跨客户端孤儿账」：
-`findAdoptableOrphan`、离线宽限、问卷桥。注意 `takeover-rollback-test` 在 **legacy 下也一样红**（既有缺陷，别当回归）。
-
-### P7 · 两条未定位（`.scratch/smoke-triage.md` §4）
-
-- `device-project-collaboration-test`：Hub 派活成功但设备侧 mock `Requests: []`（一次 SDK 都没调）
-- `scm-features-test`：`scm_commitmsg` 20s 无回帧，链路看似齐全，疑似端口内 `ModelRuntime.create` / 无凭证推断挂住
+1. **`scm-features-test`**（15 通过 / 4 失败）：
+   - 前 15 项（status/branch/history/diff/stats 等）全绿；
+   - 仅挂在末尾的 4 项：`scm_commitmsg` 20s 内未收到回包（`FAIL: scm_commitmsg answered` / `kind echo` / `fails without credentials` / `carries an error message`）；
+   - 代码线索：`packages/keel/src/domains/scm/handlers.ts:41-52` 与 `server/core-scm-adapter.ts:52-66`。排查重点：端口内部调用 `ModelRuntime.create` 或无凭证推断时是否出现未捕获 promise 挂住或超时。
+2. **`device-project-collaboration-test`**：
+   - 表现：Hub 派活成功，但设备端 mock `Requests: []`（SDK 0 次调用），任务停在未终态；
+   - 排查线索：设备中心任务分发到 local runner 的 bridge 链路（`server/device-center/` 与 `server/device-collaboration` 调度）。
 
 ## 5. 架构红线（改之前务必读）
 
@@ -135,14 +88,19 @@ DSH 补丁 6 与 `setClaudePermissionMode` 在 pi 连接上调到会回可读错
 | `desktop-files` 硬链接 staging | 并行下偶发                               | 单跑绿               |
 | `conv-cwd`（冒烟）             | `--jobs=2` 下偶发连到别的用例遗留 server | 单跑 `--jobs=1` 稳定 |
 
-## 7. 下一批建议（按性价比）
+## 7. 下一批（P7 收尾目标）
 
-1. **P1 组合根 notWired**（4~6 个用例，改动小、风险低）→ 冒烟上 65 左右
-2. **P2 插件钩子**（2 个用例，但要碰 `core-engine.ts` 生命周期）→ 67 左右
-3. **P3/P4**（MCP retain + 工具门禁真生效）→ 70 左右
-4. **P5/P6**（Bot 投影 + 孤儿移交）→ 这两块是真正的新能力，建议单独排期
-5. 追平后：把 `resolvePiEngineMode` 的 `legacy` 分支标成 deprecated，再进 P5 发布
-   （`packages/keel/MIGRATION-PLAN.md` 的 P5~P6）
+P1 ~ P6 已全部落地，当前冒烟已追平 legacy（~96/98）。最后仅剩 P7 两条用例：
+
+1. **`scm-features-test`**（15 通过 / 4 挂在 `scm_commitmsg`）：
+   - 执行：`node tests/run-smoke.mjs --no-build scm-features-test`
+   - 排查 `server/core-scm-adapter.ts:52-66` 的 `generateCommitMessage`：当缺少配置或凭证时，端口内部应当迅速抛错或返回错误对象，排查为何 20s 未发出 `scm_data` 回包。
+2. **`device-project-collaboration-test`**：
+   - 执行：`node tests/run-smoke.mjs --no-build device-project-collaboration-test`
+   - 排查 Hub 派活给本机设备时的执行器接收端。
+3. **两项追平后收尾发布**：
+   - 全量冒烟：`node tests/run-smoke.mjs`
+   - 将 `resolvePiEngineMode` 的 `legacy` 标记为已完成迁移（进入 `packages/keel/MIGRATION-PLAN.md` 阶段）。
 
 ## 8. 用子代理的方式（本会话实操，建议照搬）
 
