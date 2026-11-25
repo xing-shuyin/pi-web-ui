@@ -286,7 +286,7 @@ export function classifyUpdaterError(error: unknown): UpdaterErrorCode {
 	return "unknown";
 }
 
-export function releasesUrlFor(version: string | null | undefined, repo = "xing-shuyin/pi-web-ui"): string {
+export function releasesUrlFor(version: string | null | undefined, repo = "xing-shuyin/keel"): string {
 	const v = normalizeVersion(version);
 	return v ? `https://github.com/${repo}/releases/tag/v${v}` : `https://github.com/${repo}/releases/latest`;
 }

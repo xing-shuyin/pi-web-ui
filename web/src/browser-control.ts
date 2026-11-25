@@ -6,7 +6,7 @@ import { isDesktopShell } from "./desktop";
 import { useT, type Translate } from "./i18n";
 
 export const PAGE_PICKER_ZIP_URL =
-	"https://github.com/xing-shuyin/pi-web-ui/releases/latest/download/page-picker-extension.zip";
+	"https://github.com/xing-shuyin/keel/releases/latest/download/page-picker-extension.zip";
 
 export interface BrowserControlPage {
 	origin: string;

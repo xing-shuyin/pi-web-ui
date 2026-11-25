@@ -829,7 +829,7 @@ async function markKernelUnavailable(): Promise<string> {
 		node === null
 			? "本机没有可用的内核，也没找到 node：先安装 Node（≥22），再安装内核。"
 			: nodeOk
-				? `本机没有可用的内核（node v${node.version} 已就绪）：点「安装内核」执行 npm i -g pi-web-ui。`
+				? `本机没有可用的内核（node v${node.version} 已就绪）：点「安装内核」执行 npm i -g keel。`
 				: `本机 node 版本太低（v${node.version ?? "未知"}，需 ≥22）：先升级 Node，再安装内核。`;
 	browserHost?.setKernelMissing({ nodeOk, nodeVersion: node?.version ?? null, platform: process.platform });
 	browserHost?.setAgentError(message);
@@ -1118,7 +1118,7 @@ async function readKernelEnvironment(): Promise<KernelEnvironmentView> {
 			installed: installed !== null,
 			...(installed ? { version: installed } : {}),
 			...(latest ? { latest } : {}),
-			upgradeCommand: "npm i -g pi-web-ui@latest",
+			upgradeCommand: "npm i -g keel@latest",
 			canUpgrade: plan.kind === "upgrade",
 		},
 		service: {
@@ -1163,7 +1163,7 @@ async function upgradeKernel(): Promise<{ ok: boolean; message: string }> {
 	const node = findSystemNode();
 	// 关键：npm 的 install 脚本是 `cmd /c node install.js`，靠 PATH 找 node。
 	// 不补这一行，用 fnm/nvm 的机器会报「'node' 不是内部或外部命令」，整次安装失败。
-	const result = await runCommand("npm", ["i", "-g", "pi-web-ui@latest"], {
+	const result = await runCommand("npm", ["i", "-g", "keel@latest"], {
 		timeoutMs: 300_000,
 		env: node ? envWithNodeOnPath(process.env, node) : process.env,
 	});

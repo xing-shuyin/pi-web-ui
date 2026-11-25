@@ -944,7 +944,7 @@ export function TopBar({
 		"host:github": (
 			<a
 				className="chip github"
-				href="https://github.com/xing-shuyin/pi-web-ui"
+				href="https://github.com/xing-shuyin/keel"
 				target="_blank"
 				rel="noreferrer noopener"
 				data-tip={t("githubRepo")}
@@ -1460,7 +1460,7 @@ export function TopBar({
 										key={it.id}
 										role="menuitem"
 										className="chip github"
-										href="https://github.com/xing-shuyin/pi-web-ui"
+										href="https://github.com/xing-shuyin/keel"
 										target="_blank"
 										rel="noreferrer noopener"
 										title={t("githubRepo")}

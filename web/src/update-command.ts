@@ -30,7 +30,7 @@ export function buildUpdateCommand(targets: UpdateTarget[]): string {
 				: t.kind === "git-extension"
 					? `pi update ${toGitUpdateArg(t.source ?? t.name)}`
 					: t.kind === "plugin"
-						? `pi-web-ui install ${t.source ?? t.name} --name ${t.pluginId ?? t.name} --force`
+						? `keel install ${t.source ?? t.name} --name ${t.pluginId ?? t.name} --force`
 						: `npm i -g ${t.name}@latest`,
 		)
 		.join("; ");

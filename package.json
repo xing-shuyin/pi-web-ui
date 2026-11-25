@@ -1,5 +1,5 @@
 {
-	"name": "pi-web-ui",
+	"name": "keel",
 	"version": "0.122.0",
 	"description": "Just open your browser to get all your work done — browser cockpit for AI coding agents (chat, code, files, terminal, Git in one tab)",
 	"license": "MIT",
@@ -13,6 +13,7 @@
 		"registry": "https://registry.npmjs.org/"
 	},
 	"bin": {
+		"keel": "bin/pi-web-ui.mjs",
 		"pi-web-ui": "bin/pi-web-ui.mjs",
 		"piwebui": "bin/pi-web-ui.mjs",
 		"pwu": "bin/pi-web-ui.mjs"
@@ -59,13 +60,13 @@
 	],
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/xing-shuyin/pi-web-ui.git"
+		"url": "git+https://github.com/xing-shuyin/keel.git"
 	},
 	"pi": {
 		"extensions": [
 			"./extensions"
 		],
-		"image": "https://raw.githubusercontent.com/xing-shuyin/pi-web-ui/main/assets/chat-prompts.jpeg"
+		"image": "https://raw.githubusercontent.com/xing-shuyin/keel/main/assets/chat-prompts.jpeg"
 	},
 	"engines": {
 		"node": ">=22.19.0"

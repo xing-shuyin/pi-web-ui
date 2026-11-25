@@ -157,7 +157,7 @@ export async function installPack(
 ): Promise<LocalePackMeta & { version: string }> {
 	const meta = packMeta(code);
 	if (!meta) throw new Error(`unknown locale: ${code}`);
-	const base = (opts.baseUrl ?? "https://raw.githubusercontent.com/xing-shuyin/pi-web-ui").replace(/\/+$/, "");
+	const base = (opts.baseUrl ?? "https://raw.githubusercontent.com/xing-shuyin/keel").replace(/\/+$/, "");
 	const urls = opts.version
 		? [`${base}/v${opts.version}/locales/${code}.json`, `${base}/main/locales/${code}.json`]
 		: [`${base}/main/locales/${code}.json`];

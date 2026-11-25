@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { buildKernelInfo, classifyKernelInstall, describeKernelInstall } from "../../server/kernel-identity.js";
 
 describe("classifyKernelInstall", () => {
-	it("全局 npm 包（三平台路径）", () => {
+	it("全局 npm 包（三平台路径，兼容 keel 与 pi-web-ui）", () => {
+		expect(classifyKernelInstall("C:/Users/c/AppData/Roaming/npm/node_modules/keel")).toBe("global-npm");
+		expect(classifyKernelInstall("/usr/local/lib/node_modules/keel")).toBe("global-npm");
 		expect(classifyKernelInstall("C:/Users/c/AppData/Roaming/npm/node_modules/pi-web-ui")).toBe("global-npm");
 		expect(classifyKernelInstall("/usr/local/lib/node_modules/pi-web-ui")).toBe("global-npm");
 		expect(classifyKernelInstall("/opt/homebrew/lib/node_modules/pi-web-ui/")).toBe("global-npm");

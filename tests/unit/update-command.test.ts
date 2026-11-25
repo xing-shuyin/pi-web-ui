@@ -54,11 +54,11 @@ describe("buildUpdateCommand", () => {
 				{
 					name: "webmail",
 					kind: "plugin",
-					source: "xing-shuyin/pi-web-ui/plugins/webmail",
+					source: "xing-shuyin/keel/plugins/webmail",
 					pluginId: "webmail",
 				},
 			]),
-		).toBe("pi-web-ui install xing-shuyin/pi-web-ui/plugins/webmail --name webmail --force");
+		).toBe("keel install xing-shuyin/keel/plugins/webmail --name webmail --force");
 	});
 
 	it("chains mixed npm + git targets with `;`", () => {

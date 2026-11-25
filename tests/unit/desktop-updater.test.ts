@@ -27,7 +27,7 @@ function snapshot(overrides: Partial<DesktopUpdaterState> = {}): DesktopUpdaterS
 		errorCode: null,
 		error: null,
 		checkedAt: 1700000000000,
-		releasesUrl: "https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.123.0",
+		releasesUrl: "https://github.com/xing-shuyin/keel/releases/tag/v0.123.0",
 		...overrides,
 	};
 }
@@ -102,10 +102,10 @@ describe("hasPendingUpdate", () => {
 
 describe("desktopReleasesUrl", () => {
 	it("有版本直达 tag，没版本落 latest", () => {
-		expect(desktopReleasesUrl("0.123.0")).toBe("https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.123.0");
-		expect(desktopReleasesUrl("v0.123.0")).toBe("https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.123.0");
-		expect(desktopReleasesUrl(null)).toBe("https://github.com/xing-shuyin/pi-web-ui/releases/latest");
-		expect(desktopReleasesUrl("")).toBe("https://github.com/xing-shuyin/pi-web-ui/releases/latest");
+		expect(desktopReleasesUrl("0.123.0")).toBe("https://github.com/xing-shuyin/keel/releases/tag/v0.123.0");
+		expect(desktopReleasesUrl("v0.123.0")).toBe("https://github.com/xing-shuyin/keel/releases/tag/v0.123.0");
+		expect(desktopReleasesUrl(null)).toBe("https://github.com/xing-shuyin/keel/releases/latest");
+		expect(desktopReleasesUrl("")).toBe("https://github.com/xing-shuyin/keel/releases/latest");
 	});
 });
 

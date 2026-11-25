@@ -141,7 +141,7 @@ describe("reduceUpdater", () => {
 		expect(state.targetVersion).toBe("0.123.0");
 		expect(state.releasesBehind).toBe(2);
 		expect(state.notes).toHaveLength(2);
-		expect(state.releasesUrl).toBe("https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.123.0");
+		expect(state.releasesUrl).toBe("https://github.com/xing-shuyin/keel/releases/tag/v0.123.0");
 		expect(state.checkedAt).toBe(1000);
 	});
 
@@ -208,9 +208,9 @@ describe("reduceUpdater", () => {
 
 describe("releasesUrlFor", () => {
 	it("有版本直达 tag，没有落 latest", () => {
-		expect(releasesUrlFor("0.123.0")).toBe("https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.123.0");
-		expect(releasesUrlFor("v0.123.0")).toBe("https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.123.0");
-		expect(releasesUrlFor(null)).toBe("https://github.com/xing-shuyin/pi-web-ui/releases/latest");
+		expect(releasesUrlFor("0.123.0")).toBe("https://github.com/xing-shuyin/keel/releases/tag/v0.123.0");
+		expect(releasesUrlFor("v0.123.0")).toBe("https://github.com/xing-shuyin/keel/releases/tag/v0.123.0");
+		expect(releasesUrlFor(null)).toBe("https://github.com/xing-shuyin/keel/releases/latest");
 	});
 });
 

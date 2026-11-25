@@ -40,4 +40,4 @@ export const RUNTIME_SELF_UPDATE_ENABLED: boolean = KERNEL_AUTHORITY === "bundle
  */
 export const KERNEL_SERVICE_FIRST = true;
 
-export const DEFAULT_RUNTIME_FEED_URL = "https://github.com/xing-shuyin/pi-web-ui/releases/latest/download";
+export const DEFAULT_RUNTIME_FEED_URL = "https://github.com/xing-shuyin/keel/releases/latest/download";

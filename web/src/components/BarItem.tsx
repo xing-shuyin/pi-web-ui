@@ -1038,7 +1038,7 @@ export function BarItem({
 			iconNode = <FiGithub className="bar-item-icon" />;
 			labelText = named("GitHub");
 			extraClasses = "chip github";
-			onClick = () => window.open("https://github.com/xing-shuyin/pi-web-ui", "_blank", "noreferrer,noopener");
+			onClick = () => window.open("https://github.com/xing-shuyin/keel", "_blank", "noreferrer,noopener");
 			break;
 		case "host:cwd":
 			iconNode = <FiFolder className="bar-item-icon" />;

@@ -8,30 +8,30 @@
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"16\" rx=\"3\"/><path d=\"m10 8 6 4-6 4Z\"/></svg>",
 		"description": "短剧观看",
 		"descriptionEn": "Watch short dramas",
-		"source": "xing-shuyin/pi-web-ui/plugins/hongguo",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/hongguo"
+		"source": "xing-shuyin/keel/plugins/hongguo",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/hongguo"
 	},
 	{
 		"id": "github-workbench",
-		"name": "GitHub 工作台",
+		"name": "GitHub 工作�?,
 		"nameEn": "GitHub Workbench",
 		"version": "0.1.7",
 		"icon": "🐙",
 		"iconSvg": "<svg stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\" viewBox=\"0 0 24 24\" stroke-linecap=\"round\" stroke-linejoin=\"round\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22\"/></svg>",
-		"description": "文件列表旁的 GitHub 工作台 Tab：集中查看 PR 与 Issue、切换个人待办、筛选搜索、引用到对话、交给 AI、评论及关闭／重新打开。复用本机 gh 登录，切换 Tab 保留草稿。",
+		"description": "文件列表旁的 GitHub 工作�?Tab：集中查�?PR �?Issue、切换个人待办、筛选搜索、引用到对话、交�?AI、评论及关闭／重新打开。复用本�?gh 登录，切�?Tab 保留草稿�?,
 		"descriptionEn": "A GitHub sidebar tab next to Files with PRs, issues, personal inboxes and search. Read, quote into chat, delegate to AI, comment, close and reopen using your existing gh login. Tab switches preserve drafts.",
-		"source": "xing-shuyin/pi-web-ui/plugins/github-workbench",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/github-workbench"
+		"source": "xing-shuyin/keel/plugins/github-workbench",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/github-workbench"
 	},
 	{
 		"id": "image-ocr",
 		"name": "图片文字识别",
 		"nameEn": "Image OCR",
 		"icon": "🔎",
-		"description": "在统一图片预览弹窗中识别并复制中英文文字。浏览器本地 OCR，无需 API Key；首次使用需联网下载引擎和字库。",
+		"description": "在统一图片预览弹窗中识别并复制中英文文字。浏览器本地 OCR，无需 API Key；首次使用需联网下载引擎和字库�?,
 		"descriptionEn": "Recognize and copy Chinese and English text from any image preview. Local browser OCR, no API key. First use downloads the engine and language data.",
-		"source": "xing-shuyin/pi-web-ui/plugins/image-ocr",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/image-ocr",
+		"source": "xing-shuyin/keel/plugins/image-ocr",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/image-ocr",
 		"version": "0.1.3",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 7V4h3m10 0h3v3m0 10v3h-3M7 20H4v-3M8 9h8M8 13h8M8 17h4\"/></svg>"
 	},
@@ -41,10 +41,10 @@
 		"name": "Superagent",
 		"version": "0.1.10",
 		"icon": "📥",
-		"description": "GitHub / 飞书渠道工单适配、群组映射与原渠道回写；默认仅观察，由群组独立 AI Router 分配给 Bot 执行。",
+		"description": "GitHub / 飞书渠道工单适配、群组映射与原渠道回写；默认仅观察，由群组独�?AI Router 分配�?Bot 执行�?,
 		"descriptionEn": "GitHub and Feishu work item adapters, group mapping, and durable channel replies. Observe by default; group AI Router delegates execution to Bots.",
-		"source": "xing-shuyin/pi-web-ui/plugins/superagent",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/superagent",
+		"source": "xing-shuyin/keel/plugins/superagent",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/superagent",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z\"/></svg>",
 		"nameEn": "Superagent"
 	},
@@ -53,10 +53,10 @@
 		"name": "lx-music",
 		"icon": "🎵",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M9 18V5l12-2v13\"/><circle cx=\"6\" cy=\"18\" r=\"3\"/><circle cx=\"18\" cy=\"16\" r=\"3\"/></svg>",
-		"description": "洛雪音乐播放器：多源搜索、流式播放、同步歌词、歌单与自定义音源，支持 AI 点歌。",
+		"description": "洛雪音乐播放器：多源搜索、流式播放、同步歌词、歌单与自定义音源，支持 AI 点歌�?,
 		"descriptionEn": "LX Music player with multi-source search, streaming, synchronized lyrics, playlists, custom sources, and AI playback tools.",
-		"source": "xing-shuyin/pi-web-ui/plugins/lx-music",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/lx-music",
+		"source": "xing-shuyin/keel/plugins/lx-music",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/lx-music",
 		"nameEn": "LX Music"
 	},
 	{
@@ -64,21 +64,21 @@
 		"name": "webmail",
 		"icon": "📬",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z\"/><polyline points=\"22,6 12,13 2,6\"/></svg>",
-		"description": "网页邮箱：IMAP 收件 + SMTP 发信 + 新邮件通知，可开放给 AI 直接管理邮件。",
+		"description": "网页邮箱：IMAP 收件 + SMTP 发信 + 新邮件通知，可开放给 AI 直接管理邮件�?,
 		"descriptionEn": "IMAP/SMTP mailbox: browse/search/read the inbox, send mail, new-mail notifications, manageable by AI directly",
-		"source": "xing-shuyin/pi-web-ui/plugins/webmail",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/webmail",
+		"source": "xing-shuyin/keel/plugins/webmail",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/webmail",
 		"nameEn": "Webmail"
 	},
 	{
 		"id": "db-client",
 		"name": "db-client",
-		"icon": "🗄️",
+		"icon": "🗄�?,
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><ellipse cx=\"12\" cy=\"5\" rx=\"9\" ry=\"3\"/><path d=\"M21 12c0 1.66-4 3-9 3s-9-1.34-9-3\"/><path d=\"M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5\"/></svg>",
-		"description": "数据库连接管理：MySQL / PostgreSQL / SQLite / SQL Server / MongoDB / Redis 的库表浏览、SQL 查询与数据编辑。",
+		"description": "数据库连接管理：MySQL / PostgreSQL / SQLite / SQL Server / MongoDB / Redis 的库表浏览、SQL 查询与数据编辑�?,
 		"descriptionEn": "Database client: browse schemas, run SQL and edit data across MySQL / PostgreSQL / SQLite / SQL Server / MongoDB / Redis.",
-		"source": "xing-shuyin/pi-web-ui/plugins/db-client",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/db-client",
+		"source": "xing-shuyin/keel/plugins/db-client",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/db-client",
 		"nameEn": "Databases"
 	},
 	{
@@ -86,10 +86,10 @@
 		"name": "vscode-editor",
 		"icon": "📝",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m16 18 6-6-6-6\"/><path d=\"m8 6-6 6 6 6\"/></svg>",
-		"description": "类 VSCode 工作台：多根文件树 + CodeMirror 编辑器 + 底部终端 + Remote-SSH 远程文件浏览与编辑。",
+		"description": "�?VSCode 工作台：多根文件�?+ CodeMirror 编辑�?+ 底部终端 + Remote-SSH 远程文件浏览与编辑�?,
 		"descriptionEn": "VSCode-like workbench: multi-root file tree, CodeMirror editor, integrated terminal, and Remote-SSH remote file browsing/editing.",
-		"source": "xing-shuyin/pi-web-ui/plugins/vscode-editor",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/vscode-editor",
+		"source": "xing-shuyin/keel/plugins/vscode-editor",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/vscode-editor",
 		"nameEn": "Editor"
 	},
 	{
@@ -97,21 +97,21 @@
 		"name": "sftp",
 		"icon": "☁️",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18 16.5a4.5 4.5 0 0 0-.9-8.9 6 6 0 0 0-11.4 1.6A4 4 0 0 0 6.5 17\"/><path d=\"M12 12v7\"/><path d=\"m9 15 3-3 3 3\"/></svg>",
-		"description": "项目级 SFTP 同步：配置存项目 .pi/sftp.json（多环境 profile + .pi/sftp.local.json 本机覆盖），先算差异再传，扫描与传输按层/按文件并行且随时可停（面板「停止」或 action=cancel），支持 dry-run 预览与计划复用（预览完直接执行不重扫）、删除保护（进垃圾桶可回滚）、并发流式传输与原子落盘；打开远端命令执行后另有两条快通道（一次 find 完成远端扫描；一批小文件上行打成 tar 流、下行 tar -czf - 一次拉回，失败自动回落）；凭据走 ${env:} / ${secret:} / ${file:} 引用，明文永不进配置。面板里可直接手动上传/下载单个文件或整棵目录（永不动删除策略），也向 AI 注册**一个** action 式 sftp 工具（status/save/secret/test/plan/sync/cancel/ls/read/write/mkdir/mv/rm/search，可选 exec）。",
+		"description": "项目�?SFTP 同步：配置存项目 .pi/sftp.json（多环境 profile + .pi/sftp.local.json 本机覆盖），先算差异再传，扫描与传输按层/按文件并行且随时可停（面板「停止」或 action=cancel），支持 dry-run 预览与计划复用（预览完直接执行不重扫）、删除保护（进垃圾桶可回滚）、并发流式传输与原子落盘；打开远端命令执行后另有两条快通道（一�?find 完成远端扫描；一批小文件上行打成 tar 流、下�?tar -czf - 一次拉回，失败自动回落）；凭据�?${env:} / ${secret:} / ${file:} 引用，明文永不进配置。面板里可直接手动上�?下载单个文件或整棵目录（永不动删除策略），也�?AI 注册**一�?* action �?sftp 工具（status/save/secret/test/plan/sync/cancel/ls/read/write/mkdir/mv/rm/search，可�?exec）�?,
 		"descriptionEn": "Project-scoped SFTP sync: config lives in the project's .pi/sftp.json (multi-profile, with .pi/sftp.local.json machine override). Plans a diff before transferring; scanning and transfers run in parallel and can be stopped at any time (the panel's Stop button, or action=cancel); dry-run preview plus plan reuse (running right after a preview skips the rescan), delete protection (moved to a trash folder so it can be rolled back), concurrent streaming transfers and atomic writes; with exec access enabled two extra fast paths kick in (one remote find for the whole scan, and one tar batch per direction for a pile of small files, both falling back automatically); credentials use ${env:} / ${secret:} / ${file:} references so plaintext never lands in the config. The panel can upload or download a single file or a whole folder by hand (never touching the delete policy), and the AI gets one action-style sftp tool (status/save/secret/test/plan/sync/cancel/ls/read/write/mkdir/mv/rm/search, plus optional exec).",
-		"source": "xing-shuyin/pi-web-ui/plugins/sftp",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/sftp",
+		"source": "xing-shuyin/keel/plugins/sftp",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/sftp",
 		"nameEn": "SFTP Sync"
 	},
 	{
 		"id": "remote-workbench",
 		"name": "remote-workbench",
-		"icon": "🖥️",
+		"icon": "🖥�?,
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect width=\"20\" height=\"14\" x=\"2\" y=\"3\" rx=\"2\"/><line x1=\"8\" x2=\"16\" y1=\"21\" y2=\"21\"/><line x1=\"12\" x2=\"12\" y1=\"17\" y2=\"21\"/><path d=\"m7 8 2 2-2 2\"/><path d=\"M12 12h4\"/></svg>",
-		"description": "远程工作台：多主机资产管理与 Web SSH 远程交互终端，统一共享 global-hosts.json 事实源，与远程工作区及 SFTP 插件无缝联动，支持一键终端直连、环境探针与多标签会话。",
+		"description": "远程工作台：多主机资产管理与 Web SSH 远程交互终端，统一共享 global-hosts.json 事实源，与远程工作区�?SFTP 插件无缝联动，支持一键终端直连、环境探针与多标签会话�?,
 		"descriptionEn": "Remote Workbench: multi-host inventory & Web SSH terminal connected to unified global-hosts.json, supporting one-click terminal sessions and SFTP integration.",
-		"source": "xing-shuyin/pi-web-ui/plugins/remote-workbench",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/remote-workbench",
+		"source": "xing-shuyin/keel/plugins/remote-workbench",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/remote-workbench",
 		"nameEn": "Remote Workbench"
 	},
 	{
@@ -119,10 +119,10 @@
 		"name": "mermaid",
 		"icon": "📊",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"18\" cy=\"5\" r=\"3\"/><circle cx=\"6\" cy=\"12\" r=\"3\"/><circle cx=\"18\" cy=\"19\" r=\"3\"/><line x1=\"8.59\" y1=\"13.51\" x2=\"15.42\" y2=\"17.49\"/><line x1=\"15.41\" y1=\"6.51\" x2=\"8.59\" y2=\"10.49\"/></svg>",
-		"description": "把对话里的 ```mermaid 围栏渲染成 SVG 图表（fenced-code 渲染插件，本地引擎离线优先）。",
-		"descriptionEn": "Renders ```mermaid fences as SVG diagrams (renderer plugin: the engine lazy-loads from CDN only on hit — no bundle cost when unused, zero chat overhead)",
-		"source": "xing-shuyin/pi-web-ui/plugins/mermaid",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/mermaid",
+		"description": "把对话里�?```mermaid 围栏渲染�?SVG 图表（fenced-code 渲染插件，本地引擎离线优先）�?,
+		"descriptionEn": "Renders ```mermaid fences as SVG diagrams (renderer plugin: the engine lazy-loads from CDN only on hit �?no bundle cost when unused, zero chat overhead)",
+		"source": "xing-shuyin/keel/plugins/mermaid",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/mermaid",
 		"nameEn": "Mermaid Diagrams"
 	},
 	{
@@ -130,10 +130,10 @@
 		"name": "run-trace",
 		"icon": "🧭",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"22 12 18 12 15 21 9 3 6 12 2 12\"/></svg>",
-		"description": "运行轨迹：任务 → 思考 → 工具 → 文件改动 → 结果的时间线聚合视图，支持回放与节点详情。",
-		"descriptionEn": "Run trajectory: task → thinking → tools → file changes → result timeline with replay and node details.",
-		"source": "xing-shuyin/pi-web-ui/plugins/run-trace",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/run-trace",
+		"description": "运行轨迹：任�?�?思�?�?工具 �?文件改动 �?结果的时间线聚合视图，支持回放与节点详情�?,
+		"descriptionEn": "Run trajectory: task �?thinking �?tools �?file changes �?result timeline with replay and node details.",
+		"source": "xing-shuyin/keel/plugins/run-trace",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/run-trace",
 		"nameEn": "Run Trace"
 	},
 	{
@@ -141,10 +141,10 @@
 		"name": "legado-web",
 		"icon": "📖",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z\"/><path d=\"M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z\"/></svg>",
-		"description": "Legado 阅读（文本源）：搜索 / 发现 / 详情 / 目录 / 正文，书源 JSON 与安卓版兼容，可导入、检测、删废源；内置跨域+GBK 代理与本地存储，并给 AI 配了修源接口（读规则、读书源文件、逐步诊断链路、试规则验证）。",
+		"description": "Legado 阅读（文本源）：搜索 / 发现 / 详情 / 目录 / 正文，书�?JSON 与安卓版兼容，可导入、检测、删废源；内置跨�?GBK 代理与本地存储，并给 AI 配了修源接口（读规则、读书源文件、逐步诊断链路、试规则验证）�?,
 		"descriptionEn": "Legado reader (text book sources): search / explore / info / TOC / content with Android-compatible book source JSON, plus source import and health checking. Ships its own CORS+GBK proxy, local store, and AI tools to diagnose and repair book sources.",
-		"source": "xing-shuyin/pi-web-ui/plugins/legado-web",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/legado-web",
+		"source": "xing-shuyin/keel/plugins/legado-web",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/legado-web",
 		"nameEn": "Legado Reader"
 	},
 	{
@@ -153,10 +153,10 @@
 		"nameEn": "WeChat Channel",
 		"icon": "💬",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z\"/></svg>",
-		"description": "微信扫码登录（与腾讯 openclaw-weixin 同源的 ilink 协议）：出站长轮询收消息，微信里直接指挥 agent，无需公网 IP。",
+		"description": "微信扫码登录（与腾讯 openclaw-weixin 同源�?ilink 协议）：出站长轮询收消息，微信里直接指挥 agent，无需公网 IP�?,
 		"descriptionEn": "WeChat channel (ilink protocol, same origin as Tencent openclaw-weixin): outbound long-polling, drive the agent from WeChat, no public IP needed.",
-		"source": "xing-shuyin/pi-web-ui/plugins/wechat-ilink",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/wechat-ilink"
+		"source": "xing-shuyin/keel/plugins/wechat-ilink",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/wechat-ilink"
 	},
 	{
 		"id": "feishu",
@@ -164,10 +164,10 @@
 		"nameEn": "Feishu",
 		"icon": "🐦",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 4L10 14\"/><path d=\"M21 4l-6.5 16-4.5-6-6-4.5L21 4z\"/></svg>",
-		"description": "飞书工作台与机器人：飞书 Bot 双工对话（出站长连接 / 智能 Markdown 分块 / 多轮会话隔离）/ 群聊与单聊会话列表 / 消息收发、回复与撤回 / 自定义机器人 Webhook 卡片推送 / AI 飞书工具（密钥加密落盘，零外部依赖）。",
+		"description": "飞书工作台与机器人：飞书 Bot 双工对话（出站长连接 / 智能 Markdown 分块 / 多轮会话隔离�? 群聊与单聊会话列�?/ 消息收发、回复与撤回 / 自定义机器人 Webhook 卡片推�?/ AI 飞书工具（密钥加密落盘，零外部依赖）�?,
 		"descriptionEn": "Feishu (Lark) workspace & Bot: Feishu Bot duplex chat (outbound long-connection, structure-aware Markdown chunks, isolated multi-turn sessions), chat management, Webhook cards, and AI feishu tool.",
-		"source": "xing-shuyin/pi-web-ui/plugins/feishu",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/feishu"
+		"source": "xing-shuyin/keel/plugins/feishu",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/feishu"
 	},
 	{
 		"id": "dingtalk",
@@ -175,10 +175,10 @@
 		"nameEn": "DingTalk",
 		"icon": "📌",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 2v20\"/><path d=\"m17 5-5-3-5 3\"/><path d=\"M4 12h16\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/></svg>",
-		"description": "钉钉机器人与工作台：钉钉 Bot 双工对话（出站长连接 / 智能 Markdown 分块 / 多轮会话隔离）/ 群聊与单聊消息推送 / 自定义机器人 Webhook / AI 钉钉工具（密钥加密存储，零外部依赖）。",
+		"description": "钉钉机器人与工作台：钉钉 Bot 双工对话（出站长连接 / 智能 Markdown 分块 / 多轮会话隔离�? 群聊与单聊消息推�?/ 自定义机器人 Webhook / AI 钉钉工具（密钥加密存储，零外部依赖）�?,
 		"descriptionEn": "DingTalk workspace & Bot: DingTalk Bot duplex chat (outbound long-connection, structure-aware Markdown chunks, isolated multi-turn sessions), group/single message push, custom bot Webhooks, and AI dingtalk tool.",
-		"source": "xing-shuyin/pi-web-ui/plugins/dingtalk",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/dingtalk"
+		"source": "xing-shuyin/keel/plugins/dingtalk",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/dingtalk"
 	},
 	{
 		"id": "telegram",
@@ -186,10 +186,10 @@
 		"nameEn": "Telegram",
 		"icon": "✈️",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"22\" y1=\"2\" x2=\"11\" y2=\"13\"/><polygon points=\"22 2 15 22 11 13 2 9 22 2\"/></svg>",
-		"description": "Telegram 机器人：出站长轮询双工对话（零公网 IP / 智能 Markdown 分块 / 多轮会话隔离）/ 用户白名单准入 / AI telegram 工具（密钥加密存储，零外部依赖）。",
+		"description": "Telegram 机器人：出站长轮询双工对话（零公�?IP / 智能 Markdown 分块 / 多轮会话隔离�? 用户白名单准�?/ AI telegram 工具（密钥加密存储，零外部依赖）�?,
 		"descriptionEn": "Telegram Bot: outbound long-polling duplex chat (zero public IP, structure-aware Markdown chunks, isolated multi-turn sessions), access control whitelist, and AI telegram tool.",
-		"source": "xing-shuyin/pi-web-ui/plugins/telegram",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/telegram"
+		"source": "xing-shuyin/keel/plugins/telegram",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/telegram"
 	},
 	{
 		"id": "wecom",
@@ -197,10 +197,10 @@
 		"nameEn": "WeCom",
 		"icon": "💼",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"2\" y=\"7\" width=\"20\" height=\"14\" rx=\"2\" ry=\"2\"/><path d=\"M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16\"/></svg>",
-		"description": "企业微信工作台与机器人：企微 Bot 双工对话（智能 Markdown 分块 / 多轮会话隔离）/ 群机器人 Webhook 卡片推送 / 自建应用消息 / AI wecom 工具（密钥加密存储，零外部依赖）。",
+		"description": "企业微信工作台与机器人：企微 Bot 双工对话（智�?Markdown 分块 / 多轮会话隔离�? 群机器人 Webhook 卡片推�?/ 自建应用消息 / AI wecom 工具（密钥加密存储，零外部依赖）�?,
 		"descriptionEn": "WeCom workspace & Bot: WeCom Bot duplex chat (structure-aware Markdown chunks, isolated multi-turn sessions), group bot Webhook push, internal app messages, and AI wecom tool.",
-		"source": "xing-shuyin/pi-web-ui/plugins/wecom",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/wecom"
+		"source": "xing-shuyin/keel/plugins/wecom",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/wecom"
 	},
 	{
 		"id": "discord",
@@ -208,10 +208,10 @@
 		"nameEn": "Discord",
 		"icon": "🎮",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18 6h0a14.5 14.5 0 0 0-4-1.5 9.6 9.6 0 0 0-.5 1.5 13.8 13.8 0 0 0-3 0 9.6 9.6 0 0 0-.5-1.5A14.5 14.5 0 0 0 6 6C3.5 10 3 14 3.5 18a15.8 15.8 0 0 0 5 2.5 11.2 11.2 0 0 0 1-1.7 9.8 9.8 0 0 1-1.6-.8l.4-.3a11.5 11.5 0 0 0 7.4 0l.4.3a9.8 9.8 0 0 1-1.6.8 11.2 11.2 0 0 0 1 1.7 15.8 15.8 0 0 0 5-2.5c.5-4 0-8-2.5-12z\"/><circle cx=\"9\" cy=\"12\" r=\"1\"/><circle cx=\"15\" cy=\"12\" r=\"1\"/></svg>",
-		"description": "Discord 机器人：官方 Gateway 出站 WebSocket 双工长连接（零公网 IP / 智能 Markdown 分块 / 多轮会话隔离）/ 用户白名单准入 / AI discord 工具（密钥加密存储，零外部依赖）。",
+		"description": "Discord 机器人：官方 Gateway 出站 WebSocket 双工长连接（零公�?IP / 智能 Markdown 分块 / 多轮会话隔离�? 用户白名单准�?/ AI discord 工具（密钥加密存储，零外部依赖）�?,
 		"descriptionEn": "Discord Bot: official Gateway outbound WebSocket duplex chat (zero public IP, structure-aware Markdown chunks, isolated multi-turn sessions), access control whitelist, and AI discord tool.",
-		"source": "xing-shuyin/pi-web-ui/plugins/discord",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/discord"
+		"source": "xing-shuyin/keel/plugins/discord",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/discord"
 	},
 	{
 		"id": "whatsapp",
@@ -219,10 +219,10 @@
 		"nameEn": "WhatsApp",
 		"icon": "🟢",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z\"/></svg>",
-		"description": "WhatsApp 机器人与工作台：WhatsApp Cloud API 与双工对话（智能 Markdown 分块 / 多轮会话隔离）/ 用户白名单准入 / AI whatsapp 工具（密钥加密存储，零外部依赖）。",
+		"description": "WhatsApp 机器人与工作台：WhatsApp Cloud API 与双工对话（智能 Markdown 分块 / 多轮会话隔离�? 用户白名单准�?/ AI whatsapp 工具（密钥加密存储，零外部依赖）�?,
 		"descriptionEn": "WhatsApp workspace & Bot: WhatsApp Cloud API & duplex chat (structure-aware Markdown chunks, isolated multi-turn sessions), access control whitelist, and AI whatsapp tool.",
-		"source": "xing-shuyin/pi-web-ui/plugins/whatsapp",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/whatsapp"
+		"source": "xing-shuyin/keel/plugins/whatsapp",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/whatsapp"
 	},
 	{
 		"id": "slack",
@@ -230,10 +230,10 @@
 		"nameEn": "Slack",
 		"icon": "💬",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"2\" y=\"2\" width=\"20\" height=\"20\" rx=\"5\"/><path d=\"M8 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 0v4a2 2 0 1 1-4 0v-4zm4-4a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 0h4a2 2 0 1 1 0-4h-4zm4 4a2 2 0 1 1 4 0 2 2 0 0 1-4 0zm0 0v-4a2 2 0 1 1 4 0v4zm-4 4a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm0 0h-4a2 2 0 1 1 0 4h4z\"/></svg>",
-		"description": "Slack 机器人：官方 Socket Mode 出站 WebSocket 双工长连接（零公网 IP / 智能 Markdown 分块 / 多轮会话隔离）/ 用户白名单准入 / AI slack 工具（密钥加密存储，零外部依赖）。",
+		"description": "Slack 机器人：官方 Socket Mode 出站 WebSocket 双工长连接（零公�?IP / 智能 Markdown 分块 / 多轮会话隔离�? 用户白名单准�?/ AI slack 工具（密钥加密存储，零外部依赖）�?,
 		"descriptionEn": "Slack Bot: official Socket Mode outbound WebSocket duplex chat (zero public IP, structure-aware Markdown chunks, isolated multi-turn sessions), access control whitelist, and AI slack tool.",
-		"source": "xing-shuyin/pi-web-ui/plugins/slack",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/slack"
+		"source": "xing-shuyin/keel/plugins/slack",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/slack"
 	},
 	{
 		"id": "qq",
@@ -241,10 +241,10 @@
 		"nameEn": "QQ",
 		"icon": "🐧",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 2a8 8 0 0 0-8 8c0 3 1.5 5 2 7-1 .5-2 1.5-2 3h16c0-1.5-1-2.5-2-3 .5-2 2-4 2-7a8 8 0 0 0-8-8z\"/><circle cx=\"9\" cy=\"9\" r=\"1\"/><circle cx=\"15\" cy=\"9\" r=\"1\"/><path d=\"M10 13h4\"/></svg>",
-		"description": "QQ 机器人：官方出站 WebSocket 双向对话、富媒体收发、用户白名单与 AI qq 工具；支持系统或插件 TTS 语音自动回复，可选择引擎、音色及语音和文字组合。密钥加密存储。",
+		"description": "QQ 机器人：官方出站 WebSocket 双向对话、富媒体收发、用户白名单�?AI qq 工具；支持系统或插件 TTS 语音自动回复，可选择引擎、音色及语音和文字组合。密钥加密存储�?,
 		"descriptionEn": "QQ Bot with outbound WebSocket chat, rich media, access control, and an AI qq tool. Automatic voice replies use the shared TTS center with selectable engines and voices, optional text, and encrypted credentials.",
-		"source": "xing-shuyin/pi-web-ui/plugins/qq",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/qq"
+		"source": "xing-shuyin/keel/plugins/qq",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/qq"
 	},
 	{
 		"id": "imessage",
@@ -252,10 +252,10 @@
 		"nameEn": "iMessage",
 		"icon": "💬",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z\"/></svg>",
-		"description": "iMessage 机器人与工作台：Apple macOS 原生 iMessage 通道（零公网 IP / 苹果生态随身触达 / 多轮会话隔离）/ 用户白名单准入 / AI imessage 工具。",
+		"description": "iMessage 机器人与工作台：Apple macOS 原生 iMessage 通道（零公网 IP / 苹果生态随身触�?/ 多轮会话隔离�? 用户白名单准�?/ AI imessage 工具�?,
 		"descriptionEn": "iMessage workspace & Bot: Apple macOS native iMessage bridge (zero public IP, Apple ecosystem companion, isolated multi-turn sessions), access control whitelist, and AI imessage tool.",
-		"source": "xing-shuyin/pi-web-ui/plugins/imessage",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/imessage"
+		"source": "xing-shuyin/keel/plugins/imessage",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/imessage"
 	},
 	{
 		"id": "matrix",
@@ -263,10 +263,10 @@
 		"nameEn": "Matrix",
 		"icon": "🔮",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 4h3v16H4V4zm13 0h3v16h-3V4z\"/><rect x=\"8.5\" y=\"7\" width=\"7\" height=\"10\" rx=\"1\"/></svg>",
-		"description": "Matrix 机器人与工作台 (实验功能)：开源去中心化通信协议 Matrix 出站长轮询双工对话（零公网 IP / 智能 Markdown 分块 / 多轮会话隔离）/ 用户白名单准入 / AI matrix 工具。",
+		"description": "Matrix 机器人与工作�?(实验功能)：开源去中心化通信协议 Matrix 出站长轮询双工对话（零公�?IP / 智能 Markdown 分块 / 多轮会话隔离�? 用户白名单准�?/ AI matrix 工具�?,
 		"descriptionEn": "Matrix workspace & Bot (experimental): decentralized Matrix protocol outbound sync duplex chat (zero public IP, structure-aware Markdown chunks, isolated multi-turn sessions), access control whitelist, and AI matrix tool.",
-		"source": "xing-shuyin/pi-web-ui/plugins/matrix",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/matrix"
+		"source": "xing-shuyin/keel/plugins/matrix",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/matrix"
 	},
 	{
 		"id": "voice-input",
@@ -274,32 +274,32 @@
 		"nameEn": "Voice & Photo Input",
 		"icon": "🎤",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z\"/><path d=\"M19 10v2a7 7 0 0 1-14 0v-2\"/><line x1=\"12\" y1=\"19\" x2=\"12\" y2=\"23\"/><line x1=\"8\" y1=\"23\" x2=\"16\" y2=\"23\"/></svg>",
-		"description": "语音输入：输入框旁的麦克风按钮，浏览器语音识别直接听写进输入框；不支持/识别失败时自动降级为服务端转写（远端接口，或一键安装的本地 Whisper，免费不出网）。",
+		"description": "语音输入：输入框旁的麦克风按钮，浏览器语音识别直接听写进输入框；不支�?识别失败时自动降级为服务端转写（远端接口，或一键安装的本地 Whisper，免费不出网）�?,
 		"descriptionEn": "Voice input: a mic button next to the composer. Browser speech recognition dictates into the input box, with server-side transcription as automatic fallback (remote API, or one-click local Whisper that runs fully offline).",
-		"source": "xing-shuyin/pi-web-ui/plugins/voice-input",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/voice-input"
+		"source": "xing-shuyin/keel/plugins/voice-input",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/voice-input"
 	},
 	{
 		"id": "live-preview",
 		"name": "live-preview",
 		"icon": "🌐",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><line x1=\"2\" y1=\"12\" x2=\"22\" y2=\"12\"/><path d=\"M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z\"/></svg>",
-		"description": "Live Server 式预览：/liveserver 看 HTML（含相对资源与自动刷新），/md 看 Markdown 渲染；真服务只绑回环地址，经宿主通用代理对外只露同源前缀。",
+		"description": "Live Server 式预览：/liveserver �?HTML（含相对资源与自动刷新）�?md �?Markdown 渲染；真服务只绑回环地址，经宿主通用代理对外只露同源前缀�?,
 		"descriptionEn": "Live-Server-style preview: HTML under /liveserver (relative assets + auto reload), rendered Markdown under /md. Loopback-only inner server exposed via host proxy prefixes.",
-		"source": "xing-shuyin/pi-web-ui/plugins/live-preview",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/live-preview",
+		"source": "xing-shuyin/keel/plugins/live-preview",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/live-preview",
 		"nameEn": "Live Preview"
 	},
 	{
 		"id": "image-toolkit",
-		"name": "图片工作台",
+		"name": "图片工作�?,
 		"nameEn": "Image Studio & Toolkit",
 		"icon": "🎨",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z\"/><path d=\"M18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9z\"/><path d=\"M4.5 19.5l2.5-2.5\"/></svg>",
-		"description": "一体化 AI 生图与图像处理工作台：一套配置同时接入通义万相、FLUX、OpenAI、Google Imagen/Gemini、智谱 CogView、火山豆包、Stability 与 ComfyUI 等主流生图服务；集成压缩（目标体积二分逼近）、裁剪、缩放、格式转换、水印、滤镜调色与 EXIF 分析；生图与处理在同一工作台内无缝流转。提供 8 个 AI 工具，让 agent 自己生图、配置供应商、分析并加工工作区图片与精准像素取色（附带位置截图）。",
+		"description": "一体化 AI 生图与图像处理工作台：一套配置同时接入通义万相、FLUX、OpenAI、Google Imagen/Gemini、智�?CogView、火山豆包、Stability �?ComfyUI 等主流生图服务；集成压缩（目标体积二分逼近）、裁剪、缩放、格式转换、水印、滤镜调色与 EXIF 分析；生图与处理在同一工作台内无缝流转。提�?8 �?AI 工具，让 agent 自己生图、配置供应商、分析并加工工作区图片与精准像素取色（附带位置截图）�?,
 		"descriptionEn": "All-in-one AI image generation & processing studio: configure DashScope (Wanx), FLUX, OpenAI, Google Imagen/Gemini, Zhipu CogView, Volcengine Seedream, Stability & ComfyUI side by side; compress (with binary search target size), crop, resize, format conversion, watermark, filters & EXIF analysis. Seamlessly flow between generation and editing in one unified workbench. Ships 8 AI tools for generation, provider configuration, analysis, processing, and exact pixel color picking with context screenshot crops.",
-		"source": "xing-shuyin/pi-web-ui/plugins/image-toolkit",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/image-toolkit"
+		"source": "xing-shuyin/keel/plugins/image-toolkit",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/image-toolkit"
 	},
 	{
 		"id": "notes",
@@ -307,32 +307,32 @@
 		"nameEn": "Notes",
 		"icon": "📓",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1024 1024\"><path d=\"M746.666667 64a170.666667 170.666667 0 0 1 170.666666 170.666667v554.666666a170.666667 170.666667 0 0 1-170.666666 170.666667H298.666667a170.666667 170.666667 0 0 1-170.666667-170.666667V234.666667a170.666667 170.666667 0 0 1 170.666667-170.666667h448z m0 74.666667H298.666667a96 96 0 0 0-95.893334 91.477333L202.666667 234.666667v554.666666a96 96 0 0 0 91.477333 95.893334L298.666667 885.333333h448a96 96 0 0 0 95.893333-91.477333L842.666667 789.333333V234.666667a96 96 0 0 0-91.477334-95.893334L746.666667 138.666667z\" fill=\"currentColor\"/><path d=\"M224 325.333333a37.333333 37.333333 0 0 1 3.072 74.538667l-3.072 0.128H106.666667a37.333333 37.333333 0 0 1-3.072-74.538667L106.666667 325.333333h117.333333zM224 624a37.333333 37.333333 0 0 1 3.072 74.538667l-3.072 0.128H106.666667a37.333333 37.333333 0 0 1-3.072-74.538667L106.666667 624h117.333333zM693.333333 346.666667a37.333333 37.333333 0 0 1 37.205334 34.261333l0.128 3.072v256a37.333333 37.333333 0 0 1-74.538667 3.072L656 640V384c0-20.608 16.725333-37.333333 37.333333-37.333333z\" fill=\"currentColor\"/></svg>",
-		"description": "随手记：笔记 + 待办 + 日程提醒三合一。顶栏按钮打开可自由拖拽的全局浮窗（位置/尺寸记忆，设置也在浮窗里，无独立视图页）；提醒走服务端定时（重启不丢、错过补送），另有 5 个 AI 工具与 /note /todo /remind 快速捕获。",
+		"description": "随手记：笔记 + 待办 + 日程提醒三合一。顶栏按钮打开可自由拖拽的全局浮窗（位�?尺寸记忆，设置也在浮窗里，无独立视图页）；提醒走服务端定时（重启不丢、错过补送），另�?5 �?AI 工具�?/note /todo /remind 快速捕获�?,
 		"descriptionEn": "Notes, todos and scheduled reminders in one place: a freely draggable always-on-top panel (position, size and settings all live in it, no separate view tab); reminders fire server-side (survive restarts, delivered on next open), with 5 AI tools and /note /todo /remind quick capture.",
-		"source": "xing-shuyin/pi-web-ui/plugins/notes",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/notes"
+		"source": "xing-shuyin/keel/plugins/notes",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/notes"
 	},
 	{
 		"id": "desktop-use",
 		"name": "桌面控制",
 		"nameEn": "Desktop Control",
-		"icon": "🖱️",
+		"icon": "🖱�?,
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"5\" y=\"2\" width=\"14\" height=\"20\" rx=\"7\"/><line x1=\"12\" y1=\"6\" x2=\"12\" y2=\"10\"/></svg>",
-		"description": "让 AI 操作 Windows 桌面：按元素名查控件坐标（UI Automation，无需截图）→ 点击 / 输入（含中文粘贴）/ 按键 / 聚焦窗口。输入库缺失时自动安装，卸载时连带删除。",
-		"descriptionEn": "Let the AI drive the Windows desktop: find controls by name via UI Automation (no screenshots) → click / type (CJK via paste) / hotkeys / focus windows. The input library auto-installs on activate and is removed with the plugin.",
-		"source": "xing-shuyin/pi-web-ui/plugins/desktop-use",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/desktop-use"
+		"description": "�?AI 操作 Windows 桌面：按元素名查控件坐标（UI Automation，无需截图）→ 点击 / 输入（含中文粘贴�? 按键 / 聚焦窗口。输入库缺失时自动安装，卸载时连带删除�?,
+		"descriptionEn": "Let the AI drive the Windows desktop: find controls by name via UI Automation (no screenshots) �?click / type (CJK via paste) / hotkeys / focus windows. The input library auto-installs on activate and is removed with the plugin.",
+		"source": "xing-shuyin/keel/plugins/desktop-use",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/desktop-use"
 	},
 	{
 		"id": "sol-savings",
-		"name": "SoL-Pi 状态",
+		"name": "SoL-Pi 状�?,
 		"nameEn": "SoL-Pi Status",
-		"icon": "⚡",
+		"icon": "�?,
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polygon points=\"13 2 3 14 12 14 11 22 21 10 12 10 13 2\"/></svg>",
-		"description": "SoL-Pi 会话节省统计与规划底栏：实时追踪大工具输出打包（Observation Pack）节省的上下文 Token 与在线计划（Plan）进度，借鉴 pi-sol-plan-footer 在底栏显示。",
+		"description": "SoL-Pi 会话节省统计与规划底栏：实时追踪大工具输出打包（Observation Pack）节省的上下�?Token 与在线计划（Plan）进度，借鉴 pi-sol-plan-footer 在底栏显示�?,
 		"descriptionEn": "SoL-Pi session savings and plan status in the footer bar: real-time tracking of context tokens saved by Observation Pack and active Plan progress, inspired by pi-sol-plan-footer.",
-		"source": "xing-shuyin/pi-web-ui/plugins/sol-savings",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/sol-savings"
+		"source": "xing-shuyin/keel/plugins/sol-savings",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/sol-savings"
 	},
 	{
 		"id": "session-migrate",
@@ -340,10 +340,10 @@
 		"nameEn": "Session Migration",
 		"icon": "🔄",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\"/><path d=\"M21 3v5h-5\"/><path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\"/><path d=\"M8 16H3v5\"/></svg>",
-		"description": "会话迁移与导入导出：扫描 ~/.omp/agent/sessions 与 ~/.pi/agent/sessions 的历史会话一键导入，导出任一会话为 .jsonl 备份，也能上传别处导出的 .jsonl（重名可选覆盖 / 另存副本）。",
+		"description": "会话迁移与导入导出：扫描 ~/.omp/agent/sessions �?~/.pi/agent/sessions 的历史会话一键导入，导出任一会话�?.jsonl 备份，也能上传别处导出的 .jsonl（重名可选覆�?/ 另存副本）�?,
 		"descriptionEn": "Migrate and move sessions: scan ~/.omp/agent/sessions and ~/.pi/agent/sessions and import them, export any session as .jsonl, and import an uploaded .jsonl from another machine (overwrite / copy on duplicate).",
-		"source": "xing-shuyin/pi-web-ui/plugins/session-migrate",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/session-migrate"
+		"source": "xing-shuyin/keel/plugins/session-migrate",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/session-migrate"
 	},
 	{
 		"id": "pm2-manager",
@@ -351,32 +351,32 @@
 		"nameEn": "Process Manager",
 		"icon": "🚀",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"2\" y=\"2\" width=\"20\" height=\"8\" rx=\"2\"/><rect x=\"2\" y=\"14\" width=\"20\" height=\"8\" rx=\"2\"/><line x1=\"6\" y1=\"6\" x2=\"6.01\" y2=\"6\"/><line x1=\"6\" y1=\"18\" x2=\"6.01\" y2=\"18\"/></svg>",
-		"description": "用 pm2 统一托管 AI 启动的后台任务：长期服务与调试实例交给 pm2 后有名字、有状态、有日志，顶栏「后台任务」面板与插件面板同一份列表，可看状态/CPU/内存/重启/日志、单独停止或删除；未装 pm2 时一键安装。不拦截 AI 的命令，管不管由模型和用户自行决定。",
-		"descriptionEn": "Supervise AI-started background tasks with pm2: long-running services and debug instances get a name, a status and logs, so the host background-tasks panel and the plugin panel show one shared list with status/CPU/memory/restarts/logs plus per-app stop or delete; one-click pm2 install when missing. It never intercepts AI commands — whether a process goes through pm2 is up to the model and the user.",
-		"source": "xing-shuyin/pi-web-ui/plugins/pm2-manager",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/pm2-manager"
+		"description": "�?pm2 统一托管 AI 启动的后台任务：长期服务与调试实例交�?pm2 后有名字、有状态、有日志，顶栏「后台任务」面板与插件面板同一份列表，可看状�?CPU/内存/重启/日志、单独停止或删除；未�?pm2 时一键安装。不拦截 AI 的命令，管不管由模型和用户自行决定�?,
+		"descriptionEn": "Supervise AI-started background tasks with pm2: long-running services and debug instances get a name, a status and logs, so the host background-tasks panel and the plugin panel show one shared list with status/CPU/memory/restarts/logs plus per-app stop or delete; one-click pm2 install when missing. It never intercepts AI commands �?whether a process goes through pm2 is up to the model and the user.",
+		"source": "xing-shuyin/keel/plugins/pm2-manager",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/pm2-manager"
 	},
 	{
 		"id": "wallpaper-engine",
-		"name": "动态壁纸",
+		"name": "动态壁�?,
 		"nameEn": "Wallpaper Engine",
-		"icon": "🖼️",
+		"icon": "🖼�?,
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" ry=\"2\"/><circle cx=\"9\" cy=\"9\" r=\"2\"/><path d=\"m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\"/></svg>",
-		"description": "动态壁纸：自动扫描本机 Wallpaper Engine 创意工坊壁纸，支持视频壁纸播放、液态毛玻璃磨砂效果与壁纸库抽屉。",
+		"description": "动态壁纸：自动扫描本机 Wallpaper Engine 创意工坊壁纸，支持视频壁纸播放、液态毛玻璃磨砂效果与壁纸库抽屉�?,
 		"descriptionEn": "Wallpaper Engine: scans Steam Workshop, supports video wallpapers, liquid frosted glass effects and a wallpaper library drawer.",
-		"source": "xing-shuyin/pi-web-ui/plugins/wallpaper-engine",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/wallpaper-engine"
+		"source": "xing-shuyin/keel/plugins/wallpaper-engine",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/wallpaper-engine"
 	},
 	{
 		"id": "response-speed",
 		"name": "响应速度",
 		"nameEn": "Response Speed",
-		"icon": "⚡",
+		"icon": "�?,
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polygon points=\"13 2 3 14 12 14 11 22 21 10 12 10 13 2\"/></svg>",
-		"description": "AI 响应速度监控：实时统计并显示当前回答的 AI 首字响应耗时（TTFT，发送请求到首个响应的时间）以及底部状态栏的平均响应速度，支持点击底栏查看统计明细与历史趋势。",
+		"description": "AI 响应速度监控：实时统计并显示当前回答�?AI 首字响应耗时（TTFT，发送请求到首个响应的时间）以及底部状态栏的平均响应速度，支持点击底栏查看统计明细与历史趋势�?,
 		"descriptionEn": "AI response speed monitoring: real-time tracking of Time to First Token (TTFT) latency for the current response and the average speed in the bottom status bar, with details and history dialog.",
-		"source": "xing-shuyin/pi-web-ui/plugins/response-speed",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/response-speed"
+		"source": "xing-shuyin/keel/plugins/response-speed",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/response-speed"
 	},
 	{
 		"id": "browser-use",
@@ -384,10 +384,10 @@
 		"nameEn": "browser-use",
 		"icon": "🌐",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20\"/><path d=\"M2 12h20\"/></svg>",
-		"description": "常驻 Chrome 自动化：自动拉起或接管常驻浏览器窗口，支持多标签页切换、精简交互元素快照（极省 Token）、智能点击输入、反爬穿透与状态跨任务持久。",
+		"description": "常驻 Chrome 自动化：自动拉起或接管常驻浏览器窗口，支持多标签页切换、精简交互元素快照（极�?Token）、智能点击输入、反爬穿透与状态跨任务持久�?,
 		"descriptionEn": "Persistent Chrome automation: launches or attaches to a persistent Chrome instance, supports tab management, human-visible element snapshots, smart clicks and inputs, and anti-bot resilience across tasks.",
-		"source": "xing-shuyin/pi-web-ui/plugins/browser-use",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/browser-use"
+		"source": "xing-shuyin/keel/plugins/browser-use",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/browser-use"
 	},
 	{
 		"id": "tts",
@@ -395,20 +395,20 @@
 		"nameEn": "TTS Voice Engine",
 		"icon": "🔊",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polygon points=\"11 5 6 9 2 9 2 15 6 15 11 19 11 5\"/><path d=\"M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07\"/></svg>",
-		"description": "将豆包和 DeepSeek 语音及音色注册到系统统一 TTS 中心，供网页播报、QQ 自动回复和其他工具共用。支持浏览器扩展同步凭据、引擎音色查询与音频文件生成。",
+		"description": "将豆包和 DeepSeek 语音及音色注册到系统统一 TTS 中心，供网页播报、QQ 自动回复和其他工具共用。支持浏览器扩展同步凭据、引擎音色查询与音频文件生成�?,
 		"descriptionEn": "Registers Doubao and DeepSeek engines and voices in the shared TTS center for web playback, QQ replies, and other tools. Includes credential synchronization, engine/voice discovery, and audio-file generation.",
-		"source": "xing-shuyin/pi-web-ui/plugins/tts",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/tts"
+		"source": "xing-shuyin/keel/plugins/tts",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/tts"
 	},
 	{
 		"id": "tunnel",
 		"name": "网络隧道",
 		"icon": "🔗",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\"/><path d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\"/></svg>",
-		"description": "反向隧道：主人设备 CLI 主动连入（零公网暴露，穿 NAT），pi 经本机 SOCKS5 以主人所在网络为出口做巡检与访问（DNS 在主人侧解析）。面板展示隧道在线状态/连接数/令牌管理；注册 tunnel_fetch 工具供 AI 直接探测主人网络。",
+		"description": "反向隧道：主人设�?CLI 主动连入（零公网暴露，穿 NAT），pi 经本�?SOCKS5 以主人所在网络为出口做巡检与访问（DNS 在主人侧解析）。面板展示隧道在线状�?连接�?令牌管理；注�?tunnel_fetch 工具�?AI 直接探测主人网络�?,
 		"descriptionEn": "Reverse tunnel: the owner's device dials in (no public exposure, NAT-friendly); pi reaches the owner's network via local SOCKS5 with DNS resolved owner-side. Panel shows tunnel status/connections/token; tunnel_fetch tool for AI probes.",
-		"source": "xing-shuyin/pi-web-ui/plugins/tunnel",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/tunnel",
+		"source": "xing-shuyin/keel/plugins/tunnel",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/tunnel",
 		"nameEn": "pi-tunnel"
 	},
 	{
@@ -416,22 +416,22 @@
 		"name": "拍板",
 		"icon": "🪧",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M22 5H2v11h20z\"/><path d=\"M12 16v4\"/><path d=\"M8 20h8\"/><path d=\"M7 9l3 3 5-5\"/></svg>",
-		"description": "定时任务拍板中心：待拍板项集中列表，点击跳转对应会话完成拍板；通用 CLI 供任意定时任务登记；顶栏拍板 tab 红点显示待拍板数。",
+		"description": "定时任务拍板中心：待拍板项集中列表，点击跳转对应会话完成拍板；通用 CLI 供任意定时任务登记；顶栏拍板 tab 红点显示待拍板数�?,
 		"descriptionEn": "Approval gate: centralized pending-decision list from scheduled tasks; click an item to jump into its conversation; red-dot badge on the tab shows pending count. A generic CLI lets any cron job register items.",
-		"source": "xing-shuyin/pi-web-ui/plugins/approval-gate",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/approval-gate",
+		"source": "xing-shuyin/keel/plugins/approval-gate",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/approval-gate",
 		"nameEn": "Approval Gate"
 	},
 	{
 		"id": "live2d",
-		"name": "Live2D 看板娘",
+		"name": "Live2D 看板�?,
 		"nameEn": "Live2D Companion",
 		"icon": "🐾",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-2-9c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1zm4 0c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1zm-2 5c1.66 0 3-1.34 3-3H9c0 1.66 1.34 3 3 3z\"/></svg>",
-		"description": "页面悬浮 Live2D 桌面看板娘宠物：支持 Cubism 2/3/4 模型渲染、鼠标视线跟随、触摸点击反应、气泡对话台词、伴随 AI 思考/回复情绪联动与 AI 动作表情操控工具。",
+		"description": "页面悬浮 Live2D 桌面看板娘宠物：支持 Cubism 2/3/4 模型渲染、鼠标视线跟随、触摸点击反应、气泡对话台词、伴�?AI 思�?回复情绪联动�?AI 动作表情操控工具�?,
 		"descriptionEn": "Interactive Live2D companion on your screen: Cubism 2/3/4 models, mouse eye-tracking, tap reactions, speech bubbles, AI emotion reactivity, and agent tools.",
-		"source": "xing-shuyin/pi-web-ui/plugins/live2d",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/live2d"
+		"source": "xing-shuyin/keel/plugins/live2d",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/live2d"
 	},
 	{
 		"id": "office",
@@ -439,10 +439,10 @@
 		"nameEn": "office",
 		"icon": "📑",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z\"/><polyline points=\"14 2 14 8 20 8\"/><line x1=\"16\" y1=\"13\" x2=\"8\" y2=\"13\"/><line x1=\"16\" y1=\"17\" x2=\"8\" y2=\"17\"/><line x1=\"10\" y1=\"9\" x2=\"8\" y2=\"9\"/></svg>",
-		"description": "基于 Univer 引擎的高保真 Office 原生画布预览与编辑：接管工作区 .pptx / .docx / .xlsx 真实渲染，支持 1:1 排版放映与 AI 结构化表格修改写回。",
+		"description": "基于 Univer 引擎的高保真 Office 原生画布预览与编辑：接管工作�?.pptx / .docx / .xlsx 真实渲染，支�?1:1 排版放映�?AI 结构化表格修改写回�?,
 		"descriptionEn": "Office Canvas preview and editing powered by Univer, with structured AI operations and conflict-checked disk export.",
-		"source": "xing-shuyin/pi-web-ui/plugins/office",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/office"
+		"source": "xing-shuyin/keel/plugins/office",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/office"
 	},
 	{
 		"id": "bili-scroll",
@@ -450,10 +450,10 @@
 		"nameEn": "Bilibili Scroll",
 		"icon": "📺",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"2\" y=\"7\" width=\"20\" height=\"15\" rx=\"3\"/><polyline points=\"17 2 12 7 7 2\"/><line x1=\"8\" y1=\"12\" x2=\"8\" y2=\"12.01\"/><line x1=\"16\" y1=\"12\" x2=\"16\" y2=\"12.01\"/></svg>",
-		"description": "每天替你刷一轮 B 站：通读原文字幕深度排雷、三档位精选、默认私信投递、支持私信双向对话与分享看片、视频卡片墙与自动收藏。",
+		"description": "每天替你刷一�?B 站：通读原文字幕深度排雷、三档位精选、默认私信投递、支持私信双向对话与分享看片、视频卡片墙与自动收藏�?,
 		"descriptionEn": "Autonomous Bilibili duty agent: reads raw subtitles to filter fluff, delivers curated video digests directly to private DMs, supports bidirectional DM chat, video card wall, and auto-favorite.",
-		"source": "xing-shuyin/pi-web-ui/plugins/bili-scroll",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/bili-scroll"
+		"source": "xing-shuyin/keel/plugins/bili-scroll",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/bili-scroll"
 	},
 	{
 		"id": "quota-watch",
@@ -462,21 +462,21 @@
 		"version": "0.5.3",
 		"icon": "📊",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 3v18h18\"/><rect x=\"7\" y=\"7\" width=\"3\" height=\"9\" rx=\"1\"/><rect x=\"13\" y=\"11\" width=\"3\" height=\"5\" rx=\"1\"/></svg>",
-		"description": "底栏只显示当前模型对应那家的额度，点它，宿主弹出跟随位置的小卡片：自动读取本机已登录的 Claude Code、Codex、OpenCode（Go 订阅剩余额度）登录态，DeepSeek 填一次 Key 即可；卡片里是剩余百分比、重置倒计时与账户余额，刷新按钮外圈就是自动刷新进度、旁边实时显示数据有多旧，点刷新底栏与卡片同一帧更新，AI 也能用工具直接查。只查当前供应商，别家订阅不出网、不打扰。凭据只在本机读取，不外传、不写盘。",
-		"descriptionEn": "The bottom bar shows only the quota of the provider behind your current model; click it and the host pops a small card right next to it: local Antigravity, Claude Code and Codex logins are read automatically (DeepSeek needs one API key), with remaining percentage, reset countdowns and balance — the refresh button doubles as an auto-refresh progress ring, the data's age is shown live, and one click updates the bar and the card in the same frame. The AI can query it too. Only that provider is queried; other subscriptions are left alone. Credentials stay on this machine; nothing is uploaded or persisted.",
-		"source": "xing-shuyin/pi-web-ui/plugins/quota-watch",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/quota-watch"
+		"description": "底栏只显示当前模型对应那家的额度，点它，宿主弹出跟随位置的小卡片：自动读取本机已登录�?Claude Code、Codex、OpenCode（Go 订阅剩余额度）登录态，DeepSeek 填一�?Key 即可；卡片里是剩余百分比、重置倒计时与账户余额，刷新按钮外圈就是自动刷新进度、旁边实时显示数据有多旧，点刷新底栏与卡片同一帧更新，AI 也能用工具直接查。只查当前供应商，别家订阅不出网、不打扰。凭据只在本机读取，不外传、不写盘�?,
+		"descriptionEn": "The bottom bar shows only the quota of the provider behind your current model; click it and the host pops a small card right next to it: local Antigravity, Claude Code and Codex logins are read automatically (DeepSeek needs one API key), with remaining percentage, reset countdowns and balance �?the refresh button doubles as an auto-refresh progress ring, the data's age is shown live, and one click updates the bar and the card in the same frame. The AI can query it too. Only that provider is queried; other subscriptions are left alone. Credentials stay on this machine; nothing is uploaded or persisted.",
+		"source": "xing-shuyin/keel/plugins/quota-watch",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/quota-watch"
 	},
 	{
 		"id": "frp-manager",
-		"name": "内网穿透",
+		"name": "内网穿�?,
 		"nameEn": "FRP Manager",
 		"icon": "🚇",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 17V7a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v10\"/><path d=\"M2 17h20\"/><circle cx=\"8.5\" cy=\"17.5\" r=\"1.5\"/><circle cx=\"15.5\" cy=\"17.5\" r=\"1.5\"/><path d=\"M9 6v3M15 6v3\"/></svg>",
-		"description": "frp 内网穿透一站式管理：自动下载 frpc/frps、本机穿透列表增删改查、TOML 可视化配置、启停与日志、本地 frps 联调、远端公网 frps 一键部署脚本。",
+		"description": "frp 内网穿透一站式管理：自动下�?frpc/frps、本机穿透列表增删改查、TOML 可视化配置、启停与日志、本�?frps 联调、远端公�?frps 一键部署脚本�?,
 		"descriptionEn": "One-stop frp management: auto-download frpc/frps, local proxy list CRUD, visual TOML config, start/stop/logs, local frps for debugging, one-click remote frps deploy script.",
-		"source": "xing-shuyin/pi-web-ui/plugins/frp-manager",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/frp-manager"
+		"source": "xing-shuyin/keel/plugins/frp-manager",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/frp-manager"
 	},
 	{
 		"id": "web-capture",
@@ -485,21 +485,21 @@
 		"version": "0.2.1",
 		"icon": "🎯",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M12 2v3m0 14v3M2 12h3m14 0h3\"/><circle cx=\"12\" cy=\"12\" r=\"8\"/></svg>",
-		"description": "免扩展抓页面：收藏夹书签在任意网站点选元素、快照与点击日志实时回传本 Tab，一键送入聊天给 AI 调试；AI 经 web_capture_* 工具读取。",
+		"description": "免扩展抓页面：收藏夹书签在任意网站点选元素、快照与点击日志实时回传�?Tab，一键送入聊天�?AI 调试；AI �?web_capture_* 工具读取�?,
 		"descriptionEn": "No-extension page capture: a bookmarklet picks elements on any site; snapshots + steps stream back to this tab, one click sends a report to chat; AI reads and saves via 6 web_capture_* tools.",
-		"source": "xing-shuyin/pi-web-ui/plugins/web-capture",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/web-capture"
+		"source": "xing-shuyin/keel/plugins/web-capture",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/web-capture"
 	},
 	{
 		"id": "chat-highlight",
 		"name": "正文高亮",
 		"nameEn": "Text Highlight",
 		"version": "1.0.0",
-		"icon": "🖍️",
+		"icon": "🖍�?,
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m9 11-6 6v3h3l6-6\"/><path d=\"m14 6 4 4\"/><path d=\"M13 5.5 18.5 11 21 8.5a2 2 0 0 0 0-2.8l-2.7-2.7a2 2 0 0 0-2.8 0Z\"/><path d=\"M3 21h8\"/></svg>",
-		"description": "按内容给聊天正文上色：引号台词、角色行、旁白、邮件头、issue/SHA/路径、链接邮箱、日期、金额、斜杠命令，外加一条自定义正则。纯展示，不改文本、不碰 DOM、不需要 dom 授权。",
+		"description": "按内容给聊天正文上色：引号台词、角色行、旁白、邮件头、issue/SHA/路径、链接邮箱、日期、金额、斜杠命令，外加一条自定义正则。纯展示，不改文本、不�?DOM、不需�?dom 授权�?,
 		"descriptionEn": "Colors chat text by pattern: quoted dialogue, speaker lines, stage directions, mail headers, issue/SHA/paths, links & emails, dates, amounts, slash commands, plus one custom regex. Display-only: no text rewriting, no DOM mutation, no dom grant.",
-		"source": "xing-shuyin/pi-web-ui/plugins/chat-highlight",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/chat-highlight"
+		"source": "xing-shuyin/keel/plugins/chat-highlight",
+		"homepage": "https://github.com/xing-shuyin/keel/tree/main/plugins/chat-highlight"
 	}
 ]

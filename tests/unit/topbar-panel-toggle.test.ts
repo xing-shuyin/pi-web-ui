@@ -438,7 +438,7 @@ describe("TopBar 溢出菜单里的 GitHub 行", () => {
 		expect(link).toBeTruthy();
 		expect(link!.querySelector("svg")).toBeTruthy();
 		expect(link!.textContent?.trim()).toBe("GitHub");
-		expect(link!.title).toContain("xing-shuyin/pi-web-ui");
+		expect(link!.title).toContain("xing-shuyin/keel");
 		expect(link!.getAttribute("role")).toBe("menuitem");
 		expect(link!.parentElement?.classList.contains("plugin-topbar-menu")).toBe(true);
 	});

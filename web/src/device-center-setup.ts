@@ -67,11 +67,11 @@ export function isLocalSetupOrigin(origin: string): boolean {
 }
 
 export const HUB_DEPLOYMENT_GUIDE_URL =
-	"https://raw.githubusercontent.com/xing-shuyin/pi-web-ui/main/docs/device-center-deployment.md";
+	"https://raw.githubusercontent.com/xing-shuyin/keel/main/docs/device-center-deployment.md";
 export const HUB_DEPLOYMENT_GUIDE_PAGE_URL =
-	"https://github.com/xing-shuyin/pi-web-ui/blob/main/docs/device-center-deployment.md";
+	"https://github.com/xing-shuyin/keel/blob/main/docs/device-center-deployment.md";
 
-export const HUB_INSTALL_EXAMPLE = "pi-web-ui hub install --public-url https://SERVER_IP --allow-registration";
+export const HUB_INSTALL_EXAMPLE = "keel hub install --public-url https://SERVER_IP --allow-registration";
 
 export interface RemoteHubSetupInput {
 	server: string;

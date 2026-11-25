@@ -65,7 +65,7 @@ describe("describeKernelCompat", () => {
 	it("ok 不说话，其余都给可执行的下一步", () => {
 		expect(describeKernelCompat({ kind: "ok" })).toBe("");
 		expect(describeKernelCompat({ kind: "upgrade-kernel", kernelProtocol: 59, shellProtocol: 60 })).toContain(
-			"npm i -g pi-web-ui@latest",
+			"npm i -g keel@latest",
 		);
 		expect(describeKernelCompat({ kind: "upgrade-shell", kernelMinShell: 3, shellCapability: 1 })).toContain(
 			"更新桌面应用",

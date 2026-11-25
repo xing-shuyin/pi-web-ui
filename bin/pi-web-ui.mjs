@@ -1995,10 +1995,10 @@ function parsePluginSource(rawSpec) {
 			if (isOfficial) {
 				return {
 					owner: "xing-shuyin",
-					repo: "pi-web-ui",
+					repo: "keel",
 					ref,
 					subpath: `plugins/${id}`,
-					cloneUrl: "https://github.com/xing-shuyin/pi-web-ui.git",
+					cloneUrl: "https://github.com/xing-shuyin/keel.git",
 				};
 			}
 		}
@@ -2051,7 +2051,7 @@ function resolveLocalBuiltinPluginDir(rawSpec, src, opts = {}) {
 	const pkgRoot = resolve(BIN_DIR, "..");
 	let pluginSubdir = null;
 
-	if (src?.owner === "xing-shuyin" && src?.repo === "pi-web-ui" && src?.subpath) {
+	if (src?.owner === "xing-shuyin" && (src?.repo === "keel" || src?.repo === "pi-web-ui") && src?.subpath) {
 		pluginSubdir = src.subpath.startsWith("plugins/") ? src.subpath.slice("plugins/".length) : src.subpath;
 	} else if (!src && typeof rawSpec === "string" && !rawSpec.includes("/") && PLUGIN_ID_RE.test(rawSpec.trim())) {
 		pluginSubdir = rawSpec.trim();

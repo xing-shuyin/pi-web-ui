@@ -50,7 +50,7 @@ describe("update terminal navigation & selection (#832)", () => {
 
 		const chat = { ready: true, terminals: [] as any[], activeConversationId: "conv-1", state: { cwd: "/cwd" } };
 		const title = "系统更新";
-		const cmd = { name: title, command: "npm i -g pi-web-ui@latest", cwd: "${pwd}" };
+		const cmd = { name: title, command: "npm i -g keel@latest", cwd: "${pwd}" };
 		const existing = chat.terminals.find((tm) => tm.title === title);
 		const targetId = existing ? existing.id : "test-new-id";
 
@@ -92,7 +92,7 @@ describe("update terminal navigation & selection (#832)", () => {
 		const appSend = vi.fn();
 
 		const title = "系统更新";
-		const cmd = { name: title, command: "npm i -g pi-web-ui@latest", cwd: "${pwd}" };
+		const cmd = { name: title, command: "npm i -g keel@latest", cwd: "${pwd}" };
 		const existing = chat.terminals.find((tm) => tm.title === title);
 		const targetId = existing ? existing.id : "new-id";
 

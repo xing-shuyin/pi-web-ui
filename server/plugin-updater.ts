@@ -217,7 +217,7 @@ export function compareVersions(a: string, b: string): number {
 }
 
 export function isBuiltinPlugin(id: string, source?: string, builtinCatalogPath?: string): boolean {
-	if (source && /xing-shuyin\/pi-web-ui\/plugins\//i.test(source)) return true;
+	if (source && /xing-shuyin\/(?:keel|pi-web-ui)\/plugins\//i.test(source)) return true;
 	const catPath =
 		builtinCatalogPath ??
 		(() => {

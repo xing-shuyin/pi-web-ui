@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isDesktopShell, type DesktopShellWindow } from "./desktop.js";
 
-const DESKTOP_REPO = "xing-shuyin/pi-web-ui";
+const DESKTOP_REPO = "xing-shuyin/keel";
 
 /** 运行时通道（双层模型的 L2）在渲染层的样子；旧壳没这个字段 → 面板不显示这一段。 */
 export interface DesktopRuntimeUpdaterState {

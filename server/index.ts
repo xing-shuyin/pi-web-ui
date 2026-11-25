@@ -304,7 +304,7 @@ if (!isLoopbackHost(HOST) && !AUTH_TOKEN && !ALLOW_INSECURE_NO_AUTH) {
 	}
 }
 const LOCALE_BASE_URL =
-	process.env.PI_WEB_LOCALE_BASE_URL?.trim() || "https://raw.githubusercontent.com/xing-shuyin/pi-web-ui";
+	process.env.PI_WEB_LOCALE_BASE_URL?.trim() || "https://raw.githubusercontent.com/xing-shuyin/keel";
 function appVersion(): string {
 	return getAppVersion();
 }

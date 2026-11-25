@@ -846,7 +846,7 @@ export function App() {
 						jobId,
 						action: "install",
 						id: "image-ocr",
-						source: "xing-shuyin/pi-web-ui/plugins/image-ocr",
+						source: "xing-shuyin/keel/plugins/image-ocr",
 					});
 			}
 		});
