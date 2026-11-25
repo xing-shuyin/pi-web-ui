@@ -278,7 +278,8 @@ describe("宿主侧 native-cli 适配器 · 终端归属那几个动作", () => 
 	it("hook 事件触发标题回填时，同步调用 renameConversation 与 publish（左栏才跟着改名）", async () => {
 		const calls: Call[] = [];
 		const manager = fakeTerminals(calls);
-		(manager as unknown as { getRawOutput: () => string }).getRawOutput = () => "> 修一下登录页";
+		(manager as unknown as { getRawOutput: () => string }).getRawOutput = () =>
+			["> 修一下登录页", "────────", "> Auto mode: edits & safe commands", "? for shortcuts", "ng"].join("\n");
 		const port = createCoreNativeCli(sinks(calls, manager));
 		await port.launch({
 			conversationId: "c-1",

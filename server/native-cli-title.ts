@@ -14,7 +14,9 @@ import { stripAnsi } from "./terminals.js";
  * 3. 去掉行首提示符（`>` / `$` / `📎` / `╭─` …），超 30 字截断加 `…`；派生结果仍是自动名就放弃。
  */
 const DECORATION = /^[│─┌┐└┘├┤┬┴┼═║╒╓╔╕╖╗╘╙╚╛╜╝╞╟╠╡╢╣╤╥╦╧╨╩╪╫╬·•\s_-]+$/;
+const PROMPT_MARKS = /^([>▶$➜📎]|╭─|╰─)\s*/u;
 const LEADING_MARKS = /^([>▶$➜%?#📎]|╭─|╰─)\s*/u;
+const TUI_CHROME = /^(?:for shortcuts|Auto mode:|Thinking\b|Working\b|Loading\b)/i;
 const MAX_TITLE = 30;
 
 export interface NativeCliTitleHint {
@@ -24,18 +26,29 @@ export interface NativeCliTitleHint {
 	executable?: string;
 }
 
+function acceptTitle(clean: string, hint: NativeCliTitleHint): string | undefined {
+	if (clean.length < 2 || clean.startsWith("Error:") || clean.startsWith("warning") || TUI_CHROME.test(clean))
+		return undefined;
+	const title = clean.length > MAX_TITLE ? `${clean.slice(0, MAX_TITLE)}…` : clean;
+	return isDefaultNativeCliTitle(title, hint.preset, hint.executable) ? undefined : title;
+}
+
 export function nativeCliTitleFromTerminalOutput(output: string, hint: NativeCliTitleHint): string | undefined {
 	if (!output) return undefined;
 	if (!isDefaultNativeCliTitle(hint.title, hint.preset, hint.executable)) return undefined;
 	const lines = stripAnsi(output).split("\n");
+	// 先找带提示符（> / ▶ / $ ...）的用户输入行，避免全屏 TUI 底部的状态栏/spinner 残片（如 "ng"）抢标题。
+	for (let index = lines.length - 1; index >= 0; index--) {
+		const line = lines[index].trim();
+		if (!line || DECORATION.test(line) || !PROMPT_MARKS.test(line)) continue;
+		const title = acceptTitle(line.replace(PROMPT_MARKS, "").trim(), hint);
+		if (title) return title;
+	}
 	for (let index = lines.length - 1; index >= 0; index--) {
 		const line = lines[index].trim();
 		if (!line || line.length < 2 || DECORATION.test(line)) continue;
-		const clean = line.replace(LEADING_MARKS, "").trim();
-		if (clean.length < 2 || clean.startsWith("Error:") || clean.startsWith("warning")) continue;
-		const title = clean.length > MAX_TITLE ? `${clean.slice(0, MAX_TITLE)}…` : clean;
-		if (isDefaultNativeCliTitle(title, hint.preset, hint.executable)) continue;
-		return title;
+		const title = acceptTitle(line.replace(LEADING_MARKS, "").trim(), hint);
+		if (title) return title;
 	}
 	return undefined;
 }
