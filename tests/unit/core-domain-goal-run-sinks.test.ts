@@ -40,6 +40,7 @@ describe("目标运行 sinks 与内核的组合", () => {
 		const sent: ServerMessage[] = [];
 		let flushes = 0;
 		const planCalls: string[] = [];
+		let conversationPushes = 0;
 		const sinks = createGoalRunSinks({
 			runtime: {
 				clientId: "c1",
@@ -48,6 +49,7 @@ describe("目标运行 sinks 与内核的组合", () => {
 				publisher: { request: () => void (flushes += 1) },
 				cwd: "/work",
 				activeConversationId: () => registry.activeId() || undefined,
+				pushConversations: () => void (conversationPushes += 1),
 			},
 			sessions,
 			resolveModel: async () => ({ id: "m" }),
@@ -56,14 +58,26 @@ describe("目标运行 sinks 与内核的组合", () => {
 			getLang: () => "zh",
 			setPlan: (conversationId) => void planCalls.push(conversationId),
 		});
-		return { registry, turns, sinks, settled, closed, sent, planCalls, flushCount: () => flushes };
+		return {
+			registry,
+			turns,
+			sinks,
+			settled,
+			closed,
+			sent,
+			planCalls,
+			flushCount: () => flushes,
+			conversationPushes: () => conversationPushes,
+		};
 	}
 
-	it("开子对话只注册不激活：主对话仍是当前对话，子对话是 subagent 且带 parent", () => {
+	it("开子对话只注册不激活：主对话仍是当前对话，执行对话是落盘对话（kind=user）且带 parent", () => {
 		const h = makeHarness();
 		const child = h.sinks.openChild({ parentId: "c-1", title: "执行", cwd: "/work" });
 		expect(h.registry.activeId()).toBe("c-1");
-		expect(h.registry.get(child.id)).toMatchObject({ meta: { kind: "subagent", parentId: "c-1", cwd: "/work" } });
+		// 老实现给执行体开的是 `persist: true` 的普通对话（`isSubagent = !persist`）：
+		// 微标 / 连带关闭 / 限额都不该落到目标执行对话上。
+		expect(h.registry.get(child.id)).toMatchObject({ meta: { kind: "user", parentId: "c-1", cwd: "/work" } });
 		expect(h.sinks.hasChild(child.id)).toBe(true);
 		expect(h.sinks.conversationCwd(child.id)).toBe("/work");
 	});
@@ -84,6 +98,15 @@ describe("目标运行 sinks 与内核的组合", () => {
 		expect(h.closed).toContain(child.id);
 		expect(h.registry.get(child.id)).toBeUndefined();
 		expect(h.sinks.hasChild(child.id)).toBe(false);
+	});
+
+	it("开 / 拆子对话各推一帧 conversations：左栏行不能靠运气出帧", () => {
+		const h = makeHarness();
+		const child = h.sinks.openChild({ parentId: "c-1", title: "执行", cwd: "/work" });
+		expect(h.conversationPushes()).toBe(1);
+		h.sinks.closeChild(child.id);
+		// 出注册表还不算完：不推这一帧，客户端会一直挂着已经拆掉的执行对话。
+		expect(h.conversationPushes()).toBe(2);
 	});
 
 	it("计划写口 / 帧出口 / 模型写入都是内核侧真对象（不是空壳）", async () => {

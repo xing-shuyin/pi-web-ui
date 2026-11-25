@@ -120,6 +120,12 @@ export interface UiCliProbe {
 export interface UiBridgePort {
 	readonly dialogs: UiDialogSurface;
 	readonly overlays: UiOverlaySurface;
+	/**
+	 * 某个对话的扩展 UI 上下文（SDK `ExtensionUIContext`）：内核只当**不透明值**转交给
+	 * `session.bindExtensions()`，形状归宿主（`server/webui-context.ts`）。
+	 * `undefined` = headless（子代理 / 后台会话：dialog 立刻 `null`、不依赖浏览器）。
+	 */
+	uiContextFor(conversationId?: string): unknown;
 	installCli(): Promise<UiCliInstallResult>;
 	probe(): UiCliProbe;
 }

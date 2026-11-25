@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { CoreEngineNotReadyError } from "../../contracts/core-engine-errors.js";
+import type { ConversationId } from "../../contracts/ids.js";
 import type { Conversation, ConversationRegistry } from "../../kernel/conversation/index.js";
 import { restoreWorkspaceUriFromSessionDir } from "../../remote-workspace.js";
 import { readCwdFromSessionHeader } from "../../session-search.js";
@@ -9,6 +10,16 @@ export interface SessionEntityOptions {
 	registry: ConversationRegistry<Conversation>;
 	/** 重绑原语（`rebindSession` 绑定上下文后的调用口）；缺省 = 该能力未接。 */
 	rebind?: (request: RebindRequest) => Promise<RebindResult>;
+	/**
+	 * 切到**已经开着**的对话时的腾位口（老 `switchConversation` → `displaceActive`）：
+	 * 装配层接 `displacePrevious(rebindCtx, conversation)`。缺省 = 不腾位（旧对话原封不动留着）。
+	 */
+	displace?(conversation: Conversation): void;
+	/**
+	 * 记进运行列表（老 `switchSession` 里打开会话时的 `conv.listed = true`）：
+	 * 不记的话，从历史打开的对话一旦切走就从运行列表消失（它没有标题/内容撑着 `inRunningList`）。
+	 */
+	markListed?(conversationId: ConversationId): void;
 	frames: RebindFrames;
 	/** 当前工作区：转录 header 里读不出 cwd 时用它兜底。 */
 	cwd(): string;
@@ -20,7 +31,15 @@ export interface SessionEntityOptions {
 	noteSessionFile?(file: string | undefined): void;
 	notice(level: "info" | "warning" | "error", text: string, textEn: string): void;
 	/** 跨客户端会话占用查询：避免双写或误判 */
-	findSessionOwner?: (sessionFile: string) => { title: string; isStreaming: boolean } | undefined;
+	/** 占用者身份 + 状态：`clientId` / `conversationId` 是用来发起自动过户的（issue #567）。 */
+	findSessionOwner?: (
+		sessionFile: string,
+	) => { title: string; isStreaming: boolean; clientId: string; conversationId: string } | undefined;
+	/**
+	 * 「这条对话在另一处开着（且没在跑）」→ 把它过户到本页再继续打开（老实现 `switchSession` 的
+	 * `takeOverConversationElsewhere`）。缺省 = 不做过户，只提示「已同时打开」（两份写者会互相覆盖）。
+	 */
+	takeOverElsewhere?(owner: { clientId: string; conversationId: string }): Promise<void>;
 	/** 进度帧（客户端据此收起切换蒙层）：`done` 才落定，`error` 明确失败。 */
 	progress?(kind: "cwd" | "session", target: string, phase: "done" | "error", text: string, textEn: string): void;
 }
@@ -56,13 +75,55 @@ export function createSessionEntityHandlers(options: SessionEntityOptions): Sess
 
 	/** 已经开着的对话直接用（老口径：同一份转录不重复建，避免两个写者）。 */
 	const reuse = (conversation: Conversation, target: string): void => {
+		// 老口径：切到已经开着的对话也要先腾位（`switchConversation` → `displaceActive`），
+		// 否则正在跑的那条既未被保留也未被退役——它这一轮跑完就再也不会出现在运行列表里。
+		const active = options.registry.activeConv();
+		if (active && active.id !== conversation.id) options.displace?.(active);
 		options.registry.activate(conversation.id);
+		// 老 `switchSession` 打开历史会话时记的 `conv.listed = true`：用户是明确回来看它的。
+		options.markListed?.(conversation.id);
 		options.noteSessionFile?.(target);
 		options.frames.flush(true);
 		void options.frames.pushSessions?.();
+		options.frames.pushConversations?.();
 		progress?.("session", target, "done", "会话加载完成", "Session loaded");
 	};
 
+	/** 真正去打开（检查路径 → 复用已开的 → 重绑）：过户之后也走这里。 */
+	const openTarget = (target: string, rebind: (request: RebindRequest) => Promise<RebindResult>): Promise<void> => {
+		const isAllowedPath = options.isAllowedPath;
+		if (isAllowedPath && !isAllowedPath(target)) {
+			options.notice(
+				"error",
+				"只能打开会话目录中的对话记录",
+				"Only transcripts inside the session directory can be opened",
+			);
+			options.frames.flush(false);
+			return Promise.resolve();
+		}
+		const holder = options.registry.bySessionFile(target);
+		if (holder) {
+			reuse(holder, target);
+			return Promise.resolve();
+		}
+		const fallback = options.cwd();
+		return ownerCwdOf(target, fallback).then(async (cwd) => {
+			try {
+				const result = await rebind({ cwd, sessionFile: target });
+				// 先从历史打开的对话也要先进运行列表（老 `switchSession` 的 `conv.listed = true`）：
+				// 它此刻是活动对话、标题还是默认值，`inRunningList` 不会自己收它。
+				options.markListed?.(result.conversation.id);
+				options.noteSessionFile?.(target);
+				// 重绑末尾那一帧是「已列出」之前的，再推一次运行列表，客户端手上的那一行才不会凭空消失。
+				options.frames.pushConversations?.();
+				progress?.("session", target, "done", "会话加载完成", "Session loaded");
+			} catch (error) {
+				const message = (error as Error).message;
+				progress?.("session", target, "error", `会话加载失败：${message}`, `Failed to load session: ${message}`);
+				options.notice("error", `打开会话失败：${message}`, `Failed to open session: ${message}`);
+			}
+		});
+	};
 	return {
 		// 不用 `async` 包：端口缺失的抛错必须是**同步**的（wire 层这里是 `void` 调用，不能变成 unhandled）。
 		switchSession(path: string, sessionId?: string, _independent?: boolean): Promise<void> {
@@ -98,6 +159,20 @@ export function createSessionEntityHandlers(options: SessionEntityOptions): Sess
 				options.frames.flush(false);
 				return Promise.resolve();
 			}
+			if (owner && !owner.isStreaming && options.takeOverElsewhere) {
+				// 别处开着、没在跑：先过户（跨客户端单一写者），过完这条对话已经在本页的注册表里了。
+				// 不用 `async` 包：端口缺失的抛错必须是同步的（见函数头注释）。
+				const takeOver = options.takeOverElsewhere;
+				return takeOver({ clientId: owner.clientId, conversationId: owner.conversationId }).then(() => {
+					const moved = options.registry.bySessionFile(target);
+					if (moved) {
+						reuse(moved, target);
+						return;
+					}
+					// 过户没把对话带过来（失败/对方已关）：落回正常打开，别让动作静默消失。
+					return openTarget(target, rebind);
+				});
+			}
 			if (owner && !owner.isStreaming) {
 				options.notice(
 					"info",
@@ -105,34 +180,7 @@ export function createSessionEntityHandlers(options: SessionEntityOptions): Sess
 					`This conversation is also open in another window ("${owner.title}"). Opened here as well; avoid sending from both sides concurrently to prevent conflicting transcript writes.`,
 				);
 			}
-			const isAllowedPath = options.isAllowedPath;
-			if (isAllowedPath && !isAllowedPath(target)) {
-				options.notice(
-					"error",
-					"只能打开会话目录中的对话记录",
-					"Only transcripts inside the session directory can be opened",
-				);
-				options.frames.flush(false);
-				return Promise.resolve();
-			}
-			const holder = options.registry.bySessionFile(target);
-			if (holder) {
-				reuse(holder, target);
-				return Promise.resolve();
-			}
-
-			const fallback = options.cwd();
-			return ownerCwdOf(target, fallback).then(async (cwd) => {
-				try {
-					await rebind({ cwd, sessionFile: target });
-					options.noteSessionFile?.(target);
-					progress?.("session", target, "done", "会话加载完成", "Session loaded");
-				} catch (error) {
-					const message = (error as Error).message;
-					progress?.("session", target, "error", `会话加载失败：${message}`, `Failed to load session: ${message}`);
-					options.notice("error", `打开会话失败：${message}`, `Failed to open session: ${message}`);
-				}
-			});
+			return openTarget(target, rebind);
 		},
 	};
 }

@@ -1,11 +1,13 @@
 import { CoreEngineNotReadyError } from "../../contracts/core-engine-errors.js";
-import type { ModelAdminPort } from "../../contracts/model-admin.js";
+import type { ModelAdminPort, ProjectKeyPins } from "../../contracts/model-admin.js";
 import type { ServerLang } from "../../i18n.js";
 import type { UiModelConfigEntry, UiProviderConfig } from "../../protocol.js";
 
 export interface ProviderHandlersOptions {
 	/** 缺省 = 未接：每个 handler 调到时同步抛 `CoreEngineNotReadyError`（与注册表口径一致）。 */
 	modelAdmin?: ModelAdminPort;
+	/** 项目级 key 记忆的写入口；缺省 = 只动凭据，不写项目 pin。 */
+	projectKeys?: ProjectKeyPins;
 	/** 当前语言（`fetchModelsList` / `testConnection` / `refreshProviderModels` / `enrichModels` 都要）。 */
 	getLang(): ServerLang;
 }
@@ -66,6 +68,8 @@ export function createProviderHandlers(options: ProviderHandlersOptions): Provid
 		if (!admin) throw new CoreEngineNotReadyError(what);
 		return admin;
 	};
+	/** 项目级 key 记忆：没接就是 `undefined`，handler 仍原样转发给端口。 */
+	const pins = (): ProjectKeyPins | undefined => options.projectKeys;
 	return {
 		setProviderApiKey: (provider, apiKey) => port("setProviderApiKey").setProviderApiKey(provider, apiKey),
 		clearProviderApiKey: (provider) => port("clearProviderApiKey").clearProviderApiKey(provider),
@@ -85,12 +89,26 @@ export function createProviderHandlers(options: ProviderHandlersOptions): Provid
 		listProviders: () => port("listProviders").listProviders(),
 		listProviderKeys: () => port("listProviderKeys").listProviderKeys(),
 		addProviderKey: (provider, apiKey, name) => port("addProviderKey").addProviderKey(provider, apiKey, name),
-		// 端口返回 boolean（是否真的切换了）且内部已经 emit 过 notice：返回值与协议 void 对齐后丢弃。
-		activateProviderKey: (provider, keyName) =>
-			port("activateProviderKey")
-				.activateProviderKey(provider, keyName)
-				.then(() => undefined),
-		removeProviderKey: (provider, keyName) => port("removeProviderKey").removeProviderKey(provider, keyName),
+		// 端口返回 boolean（是否真的切换了）且内部已经 emit 过 notice：返回值与协议 void 对齐后丢弃，
+		// 但**项目 pin 要立刻落盘**（老 `agent-service.ts:9538`）：切成功就记住这个项目的选择，
+		// 失败（key 不存在）就把那条记忆删掉，否则下次进项目会去激活一个不存在的 key。
+		activateProviderKey: (provider, keyName) => {
+			const admin = port("activateProviderKey");
+			const target = pins();
+			return admin.activateProviderKey(provider, keyName).then((ok) => {
+				if (!target) return;
+				if (ok) target.remember(provider, keyName);
+				else target.forget(provider);
+			});
+		},
+		// 删掉 key 之后把指向它的项目/全局引用改指新的 active（老 `agent-service.ts:9543`）。
+		removeProviderKey: (provider, keyName) => {
+			const admin = port("removeProviderKey");
+			const target = pins();
+			return admin.removeProviderKey(provider, keyName).then(() => {
+				target?.repointDeleted(provider, keyName, admin.getActiveKeyName(provider));
+			});
+		},
 		// 端口的 `lang` 在倒数第二位（providerId 之后没有参数），逐个对位，别按协议顺序猜。
 		fetchModelsList: (reqId, baseUrl, apiKey, authHeader, api, providerId) =>
 			port("fetchModelsList").fetchModelsList(reqId, baseUrl, apiKey, authHeader, api, lang, providerId),

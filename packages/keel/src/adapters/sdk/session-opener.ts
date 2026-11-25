@@ -5,12 +5,16 @@ import {
 	createAgentSessionServices,
 	type AgentSession,
 	SessionManager,
+	type ExtensionUIContext,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { assertSupportedTranscriptVersion, openSessionManagerAsync } from "../../session-open.js";
 import { guardSession } from "../../session-turns.js";
 import { prepareTranscriptForOpen } from "../../transcript-prepare.js";
+import { calibrateSessionLeaf } from "../../session-branch.js";
 import type { TurnCapableSession } from "../../contracts/session.js";
+import type { PromptRenderBinding } from "../../contracts/prompt-render.js";
+import { createPromptRenderExtension } from "./prompt-render.js";
 
 export interface OpenSessionOptions {
 	cwd: string;
@@ -33,6 +37,16 @@ export interface OpenSessionOptions {
 	 * 类型故意收成 `unknown`：app 层不许依赖 SDK，形状在这里收回 `ToolDefinition`。
 	 */
 	customTools?: readonly unknown[];
+	/**
+	 * 扩展要绑的 UI 上下文（宿主给的不透明值：`UiBridgePort.uiContextFor()` 的结果）。
+	 * `undefined` = 不绑扩展：`session_start` 由 SDK 在 `bindExtensions` 里发，不绑就不发（今天的行为）。
+	 */
+	uiContext?: unknown;
+	/**
+	 * 提示词覆写通道（宿主实现的渲染端口 + 这条对话的身份）：给了才挂 `before_agent_start`，
+	 * 按需加载生效时把整份系统提示词换成宿主渲染的那一份；**缺省 = 行为与今天逐字节一致**。
+	 */
+	promptRender?: PromptRenderBinding;
 }
 
 export interface OpenedSession {
@@ -101,7 +115,11 @@ async function openSessionManager(
 	// 顺序是硬约束：版本校验必须早于打开前修复，否则看不懂的转录会被新内核按自己的语义改写。
 	assertSupportedTranscriptVersion(sessionFile);
 	await prepareTranscriptForOpen(sessionFile);
-	return openSessionManagerAsync(sessionFile);
+	const manager = await openSessionManagerAsync(sessionFile);
+	// 打开既有转录时校准叶指针：上次退出可能停在侧枝（分叉 / 计划旁注的尾条目），
+	// 不校准的话「打开」等于只显示那条侧枝，主分支的历史看不见（老实现 `agent-service.ts:16078` 同一位置）。
+	calibrateSessionLeaf(manager);
+	return manager;
 }
 
 export interface BranchFileOptions {
@@ -161,7 +179,14 @@ export async function openTurnSession(opts: OpenSessionOptions): Promise<OpenedS
 
 	let session: AgentSession;
 	try {
-		const services = await createAgentSessionServices({ cwd, agentDir });
+		const services = await createAgentSessionServices({
+			cwd,
+			agentDir,
+			// 提示词覆写只走扩展（`before_agent_start`）：没给端口就一个扩展都不加，提示词维持 SDK 默认。
+			...(opts.promptRender
+				? { resourceLoaderOptions: { extensionFactories: [createPromptRenderExtension(opts.promptRender)] } }
+				: {}),
+		});
 		session = (
 			await createAgentSessionFromServices({
 				services,
@@ -174,6 +199,15 @@ export async function openTurnSession(opts: OpenSessionOptions): Promise<OpenedS
 		throw new OpenSessionError("create-session", cwd, sessionFile, error);
 	}
 
+	// 扩展必须在**第一轮之前**绑好：`session_start` 只在 `bindExtensions` 里发一次，
+	// 晚一步就是「扩展的资源发现 / UI 初始化」全部缺席（老实现 `agent-service.ts:6334` 同位置）。
+	if (opts.uiContext !== undefined) {
+		try {
+			await session.bindExtensions({ mode: "rpc", uiContext: opts.uiContext as ExtensionUIContext });
+		} catch (error) {
+			throw new OpenSessionError("create-session", cwd, sessionFile, error);
+		}
+	}
 	const guarded = guardSession(session);
 	const file = manager.getSessionFile();
 	let disposed = false;

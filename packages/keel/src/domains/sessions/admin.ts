@@ -60,6 +60,11 @@ function defaultIsAllowedPath(path: string): boolean {
 	return isInsideRoots(path, sessionsRootsFromEnv());
 }
 
+/** 删转录的越界判定（`deleteSession` 与 `deleteSessionFile` 共用同一份：注入优先，缺省按环境根）。 */
+export function canDeleteSessionPath(path: string, isAllowedPath?: (path: string) => boolean): boolean {
+	return (isAllowedPath ?? defaultIsAllowedPath)(path);
+}
+
 async function removeFileFromDisk(path: string): Promise<boolean> {
 	try {
 		await unlink(path);

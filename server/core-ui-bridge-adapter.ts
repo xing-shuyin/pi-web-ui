@@ -9,11 +9,14 @@ import type {
 } from "../packages/keel/src/contracts/ui-bridge.js";
 import { ENGINE_CATALOG } from "../packages/keel/src/engine-catalog.js";
 import { runProcess } from "./run-process.js";
+import { WebUIContext } from "./webui-context.js";
 
 /** 宿主 UI 上下文里内核真正用到的那两张表（`WebUIContext` 的实现就是内核那两份）。 */
 export interface CoreUiBridgeTables {
 	readonly dialogs: UiDialogSurface;
 	readonly overlays: UiOverlaySurface;
+	/** 按对话取扩展 UI 上下文（`WebUIContext.forConversation`）；缺省 = 该宿主管不了会话级 UI。 */
+	forConversation?(conversationId: string): unknown;
 }
 
 export interface CoreUiBridgeSinks {
@@ -119,6 +122,9 @@ export function createCoreUiBridge(sinks: CoreUiBridgeSinks): UiBridgePort {
 	return {
 		dialogs: sinks.webUi.dialogs,
 		overlays: sinks.webUi.overlays,
+		// 子代理 / 后台会话用 headless（dialog 立刻 null、不等浏览器），真对话用浏览器那份。
+		uiContextFor: (conversationId) =>
+			conversationId ? sinks.webUi.forConversation?.(conversationId) : WebUIContext.headless(),
 		async installCli(): Promise<UiCliInstallResult> {
 			try {
 				return await (sinks.runInstall?.() ?? defaultInstall(sinks.agentDir));

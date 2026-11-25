@@ -40,6 +40,8 @@ function fakeSettingsPort(overrides: Partial<SettingsFramePort> = {}): {
 		resetBuiltinApprovalRule: record("resetBuiltinApprovalRule") as SettingsFramePort["resetBuiltinApprovalRule"],
 		saveTemplate: record("saveTemplate") as SettingsFramePort["saveTemplate"],
 		deleteTemplate: record("deleteTemplate") as SettingsFramePort["deleteTemplate"],
+		// 模板读口（子代理工具读它）：这个假体只验设置面的转发，清单给空表。
+		subagentTemplates: () => [],
 		...overrides,
 	};
 	return { port, calls };

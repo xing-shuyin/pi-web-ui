@@ -5,13 +5,15 @@ import type { ContextCategory, ContextCategoryUsage, UiState } from "../../proto
  * `AgentSession.getSessionStats()` 的窄面：只声明快照真的用到的字段。
  * 真身是 SDK 会话，SDK 类型只许出现在 `adapters/sdk/**`，所以这里按结构收窄（不 `import type` SDK）。
  */
+type SessionStatsValue = {
+	totalMessages?: unknown;
+	tokens?: { input?: unknown; output?: unknown; cacheRead?: unknown; cacheWrite?: unknown; total?: unknown };
+	cost?: unknown;
+	contextUsage?: { tokens?: unknown; contextWindow?: unknown; percent?: unknown } | null;
+};
+
 interface SessionStatsSource {
-	getSessionStats?(): {
-		totalMessages?: unknown;
-		tokens?: { input?: unknown; output?: unknown; cacheRead?: unknown; cacheWrite?: unknown; total?: unknown };
-		cost?: unknown;
-		contextUsage?: { tokens?: unknown; contextWindow?: unknown; percent?: unknown } | null;
-	};
+	getSessionStats?(): SessionStatsValue;
 	/** 组装好的系统提示词（内核的引擎侧就是 SDK 自己这份，宿主模板不参与）。 */
 	readonly systemPrompt?: unknown;
 	/** 项目记忆（AGENTS.md 等）：内容已被 SDK 拼进 `systemPrompt`，这里只用来做分类拆分。 */
@@ -37,6 +39,52 @@ const CATEGORIES: readonly ContextCategory[] = [
 
 function emptyWeights(): Weights {
 	return { systemPrompt: 0, memoryFiles: 0, tools: 0, skills: 0, toolResults: 0, messages: 0, other: 0 };
+}
+
+/**
+ * SDK `getSessionStats()` 对转录的假设比协议硬：累加 usage 时 `toolResult` 判了空，
+ * **`assistant` 没判**（`usage-totals.addUsageToTotals` 直接读 `usage.input`）。
+ * 手写/迁移/桩转录里 assistant 常常没有 `usage`，这时它抛 —— 而取统计的调用点在**出帧**里，
+ * 一次抛错就等于把整条出帧链打断（会话已经切过去了，客户端却永远收不到新帧）。
+ * 老实现 `sessionStats()` 外面有 try/catch 落到零值默认，内核对着同一份数据必须同样不抛。
+ */
+function rawStats(source: SessionStatsSource): SessionStatsValue | undefined {
+	try {
+		return source.getSessionStats?.();
+	} catch {
+		return undefined;
+	}
+}
+
+/** 没有 SDK 统计时的兜底：按转录自己加，缺 `usage` 的条目算 0（不是猜，就是没有计费信息）。 */
+function tolerantStats(messages: readonly unknown[] | undefined): SessionStatsValue {
+	const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
+	let cost = 0;
+	let totalMessages = 0;
+	for (const value of messages ?? []) {
+		if (!value || typeof value !== "object") continue;
+		totalMessages += 1;
+		const usage = (value as { usage?: unknown }).usage;
+		if (!usage || typeof usage !== "object") continue;
+		const u = usage as {
+			input?: unknown;
+			output?: unknown;
+			cacheRead?: unknown;
+			cacheWrite?: unknown;
+			cost?: { total?: unknown };
+		};
+		const input = count(u.input);
+		const output = count(u.output);
+		const cacheRead = count(u.cacheRead);
+		const cacheWrite = count(u.cacheWrite);
+		tokens.input += input;
+		tokens.output += output;
+		tokens.cacheRead += cacheRead;
+		tokens.cacheWrite += cacheWrite;
+		tokens.total += input + output + cacheRead + cacheWrite;
+		cost += typeof u.cost?.total === "number" && Number.isFinite(u.cost.total) ? u.cost.total : 0;
+	}
+	return { totalMessages, tokens, cost };
 }
 
 function count(value: unknown): number {
@@ -162,8 +210,8 @@ function reconcile(weights: Weights, usedTokens: number): ContextCategoryUsage[]
  */
 export function statsOfSession(session: unknown): UiState["stats"] | undefined {
 	const source = session as SessionStatsSource | undefined;
-	const stats = source?.getSessionStats?.();
-	if (!source || !stats) return undefined;
+	if (!source) return undefined;
+	const stats = rawStats(source) ?? tolerantStats(source.messages);
 	const tokens = stats.tokens ?? {};
 	const contextUsage = stats.contextUsage;
 	let contextTokens = maybeCount(contextUsage?.tokens);

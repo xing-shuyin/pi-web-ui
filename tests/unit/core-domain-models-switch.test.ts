@@ -199,7 +199,7 @@ describe("选模型 / 思考档 / 全局默认模型（B1）", () => {
 });
 
 describe("模型记忆适配器", () => {
-	it("九格窄面直接转发给 ClientStateStore，不自己缓存", () => {
+	it("九格窄面 + 三项可选维护口直接转发给 ClientStateStore，不自己缓存", () => {
 		const store = {
 			getProjectModel: vi.fn(() => "demo/m1"),
 			saveProjectModel: vi.fn(),
@@ -210,6 +210,9 @@ describe("模型记忆适配器", () => {
 			saveDefaultModel: vi.fn(),
 			getDefaultProviderKey: vi.fn(() => "key-b"),
 			saveDefaultProviderKey: vi.fn(),
+			getProjectProviderKeys: vi.fn(() => ({ demo: "key-a" })),
+			repointDeletedKeyEverywhere: vi.fn(() => 1),
+			repointDeletedKeyInDefault: vi.fn(),
 		} as unknown as ClientStateStore;
 		const memory = createModelMemory(store);
 		expect(memory.getProjectModel("c1", "/w", "pi")).toBe("demo/m1");
@@ -217,5 +220,11 @@ describe("模型记忆适配器", () => {
 		memory.saveDefaultProviderKey("demo", "key-b");
 		expect(store.saveProjectModel).toHaveBeenCalledWith("c1", "/w", "demo/m1", "pi");
 		expect(store.saveDefaultProviderKey).toHaveBeenCalledWith("demo", "key-b");
+		// 进项目枚举 / 删 key 后的改指：宿主有这两个方法就直通（没有就什么也不做）。
+		expect(memory.getProjectProviderKeys?.("c1", "/w")).toEqual({ demo: "key-a" });
+		memory.repointDeletedKeyEverywhere?.("demo", "key-a", "key-b");
+		memory.repointDeletedKeyInDefault?.("demo", "key-a", "key-b");
+		expect(store.repointDeletedKeyEverywhere).toHaveBeenCalledWith("demo", "key-a", "key-b");
+		expect(store.repointDeletedKeyInDefault).toHaveBeenCalledWith("demo", "key-a", "key-b");
 	});
 });

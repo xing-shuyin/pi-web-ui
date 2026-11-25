@@ -28,6 +28,19 @@ export interface RebindContext {
 	/** 活动指针换了：出帧基线与增量缓存要跟着换（app 层接 `SnapshotPublisher.switchConversation`）。 */
 	onActivated?(conversationId: ConversationId): void;
 	notice?: RebindNotice;
+	/**
+	 * 换掉旧对话之前的保留判定（老 `ClientSession.displaceActive` → `isRetainedOnDisplace`）：
+	 * 为真则**不退役**旧对话——它继续留在注册表里、会话不释放、运行列表继续占一行，
+	 * 只有活动指针交给新对话。判据单源在 `domains/sessions/retain.ts`（`createRetainOnDisplace`）。
+	 * 缺省 = 一律退役（重绑的原语义）。
+	 */
+	shouldRetainPrevious?(conversation: Conversation): boolean;
+	/**
+	 * 被保留的旧对话要记进运行列表（老 `displaceActive` 里的 `conv.listed = true`）：
+	 * 少了这一笔，它这一轮跑完就再也不会出现在运行列表里（`inRunningList` 只认 listed / 在跑 / 钉住）。
+	 * 缺省 = 只保留、不列入。
+	 */
+	markListed?(conversationId: ConversationId): void;
 }
 
 export interface RebindConversationInit {
@@ -53,7 +66,10 @@ export interface RebindRequest {
 
 export interface RebindResult {
 	conversation: Conversation;
-	/** 换下来的旧对话（已退役、已摘出注册表、会话已释放）。 */
+	/**
+	 * 换下来的旧对话（已退役、已摘出注册表、会话已释放）。
+	 * **被保留的旧对话不在这里**（老 `displaceActive` 返回 null）：它还在注册表里、还在跑。
+	 */
 	displaced?: Conversation;
 }
 
@@ -64,6 +80,28 @@ function retire(conversation: Conversation): void {
 	conversation.finishRetire();
 }
 
+/** 腾位只需要这四样：注册表、会话释放口、保留判据、列入运行列表。 */
+export type DisplaceContext = Pick<RebindContext, "registry" | "sessions" | "shouldRetainPrevious" | "markListed">;
+
+/**
+ * 换活动对话前的「腾位」（老 `displaceActive`）：按判据决定**保留**还是**退役**。
+ *
+ * 返回是否保留了旧对话（老口径：返回 null = 保留）。两个入口共用这一份：
+ * `rebindSession`（换目录 / 切转录 / 换工作树）与切到已经开着的对话
+ * （`domains/sessions/entity.ts` 的 `switchSession` 复用路径）——老实现两条路都走 `displaceActive`。
+ */
+export function displacePrevious(ctx: DisplaceContext, conversation: Conversation): boolean {
+	if (ctx.shouldRetainPrevious?.(conversation) === true) {
+		// 保留 = 会话一个字节都不动 + 继续占运行列表一行（老 `conv.listed = true`）。
+		ctx.markListed?.(conversation.id);
+		return true;
+	}
+	retire(conversation);
+	ctx.registry.remove(conversation.id);
+	ctx.sessions.close(conversation.id);
+	return false;
+}
+
 /**
  * 会话实体重绑的唯一原语：**先建后拆**。
  *
@@ -72,7 +110,8 @@ function retire(conversation: Conversation): void {
  *
  * 1. 新对话先注册成**候选**（不激活、不出帧），旧对话与旧会话一个字节都不动；
  * 2. 候选会话真的开起来（这一步会读盘/建 SDK 运行时，是最可能失败的地方）；
- * 3. 成功才拆旧的：退役 → 摘出注册表 → 释放会话，然后激活候选、全量重帧；
+ * 3. 成功才腾位：旧对话按 `shouldRetainPrevious` 决定保留还是退役（退役 = 退役 → 摘出注册表 → 释放会话），
+ *    然后激活候选、全量重帧；
  * 4. 任何一步失败：候选会话释放、候选对话摘出注册表、活动指针回到原处，**旧会话仍然可用**，
  *    错误原样抛出（wire 层按自己的口径发 error notice）。
  *
@@ -101,16 +140,15 @@ export async function rebindSession(ctx: RebindContext, request: RebindRequest):
 		throw error;
 	}
 
-	if (previous && previous.id !== candidate.id) {
-		retire(previous);
-		ctx.registry.remove(previous.id);
-		ctx.sessions.close(previous.id);
-	}
+	// 腾位：老实现在这里问 `isRetainedOnDisplace`，保留的对话不退役、只把活动指针让出去。
+	const replaced = previous !== undefined && previous.id !== candidate.id;
+	const retained = replaced && previous !== undefined ? displacePrevious(ctx, previous) : false;
 	ctx.registry.activate(candidate.id);
 	ctx.onActivated?.(candidate.id);
 	ctx.frames.flush(true);
 	ctx.frames.pushConversations?.();
 	void ctx.frames.pushSessions?.();
 	void ctx.frames.pushProjects?.();
-	return { conversation: candidate, ...(previous && previous.id !== candidate.id ? { displaced: previous } : {}) };
+	// 保留的旧对话不算被换下来（老 `displaceActive` 返回 null），调用方据此决定要不要报「旧对话已结束」。
+	return { conversation: candidate, ...(replaced && !retained ? { displaced: previous } : {}) };
 }

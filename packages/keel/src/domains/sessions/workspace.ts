@@ -33,6 +33,16 @@ export interface WorkspaceSwitcherOptions {
 	progress?(kind: "cwd" | "session", target: string, phase: "done" | "error", text: string, textEn: string): void;
 	/** 换完后的文件树重列（文件域的宿主端口自己出 `files` 帧）；缺省 = 骨架不动。 */
 	refreshFiles?(): void | Promise<void>;
+	/** 换掉旧对话之前的保留判定（老 `displaceActive`）：见 `domains/sessions/retain.ts`。 */
+	shouldRetainPrevious?(conversation: Conversation): boolean;
+	/** 保留的旧对话要记进运行列表（老 `conv.listed = true`）；缺省 = 只保留、不列入。 */
+	markListed?(conversationId: ConversationId): void;
+	/** 设置项 `openRecentSessionOnProjectSwitch`（老 `setCwd` 的 `openRecent`）；缺省 `false` = 不恢复。 */
+	openRecentSession?(): boolean;
+	/** 目标工作区最近一份转录（宿主扫盘：内核不拼 SDK 目录布局）；拿不到就返回 `undefined`。 */
+	mostRecentSession?(cwd: string): Promise<string | undefined>;
+	/** 转录占用查询（老 `findSessionOwner`）：别的页面正开着 / 正在跑时不恢复，避免两个写者。 */
+	sessionOwner?(file: string): { connected?: boolean; isStreaming?: boolean } | undefined;
 }
 
 /** 换工作区失败时的用户可见文案：`set_cwd` / `/cwd` / 上传进度三条入口共用一份，不各写一句。 */
@@ -76,11 +86,31 @@ export function createWorkspaceSwitcher(options: WorkspaceSwitcherOptions): Work
 		frames: options.frames,
 		createConversation: (init: { cwd: string }) => options.createConversation(init),
 		...(options.onActivated ? { onActivated: options.onActivated } : {}),
+		...(options.shouldRetainPrevious ? { shouldRetainPrevious: options.shouldRetainPrevious } : {}),
+		...(options.markListed ? { markListed: options.markListed } : {}),
 		notice: options.notice,
 	};
 
 	/**
+	 * 老 `setCwd` 的 `openRecent`：切项目时恢复该项目的最近会话（而不是新建空白会话）。
+	 *
+	 * 三道闸，顺序与老实现一致：设置项 → 扫得最近文件 → 占用检查。
+	 * 占用检查（老 `resumeSkipped`：`owner.connected || owner.isStreaming`）必须留：同一份转录两个写者会互相覆盖。
+	 * 扫盘失败 / 拿不到文件 = 不恢复（老实现在这里会回退到 `continueRecent`；内核没有那个原语，不自拼目录布局）。
+	 */
+	const resumeTarget = async (target: WorkspaceTarget): Promise<string | undefined> => {
+		if (options.openRecentSession?.() !== true) return undefined;
+		const recent = await options.mostRecentSession?.(target.cwd);
+		if (!recent) return undefined;
+		const owner = options.sessionOwner?.(recent);
+		if (owner?.connected === true || owner?.isStreaming === true) return undefined;
+		return recent;
+	};
+
+	/**
 	 * 换工作区的唯一提交点：**先把运行时状态切过去**，再重绑会话，最后宿主收尾。
+	 *
+	 * 重绑目标本身由 `resumeTarget` 裁定（老口径：恢复该项目最近会话或新建空白会话）。
 	 *
 	 * 顺序不能再反：重绑末尾那一帧是客户端看到新工作区的唯一机会（`setWorkspace` 到它之前生效），
 	 * 先切状态才会出「新对话 + 新目录」的一帧，而不是「新对话 + 旧目录」然后再等下一次 flush
@@ -93,9 +123,12 @@ export function createWorkspaceSwitcher(options: WorkspaceSwitcherOptions): Work
 		const roots = options.store?.getRoots(target.cwd) ?? [];
 		options.setWorkspace(target.cwd, roots);
 		try {
+			// 扫盘是宿主的活，抛错就当「不知道最近的哪一份」：宁肯新建，也不拿半熟路径去重绑。
+			const recent = await resumeTarget(target).catch(() => undefined);
 			await rebindSession(rebindCtx, {
 				cwd: target.cwd,
 				...(target.sessionCwd ? { sessionCwd: target.sessionCwd } : {}),
+				...(recent ? { sessionFile: recent } : {}),
 			});
 		} catch (error) {
 			options.setWorkspace(previousCwd, previousRoots);

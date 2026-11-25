@@ -8,6 +8,7 @@ import type { GoalRunPort } from "../contracts/goals.js";
 import type { GoalRunSinks } from "../domains/goals/index.js";
 import type { ServerLang } from "../i18n.js";
 import type { HostFaceFactories } from "./host-faces.js";
+import type { Conversation } from "../kernel/conversation/index.js";
 import type { TerminalManagerLike } from "../engine-service.js";
 import type { CoreMcpProjectsPort } from "../contracts/plugins.js";
 
@@ -31,6 +32,15 @@ export type {
  * 宿主面工厂（设置/文件/插件/沙盒/后台/终端面…）的形状定义在 `HostFaceFactories`，那边也是装配点。
  */
 export interface CoreEngineOptions extends HostFaceFactories {
+	/**
+	 * 换活动对话时「保留还是退役」里只有宿主知道的几项（子代理运行 / 等唤醒订阅 / 在跑的后台任务 /
+	 * 终端 / 目标评审 / 问卷 / 投递在飞）。判据单源在 `domains/sessions/retain.ts`，这里只交证据。
+	 * 缺省 = 只按内核自己认得的判（少保留几项，绝不凭空保留）。
+	 */
+	retainEvidence?: (
+		clientId: string,
+		conversation: Conversation,
+	) => Partial<import("../domains/sessions/retain.js").DisplaceRetainFacts>;
 	version: string;
 	attach?: boolean;
 	agentDir?: string;

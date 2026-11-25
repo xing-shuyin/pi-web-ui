@@ -7,6 +7,14 @@ export {
 	type AppendRejectedTool,
 	type AppendRejectionReason,
 } from "./lazy.js";
+export {
+	lazyCatalogInput,
+	lazyCatalogResolve,
+	lazyEffectiveOf,
+	lazyOnDemandOf,
+	loadedLazyToolsOf,
+	markLazyToolsLoaded,
+} from "./lazy-state.js";
 export { resolveToolLoadout, type ToolLoadout, type ToolLoadoutInput } from "./loadout.js";
 export { createToolInfoHandlers, type ToolInfoHandlers, type ToolInfoHandlersOptions } from "./info.js";
 export {

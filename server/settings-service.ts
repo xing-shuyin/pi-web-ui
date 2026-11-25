@@ -15,6 +15,7 @@ import type {
 	UiLayoutPrefs,
 	UiSettingsState,
 	UiSkillInfo,
+	UiSubagentTemplate,
 	UiToolPromptOverride,
 	UiVisionBridgeModel,
 } from "./protocol.js";
@@ -471,6 +472,19 @@ export class SettingsService {
 		this.knownExtensions.clear();
 	}
 
+	/**
+	 * 子代理模板（生效值）：设置帧与 `conversation` 工具读同一份投影。
+	 *
+	 * `securityMode` 下发的是**生效值**：模板从未声明权限时也要看得见启发式的真实结果，
+	 * 否则用户以为「常规」、实际按名字被当成 readonly。
+	 */
+	subagentTemplateViews(): UiSubagentTemplate[] {
+		return this.templates.list().map((t) => ({
+			...localizeTemplate(t, this.host.getLocale?.()),
+			securityMode: resolveSecurityMode(t.name, t),
+		}));
+	}
+
 	push(): void {
 		if (this.disposed || this.host.isDisposed()) return;
 		this.resetResourceCatalog();
@@ -594,12 +608,7 @@ export class SettingsService {
 							disabledMarkers: [] as string[],
 							markers: [] as import("./protocol.js").UiMarkerInfo[],
 						}),
-				subagentTemplates: this.templates.list().map((t) => ({
-					...localizeTemplate(t, this.host.getLocale?.()),
-					// 下发生效值：模板从未声明权限时也要让设置页看见启发式的真实结果，
-					// 否则用户以为「常规」、实际按名字被当成 readonly。
-					securityMode: resolveSecurityMode(t.name, t),
-				})),
+				subagentTemplates: this.subagentTemplateViews(),
 				subagentDefaultTemplates: DEFAULT_TEMPLATES.map((t) => t.name),
 				subagentDefaultModel: this.settings.subagentDefaultModel ?? null,
 				subagentMaxDepth: this.settings.subagentMaxDepth ?? 0,

@@ -19,9 +19,11 @@ export interface SubagentSpawnSpec {
 	signal?: AbortSignal;
 }
 
+/** 模板清单的一行：与设置帧 `subagentTemplates` 同一份数据（叶子只展示这几列）。 */
 export interface SubagentTemplateInfo {
 	name: string;
 	description: string;
+	descriptionEn?: string;
 	model?: string;
 	thinkingLevel?: string;
 }

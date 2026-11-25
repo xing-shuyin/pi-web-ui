@@ -6,6 +6,7 @@ import {
 	type ChatModeState,
 	type PresetState,
 } from "../domains/tools/index.js";
+import { createProjectMemory } from "../domains/models/index.js";
 import { withChatModeGates } from "../adapters/sdk/chat-mode.js";
 import { createAskQuestionTool } from "../adapters/tools/ask-question.js";
 import { createGuardedBuiltinTools } from "../adapters/tools/guarded.js";
@@ -100,8 +101,43 @@ export function createEngineSessionRegistry(deps: EngineSessionDeps): SessionReg
 		applyBotToolGate({ host, face });
 	};
 
+	/**
+	 * 进项目：先把该项目记住的 provider key 全部激活，再给「还没开始」的会话套上项目模型。
+	 *
+	 * 老实现 `server/agent-service.ts:4908-4909`（开会话）、`:14543`（切会话）、`:17167`（换目录）
+	 * 三处都是这个顺序与语义：key 先、模型后（模型恢复自己还会再查一次该 provider 的 pin），
+	 * 静默 + 自愈（记忆里的 key / 模型已经不在了就当那条记忆失效，不弹错），最后补一帧。
+	 */
+	const restoreProjectMemory = async (conv: Conversation, opened: OpenedSession): Promise<void> => {
+		const runtime = deps.getRuntime();
+		const memory = runtime.options.modelMemory;
+		if (!memory) return;
+		// 对话转手后归新客户端（与 ask / pageCall / 工具门禁同一口径）。
+		const owner = conv.meta.clientId;
+		const clientId = typeof owner === "string" && owner.length > 0 ? owner : deps.clientId;
+		const admin = runtime.options.modelAdmin;
+		const project = createProjectMemory({ clientId, memory, ...(admin ? { admin } : {}) });
+		try {
+			await project.restoreKeysForProject(conv.meta.cwd);
+			// Bot / 子代理对话的模型由身份或父对话固定：项目模型只套普通对话（老实现 `!botExecution`）。
+			if (conv.meta.kind === "user") {
+				await project.restoreModelForProject({
+					cwd: conv.meta.cwd,
+					session: opened.session,
+					resolveModel: deps.getFaces().resolveModel,
+					onModelChanged: () => runtime.options.onSessionModelChanged?.(conv.id),
+				});
+			}
+		} catch {}
+		// 退役掉的对话不再占出帧：它已经被后一次重绑换下来了（老实现的 `activeId` 比对）。
+		if (runtime.isDisposed() || conv.phase === "retired") return;
+		runtime.publisher.request();
+	};
+
 	return new SessionRegistry({
 		agentDir: deps.agentDir,
+		// 扩展的 UI 上下文：子代理用 headless（dialog 立刻 null、不等浏览器），真对话用浏览器那份。
+		uiContextOf: (conv) => deps.getFaces().uiBridge?.uiContextFor(conv.meta.kind === "subagent" ? undefined : conv.id),
 		toolsFor: () => resolveToolLoadout({ switches: deps.stateStore.getSettingsSnapshot(deps.clientId) }).tools,
 		customToolsFor: (conv) => [
 			...withChatModeGates(
@@ -219,6 +255,8 @@ export function createEngineSessionRegistry(deps: EngineSessionDeps): SessionReg
 			resumeAgentPreset(conv, opened);
 			// Bot 执行的门禁排在预设之后：白名单是最终口径（老实现的早返回）。
 			gateBotTools(conv, opened);
+			// 项目记忆（该项目的 {模型, provider key}）：晚于预设与门禁，失败不影响会话可用。
+			void restoreProjectMemory(conv, opened);
 			unsubscribers.set(
 				conv.id,
 				subscribePluginSessionEvents({

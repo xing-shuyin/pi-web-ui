@@ -15,6 +15,34 @@ export interface ModelMemoryPort {
 	saveDefaultModel(modelId: string, engine: string): void;
 	getDefaultProviderKey(provider: string): string | undefined;
 	saveDefaultProviderKey(provider: string, keyName: string): void;
+	/**
+	 * 一个项目记住的全部 provider key（`cwd → provider → keyName`）：进项目要逐个激活。
+	 * 可选——宿主没实现就只按「当前模型那一个 provider」恢复，不报错。
+	 */
+	getProjectProviderKeys?(clientId: string, cwd: string): Record<string, string> | undefined;
+	/**
+	 * 某个 key 被删掉之后，把**所有**项目里指向它的引用改指新的 active（老的 `repointDeletedKeyEverywhere`）：
+	 * 不这么做，下次进项目激活的就是一个不存在的 key。可选同上。
+	 */
+	repointDeletedKeyEverywhere?(provider: string, deletedKeyName: string, newActive: string | null): void;
+	/** 全局默认 key 的同一次改指（老的 `repointDeletedKeyInDefault`）。 */
+	repointDeletedKeyInDefault?(provider: string, deletedKeyName: string, newActive: string | null): void;
+}
+
+/**
+ * 项目级 provider key 记忆的**写入口**（凭据面只需这三格）。
+ *
+ * 为什么要单独一个接口：语义单源在 `domains/models/project-memory.ts`（项目 pin 优先 / 自愈 /
+ * 删 key 后改指都是那一份），而"激活/删除 key"发生在 `domains/providers`。两块域之间不许互相 import，
+ * 所以凭据面只认这个窄面，具体绑定在 app 层（`bindProjectKeyPins`）。
+ */
+export interface ProjectKeyPins {
+	/** 已切到某个 key：把它记成本项目的选择。 */
+	remember(provider: string, keyName: string): void;
+	/** 切换没成功（key 不存在）：那条记忆失效。 */
+	forget(provider: string): void;
+	/** 某个 key 被删了：项目/全局引用改指新的 active（没有就给 `null`）。 */
+	repointDeleted(provider: string, deletedKeyName: string, newActive: string | null): void;
 }
 
 /**

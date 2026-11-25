@@ -46,6 +46,11 @@ export interface SnapshotEmitOptions {
 	since?: number;
 	/** 内容是否变了（默认 true：调用方主动 flush 通常就是有变化） */
 	changed?: boolean;
+	/**
+	 * 这是「现在就要一帧」的显式出帧（`flush`/`forceFull`），不是「顺便推一帧」的合并请求：
+	 * 跳过间隔闸。否则在上一帧之后 `frameMs` 内的 flush 会被静默丢掉——调用方以为已经通知了客户端。
+	 */
+	immediate?: boolean;
 }
 
 /**
@@ -125,7 +130,7 @@ export class SnapshotPublisher {
 	/** 立刻出帧（先取消排队的合并帧）。返回 null 表示已 dispose / 通道已关，未参与决策。 */
 	flush(options: SnapshotEmitOptions = {}): SnapshotPlan | null {
 		this.cancelPending();
-		return this.emit(options);
+		return this.emit({ ...options, immediate: true });
 	}
 
 	/** 强制全量出帧：忽略间隔与内容是否变化。 */
@@ -164,6 +169,7 @@ export class SnapshotPublisher {
 			sameConversation,
 			streaming: now - this.lastDeltaAt < this.deltaActiveWindowMs,
 			forceFull,
+			immediate: options.immediate === true,
 			now,
 			intervals: this.intervals,
 		});

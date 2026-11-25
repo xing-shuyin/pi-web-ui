@@ -149,6 +149,8 @@ export async function executeTakeOverConversation(
 			conversationId: fixId(ask.conversationId),
 		}));
 
+		/** 真的插进目标注册表的对话（回滚只把这些搬回去；没插进去的一步都不许动）。 */
+		const inserted = new Set<Conversation>();
 		try {
 			if (process.env.PI_WEB_TEST_TAKEOVER_FAIL_INSERT === "1") {
 				throw new Error("injected takeover insert failure");
@@ -173,6 +175,7 @@ export async function executeTakeOverConversation(
 				}
 				c.meta.clientId = target.options.clientId;
 				target.registry.add(c);
+				inserted.add(c);
 				target.surface().conversations().markListed(newId);
 				if (source.options.sessions && target.options.sessions) {
 					target.options.sessions.transferFrom(source.options.sessions, oldId, newId);
@@ -228,7 +231,9 @@ export async function executeTakeOverConversation(
 				c.meta.clientId = ownerId;
 				c.meta.parentId = originalParentIds.get(c);
 				if (!source.registry.has(origId)) source.registry.add(c);
-				if (target.options.sessions && source.options.sessions) {
+				// 只有**真搬过去过**的才搬回来：注入/中途失败时目标那份可能是空的/别人的，
+				// 无条件 transferFrom 会把它盖在来源活着的会话上（在跑的那一轮就此消失）。
+				if (inserted.has(c) && target.options.sessions && source.options.sessions) {
 					source.options.sessions.transferFrom(target.options.sessions, curId, origId);
 				}
 			}

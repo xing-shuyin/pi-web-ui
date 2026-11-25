@@ -18,6 +18,7 @@ import {
 import {
 	ConversationPinIndex,
 	createSessionEntityHandlers,
+	type DisplaceRetainFacts,
 	createSessionForks,
 	createSessionPins,
 	createSessionRollbacks,
@@ -27,8 +28,11 @@ import {
 	type SessionPinsHandlers,
 	type SessionRollbackHandlers,
 } from "../domains/sessions/index.js";
-import { rebindSession, type RebindFrames } from "../domains/sessions/rebind.js";
+import { displacePrevious, rebindSession, type RebindFrames } from "../domains/sessions/rebind.js";
+import { createRetainOnDisplace } from "../domains/sessions/retain.js";
 import { createWorkspaceSwitcher } from "../domains/sessions/workspace.js";
+import { findMostRecentSessionFileFast } from "../session-parser.js";
+import { resolveWorkspaceSessionDir } from "../remote-workspace.js";
 import { findTurnBaseEntryId, resolveEntry, undeletedContextEntries } from "../domains/turns/entries.js";
 import { createSandboxHandlers, type SandboxHandlers } from "../domains/sandbox/index.js";
 import type { SessionRegistry } from "./session-registry.js";
@@ -80,7 +84,12 @@ export interface SessionSurfaceOptions {
 	isAllowedPath?(path: string): boolean;
 	notice(level: "info" | "warning" | "error", text: string, textEn: string): void;
 	/** 跨客户端会话占用查询 */
-	findSessionOwner?: (sessionFile: string) => { title: string; isStreaming: boolean } | undefined;
+	/** 跨客户端会话占用查询（带占用者身份：自动过户要用）。 */
+	findSessionOwner?: (
+		sessionFile: string,
+	) => { title: string; isStreaming: boolean; clientId: string; conversationId: string } | undefined;
+	/** 别处开着且没在跑 → 过户到本页（老实现 `switchSession` 的 `takeOverConversationElsewhere`）。 */
+	takeOverElsewhere?(owner: { clientId: string; conversationId: string }): Promise<void>;
 	progress?(kind: "cwd" | "session", target: string, phase: "done" | "error", text: string, textEn: string): void;
 	/** 换完工作区后重列文件树（文件域的实现自己发 `files` 帧）；缺省 = 不重列。 */
 	refreshFiles?(): void | Promise<void>;
@@ -90,6 +99,12 @@ export interface SessionSurfaceOptions {
 	elsewhere?(): readonly import("../protocol.js").ElsewhereRunning[];
 	/** 客户端通道是否已关（关了就只算账不出帧）。 */
 	isClosed(): boolean;
+	/**
+	 * 换活动对话时「保留还是退役」里宿主才知道的那几项（子代理运行 / 等唤醒订阅 / 在跑的后台任务 /
+	 * 终端 / 目标评审 / 问卷 / 投递在飞）。判据仍归 `domains/sessions/retain.ts`，这里只交证据；
+	 * 缺项 = 不知道（按 false 处理，老口径同）。
+	 */
+	retainEvidence?(conversation: Conversation): Partial<DisplaceRetainFacts>;
 }
 
 export interface SessionSurface {
@@ -107,6 +122,11 @@ export interface SessionSurface {
 	conversations(): SessionConversations;
 	/** 沙盒 7 个。 */
 	sandbox(): SandboxHandlers;
+	/**
+	 * 活动对话换了、且它的工作区与当前不同：把工作区跟过去（不重绑会话）。
+	 * 对应老 `switchConversation` 的 `applyCwdSideEffects`：根取存储、宿主收尾、项目/会话帧、重列文件。
+	 */
+	followActiveProject(): void;
 }
 
 export interface SessionConversations {
@@ -127,6 +147,41 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 	const registry = options.registry;
 	/** 运行列表内存态：钉住面与 `conversations` 帧共用同一份（不能两处各记一套）。 */
 	const pinIndex = new ConversationPinIndex();
+	/**
+	 * 换活动对话时的保留判定（老 `displaceActive` → `isRetainedOnDisplace`）：判据单源在
+	 * `domains/sessions/retain.ts`，这里只喂「只有装配层拿得到」的事实。
+	 * 故意不传的几项（宿主才有）：`reviewing` / `wizardRunning`（目标/问卷域）、`promptInFlight`
+	 * （`server/conversation-delivery.ts`）、`compacting`（宿主 `session.isCompacting`）、
+	 * `openTerminals`（终端叶子）、`promptedSinceActive`（内核暂无此状态位）、
+	 * `hasActiveSubagentRun` / `hasPendingWake` / `hasRunningBackgroundTask`（`wait-subscription-scan`）。
+	 * 缺失 = false，与老口径「没在跑就不保留」一致。
+	 */
+	/** 宿主证据是**逐对话**的：每次判定都现问（缓存住会让「刚跑完」的对话被一直当在跑）。 */
+	const evidenceOf = (conv: Conversation): Partial<DisplaceRetainFacts> => {
+		try {
+			return options.retainEvidence?.(conv) ?? {};
+		} catch {
+			// 宿主扫描抛错 = 不知道；不能让一次扫盘失败把「保留」判成「退役」。
+			return {};
+		}
+	};
+	const shouldRetainPrevious = createRetainOnDisplace(registry, {
+		nativeCli: (conv) => options.nativeCliOf?.(conv.id) !== undefined,
+		hasActiveSubagentRun: (conv) => evidenceOf(conv).hasActiveSubagentRun,
+		hasPendingWake: (conv) => evidenceOf(conv).hasPendingWake,
+		hasRunningBackgroundTask: (conv) => evidenceOf(conv).hasRunningBackgroundTask,
+		openTerminals: (conv) => evidenceOf(conv).openTerminals,
+		reviewing: (conv) => evidenceOf(conv).reviewing,
+		wizardRunning: (conv) => evidenceOf(conv).wizardRunning,
+		promptInFlight: (conv) => evidenceOf(conv).promptInFlight,
+		streaming: (conv) => evidenceOf(conv).streaming,
+		started: (conv) =>
+			pinIndex.stateOf(conv.id)?.listed === true || (options.sessions?.get(conv.id)?.session.messages?.length ?? 0) > 0,
+		keepsFinished: () => options.store?.()?.getSettingsSnapshot(options.clientId).retainFinishedConversations === true,
+		pinned: (conv) => pinIndex.isPinned(conv.id),
+		listed: (conv) => pinIndex.stateOf(conv.id)?.listed === true,
+	});
+	const markListed = (id: ConversationId): void => pinIndex.markListed(id);
 	/** 已开会话 → 条目树窄面；会话没接时不了（handler 同步抛，不拿半死句柄）。 */
 	const editorOf = (conversationId: ConversationId): MessageEditSession | undefined => {
 		const opened = options.sessions?.get(conversationId);
@@ -208,6 +263,8 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 		frames: options.frames,
 		createConversation: (init: { cwd: string; sessionFile?: SessionFile }) => options.createConversation(init),
 		onActivated: options.onActivated,
+		shouldRetainPrevious,
+		markListed,
 		notice: options.notice,
 	});
 	const rebind = async (request: Parameters<typeof rebindSession>[1]) => {
@@ -248,6 +305,13 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 				},
 			},
 			...(host ? { host } : {}),
+			shouldRetainPrevious,
+			markListed,
+			// 老 `setCwd` 的 `openRecent`（设置项缺省 true）。
+			openRecentSession: () => store.getSettingsSnapshot(options.clientId).openRecentSessionOnProjectSwitch === true,
+			// 会话目录布局只在装配层拼（与 `app/engine-elsewhere.ts` 同一口径）。
+			mostRecentSession: (cwd) => findMostRecentSessionFileFast(resolveWorkspaceSessionDir(store.dataDir, cwd), cwd),
+			...(options.findSessionOwner ? { sessionOwner: options.findSessionOwner } : {}),
 			notice: options.notice,
 			...(options.progress ? { progress: options.progress } : {}),
 			...(options.refreshFiles ? { refreshFiles: options.refreshFiles } : {}),
@@ -262,6 +326,9 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 			(entity ??= createSessionEntityHandlers({
 				registry,
 				rebind,
+				markListed,
+				displace: (conversation) =>
+					void displacePrevious({ registry, sessions: sessionsOf(), shouldRetainPrevious, markListed }, conversation),
 				frames: options.frames,
 				cwd: () => registry.activeConv()?.meta.cwd ?? options.cwd(),
 				...(options.isAllowedPath ? { isAllowedPath: options.isAllowedPath } : {}),
@@ -269,6 +336,7 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 				...(options.noteSessionFile ? { noteSessionFile: options.noteSessionFile } : {}),
 				notice: options.notice,
 				...(options.findSessionOwner ? { findSessionOwner: options.findSessionOwner } : {}),
+				...(options.takeOverElsewhere ? { takeOverElsewhere: options.takeOverElsewhere } : {}),
 				...(options.progress ? { progress: options.progress } : {}),
 			})),
 
@@ -314,6 +382,25 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 			push: pushConversations,
 			markListed: (id) => pinIndex.markListed(id),
 		}),
+
+		/**
+		 * 跨项目切对话只跟工作区，**不**走重绑（目标会话已经开着，重绑会把它拆了）。
+		 * 老实现在这里做四件事：`roots` 重取、`onCwdChanged`、项目/会话帧、`listFiles`。
+		 * 帧顺序：先切状态再出帧（否则客户端先看到「新对话 + 旧目录」，下一帧又会被合并闸吞掉）。
+		 */
+		followActiveProject: (): void => {
+			const conv = registry.activeConv();
+			const next = conv?.meta.cwd;
+			if (!next || next === options.cwd()) return;
+			const store = options.store?.();
+			const roots = store ? store.getWorkspaceRoots(options.clientId, next) : options.roots();
+			options.setWorkspace(next, roots);
+			// 宿主收尾（插件 cwd / 额外根通知）：失败不影响切换，也不挡住出帧。
+			void Promise.resolve(options.workspaceHost?.()?.onChanged?.(next, roots)).catch(() => undefined);
+			void options.frames.pushProjects?.();
+			void options.frames.refreshSessionsFor?.(next);
+			void options.refreshFiles?.();
+		},
 
 		sandbox: () =>
 			(sandbox ??= createSandboxHandlers({

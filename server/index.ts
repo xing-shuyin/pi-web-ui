@@ -1554,6 +1554,11 @@ import type { EngineId, EngineStatus } from "./protocol.js";
 
 import type { DispatchSession, EngineService, TerminalManagerLike } from "./engine-service.js";
 import { TerminalManager } from "./terminals.js";
+import {
+	hasActiveSubagentRun,
+	hasPendingWaitSubscription,
+	hasRunningBackgroundTask,
+} from "./wait-subscription-scan.js";
 
 let piServiceInstance: AgentService | null = null;
 let dshServiceInstance: DshAgentService | null = null;
@@ -1728,6 +1733,16 @@ function ensureEngine(engine: EngineId): EngineService {
 								engine: () => resolveClientEngine(sinks.clientId),
 								session: () => dshServiceInstance?.get(sinks.clientId),
 							}),
+						// 换活动对话时「保留还是退役」里只有宿主知道的几项（老 shouldRetainActive 同一条口径）：
+						// 三份扫描都读 PI_SUBAGENTS_TEMP_ROOT 下的运行态账，内核不认这个目录布局。
+						retainEvidence: (_clientId, conv) => ({
+							hasActiveSubagentRun: hasActiveSubagentRun({ sessionId: conv.meta.sessionFile }),
+							hasPendingWake: hasPendingWaitSubscription({ sessionId: conv.meta.sessionFile }),
+							hasRunningBackgroundTask: hasRunningBackgroundTask({
+								cwd: conv.meta.cwd,
+								sessionFile: conv.meta.sessionFile,
+							}),
+						}),
 						enginePermissionMode: (sinks) =>
 							createCoreEnginePermissionMode({
 								clientId: sinks.clientId,

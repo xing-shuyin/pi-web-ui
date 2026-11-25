@@ -208,20 +208,21 @@ describe("domains/snapshots · SnapshotPublisher 出帧闸门", () => {
 		publisher.flush();
 		clock.advance(60);
 		const planned = publisher.flush();
-		expect(planned).toEqual({ kind: "delta", rev: 3, reason: "interval" });
-		expect(built[1]).toEqual({ kind: "delta", conversationId: "c1", rev: 3, baseRev: 2, reason: "interval" });
+		expect(planned).toEqual({ kind: "delta", rev: 3, reason: "immediate" });
+		expect(built[1]).toEqual({ kind: "delta", conversationId: "c1", rev: 3, baseRev: 2, reason: "immediate" });
 		expect(transport.frames).toHaveLength(2);
 		expect(publisher.rev).toBe(3);
 	});
 
-	it("未到间隔的 flush 被合并成 skip，不发帧也不推进 rev", () => {
+	it("未到间隔的显式 flush 也照发（间隔只服务于合并请求）", () => {
 		const { clock, publisher, transport } = harness();
 		publisher.switchConversation("c1");
 		publisher.flush();
 		clock.advance(10);
-		expect(publisher.flush()).toEqual({ kind: "skip", rev: 3, reason: "too-soon" });
-		expect(transport.frames).toHaveLength(1);
-		expect(publisher.rev).toBe(2);
+		// 老实现 `flushSnapshot()` 是「清定时器 + 立刻出帧」，没有间隔闸；间隔闸只拦「顺便推一帧」。
+		expect(publisher.flush()).toEqual({ kind: "delta", rev: 3, reason: "immediate" });
+		expect(transport.frames).toHaveLength(2);
+		expect(publisher.rev).toBe(3);
 	});
 
 	it("没有任何变化时 flush 也 skip", () => {
@@ -322,15 +323,19 @@ describe("domains/snapshots · SnapshotPublisher 出帧闸门", () => {
 		expect(publisher.rev).toBe(0);
 	});
 
-	it("注入的间隔参数决定合并节奏", () => {
+	it("间隔只约束合并请求：显式 flush 撞上间隔也照发", () => {
 		const { clock, publisher, transport } = harness({ frameMs: 500, streamingMs: 5_000 });
 		publisher.switchConversation("c1");
 		publisher.flush();
 		clock.advance(499);
-		expect(publisher.flush()).toEqual({ kind: "skip", rev: 3, reason: "too-soon" });
-		clock.advance(1);
-		expect(publisher.flush()).toEqual({ kind: "delta", rev: 4, reason: "interval" });
+		// 显式 flush 定义就是「现在就要一帧」（老实现 `flushSnapshot()` 立刻出帧）：撞上间隔被丢掉，
+		// 调用方就会以为已通知客户端、其实一帧没发（回滚 / 切会话 / 改设置都靠它）。
+		expect(publisher.flush()).toEqual({ kind: "delta", rev: 3, reason: "immediate" });
 		expect(transport.frames).toHaveLength(2);
+		// 合并请求（`request()`）照旧受间隔约束：排一次定时出帧，不越闸。
+		publisher.request();
+		clock.advance(500);
+		expect(transport.frames).toHaveLength(3);
 	});
 });
 

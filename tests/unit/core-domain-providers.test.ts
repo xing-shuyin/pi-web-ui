@@ -1,7 +1,8 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { CoreEngineNotReadyError } from "../../packages/keel/src/contracts/core-engine-errors.js";
-import type { ModelAdminPort } from "../../packages/keel/src/contracts/model-admin.js";
+import type { ModelAdminPort, ModelMemoryPort } from "../../packages/keel/src/contracts/model-admin.js";
 import { createProviderHandlers, type ProviderHandlers } from "../../packages/keel/src/domains/providers/handlers.js";
+import { bindProjectKeyPins } from "../../packages/keel/src/domains/models/index.js";
 import type { DispatchSession } from "../../packages/keel/src/engine-service.js";
 import type { ServerLang } from "../../packages/keel/src/i18n.js";
 import type { ServerMessage, UiModelConfigEntry, UiProviderConfig } from "../../server/protocol.js";
@@ -271,6 +272,103 @@ describe("domains/providers · modelAdmin 缺省 = 未接", () => {
 		for (const c of cases) {
 			expect(() => c.invoke(handlers), `${c.member} 应同步抛`).toThrow(CoreEngineNotReadyError);
 		}
+	});
+});
+
+describe("domains/providers · 项目级 key 记忆（老 agent-service.ts:9538-9548）", () => {
+	/** 记忆假体：只记真正落盘的那几格，其余不动。 */
+	function fakeMemory(): ModelMemoryPort & { calls: Call[] } {
+		const calls: Call[] = [];
+		const track =
+			(name: string) =>
+			(...args: unknown[]) =>
+				void calls.push([name, ...args]);
+		return {
+			calls,
+			getProjectModel: () => undefined,
+			saveProjectModel: track("saveProjectModel") as ModelMemoryPort["saveProjectModel"],
+			getProjectProviderKey: () => undefined,
+			saveProjectProviderKey: track("saveProjectProviderKey") as ModelMemoryPort["saveProjectProviderKey"],
+			deleteProjectProviderKey: track("deleteProjectProviderKey") as ModelMemoryPort["deleteProjectProviderKey"],
+			getDefaultModel: () => undefined,
+			saveDefaultModel: track("saveDefaultModel") as ModelMemoryPort["saveDefaultModel"],
+			getDefaultProviderKey: () => undefined,
+			saveDefaultProviderKey: track("saveDefaultProviderKey") as ModelMemoryPort["saveDefaultProviderKey"],
+			repointDeletedKeyEverywhere: track(
+				"repointDeletedKeyEverywhere",
+			) as ModelMemoryPort["repointDeletedKeyEverywhere"],
+			repointDeletedKeyInDefault: track("repointDeletedKeyInDefault") as ModelMemoryPort["repointDeletedKeyInDefault"],
+		};
+	}
+
+	function projectAdmin(ok: boolean, active: string | null = "work") {
+		const calls: Call[] = [];
+		const port = new Proxy(
+			{},
+			{
+				get:
+					(_target, name) =>
+					(...args: unknown[]) => {
+						calls.push([String(name), ...args]);
+						if (name === "getActiveKeyName") return active;
+						return Promise.resolve(name === "activateProviderKey" ? ok : undefined);
+					},
+			},
+		) as unknown as ModelAdminPort;
+		return { port, calls };
+	}
+
+	/** 凭据域只认这三格：项目记忆的真身由模型域绑定（`bindProjectKeyPins`），这里同样走绑定器。 */
+	const pins = (memory: ModelMemoryPort) =>
+		bindProjectKeyPins({
+			clientId: () => "c1",
+			cwd: () => "/work/proj-a",
+			memory: () => memory,
+			admin: () => undefined,
+		});
+
+	it("activateProviderKey 成功：把这个项目的选择记下来", async () => {
+		const memory = fakeMemory();
+		const { port } = projectAdmin(true);
+		const handlers = createProviderHandlers({ modelAdmin: port, projectKeys: pins(memory), getLang: () => "zh" });
+		await handlers.activateProviderKey("acme", "work");
+		expect(memory.calls).toEqual([["saveProjectProviderKey", "c1", "/work/proj-a", "acme", "work"]]);
+	});
+
+	it("activateProviderKey 失败（key 不存在）：把那条记忆删掉，下次进项目不去激活它", async () => {
+		const memory = fakeMemory();
+		const { port } = projectAdmin(false);
+		const handlers = createProviderHandlers({ modelAdmin: port, projectKeys: pins(memory), getLang: () => "zh" });
+		await handlers.activateProviderKey("acme", "gone");
+		expect(memory.calls).toEqual([["deleteProjectProviderKey", "c1", "/work/proj-a", "acme"]]);
+	});
+
+	it("removeProviderKey：删完把项目/全局引用改指新的 active", async () => {
+		const memory = fakeMemory();
+		const { port, calls } = projectAdmin(false, "other");
+		const handlers = createProviderHandlers({ modelAdmin: port, projectKeys: pins(memory), getLang: () => "zh" });
+		await handlers.removeProviderKey("acme", "work");
+		expect(calls.map((c) => c[0])).toEqual(["removeProviderKey", "getActiveKeyName"]);
+		expect(memory.calls).toEqual([
+			["repointDeletedKeyEverywhere", "acme", "work", "other"],
+			["repointDeletedKeyInDefault", "acme", "work", "other"],
+		]);
+	});
+
+	it("没接 projectKeys（或记忆未接）：只动凭据，不写项目记忆", async () => {
+		const memory = fakeMemory();
+		const { port } = projectAdmin(true);
+		await createProviderHandlers({ modelAdmin: port, getLang: () => "zh" }).activateProviderKey("acme", "work");
+		await createProviderHandlers({
+			modelAdmin: port,
+			projectKeys: bindProjectKeyPins({
+				clientId: () => "c1",
+				cwd: () => "/work/proj-a",
+				memory: () => undefined,
+			}),
+			getLang: () => "zh",
+		}).removeProviderKey("acme", "work");
+		expect(memory.calls).toEqual([]);
 	});
 });
 

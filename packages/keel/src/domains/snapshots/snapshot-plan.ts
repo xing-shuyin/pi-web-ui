@@ -7,7 +7,14 @@ export const STREAMING_SNAPSHOT_INTERVAL_MS = 2000;
 export type SnapshotKind = "full" | "delta" | "skip";
 
 export type SnapshotReason =
-	"forced" | "conversation-changed" | "no-baseline" | "unchanged" | "streaming-merged" | "too-soon" | "interval";
+	| "forced"
+	| "conversation-changed"
+	| "no-baseline"
+	| "unchanged"
+	| "streaming-merged"
+	| "too-soon"
+	| "interval"
+	| "immediate";
 
 export interface SnapshotIntervals {
 	/** 非流式期的出帧间隔 */
@@ -38,6 +45,11 @@ export interface SnapshotPlanInput {
 	/** 是否处在流式增量窗口内 */
 	streaming: boolean;
 	forceFull: boolean;
+	/**
+	 * 调用方是「现在就要一帧」（显式 flush）而不是「有空就发一帧」（合并请求）：
+	 * 间隔闸只服务于合并，显式 flush 撞上它等于把这次变更丢掉（老实现 `flushSnapshot()` 也是立刻出帧）。
+	 */
+	immediate?: boolean;
 	/** 当前时刻（`ClockPort.now()` 口径）；plan 自己不读时钟 */
 	now: number;
 	intervals?: SnapshotIntervals;
@@ -60,6 +72,8 @@ export function planSnapshot(input: SnapshotPlanInput): SnapshotPlan {
 	if (input.lastEmit.at === null || input.lastEmit.rev <= 0) return { kind: "full", rev, reason: "no-baseline" };
 	if (!input.sameConversation) return { kind: "full", rev, reason: "conversation-changed" };
 	if (!input.changed) return { kind: "skip", rev, reason: "unchanged" };
+	// 显式 flush：内容确实变了就发，不看间隔（间隔只用于合并「顺便推一帧」的请求）。
+	if (input.immediate) return { kind: "delta", rev, reason: "immediate" };
 
 	const intervals = input.intervals ?? DEFAULT_SNAPSHOT_INTERVALS;
 	const elapsed = input.now - input.lastEmit.at;

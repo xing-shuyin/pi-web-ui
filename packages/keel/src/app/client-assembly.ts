@@ -76,10 +76,17 @@ export interface ClientAssemblyContext {
 	pluginStopBgTask?: EngineService["pluginStopBgTask"];
 	notifyPluginModelChange: (clientId: string, conversationId: string) => void;
 	subagentsRegistry?: import("../domains/subagents/registry.js").SubagentRegistry;
+	retainEvidence?: (
+		clientId: string,
+		conversation: Conversation,
+	) => Partial<import("../domains/sessions/retain.js").DisplaceRetainFacts>;
 	findSessionOwner?: (
 		sessionFile: string,
 		excludeClientId?: string,
-	) => { title: string; isStreaming: boolean } | undefined;
+	) =>
+		{ title: string; isStreaming: boolean; connected?: boolean; clientId: string; conversationId: string } | undefined;
+	/** 别处开着且没在跑 → 过户到本客户端（issue #567 的单写者保护）。 */
+	takeOverElsewhere?: (targetClientId: string, owner: { clientId: string; conversationId: string }) => Promise<void>;
 	checkParallelWork?: (clientId: string, conv: Conversation | undefined) => void;
 }
 
@@ -257,7 +264,9 @@ export function assembleClient(ctx: ClientAssemblyContext): {
 		elsewhere: () => ctx.listExternalRunning(runtime.clientId),
 		getQueuedQuestions: () => collectQueuedQuestions(ctx.runtimes, ctx.askWaiters, runtime.clientId),
 		findRuntime: (cid) => ctx.runtimes.get(cid),
+		...(ctx.retainEvidence ? { retainEvidence: (conv) => ctx.retainEvidence!(runtime.clientId, conv) } : {}),
 		findSessionOwner: (target) => ctx.findSessionOwner?.(target, runtime.clientId),
+		...(ctx.takeOverElsewhere ? { takeOverElsewhere: (owner) => ctx.takeOverElsewhere!(clientId, owner) } : {}),
 		checkParallelWork: (conv) => ctx.checkParallelWork?.(runtime.clientId, conv),
 		viewOf: (conv) => ({
 			...conversationViewFromSession(conv, sessions.get(conv.id)?.session),
@@ -295,6 +304,8 @@ export function assembleClient(ctx: ClientAssemblyContext): {
 	faces = createHostFaces({
 		settingsFrame: options.settingsFrame,
 		slashCommands: options.slashCommands,
+		// 附件面：宿主解析/落盘/`<file>` 旁注全在 `server/attachments.ts`，这里漏一行 = 附件静默不发。
+		attachments: options.attachments,
 		files: options.files,
 		plugins: options.plugins,
 		background: options.background,
@@ -303,6 +314,8 @@ export function assembleClient(ctx: ClientAssemblyContext): {
 		nativeCli: options.nativeCli,
 		bots: options.bots,
 		chatMode: options.chatMode,
+		// 会话级权限预设 / 模式开关的转录面（`permission/preset`、`plan/mode` 条目）：与 `chatMode` 同一棵树。
+		presetTranscript: options.presetTranscript,
 		// SCM 提交信息面：**这张表就是宿主面的总闸**，漏一行 = 端口永远 undefined（`scmGenCommitMessage` 恒抛）。
 		scmCommitMessage: options.scmCommitMessage,
 		toolInfo: options.toolInfo,

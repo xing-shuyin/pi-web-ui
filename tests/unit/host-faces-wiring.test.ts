@@ -58,7 +58,8 @@ describe("宿主面装配：`HostFaceFactories` ↔ `createHostFaces({…})`", (
 	 * 存量漏接（同一类问题，但不归这次修）：附件面与预设转录面还没进这张表，
 	 * 各自的功能面在别的轨道上装配。它们接上后这里就自动变得多余——**不许往里加新的**。
 	 */
-	const KNOWN_UNWIRED = ["attachments", "presetTranscript"];
+	// 空白名单：attachments / presetTranscript 已在装配里补齐，任何一项漏接都必须被这条守住。
+	const KNOWN_UNWIRED: string[] = [];
 
 	it("工厂表解析得到（别把守卫自己变成空转）", () => {
 		expect(factoryKeys.length).toBeGreaterThan(10);

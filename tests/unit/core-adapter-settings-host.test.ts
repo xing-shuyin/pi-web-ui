@@ -207,7 +207,13 @@ describe("宿主设置适配器（core-settings-adapter）", () => {
 		expect(emitted).toHaveLength(0);
 	});
 
-	it("getSession 抛错时 push() 不把异常传给调用方（SettingsService 内部已 try/catch）", () => {
+	/**
+	 * 会话没开时**不发帧**（老实现那帧永远带会话：`ClientSession.create` 先建会话再推设置）：
+	 * 半成品帧的 `visionModels` / `effectiveSystemPrompt` / `toolsSchema` 都是空值，客户端会把它当基线。
+	 * 现场触发点：连接期 MCP 项目发布会早于首条会话的 `ensure()`（`refreshMcpProject → pushSettings`）。
+	 * 正式那一帧由连接期 `pushConnectFrames` 发出，不会丢。
+	 */
+	it("getSession 抛错时不发半成品帧（不把空模型目录当基线），也不把异常传给调用方", () => {
 		const frame = createCoreSettingsAdapter(
 			options({
 				getSession: () => {
@@ -216,10 +222,7 @@ describe("宿主设置适配器（core-settings-adapter）", () => {
 			}),
 		);
 		expect(() => frame.push()).not.toThrow();
-		const frames = settingsFrames();
-		expect(frames).toHaveLength(1);
-		expect(frames[0].skills).toEqual([]);
-		expect(frames[0].visionModels).toEqual([]);
+		expect(settingsFrames()).toHaveLength(0);
 	});
 
 	it("通道关闭后不再出帧，重新打开后恢复", () => {
@@ -228,6 +231,23 @@ describe("宿主设置适配器（core-settings-adapter）", () => {
 		expect(() => frame.push()).not.toThrow();
 		expect(emitted).toHaveLength(0);
 		closed = false;
+		frame.push();
+		expect(settingsFrames()).toHaveLength(1);
+	});
+
+	it("会话从无到有时：先不发，就绪后一帧完整", () => {
+		let ready = false;
+		const frame = createCoreSettingsAdapter(
+			options({
+				getSession: () => {
+					if (!ready) throw new Error("settings session");
+					return fakeSession();
+				},
+			}),
+		);
+		expect(() => frame.push()).not.toThrow();
+		expect(emitted).toHaveLength(0);
+		ready = true;
 		frame.push();
 		expect(settingsFrames()).toHaveLength(1);
 	});

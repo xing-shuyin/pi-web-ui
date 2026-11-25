@@ -79,6 +79,11 @@ export interface SettingsFramePort {
 
 	saveTemplate(template: UiSubagentTemplate): Promise<void>;
 	deleteTemplate(name: string): Promise<void>;
+	/**
+	 * 子代理模板（生效值，与设置帧 `subagentTemplates` 同一份投影）：
+	 * `conversation` 工具的模板清单、`template` 参数合法性、派发时的档位都读它。
+	 */
+	subagentTemplates(): readonly UiSubagentTemplate[];
 
 	/** 标记开关归宿主的 `MarkerService`（P4 才进内核）；缺省 = 该能力未接。 */
 	setDisabledMarkers?(names: string[]): void;

@@ -129,7 +129,10 @@ export class CoreEngine implements EngineService {
 		private readonly options: CoreEngineOptions,
 	) {
 		this.stateStore = options.stateStore;
-		this.projectSource = createProjectSource({ store: options.stateStore });
+		this.projectSource = createProjectSource({
+			store: options.stateStore,
+			...(options.agentDir ? { agentDir: options.agentDir } : {}),
+		});
 	}
 
 	/** 模型管理面由宿主建（结构性适配器），内核只按窄面调用；没装配就当能力未接。 */ private modelAdminPort():
@@ -222,6 +225,9 @@ export class CoreEngine implements EngineService {
 			listExternalRunning: (cid) => this.listExternalRunning(cid),
 			notifyExternalRunning: (cid) => this.notifyExternalRunning(cid),
 			toolGuard: this.toolGuard,
+			...(this.options.retainEvidence
+				? { retainEvidence: (cid, conv) => this.options.retainEvidence!(cid, conv) }
+				: {}),
 			pluginToolFilter: (cid, conv) => this.pluginToolFilter(cid, conv),
 			onToolEvent: this.onToolEvent,
 			onRunEvent: this.onRunEvent,
@@ -238,6 +244,9 @@ export class CoreEngine implements EngineService {
 			notifyPluginModelChange: (cid, convId) => this.notifyPluginModelChange(cid, convId),
 			subagentsRegistry: this.subagentsRegistry,
 			findSessionOwner: (target, excludeClientId) => this.findSessionOwner(target, excludeClientId),
+			// 别处开着、没在跑：把那条对话过户到本客户端再打开（跨客户端单一写者，issue #567）。
+			takeOverElsewhere: (targetClientId, owner) =>
+				this.takeOverConversation(targetClientId, owner.clientId, owner.conversationId),
 			checkParallelWork: (clientId, conv) => this.checkParallelWork(clientId, conv),
 		});
 		this.runtimes.set(clientId, runtime);
@@ -255,7 +264,10 @@ export class CoreEngine implements EngineService {
 				isQuiesced: () => this.isQuiesced(),
 			}),
 		);
-		runtime.publisher.flush({ forceFull: true });
+		// 收尾这一帧是「新 socket 手上没有基线」的兜底：连接期已经推过（`listProviderKeys()` 这种只读帧
+		// 会顺带 flush）就走闸门去重，不再强制全量——否则同一份内容冷开就是两帧（issue #965 的出帧预算）。
+		// 重连分支（同一个运行时、新 socket）才需要强制：那份基线属于**上一个** socket。
+		runtime.publisher.flush();
 		if (heldNotice) deliver(heldNotice);
 		this.notifyExternalRunning(clientId);
 		this.onClientCwdChanged?.(runtime.cwd, [...runtime.roots]);

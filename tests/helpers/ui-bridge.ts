@@ -84,6 +84,8 @@ export function fakeUiBridgePort(tables: { dialogs: UiDialogSurface; overlays: U
 	return {
 		dialogs: tables.dialogs,
 		overlays: tables.overlays,
+		// 假体默认「这个宿主没有会话级 UI」：扩展不绑（不伪造一个能弹 dialog 的上下文）。
+		uiContextFor: () => undefined,
 		installCli: async () => {
 			installs += 1;
 			return installResult;

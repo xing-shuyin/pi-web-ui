@@ -11,7 +11,7 @@ export function findSessionOwner(
 	sockets: ReadonlyMap<string, Set<FrameSender>>,
 	sessionFile: string,
 	excludeClientId?: string,
-): { title: string; isStreaming: boolean } | undefined {
+): { title: string; isStreaming: boolean; clientId: string; conversationId: string } | undefined {
 	const norm = resolve(sessionFile);
 	for (const [cid, rt] of runtimes) {
 		if (cid === excludeClientId) continue;
@@ -23,6 +23,9 @@ export function findSessionOwner(
 						return {
 							title: conv.meta.title,
 							isStreaming: conv.phase === "running",
+							// 占用者身份：`switchSession` 撞上「别处开着」时要按它发起过户（issue #567 的单写者保护）。
+							clientId: cid,
+							conversationId: conv.id,
 						};
 					}
 				} catch {}

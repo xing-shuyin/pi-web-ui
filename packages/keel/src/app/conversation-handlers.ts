@@ -21,6 +21,11 @@ export interface ConversationDispatchOptions {
 	terminalManagerFor?(conversationId: string | undefined): unknown;
 	/** 中止当前对话的那一轮（会话句柄的持有者是 runtime，这里只转调）。 */
 	abortActive?(): Promise<void>;
+	/**
+	 * 活动对话换过去之后把工作区也跟过去（老 `switchConversation` 的 `applyCwdSideEffects`）：
+	 * 只有 cwd 真的变了才动；不在这里重绑会话（目标会话已经开着）。
+	 */
+	followActiveProject?(): void;
 }
 
 /** 按对话派发的那一组 handler：切对话 / 终端归属 / 项目脚本 / 计数 / 消息 / 改名 / 关闭 / 中止。 */
@@ -75,6 +80,8 @@ export function createConversationDispatchHandlers(options: ConversationDispatch
 			}
 			options.registry.activate(id);
 			options.onActivated?.(id);
+			// 跨项目的运行中对话：切过去连项目一起切（老 `switchConversation` 末尾的 cwd 收尾）。
+			options.followActiveProject?.();
 			options.requestSnapshot();
 		},
 

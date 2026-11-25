@@ -1,5 +1,6 @@
 import type { Conversation } from "../kernel/conversation/index.js";
 import { openTurnSession, type OpenedSession } from "../adapters/sdk/index.js";
+import type { PromptRenderHost } from "../contracts/prompt-render.js";
 
 export interface SessionRegistryOptions {
 	agentDir: string;
@@ -12,6 +13,11 @@ export interface SessionRegistryOptions {
 	/** 会话打开时绑定 Bot 身份与转录锚点（停用/降级/孤儿拦截/重绑锚点）。 */
 	bindBotSession?(conversation: Conversation, opened: OpenedSession): Promise<void>;
 	prepare?(conversation: Conversation): Promise<void>;
+	/**
+	 * 这条对话开会话时要绑的扩展 UI 上下文（`UiBridgePort.uiContextFor` 的结果）：缺省 = 不绑扩展。
+	 * `conv.meta.kind === "subagent"` 传 `undefined`（headless：dialog 立刻 `null`，不等浏览器）。
+	 */
+	uiContextOf?(conversation: Conversation): unknown;
 	onOpened?(conversation: Conversation, opened: OpenedSession): void;
 	onClosed?(conversationId: string): void;
 }
@@ -32,9 +38,19 @@ export class SessionUnavailableError extends Error {
 export class SessionRegistry {
 	private readonly byConversation = new Map<string, OpenedSession>();
 	private readonly options: SessionRegistryOptions;
+	/** 提示词覆写端口（宿主渲染正文）：缺省 = 内核不改提示词。 */
+	private promptRender: PromptRenderHost | undefined;
 
 	constructor(options: SessionRegistryOptions) {
 		this.options = options;
+	}
+
+	/**
+	 * 挂上提示词覆写通道（宿主面装配时接一次，之后开的会话都带）：只存引用，不开会话、不改任何默认值。
+	 * 已经开着的会话不回溯：扩展在 `createAgentSessionServices` 那一刻定下，改它就等于重建会话。
+	 */
+	attachPromptRender(host: PromptRenderHost | undefined): void {
+		this.promptRender = host;
 	}
 
 	has(conversationId: string): boolean {
@@ -48,6 +64,9 @@ export class SessionRegistry {
 	transferFrom(other: SessionRegistry, sourceId: string, targetId: string): OpenedSession | undefined {
 		const opened = other.byConversation.get(sourceId);
 		if (!opened) return undefined;
+		// 目标这边已经有会话了 = 这次搬迁没真正发生（或已经搬过）：**不覆盖**。
+		// 覆盖会把一份活着的、正在跑的会话换成空壳（过户回滚时在跑的那一轮就此蒸发）。
+		if (this.byConversation.has(targetId)) return undefined;
 		other.byConversation.delete(sourceId);
 		this.byConversation.set(targetId, opened);
 		return opened;
@@ -69,6 +88,12 @@ export class SessionRegistry {
 			...(conv.ephemeral ? { ephemeral: true } : {}),
 			tools: this.options.toolsFor?.(conv),
 			customTools: this.options.customToolsFor?.(conv),
+			...(this.options.uiContextOf ? { uiContext: this.options.uiContextOf(conv) } : {}),
+			// 模板子代理（`kind: "subagent"`）的提示词完全由 loader 的模板槽位决定，组合模板不接进去
+			// （老实现 `pi-webui-persona` 钩子里的 `if (apply) return undefined` 同一语义）。
+			...(this.promptRender && conv.meta.kind !== "subagent"
+				? { promptRender: { ...this.promptRender, conversationId: conv.id } }
+				: {}),
 		});
 		if (opened.sessionFile && opened.sessionFile !== conv.meta.sessionFile) conv.setSessionFile(opened.sessionFile);
 		try {

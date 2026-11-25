@@ -11,6 +11,7 @@ import type { BackgroundPort } from "../contracts/background.js";
 import type { PluginsPort } from "../contracts/plugins.js";
 import type { SessionSurface } from "./session-surface.js";
 import { createSessionSurface } from "./session-surface.js";
+import { resolveLeadingSessionFile } from "./leading-session.js";
 import { emptyView } from "./conversation-handlers.js";
 import type { GoalHostPorts } from "./goal-handlers.js";
 import { createDispatchHandlers, type DispatchAssembly } from "./dispatch-handlers.js";
@@ -163,7 +164,14 @@ export interface ClientRuntimeOptions extends GoalHostPorts {
 	getQueuedQuestions?: () => import("../protocol.js").UiQueuedQuestion[];
 	hasQuestionOf?: (conversationId: ConversationId) => boolean;
 	elsewhere?: () => readonly import("../protocol.js").ElsewhereRunning[];
-	findSessionOwner?: (sessionFile: string) => { title: string; isStreaming: boolean } | undefined;
+	findSessionOwner?: (
+		sessionFile: string,
+	) =>
+		{ title: string; isStreaming: boolean; connected?: boolean; clientId: string; conversationId: string } | undefined;
+	/** 换活动对话时的保留证据（宿主扫描的几份账）；缺省 = 只按内核自己认得的判。 */
+	retainEvidence?(conversation: Conversation): Partial<import("../domains/sessions/retain.js").DisplaceRetainFacts>;
+	/** 别处开着且没在跑 → 把那条对话过户到本客户端（跨客户端单一写者）。 */
+	takeOverElsewhere?(owner: { clientId: string; conversationId: string }): Promise<void>;
 	findRuntime?: (clientId: string) => ClientRuntime | undefined;
 	checkParallelWork?: (conv: Conversation | undefined) => void;
 }
@@ -289,6 +297,7 @@ export class ClientRuntime {
 				this.options.onConversationChanged?.();
 			},
 			noteSessionFile: (file) => this.noteSessionFile(file),
+			...(this.options.retainEvidence ? { retainEvidence: (conv) => this.options.retainEvidence?.(conv) ?? {} } : {}),
 			...(this.options.nativeCliState
 				? {
 						nativeCliOf: (conversationId: ConversationId) => this.nativeCliOf(conversationId),
@@ -298,6 +307,7 @@ export class ClientRuntime {
 			...(this.options.hasQuestionOf ? { hasQuestionOf: this.options.hasQuestionOf } : {}),
 			...(this.options.elsewhere ? { elsewhere: this.options.elsewhere } : {}),
 			...(this.options.findSessionOwner ? { findSessionOwner: this.options.findSessionOwner } : {}),
+			...(this.options.takeOverElsewhere ? { takeOverElsewhere: this.options.takeOverElsewhere } : {}),
 			notice: (level, text, textEn) => {
 				if (this.disposed || this.options.transport.isClosed()) return;
 				this.options.transport.send({ type: "notice", level, text, textEn });
@@ -391,6 +401,16 @@ export class ClientRuntime {
 	}
 	historyState(): Map<string, SessionListScanState> {
 		return (this.scanState ??= new Map());
+	}
+	/** 连接期那条活动对话该续哪份转录（判据在 `app/leading-session.ts`，这里只给事实）。 */
+	leadingSessionFile(): Promise<string | undefined> {
+		if (this.disposed) return Promise.resolve(undefined);
+		return resolveLeadingSessionFile({
+			root: this.historyRoot(),
+			cwd: this.workspaceCwd,
+			openFiles: () => this.registry.list().map((conv) => conv.meta.sessionFile),
+			...(this.options.findSessionOwner ? { findSessionOwner: (file) => this.options.findSessionOwner?.(file) } : {}),
+		});
 	}
 	/** 只注册不激活：候选对话由重绑原语控制何时变成活动对话。 */
 	private newConversation(init: Partial<ConversationInit>): Conversation {

@@ -2,13 +2,12 @@ import type { ClientId } from "../../contracts/ids.js";
 import type { ModelAdminPort, ModelMemoryPort } from "../../contracts/model-admin.js";
 import type { TransportPort } from "../../contracts/ports.js";
 import type { TurnCapableSession } from "../../contracts/session.js";
-
-/** 模型/供应商记忆按引擎分槽落盘：pi 引擎之外的槽位由各自引擎写（这里只碰 pi）。 */
-const ENGINE = "pi";
+import { createProjectMemory, MODEL_MEMORY_ENGINE, modelKeyOf, parseModelId } from "./project-memory.js";
 
 export interface ModelSwitcherOptions {
 	clientId: ClientId;
-	cwd: string;
+	/** 当前工作区（**惰性读取**：换目录之后项目记忆要落到新目录上）。 */
+	cwd(): string;
 	transport: TransportPort;
 	modelAdmin?: ModelAdminPort;
 	modelMemory?: ModelMemoryPort;
@@ -30,73 +29,27 @@ export interface ModelSwitchers {
 	setThinking(level: string): void;
 }
 
-interface ParsedModelId {
-	provider: string;
-	id: string;
-}
-
-function parseModelId(modelId: string): ParsedModelId | undefined {
-	const slash = modelId.indexOf("/");
-	if (slash <= 0 || slash === modelId.length - 1) return undefined;
-	return { provider: modelId.slice(0, slash), id: modelId.slice(slash + 1) };
-}
-
-function modelKeyOf(value: unknown): ParsedModelId | undefined {
-	if (!value || typeof value !== "object") return undefined;
-	const cur = value as { provider?: unknown; id?: unknown };
-	return typeof cur.provider === "string" && typeof cur.id === "string"
-		? { provider: cur.provider, id: cur.id }
-		: undefined;
-}
-
 /**
  * 选模型 / 思考档 / 全局默认模型。
  *
  * 语义逐字沿用老实现（`server/agent-service.ts:17588-17708`）：失败一律发 `notice` 回包、**不抛**
  * （前端要看到原因而不是断线），只有「取模型对象」这一步在目录未接时才是真错误。
- * 项目/全局记忆落 `client-state`（经 `ModelMemoryPort`），默认模型/思考档的持久化留 SDK 设置层。
+ * 项目/全局记忆落 `client-state`（经 `ModelMemoryPort`），默认模型/思考档的持久化留 SDK 设置层；
+ * 「记哪一格 / 什么时候恢复」的单源是 `domains/models/project-memory.ts`。
  */
 export function createModelSwitchers(options: ModelSwitcherOptions): ModelSwitchers {
 	const notice = (level: "info" | "warning" | "error", text: string, textEn: string): void => {
 		if (!options.transport.isClosed()) options.transport.send({ type: "notice", level, text, textEn });
 	};
 	const settingsOf = () => options.sessionOf()?.settingsManager;
-
-	/** 项目 pin → 全局 pin 依次尝试激活对应 key；项目 pin 自愈（key 已不存在就删掉）。 */
-	async function restoreKeyForModel(modelId: string): Promise<void> {
-		const admin = options.modelAdmin;
-		const memory = options.modelMemory;
-		const parsed = parseModelId(modelId);
-		if (!admin || !memory || !parsed) return;
-		const { provider } = parsed;
-		const projectPin = memory.getProjectProviderKey(options.clientId, options.cwd, provider);
-		if (projectPin) {
-			if (admin.getActiveKeyName(provider) === projectPin) return;
-			if (!admin.hasProviderKey(provider, projectPin)) {
-				memory.deleteProjectProviderKey(options.clientId, options.cwd, provider);
-				return;
-			}
-			const ok = await admin.activateProviderKey(provider, projectPin, { silent: true });
-			if (!ok) memory.deleteProjectProviderKey(options.clientId, options.cwd, provider);
-			return;
-		}
-		// 没有项目 pin：跟随全局默认 key。这里不自愈删除——那条引用属于全局默认。
-		const globalPin = memory.getDefaultProviderKey(provider);
-		if (!globalPin) return;
-		if (admin.getActiveKeyName(provider) === globalPin) return;
-		if (!admin.hasProviderKey(provider, globalPin)) return;
-		await admin.activateProviderKey(provider, globalPin, { silent: true });
-	}
-
-	function rememberProjectModel(modelId: string): void {
-		const memory = options.modelMemory;
-		if (!memory) return;
-		memory.saveProjectModel(options.clientId, options.cwd, modelId, ENGINE);
-		const parsed = parseModelId(modelId);
-		if (!parsed) return;
-		const active = options.modelAdmin?.getActiveKeyName(parsed.provider);
-		if (active) memory.saveProjectProviderKey(options.clientId, options.cwd, parsed.provider, active);
-	}
+	const project = (): ReturnType<typeof createProjectMemory> | undefined =>
+		options.modelMemory
+			? createProjectMemory({
+					clientId: options.clientId,
+					memory: options.modelMemory,
+					...(options.modelAdmin ? { admin: options.modelAdmin } : {}),
+				})
+			: undefined;
 
 	return {
 		async setModel(modelId: string): Promise<void> {
@@ -107,11 +60,11 @@ export function createModelSwitchers(options: ModelSwitcherOptions): ModelSwitch
 				if (!parsed) throw new Error(`无效的模型 ID：${modelId}`);
 				const model = await options.resolveModel?.(parsed.provider, parsed.id);
 				if (!model) throw new Error(`模型不存在：${modelId}`);
-				await restoreKeyForModel(modelId);
+				await project()?.restoreKeyForModel(options.cwd(), modelId);
 				if (!session.setModel) throw new Error("当前会话不支持切换模型");
 				await session.setModel(model);
 				options.onSessionModelChanged?.();
-				rememberProjectModel(modelId);
+				project()?.rememberModel(options.cwd(), modelId);
 			} catch (err) {
 				notice("error", `切换模型失败：${(err as Error).message}`, `Failed to switch model: ${(err as Error).message}`);
 			}
@@ -125,7 +78,7 @@ export function createModelSwitchers(options: ModelSwitcherOptions): ModelSwitch
 				const parsed = parseModelId(modelId);
 				if (!parsed) throw new Error(`无效的模型 ID：${modelId}`);
 				if (!(await options.resolveModel?.(parsed.provider, parsed.id))) throw new Error(`模型不存在：${modelId}`);
-				memory.saveDefaultModel(modelId, ENGINE);
+				memory.saveDefaultModel(modelId, MODEL_MEMORY_ENGINE);
 				const active = options.modelAdmin?.getActiveKeyName(parsed.provider);
 				if (active) memory.saveDefaultProviderKey(parsed.provider, active);
 				try {
@@ -148,7 +101,7 @@ export function createModelSwitchers(options: ModelSwitcherOptions): ModelSwitch
 		},
 
 		clearDefaultModel(): void {
-			options.modelMemory?.saveDefaultModel("", ENGINE);
+			options.modelMemory?.saveDefaultModel("", MODEL_MEMORY_ENGINE);
 			try {
 				settingsOf()?.setDefaultModelAndProvider?.(undefined, undefined);
 			} catch {}

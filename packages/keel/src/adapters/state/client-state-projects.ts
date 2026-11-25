@@ -17,9 +17,12 @@ export interface ProjectSourceOptions {
 	/** 设置存储端口（宿主 `ClientStateStore`）：最近列表 / 墓碑 / 移除都在它手里。 */
 	store: SettingsStorePort;
 	/**
-	 * 扫盘发现项目用的会话根目录。默认是 `store.dataDir/sessions` 加 `PI_CODING_AGENT_SESSION_DIR`：
-	 * 默认布局下 client-state 就住在 agent 目录（`~/.pi`），两处一致；分目录部署时显式传。
+	 * 会话根目录的**权威来源**（老 `ensureProjectsCache`：`[agentDir/sessions] + piSessionsRoot()`）。
+	 * 单给 dataDir 是不够的：`PI_WEB_DATA_DIR` 与 `PI_CODING_AGENT_DIR` 可以是两个目录（部署/测试都这样），
+	 * 那时会话住在 agent 目录、client-state 住在 data 目录，只扫 dataDir 会发现不了任何项目。
 	 */
+	agentDir?: string;
+	/** 显式覆盖扫盘根（测试 / 特殊布局）；缺省按 `agentDir` + `dataDir` + `piSessionsRoot()` 拼。 */
 	sessionRoots?: readonly string[];
 	discoveryTtlMs?: number;
 	discoveryLimit?: number;
@@ -35,8 +38,9 @@ export interface ProjectSource {
 	close(): void;
 }
 
-function defaultSessionRoots(dataDir: string): string[] {
-	const roots = [resolve(dataDir, "sessions")];
+function defaultSessionRoots(dataDir: string, agentDir?: string): string[] {
+	// agent 目录在前：老实现的权威根是 `agentDir/sessions`；dataDir 只作兼容（两者常是同一个目录）。
+	const roots = [...new Set([...(agentDir ? [resolve(agentDir, "sessions")] : []), resolve(dataDir, "sessions")])];
 	const extra = piSessionsRoot();
 	if (extra) roots.push(resolve(extra));
 	return roots;
@@ -50,7 +54,7 @@ function defaultSessionRoots(dataDir: string): string[] {
  */
 export function createProjectSource(options: ProjectSourceOptions): ProjectSource {
 	const store = options.store;
-	const roots = options.sessionRoots ? [...options.sessionRoots] : defaultSessionRoots(store.dataDir);
+	const roots = options.sessionRoots ? [...options.sessionRoots] : defaultSessionRoots(store.dataDir, options.agentDir);
 	const ttl = options.discoveryTtlMs ?? DISCOVERY_TTL_MS;
 	const limit = options.discoveryLimit ?? DISCOVERY_LIMIT;
 	let scannedAt: number | null = null;

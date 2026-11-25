@@ -33,6 +33,11 @@ export interface GoalRunRuntimeHost {
 	readonly publisher: { request(): void };
 	readonly cwd: string;
 	activeConversationId(): string | undefined;
+	/**
+	 * 推一帧 `conversations`（运行列表出口）：开 / 拆目标子对话后左栏要立刻看到，
+	 * 不靠「刚好有一轮在跑 / 刚好收尾」碰运气出帧。缺省 = 不出帧（宿主自己负责）。
+	 */
+	pushConversations?(): void;
 }
 
 /** 对话登记的最小面：**只加不激活**（子对话必须与主对话并存），拆的时候连会话一起收。 */
@@ -104,16 +109,19 @@ export function createGoalRunSinks(input: GoalRunSinksInput): GoalRunSinks {
 		cwd: () => input.runtime.cwd,
 		openChild: (child) => {
 			// 只注册不激活：目标执行者 / 审查者 / 调研组与主对话并存，不抢当前对话。
+			// kind 是 `user` 而不是 `subagent`：老实现给执行体开的是**落盘对话**（`persist: true`，
+			// 左栏无「子代理」微标、可按普通对话切进去），轻量子代理那套（限额 / 连带关闭 / 微标）不适用于目标。
 			const conversation = new Conversation({
 				id: `g-${registry.nextSeq()}`,
 				clientId,
-				kind: "subagent",
+				kind: "user",
 				createdAt: Date.now(),
 				title: child.title,
 				parentId: child.parentId,
 				cwd: child.cwd,
 			});
 			registry.add(conversation);
+			input.runtime.pushConversations?.();
 			return { id: conversation.id, cwd: conversation.meta.cwd };
 		},
 		closeChild: (conversationId) => {
@@ -123,6 +131,8 @@ export function createGoalRunSinks(input: GoalRunSinksInput): GoalRunSinks {
 			if (conversation.acceptsTurns) conversation.retire();
 			conversation.finishRetire();
 			registry.remove(conversationId);
+			// 出注册表不等于左栏退行：不推这一帧，客户端会一直挂着已经拆掉的执行对话。
+			input.runtime.pushConversations?.();
 		},
 		hasChild: (conversationId) => registry.get(conversationId)?.acceptsTurns ?? false,
 		conversationCwd: (conversationId) => registry.get(conversationId)?.meta.cwd,

@@ -2,6 +2,8 @@ import { createSessionEditor, type EditSessionHost } from "../adapters/sdk/sessi
 import { isPersistedSession, persistSessionFile } from "../adapters/sdk/session-persist.js";
 import { sessionMessageSeqOf } from "../adapters/sdk/view.js";
 import { resolveWorkspaceSessionDir } from "../remote-workspace.js";
+import { appendFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import type { DispatchHandlers } from "../adapters/wire/index.js";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
 import type { Conversation, ConversationInit, ConversationRegistry } from "../kernel/conversation/index.js";
@@ -21,20 +23,20 @@ import {
 	createCompactedMessagesHandlers,
 	createConversationStateHandlers,
 	createPersistConversationHandlers,
-	deleteSessionFile,
 	renameSession,
 	type SessionManagerLike,
 } from "../domains/sessions/index.js";
 import { createBackgroundHandlers } from "../domains/background/index.js";
 import { createScmHandlers } from "../domains/scm/index.js";
 import { createPluginsHandlers } from "../domains/plugins/index.js";
-import { createModelSwitchers } from "../domains/models/index.js";
+import { bindProjectKeyPins, createModelSwitchers } from "../domains/models/index.js";
 import { createTurnsEditHandlers } from "../domains/turns/index.js";
 import { createTerminalHandlers } from "../domains/terminals/index.js";
 import { createGoalHandlersFor } from "./goal-handlers.js";
 import { createNativeCliHandlersFor } from "./native-cli-handlers.js";
 import { createBotChatHandlersFor } from "./bot-chat-handlers.js";
 import { createConversationDispatchHandlers } from "./conversation-handlers.js";
+import { deleteSession } from "./session-delete.js";
 import { createExtraHandlers } from "./extra-handlers.js";
 import { createToolInfoHandlersFor } from "./tool-info-handlers.js";
 import { createPresetHandlers } from "./preset-handlers.js";
@@ -122,6 +124,13 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 	/** 供应商/模型管理面的 24 个 handler：全部转发给宿主端口，未注入即逐个同步抛 `CoreEngineNotReadyError`。 */
 	const providerHandlers = createProviderHandlers({
 		modelAdmin: runtime.options.modelAdmin,
+		// 项目级 key 记忆的写入口（客户端 id 会被孤儿收养改写、工作区每次换目录都变，所以全走活取值）。
+		projectKeys: bindProjectKeyPins({
+			clientId: () => runtime.options.clientId,
+			cwd: () => runtime.registry.activeConv()?.meta.cwd ?? runtime.cwd,
+			memory: () => runtime.options.modelMemory,
+			admin: () => runtime.options.modelAdmin,
+		}),
 		getLang: () => runtime.options.getLang?.() ?? "zh",
 	});
 
@@ -216,6 +225,8 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 		cwd: () => runtime.cwd,
 		...(runtime.options.viewOf ? { viewOf: runtime.options.viewOf } : {}),
 		onActivated: (id) => runtime.publisher.switchConversation(id),
+		// 跨项目切对话（老 `applyCwdSideEffects`）：只跟工作区，不重绑会话。
+		followActiveProject: () => surface.followActiveProject(),
 		requestSnapshot: () => runtime.publisher.request(),
 		now: () => runtime.options.clock.now(),
 		...(runtime.options.isAllowedPath ? { isAllowedPath: runtime.options.isAllowedPath } : {}),
@@ -231,7 +242,8 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 	/** 选模型 / 思考档 / 全局默认模型：会话取「当前对话」；默认模型帧由组合根提供，没装配就不发。 */
 	const models = createModelSwitchers({
 		clientId: runtime.options.clientId,
-		cwd: runtime.options.cwd,
+		// 活取值：换目录之后项目记忆要落到新目录（与上面的 provider pin 同一口径）。
+		cwd: () => runtime.registry.activeConv()?.meta.cwd ?? runtime.cwd,
 		transport: runtime.options.transport,
 		modelAdmin: runtime.options.modelAdmin,
 		modelMemory: runtime.options.modelMemory,
@@ -503,14 +515,28 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 			runtime.optionalFrames()?.pushSettings();
 			runtime.publisher.request();
 		},
-		deleteSession: async (path: string) => {
-			await deleteSessionFile({
-				registry: runtime.registry,
-				sessionFile: path,
-				now: () => runtime.options.clock.now(),
-				isAllowedPath: runtime.options.isAllowedPath,
-			});
-		},
+		// 删一份转录（含「删的是当前对话」时的挑开语义）：整段在 `app/session-delete.ts`。
+		deleteSession: (path: string) =>
+			deleteSession(
+				{
+					registry: runtime.registry,
+					transport: () => runtime.options.transport,
+					historyRoot: () => runtime.historyRoot(),
+					historyState: () => runtime.historyState(),
+					switchSessionTo: (target) => surface.entity().switchSession(target),
+					createBlankConversation: () => void runtime.createConversation(),
+					...(runtime.options.sessions
+						? { closeSession: (id: string) => runtime.options.sessions?.close(id as never) }
+						: {}),
+					...(runtime.options.isAllowedPath ? { isAllowedPath: runtime.options.isAllowedPath } : {}),
+					now: () => runtime.options.clock.now(),
+					refreshSessions: () => void runtime.optionalFrames()?.refreshSessions(),
+					...(runtime.options.stateStore
+						? { clearPinnedSession: (target: string) => runtime.options.stateStore?.()?.clearPinnedSession?.(target) }
+						: {}),
+				},
+				path,
+			),
 		renameSession: async (path: string, name: string) => {
 			const { title } = renameSession({ sessionFile: path, title: name });
 			await runtime.options.persistSessionTitle?.(path, title);

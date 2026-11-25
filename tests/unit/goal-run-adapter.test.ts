@@ -112,7 +112,17 @@ describe("目标运行宿主适配器（GoalRunPort 的真实现）", () => {
 		expect(h.turns).toHaveLength(1);
 		expect(h.turns[0].id).toBe(h.childOf("exec"));
 		expect(h.turns[0].text).toContain("【目标 · 第 1/3 轮】");
-		expect(h.statuses().at(-1)).toMatchObject({ phase: "executing", round: 1, goal: "把 README 补全" });
+		// 地址与在飞状态：左栏目标条的「执行对话」入口靠它（拆掉后整个键消失）。
+		expect(h.statuses().at(-1)).toMatchObject({
+			phase: "executing",
+			round: 1,
+			goal: "把 README 补全",
+		});
+		expect(h.statuses().at(-1)?.roles?.executor).toMatchObject({
+			convId: h.childOf("exec"),
+			spawned: true,
+			streaming: true,
+		});
 	});
 
 	it("逐轮由 onTurnSettled 驱动：执行收尾 → 派审查 → verdict=pass 收尾并清目标", async () => {
@@ -130,6 +140,8 @@ describe("目标运行宿主适配器（GoalRunPort 的真实现）", () => {
 		h.port.onTurnSettled?.(reviewId, "done");
 		await flush();
 		expect(h.statuses().at(-1)).toMatchObject({ verdict: "pass", goal: null });
+		// 收尾后子对话全部拆掉（不留子会话），goal_status 也不再指向已拆的执行对话。
+		expect(h.statuses().at(-1)?.roles).toBeUndefined();
 		expect(h.notices()).toContain("✅ 目标已通过审查");
 		// 收尾后子对话全部拆掉（不留子会话）。
 		expect(h.closed.sort()).toEqual([execId, reviewId].sort());

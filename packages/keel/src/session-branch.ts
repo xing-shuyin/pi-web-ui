@@ -262,9 +262,12 @@ export function selectBestSessionLeaf(
 
 export function calibrateSessionLeaf(sessionManager: {
 	getEntries(): AnySessionEntry[];
-	getLeafId(): string | null;
+	/** 管理器认得的叶指针；不提供 = 这份管理器不支持校准（跳过，不算失败）。 */
+	getLeafId?(): string | null;
 	branch(id: string): void;
 }): { changed: boolean; calibratedLeafId?: string; previousLeafId?: string | null; reason?: string } {
+	// 校准只是**纠偏**：管理器没有叶指针 API 就跳过。绝不能因为一次诊断把「打开会话」弄成失败。
+	if (typeof sessionManager.getLeafId !== "function") return { changed: false, reason: "no-leaf-api" };
 	try {
 		const entries = sessionManager.getEntries();
 		const currentLeafId = sessionManager.getLeafId();

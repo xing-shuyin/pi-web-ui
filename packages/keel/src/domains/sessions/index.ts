@@ -1,4 +1,5 @@
 export {
+	canDeleteSessionPath,
 	deleteSessionFile,
 	dismissConversation,
 	renameConversation,
@@ -18,12 +19,21 @@ export {
 } from "./state.js";
 export {
 	rebindSession,
+	displacePrevious,
+	type DisplaceContext,
 	type RebindContext,
 	type RebindFrames,
 	type RebindRequest,
 	type RebindResult,
 	type RebindSessions,
 } from "./rebind.js";
+export {
+	createRetainOnDisplace,
+	retainFactsOf,
+	shouldRetainOnDisplace,
+	type DisplaceRetainFacts,
+	type RetainEnv,
+} from "./retain.js";
 export { createWorkspaceSwitcher, type WorkspaceRootsStore, type WorkspaceSwitcherOptions } from "./workspace.js";
 export { createSessionEntityHandlers, type SessionEntityHandlers, type SessionEntityOptions } from "./entity.js";
 export {

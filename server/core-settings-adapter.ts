@@ -1,5 +1,11 @@
 import { join } from "node:path";
 import type { SettingsFramePort } from "../packages/keel/src/contracts/settings.js";
+import type {
+	LazyCatalogInput,
+	PromptRenderCapable,
+	PromptRenderInput,
+} from "../packages/keel/src/contracts/prompt-render.js";
+import { lazyCatalogInput, lazyEffectiveOf, lazyOnDemandOf } from "../packages/keel/src/domains/tools/lazy-state.js";
 import type { McpServerInventory } from "../packages/keel/src/contracts/plugins.js";
 import type { CoreSettingsSinks } from "../packages/keel/src/app/core-engine.js";
 import { ApprovalRulesStore } from "../packages/keel/src/approval-rules.js";
@@ -34,6 +40,7 @@ import {
 	type ToolSchemaEntry,
 } from "./prompt-composer.js";
 import { renderMainCompose } from "./prompt-assembler.js";
+import { formatCompactSignature } from "./tool-signature.js";
 import { readPromptBase } from "./prompt-base-store.js";
 import { fillSkillContents } from "./skill-content-filler.js";
 import { formatCwdForPrompt } from "./remote-ssh-service.js";
@@ -67,12 +74,30 @@ const EMPTY_MCP: McpServerInventory = { servers: [], globalPath: "", projectPath
  * `SettingsService`；只有三件它没有的能力在这里补：标记开关、`applyRuntime`（`extensions_reload`）、
  * `setLocale`（语言落盘 + 必要时重应用）。
  */
-export function createCoreSettingsAdapter(options: CoreSettingsAdapterOptions): SettingsFramePort {
+export function createCoreSettingsAdapter(
+	options: CoreSettingsAdapterOptions,
+): SettingsFramePort & PromptRenderCapable {
 	const { service, stateStore, clientId } = createCoreSettingsService(options);
+	/**
+	 * 会话开好了吗？设置帧里的 `visionModels`（读 `host.getSession().modelRuntime`）、
+	 * `effectiveSystemPrompt` / `toolsSchema` 都从当前对话的会话现算：没有会话时它们只能是空值。
+	 * 老实现不会有这种帧（`ClientSession.create` 里会话先于一切设置帧建好），所以这里也不发半成品
+	 * ——连接期 MCP 项目发布（`refreshMcpProject` → `pushSettings`）确实早于首条会话的 `ensure()`，
+	 * 放过去就会让客户端把「模型目录为空」当成基线。正式那一帧由连接期 `pushConnectFrames` 发出。
+	 */
+	const sessionReady = (): boolean => {
+		try {
+			options.getSession();
+			return true;
+		} catch {
+			return false;
+		}
+	};
 	return {
 		// 通道已关就不再出帧（P2 之前这道闸在 keel 的 pusher 里）。
 		push: () => {
 			if (options.isClosed()) return;
+			if (!sessionReady()) return;
 			service.push();
 		},
 		refreshResources: () => service.refreshResources(),
@@ -94,8 +119,13 @@ export function createCoreSettingsAdapter(options: CoreSettingsAdapterOptions): 
 
 		saveTemplate: (template) => service.saveTemplate(template),
 		deleteTemplate: (name) => service.deleteTemplate(name),
+		// 模板清单只有宿主知道（`SubagentTemplatesStore` 在这里）：子代理工具读的就是设置帧那份投影。
+		subagentTemplates: () => service.subagentTemplateViews(),
 
 		applyRuntime: () => service.applyRuntime(),
+		// 提示词覆写通道：与上面 `effectiveSystemPrompt` 预览共用同一份渲染体（`computePromptSnapshot`），
+		// 只是目录口径换成内核递进来的那一份（`tools`）。内核只在开关开 + 名单非空时才调它。
+		promptRender: { render: (input) => renderTurnPrompt(options, input) },
 		setDisabledMarkers: options.markers ? (names) => options.markers?.setDisabledMarkers(names) : undefined,
 		async setLocale(locale: string): Promise<void> {
 			const code = locale.trim().slice(0, 16);
@@ -129,21 +159,33 @@ export function createCoreSettingsService(options: CoreSettingsAdapterOptions): 
 	return { service, stateStore: options.stateStore, clientId: options.clientId };
 }
 
-function computePromptSnapshot(options: CoreSettingsAdapterOptions): {
+function computePromptSnapshot(
+	options: CoreSettingsAdapterOptions,
+	sessionArg?: unknown,
+	target?: {
+		/** 这一轮的 cwd（`before_agent_start` 的 `ctx.cwd`）；缺省 = 适配器构造时那份。 */
+		cwd?: string;
+		/** 内核算好的目录口径（常驻基线 + 按需目录）；缺省 = 按设置现算（设置帧预览走这条）。 */
+		tools?: LazyCatalogInput;
+	},
+): {
 	full: string;
 	texts: Record<string, string>;
 	toolsSchema: string;
 } {
 	try {
 		let session: any;
-		try {
-			session = options.getSession();
-		} catch {
-			return { full: "", texts: {}, toolsSchema: "" };
+		if (sessionArg !== undefined) session = sessionArg;
+		else {
+			try {
+				session = options.getSession();
+			} catch {
+				return { full: "", texts: {}, toolsSchema: "" };
+			}
 		}
 		if (!session) return { full: "", texts: {}, toolsSchema: "" };
 
-		const cwd = options.cwd;
+		const cwd = target?.cwd ?? options.cwd;
 		const settings = options.stateStore.getSettings(options.clientId);
 		const active: string[] = typeof session.getActiveToolNames === "function" ? session.getActiveToolNames() : [];
 		const schemaEntries: ToolSchemaEntry[] = [];
@@ -164,10 +206,16 @@ function computePromptSnapshot(options: CoreSettingsAdapterOptions): {
 		const promptBase = readPromptBase(loader);
 		const realCwd = restoreWorkspaceUriFromSessionDir(cwd);
 
-		const onDemandList = normalizeLazyOnDemandList(settings.toolOnDemandTools);
-		const lazyOn = settings.toolLazyLoading === true && onDemandList.length > 0;
-		const catalogNames: string[] =
+		const onDemandList = lazyOnDemandOf(settings);
+		const lazyOn = lazyEffectiveOf(settings);
+		// 目录口径（单源在 `domains/tools/lazy-state`）：内核给了就用它的，没给按设置现算。
+		// 按需开：目录只列名单工具（不重复列常驻），常驻集当基线；按需关：目录=全量，基线=活跃集。
+		const allNames: string[] =
 			typeof session.getAllTools === "function" ? session.getAllTools().map((t: any) => t.name) : active;
+		const partition =
+			target?.tools ??
+			(lazyOn ? lazyCatalogInput({ all: allNames, allowed: allNames, onDemand: onDemandList }) : undefined);
+		const catalogNames: string[] = partition ? [...partition.catalog] : allNames;
 		const snippets: Record<string, string> = {};
 		for (const name of catalogNames) {
 			const def = session.getToolDefinition?.(name);
@@ -176,6 +224,16 @@ function computePromptSnapshot(options: CoreSettingsAdapterOptions): {
 			const eff = effectiveToolPrompt(def, ov);
 			if (eff.promptSnippet && eff.promptSnippet.trim() && (lazyOn || ov?.promptSnippet)) {
 				snippets[name] = eff.promptSnippet.trim();
+			}
+		}
+		// 目录行的紧凑签名（老实现 `promptToolCatalog().signatures` 同一口径）：只按需目录用得到。
+		const signatures: Record<string, string> = {};
+		if (partition) {
+			for (const name of catalogNames) {
+				const def = session.getToolDefinition?.(name);
+				if (!def?.parameters) continue;
+				const sig = formatCompactSignature(def.parameters);
+				if (sig) signatures[name] = sig;
 			}
 		}
 
@@ -197,9 +255,9 @@ function computePromptSnapshot(options: CoreSettingsAdapterOptions): {
 			cwd: formatCwdForPrompt(realCwd),
 			systemPromptFile: promptBase.soul || undefined,
 			builtinSoul: BUILTIN_SOUL,
-			selectedTools: active,
+			selectedTools: partition ? [...partition.resident] : active,
 			toolSnippets: snippets,
-			...(lazyOn ? { lazy: true, catalogTools: catalogNames } : {}),
+			...(lazyOn ? { lazy: true, catalogTools: catalogNames, toolSignatures: signatures } : {}),
 			pluginDocs: join(getPkgRoot(), "docs", "architecture-plugins.md"),
 			pluginSdk: join(getPkgRoot(), "plugin-sdk"),
 			pluginsDir: join(options.stateStore.dataDir, "plugins"),
@@ -237,6 +295,32 @@ function computePromptSnapshot(options: CoreSettingsAdapterOptions): {
 		return { texts, full, toolsSchema };
 	} catch {
 		return { full: "", texts: {}, toolsSchema: "" };
+	}
+}
+
+/**
+ * 提示词覆写端口的实现：内核已经把目录口径算好了（`input.tools`），这里只负责渲染。
+ * 任何一步不成（会话不在 / 按需没生效 / 渲染抛）都回 `undefined` —— 这一帧不改提示词，
+ * 与没有这个端口时逐字节一致（老实现的 `computePromptSnapshot` catch 回空串同理）。
+ */
+function renderTurnPrompt(options: CoreSettingsAdapterOptions, input: PromptRenderInput): string | undefined {
+	const settings = options.stateStore.getSettings(options.clientId);
+	if (!lazyEffectiveOf(settings)) return undefined;
+	const session = sessionOfConversation(options, input.conversationId);
+	if (!session) return undefined;
+	const snapshot = computePromptSnapshot(options, session, { cwd: input.cwd, tools: input.tools });
+	return snapshot.full.trim() === "" ? undefined : snapshot.full;
+}
+
+/** 按对话取会话句柄：宿主面给了按对话取的口就用它，只给了活动会话时退回那一个。 */
+function sessionOfConversation(options: CoreSettingsAdapterOptions, conversationId: string): HostSession | undefined {
+	try {
+		const exact = options.getSessionOf?.(conversationId);
+		if (exact) return exact as HostSession;
+		if (options.getSessionOf) return undefined;
+		return options.getSession() as HostSession;
+	} catch {
+		return undefined;
 	}
 }
 

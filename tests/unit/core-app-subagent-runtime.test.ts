@@ -93,3 +93,108 @@ describe("app · 子代理运行装配", () => {
 		expect(() => subagents.registry.assertCanSpawn("parent")).toThrow();
 	});
 });
+
+describe("app · 子代理派发的运行态", () => {
+	/** 派发真的会走：假运行时带 `openChildConversation`、会话注册表、设置帧（模板）与帧出口。 */
+	function makeSpawn() {
+		const registry = new ConversationRegistry<Conversation>();
+		let seq = 0;
+		const childSession = { thinkingLevel: "off", setThinkingLevel: vi.fn(), dispose: () => {} };
+		const parentSession = { thinkingLevel: "low", dispose: () => {} };
+		const sessions = {
+			get: vi.fn((id: string) => (id === "parent" ? { session: parentSession } : undefined)),
+			ensure: vi.fn(async () => ({ session: childSession, sessionId: "s-child", dispose: () => {} })),
+			close: vi.fn(),
+		};
+		const turns = { start: vi.fn(async () => "done" as const), steer: vi.fn(async () => {}) };
+		const transport = { send: vi.fn(), isClosed: () => false };
+		const templates = [
+			{ name: "thinker", description: "固定高强度", enabled: true, model: "", thinkingLevel: "high" },
+			{ name: "inheritor", description: "跟随主对话", enabled: true, model: "", thinkingLevel: "" },
+			{ name: "retired", description: "已停用", enabled: false, model: "", thinkingLevel: "max" },
+		];
+		const runtime = {
+			registry,
+			turns,
+			options: {
+				sessions,
+				transport,
+				settingsFrame: () => ({ subagentTemplates: () => templates }),
+			},
+			activeConversationId: () => "parent",
+			openChildConversation: (init: { parentId: string; title: string; cwd?: string }) => {
+				const conv = new Conversation({
+					id: `sa-${++seq}`,
+					clientId: "client-1",
+					cwd: init.cwd ?? "/work",
+					kind: "subagent",
+					createdAt: 1,
+					parentId: init.parentId,
+					title: init.title,
+				});
+				registry.add(conv);
+				return conv;
+			},
+		} as unknown as ClientRuntime;
+		registry.add(
+			new Conversation({
+				id: "parent",
+				clientId: "client-1",
+				cwd: "/work",
+				kind: "user",
+				createdAt: 1,
+				title: "父",
+			}),
+		);
+		const subagents = createSubagentRuntime({
+			runtime,
+			sessions: sessions as unknown as SessionRegistry,
+			now: () => 1,
+		});
+		const tool = subagents.toolFor("parent") as {
+			execute: (id: string, params: unknown, a?: unknown, b?: unknown, ctx?: unknown) => Promise<unknown>;
+		};
+		return { subagents, tool, childSession, sessions };
+	}
+
+	it("模板档位落到子代理会话上", async () => {
+		const { tool, childSession } = makeSpawn();
+		await tool.execute("t1", { action: "spawn", prompt: "干活", type: "thinker" }, undefined, undefined, {
+			cwd: "/work",
+		});
+		expect(childSession.setThinkingLevel).toHaveBeenCalledWith("high");
+	});
+
+	it("模板留空时跟随派发者当前档位（不是 SDK 默认）", async () => {
+		const { tool, childSession } = makeSpawn();
+		await tool.execute("t1", { action: "spawn", prompt: "干活", type: "inheritor" }, undefined, undefined, {
+			cwd: "/work",
+		});
+		expect(childSession.setThinkingLevel).toHaveBeenCalledWith("low");
+	});
+
+	it("显式 thinking 优先于模板档位", async () => {
+		const { tool, childSession } = makeSpawn();
+		await tool.execute(
+			"t1",
+			{ action: "spawn", prompt: "干活", type: "thinker", thinking: "minimal" },
+			undefined,
+			undefined,
+			{ cwd: "/work" },
+		);
+		expect(childSession.setThinkingLevel).toHaveBeenCalledWith("minimal");
+	});
+
+	it("停用的模板不可派发（也不产生子代理）", async () => {
+		const { tool, sessions } = makeSpawn();
+		const result = (await tool.execute(
+			"t1",
+			{ action: "spawn", prompt: "干活", template: "retired" },
+			undefined,
+			undefined,
+			{ cwd: "/work" },
+		)) as { content: { text: string }[] };
+		expect(result.content[0].text).toContain("unavailable template: retired");
+		expect(sessions.ensure).not.toHaveBeenCalled();
+	});
+});

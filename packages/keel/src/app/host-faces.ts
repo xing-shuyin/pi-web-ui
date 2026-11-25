@@ -9,6 +9,7 @@ import type { SlashCommandSinks, SlashCommandsPort } from "../contracts/commands
 import type { AttachmentsPort } from "../contracts/attachments.js";
 import type { FilesPort } from "../contracts/files.js";
 import type { SettingsFramePort } from "../contracts/settings.js";
+import type { PromptRenderCapable } from "../contracts/prompt-render.js";
 import type { PluginsPort } from "../contracts/plugins.js";
 import type { WorkspaceHostPort } from "../contracts/workspace.js";
 import type { SandboxPort } from "../contracts/sandbox.js";
@@ -30,6 +31,7 @@ import { refreshSessions, sessionListLimitOf } from "../domains/history/index.js
 import { createModelPusher, type ModelPusher } from "../domains/models/index.js";
 import type { TerminalHost } from "../domains/terminals/index.js";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
+import { lazyCatalogResolve } from "../domains/tools/lazy-state.js";
 import { createSubagentRuntime, type SubagentRuntime } from "./subagent-runtime.js";
 import type { SessionRegistry } from "./session-registry.js";
 import type { ClientFrames, ClientRuntime } from "./client-runtime.js";
@@ -181,6 +183,8 @@ export interface CoreSettingsSinks {
 	isDisposed(): boolean;
 	/** 当前对话的会话句柄；没有就绪会话时由内核抛 `CoreEngineNotReadyError`。 */
 	getSession(): unknown;
+	/** 按对话取会话句柄（提示词覆写端口用：`before_agent_start` 可能发生在非活动对话上）。 */
+	getSessionOf?(conversationId: string): unknown;
 	cwd: string;
 	agentDir: string;
 	/** 设置是否需要等回复结束再应用（宿主按实时值回答，不取构造时的快照）。 */
@@ -206,8 +210,11 @@ export interface CoreScmCommitMessageSinks {
 
 /** 宿主面工厂全表：`CoreEngineOptions` 直接 `extends` 这一份，装配只认它。 */
 export interface HostFaceFactories {
-	/** 设置帧/预设/审批规则库面工厂（宿主实现：`server/core-settings-adapter.ts`）；缺省 = 能力未接。 */
-	settingsFrame?: (sinks: CoreSettingsSinks) => SettingsFramePort;
+	/**
+	 * 设置帧/预设/审批规则库面工厂（宿主实现：`server/core-settings-adapter.ts`）；缺省 = 能力未接。
+	 * 返回值里可带 `promptRender`（同一份渲染体交出的提示词覆写通道）：给了才挂 `before_agent_start`。
+	 */
+	settingsFrame?: (sinks: CoreSettingsSinks) => SettingsFramePort & PromptRenderCapable;
 	/** 斜杠命令面工厂（宿主实现：`server/core-commands-adapter.ts`）；缺省 = 能力未接。 */
 	slashCommands?: (sinks: SlashCommandSinks) => SlashCommandsPort;
 	/** 附件面工厂（宿主实现：`server/core-attachments-adapter.ts`）；缺省 = 附件不发（会发一声 warning）。 */
@@ -369,6 +376,7 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 			if (!opened) throw new CoreEngineNotReadyError("settings session");
 			return opened.session;
 		},
+		getSessionOf: (conversationId) => sessions.get(conversationId)?.session,
 		cwd,
 		agentDir,
 		isStreaming: () => runtime.streamingCount() > 0,
@@ -376,6 +384,17 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 		getApprovalPolicy: () => approvalPolicyState(runtime.registry.activeConv()),
 		lang: { get: () => langOf(), set: (next) => deps.setLang(next) },
 	});
+	// 提示词覆写：端口由设置适配器带出（与 `effectiveSystemPrompt` 预览同一份渲染体），
+	// 交给会话注册表 —— 只存引用，没给就与今天逐字节一致。
+	if (settingsFrame?.promptRender) {
+		sessions.attachPromptRender({
+			port: settingsFrame.promptRender,
+			clientId,
+			settings: () => stateStore.getSettingsSnapshot(clientId),
+			// 目录口径的唯一实现（名单 ∩ 库存、已加载不筛掉、不重复列常驻）。
+			catalog: lazyCatalogResolve,
+		});
+	}
 	const slashCommands = deps.slashCommands?.({
 		emit: (msg) => transport.send(msg),
 		cwd: () => runtime.registry.activeConv()?.meta.cwd ?? cwd,

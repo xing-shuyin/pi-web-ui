@@ -105,7 +105,10 @@ function applyQuiesceGate(session: DispatchSession, gate: QuiesceGate): void {
 async function openLeadingConversation(runtime: ClientRuntime, sessions: SessionRegistry): Promise<void> {
 	// 幂等：已经建过（重连 / 二次调用）就认它，不另开一条。
 	if (runtime.registry.activeConv() || runtime.isDisposed()) return;
-	const conv: Conversation = runtime.createConversation();
+	// 老 `ClientSession.create` 用 `SessionManager.continueRecent`：续工作区里最近那份转录，
+	// 而不是永远从空白开始（否则重连后历史全丢、左栏也没有「当前对话」）。
+	const recent = await runtime.leadingSessionFile();
+	const conv: Conversation = runtime.createConversation(recent ? { sessionFile: recent } : undefined);
 	try {
 		await sessions.ensure(conv);
 	} catch (error) {

@@ -122,6 +122,11 @@ export function goalRunStatusOf(run: GoalRun): GoalStatus {
 		},
 		phase: run.phase === "pass" || run.phase === "wizard" ? "idle" : run.phase,
 		execModel: run.execModel,
+		// 执行对话的存在与在飞状态：左栏「目标条」靠它给出入口与活动描述（老实现 `g.roles.executor` 同形）。
+		// 子对话拆了就整个不给：指向已拆对话的 convId 比没有更坏。
+		...(run.execId
+			? { roles: { executor: { convId: run.execId, spawned: true, streaming: run.phase === "executing" } } }
+			: {}),
 		...(run.counters.goalUsage
 			? { usage: { inputTokens: run.counters.goalUsage.input, outputTokens: run.counters.goalUsage.output } }
 			: {}),

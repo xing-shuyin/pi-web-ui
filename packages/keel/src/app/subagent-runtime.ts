@@ -1,8 +1,14 @@
 import type { SubagentSnapshot } from "../subagents.js";
 import { SubagentRegistry, type SubagentRecord } from "../domains/subagents/registry.js";
-import { createSubagentToolHost, type SubagentSnapshotSource } from "../domains/subagents/host.js";
+import {
+	createSubagentToolHost,
+	type SubagentSnapshotSource,
+	type SubagentSpawnSpec,
+	type SubagentTemplateInfo,
+} from "../domains/subagents/host.js";
 import { createSubagentTool } from "../adapters/tools/subagent.js";
 import type { Conversation } from "../kernel/conversation/index.js";
+import type { TurnCapableSession } from "../contracts/session.js";
 import type { ClientRuntime } from "./client-runtime.js";
 import type { SessionRegistry } from "./session-registry.js";
 
@@ -45,6 +51,44 @@ export function createSubagentRuntime(options: SubagentRuntimeOptions): Subagent
 		});
 
 	const isSubagent = (conv: Conversation): boolean => conv.meta.kind === "subagent";
+
+	/**
+	 * 模板清单的单一来源：设置帧那份投影（`SettingsFramePort.subagentTemplates()`）里只留启用项。
+	 * 老实现的 `listTemplates` / `isTemplateUsable` 都在同一份过滤后的表上判（`agent-service.ts:4184`）。
+	 */
+	const templateRows = (): readonly SubagentTemplateInfo[] =>
+		(runtime.options.settingsFrame?.()?.subagentTemplates() ?? [])
+			.filter((template) => template.enabled)
+			.map((template) => ({
+				name: template.name,
+				description: template.description,
+				...(template.descriptionEn ? { descriptionEn: template.descriptionEn } : {}),
+				...(template.model ? { model: template.model } : {}),
+				...(template.thinkingLevel ? { thinkingLevel: template.thinkingLevel } : {}),
+			}));
+
+	/**
+	 * 子代理的思考强度：`显式请求 → 模板档位 → 派发者当前档位`（老实现 `agent-service.ts:2038` 同序）。
+	 * 超出模型能力的档位由 SDK 自己收敛（`setThinkingLevel` 自带 clamp），收敛不算失败、不得发告警。
+	 */
+	const applyThinkingLevel = (session: TurnCapableSession, parentId: string, spec: SubagentSpawnSpec): void => {
+		const template = spec.templateName ? templateRows().find((row) => row.name === spec.templateName) : undefined;
+		const parentLevel = runtime.options.sessions?.get(parentId)?.session.thinkingLevel;
+		const wanted = spec.thinking?.trim() || template?.thinkingLevel?.trim() || parentLevel;
+		if (!wanted) return;
+		try {
+			session.setThinkingLevel?.(wanted);
+		} catch (error) {
+			if (runtime.options.transport.isClosed()) return;
+			const reason = error instanceof Error ? error.message : String(error);
+			runtime.options.transport.send({
+				type: "notice",
+				level: "warning",
+				text: `子代理思考强度设置失败（将按当前档位运行）：${wanted}（${reason}）`,
+				textEn: `Failed to set subagent thinking level, keeping the current one: ${wanted} (${reason})`,
+			});
+		}
+	};
 	const snapshotOf = (conv: Conversation, owner: ClientRuntime = runtime): SubagentSnapshot => {
 		const record = registry.get(conv.id);
 		const opened = owner.options.sessions?.get(conv.id);
@@ -123,6 +167,8 @@ export function createSubagentRuntime(options: SubagentRuntimeOptions): Subagent
 			try {
 				const sessionRegistry = ownerRuntime.options.sessions ?? sessions;
 				const opened = await sessionRegistry.ensure(child);
+				// 子代理会话的档位必须在第一轮之前落到 SDK 会话上：否则跑的是 SDK 默认档（不是模板、也不是派发者）。
+				applyThinkingLevel(opened.session, parentId, spec);
 				void ownerRuntime.turns.start(child, opened.session, spec.prompt).then(
 					() => {
 						registry.settle(child.id, { state: "done" });
@@ -167,7 +213,7 @@ export function createSubagentRuntime(options: SubagentRuntimeOptions): Subagent
 			if (!conv || !opened) throw new Error(`子代理 ${id} 没有在跑的会话`);
 			await owner.turns.steer(conv, opened.session, message);
 		},
-		templates: () => [],
+		templates: () => [...templateRows()],
 		selfId: () => runtime.activeConversationId(),
 	});
 
