@@ -813,7 +813,16 @@ export class ClientStateStore {
 		const before = this.getSettingsSnapshot(_clientId);
 		const all = this.load();
 		const state = (all[ClientStateStore.GLOBAL_SETTINGS_KEY] ??= { projects: [] });
-		const cur = state.settings ?? ({} as ClientSettings);
+		/**
+		 * 生效设置打底、磁盘现值覆盖：磁盘上缺的键回退到**当前生效值**（不是 `[]` / `undefined`）。
+		 *
+		 * `readSettings` 的「老文件不补默认」语义是有意的（`stored ? undefined : DEFAULT`），所以磁盘
+		 * 上「没这个键」不等于「显式设成空」：拿裸磁盘 partial 当 `cur` 会把缺失键写成 `[]`——例如
+		 * 出厂后第一次 `set_settings` 就把 `toolOnDemandTools` 清空（重量级工具从此常驻）、
+		 * 把 `disabledPluginTools` 清空（出厂默认关掉的插件工具全开）。
+		 * 磁盘有值时仍以磁盘现值为准（legacy 形状的 `disabledAgentTools` 由这里的覆盖带着走）。
+		 */
+		const cur = { ...before, ...state.settings } as Partial<ClientSettings> & Record<string, unknown>;
 		state.settings = {
 			promptMode: settings.promptMode ?? cur.promptMode ?? "append",
 			customSystemPrompt: settings.customSystemPrompt ?? cur.customSystemPrompt ?? "",

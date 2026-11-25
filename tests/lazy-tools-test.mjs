@@ -183,6 +183,8 @@ check(
 	`lazy=${settings?.toolLazyLoading} tools=${state?.tools?.join(",")}`,
 );
 // 本测试用 patch 当「按需加载」的样例工具，而它出厂默认关闭 —— 先全开工具，再验按需加载语义
+// 丢掉旧的 settings_state：下面只认这次 set_settings 之后的新回执，避免拿旧值自我循环验证。
+settings = null;
 ws.send(JSON.stringify({ type: "set_settings", disabledAgentTools: [] }));
 for (let i = 0; i < 50 && !state?.tools?.includes("patch"); i++) await sleep(50);
 check(
@@ -190,11 +192,23 @@ check(
 	Boolean(state?.tools?.includes("patch")),
 	`tools=${state?.tools?.join(",")}`,
 );
+ws.send(JSON.stringify({ type: "get_settings" }));
+for (let i = 0; i < 50 && !Array.isArray(settings?.toolOnDemandTools); i++) await sleep(50);
+check(
+	"磁盘缺键时第一次 set_settings 不清空按需名单（缺失键回退到生效值，不是 []）",
+	Array.isArray(settings?.toolOnDemandTools) &&
+		settings.toolOnDemandTools.length > 0 &&
+		settings.toolOnDemandTools.includes("terminal"),
+	`toolOnDemandTools=${JSON.stringify(settings?.toolOnDemandTools)}`,
+);
 
 ws.send(JSON.stringify({ type: "set_settings", toolLazyLoading: true }));
 for (let i = 0; i < 50 && settings?.toolLazyLoading !== true; i++) await sleep(50);
 check("默认关：显式打开按需加载后设置生效", settings?.toolLazyLoading === true, `value=${settings?.toolLazyLoading}`);
 // 名单为空 = 没有工具可加载：等同关闭（不挂 load_tools、提示词不出按需段）。
+// 必须显式设空才算空：磁盘上「没这个键」回退到生效值（出厂七件套），不等于空名单。
+ws.send(JSON.stringify({ type: "set_settings", toolOnDemandTools: [] }));
+for (let i = 0; i < 50 && settings?.toolOnDemandTools?.length !== 0; i++) await sleep(50);
 for (let i = 0; i < 50 && state?.tools?.includes("load_tools"); i++) await sleep(50);
 check(
 	"名单为空：load_tools 不挂载、提示词不提按需加载",
