@@ -150,6 +150,23 @@ GitHub Actions ubuntu-latest（`.github/workflows/ci.yml`，push/PR → main 触
 
 `dist/` 由跑器在开跑前**串行构建一次**（CI 已在 Build 步骤构建过，可用 `--no-build` 跳过）。用例侧一律走 `tests/lib/ensure-build.mjs`，**不要**自己 `execSync("npm run build")`：默认 4 worker 并行下，一个用例重写 `dist/` 时另一个正在 `spawn dist/server/index.js`，会出「测试插件没被激活」之类与被测逻辑无关的假红。
 
+### 进程卫生（残留 server 会跑出假绿/假红）
+
+冒烟里的坑不是「进程多」，而是**旧进程占着端口**：用例 `spawn` 的 server 一旦没被收干净，下一轮同端口跑时 `waitForPort`
+照样「就绪」，于是拿**上一轮的旧构建**跑出新代码的结论。修在跑器一处，用例不用各自再写 `freePort`：
+
+| 机制       | 行为                                                                                                                                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 跑前清端口 | 并行模式下每个 worker 开跑前清自己的槽位端口；**只杀命令行像测试的进程**（用例脚本 / 仓库里的 `dist/server/index.js`），占着端口但不是测试进程的（`npm run dev`、别人的服务）直接判红，不替它背锅 |
+| 看门狗     | 单个用例默认 600s 内必须结束（`--timeout=<秒>` 可调），超时杀**进程树**并判红，runner 不会跟着挂死                                                                                                |
+| 中断清场   | `SIGINT` / `SIGTERM` / `SIGHUP` 与正常退出都把正在跑的用例连树杀掉，不留孤儿 server                                                                                                               |
+| 手工清场   | `node scripts/kill-test-servers.mjs`（默认 dry-run 列清单）/ `--kill` 真杀                                                                                                                        |
+
+判定口径在 `tests/lib/process-cleanup.mjs`（单一实现，`tests/lib/port-utils.mjs` 的 `freePort` 也转调它）：
+Windows 用 `taskkill /T` 杀整棵树（没有进程组，`process.kill(-pid)` 会静默失败并留下子进程）；
+**不按端口段盲杀**——同一台机器上可能还有别人的 `npm run dev` 或另一份测试在跑。
+守门单测：`tests/unit/smoke-runner-hygiene.test.ts`。
+
 ### 本地复刻 CI（`npm run ci:local`）
 
 本地绿 ≠ 远程绿，多数时候不是环境玄学，而是**本地根本没跑 CI 跑的东西**（2026-11 的 6 次 main 红里，4 次挂在 `Protocol smoke tests (full)`——它 PR 不跑、本地也不跑，只能在 main 上发现）。`npm run ci:local` 按 `.github/workflows/ci.yml` 的步骤与顺序逐条复刻，每步经 `scripts/safe-exec.mjs`（硬超时 + 杀进程树），日志落 `.safe-exec/`：

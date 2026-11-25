@@ -4,6 +4,7 @@ import { execSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { PREBUILT_ENV } from "./lib/ensure-build.mjs";
+import { freeTestPort, killTree } from "./lib/process-cleanup.mjs";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -156,18 +157,65 @@ const results = [];
 
 async function runOne(name, port) {
 	const args = port === undefined ? [] : [String(port)];
+	// 出口先收干净：上一轮被中断留下的 server 会把端口装成「已就绪」，
+	// 于是拿旧产物跑出假绿/假红（本仓库踩过）。不是测试进程的占用者不动，直接失败。
+	if (port !== undefined) {
+		const freed = freeTestPort(port);
+		if (freed.killed.length > 0) {
+			console.log(`⚠ :${port} 清掉了上轮残留的测试进程 ${freed.killed.join(",")}`);
+		}
+		if (freed.foreign.length > 0) {
+			return {
+				ok: false,
+				out: `✗ :${port} 被非测试进程占着（pid ${freed.foreign.join(",")}）——先自己能开它再跑。\n`,
+			};
+		}
+	}
 	return await new Promise((resolveRun) => {
 		const child = spawn(process.execPath, [join(here, `${name}.mjs`), ...args], {
 			cwd: dirname(here),
 			env: process.env,
 		});
+		liveChildren.add(child);
 		let out = "";
+		let settled = false;
+		const finish = (result) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(watchdog);
+			liveChildren.delete(child);
+			resolveRun(result);
+		};
+		// 看门狗：用例自己卡住（例如等一个永远不来的帧）时 runner 不能一起挂死，
+		// 也不能只因子进程超时就把残骸留在进程表里——杀整棵树后再判红。
+		const watchdog = setTimeout(() => {
+			killTree(child.pid);
+			finish({ ok: false, out: `${out}\n✗ 超过 ${TEST_TIMEOUT_MS / 1000}s 未结束，已杀进程树\n` });
+		}, TEST_TIMEOUT_MS);
 		child.stdout.on("data", (d) => (out += d));
 		child.stderr.on("data", (d) => (out += d));
-		child.on("exit", (code) => resolveRun({ ok: code === 0, out }));
-		child.on("error", (err) => resolveRun({ ok: false, out: out + String(err) }));
+		child.on("exit", (code) => finish({ ok: code === 0, out }));
+		child.on("error", (err) => finish({ ok: false, out: out + String(err) }));
 	});
 }
+
+/** 正在跑的用例；Ctrl-C / 异常退出时连树杀掉，不留孤儿 server。 */
+const liveChildren = new Set();
+function killLiveChildren() {
+	for (const child of liveChildren) killTree(child.pid);
+	liveChildren.clear();
+}
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+	process.on(signal, () => {
+		console.log(`\n✗ 收到 ${signal}：清掉正在跑的测试进程`);
+		killLiveChildren();
+		process.exit(130);
+	});
+}
+process.on("exit", killLiveChildren);
+
+const timeoutArg = rawArgs.find((a) => a.startsWith("--timeout="));
+const TEST_TIMEOUT_MS = Math.max(30, Number((timeoutArg ?? "").split("=")[1] ?? 600) || 600) * 1000;
 
 const slotPort = (slot) => 9100 + slot * 20;
 
