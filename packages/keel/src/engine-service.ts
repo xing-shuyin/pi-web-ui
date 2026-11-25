@@ -508,6 +508,7 @@ export interface EngineService {
 	onClientModelChanged?: ((snap: PluginConversationSnapshot) => void) | undefined;
 	chatFromPlugin?:
 		((pluginId: string, req: PluginChatRequest) => Promise<{ conversationId: string; clientId: string }>) | undefined;
+	abortPluginRun?: ((runId: string) => Promise<{ ok: boolean; error?: string }>) | undefined;
 	pluginToolsProvider?: ((cwd?: string) => unknown[]) | undefined;
 	pluginCommandsProvider?: (() => unknown[]) | undefined;
 	pluginBgTasksProvider?: (() => BgServer[]) | undefined;

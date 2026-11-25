@@ -53,10 +53,11 @@ import { WebSocket, WebSocketServer } from "ws";
 import { VERSION, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { sdkCopies, sdkOriginNote } from "./sdk-origin.js";
 import { PROTOCOL_VERSION } from "./protocol-version.js";
-import { AgentService, workspacePath, QuiesceRejectedError, ClientSession } from "./agent-service.js";
+import { workspacePath } from "./files-service.js";
 import { CoreEngine } from "../packages/keel/src/app/core-engine.js";
-import { isQuiesceRejection } from "../packages/keel/src/contracts/quiesce.js";
-import { resolvePiEngineAttach, resolvePiEngineMode } from "../packages/keel/src/app/engine-mode.js";
+import { QuiesceRejectedError, isQuiesceRejection } from "../packages/keel/src/contracts/quiesce.js";
+import { resolvePiEngineAttach } from "../packages/keel/src/app/engine-mode.js";
+import { createGroupRouterModelDirectory } from "./group-router-models.js";
 import { createCoreModelAdmin } from "./core-model-adapter.js";
 import { createCoreSettingsAdapter } from "./core-settings-adapter.js";
 import { createCoreSlashCommands } from "./core-commands-adapter.js";
@@ -1181,7 +1182,7 @@ const deviceCenter = await installLocalDeviceCenter({
 		dataDir: DATA_DIR,
 		models: async (signal) => {
 			signal.throwIfAborted();
-			const models = await (ensureEngine("pi") as AgentService).listGroupRouterModels(signal);
+			const models = await groupRouterModels.listGroupRouterModels(signal);
 			signal.throwIfAborted();
 			return models;
 		},
@@ -1219,7 +1220,7 @@ const deviceCenter = await installLocalDeviceCenter({
 			onConnect: syncBots,
 			onCommand: async (action, payload, signal) => {
 				if (action === "group_router_models") {
-					const models = await (ensureEngine("pi") as AgentService).listGroupRouterModels(signal);
+					const models = await groupRouterModels.listGroupRouterModels(signal);
 					return {
 						models: models.map((model) => ({
 							...model,
@@ -1238,7 +1239,7 @@ const deviceCenter = await installLocalDeviceCenter({
 		const routerAbort = new AbortController();
 		const routerConfig = { ...config };
 		const routerRuntime = createGroupRouterRuntime({
-			getModelRuntime: (signal) => (ensureEngine("pi") as AgentService).getGroupRouterModelRuntime(signal),
+			getModelRuntime: (signal) => groupRouterModels.getGroupRouterModelRuntime(signal),
 		});
 		const routerWorker = createGroupRouterWorker({
 			request: (path, method, body) =>
@@ -1560,7 +1561,8 @@ import {
 	hasRunningBackgroundTask,
 } from "./wait-subscription-scan.js";
 
-let piServiceInstance: AgentService | null = null;
+const groupRouterModels = createGroupRouterModelDirectory(() => process.env.PI_CODING_AGENT_DIR ?? getAgentDir());
+let piServiceInstance: EngineService | null = null;
 let dshServiceInstance: DshAgentService | null = null;
 let claudeServiceInstance: UniversalAgentService | null = null;
 let codexServiceInstance: UniversalAgentService | null = null;
@@ -1654,110 +1656,103 @@ function ensureEngine(engine: EngineId): EngineService {
 	}
 	if (!piServiceInstance) {
 		// 启动时就落一行：哪个编排层在跑、能不能接客户端（排查「我用的到底是哪版」的第一现场）。
-		console.log(
-			`[engine] pi → ${resolvePiEngineMode() === "core" ? "keel (packages/keel)" : "legacy (server/agent-service)"}` +
-				(resolvePiEngineAttach() ? "" : " · attach off"),
-		);
-		piServiceInstance =
-			resolvePiEngineMode() === "core"
-				? // 新引擎（keel）实现 EngineService 但仍有 AgentService 专属调用点待清零，类型面暂借 legacy。
-					(new CoreEngine(CWD, {
-						version: VERSION,
-						agentDir: getAgentDir(),
-						// 设置/项目/模型记忆的唯一写者：进程里共用这一份（两套实例写同一个文件会互相覆盖）。
-						stateStore: sharedStateStore,
-						modelAdmin: (sinks) => createCoreModelAdmin({ agentDir: getAgentDir(), ...sinks }),
-						// 远程工作区里的内置写/编辑工具要用 SFTP：只有宿主知道怎么建这些操作。
-						terminalManager: ({ emit, cwd, lang }) => new TerminalManager(emit, cwd, lang),
-						remoteOpsOf: (cwd) => (isRemoteWorkspaceUri(cwd) ? createRemoteSdkOperations(cwd) : undefined),
-						settingsFrame: (sinks) => createCoreSettingsAdapter({ ...sinks, stateStore: sharedStateStore }),
-						slashCommands: (sinks) => createCoreSlashCommands(sinks),
-						// 附件：解析 / 落盘 / `<file>` 旁注全在宿主 `server/attachments.ts`，内核只交端口。
-						attachments: () => createCoreAttachments(),
-						files: (sinks) => createCoreFiles(sinks),
-						// SCM 提交信息：git 采集与一次独立推断都在宿主叶子（`server/scm-commitmsg.ts`），
-						// 模型运行时 / 凭证 / 提示词口径全归宿主；内核只转发并回一帧。
-						scmCommitMessage: (sinks) =>
-							createCoreScmCommitMessage({ agentDir: getAgentDir(), stateStore: sharedStateStore, ...sinks }),
-						// 后台任务面：`BgServerTracker` + `JobRegistry` 都是进程级叶子，这里只把本客户端的帧出口接上。
-						background: (sinks) => createCoreBackground({ dataDir: DATA_DIR, ...sinks }),
-						plugins: (sinks) =>
-							createCorePlugins({
-								...sinks,
-								agentDir: getAgentDir(),
-								dataDir: DATA_DIR,
-								version: VERSION,
-								mcpProjects: () => mcpProjects,
-							}),
-						mcpProjects: () => mcpProjects,
-						// 插件工具「装进已开会话」：SDK 的会话工具表只能创建期组，就地刷新要用宿主那份
-						// `syncPluginToolsIntoSession`（`server/plugins.ts` 的单源，不在这里重写一遍）。
-						pluginToolSync: () => createCorePluginToolSync(),
-						workspaceHost: () => createCoreWorkspace({ dataDir: DATA_DIR }),
-						sandbox: (sinks) => createCoreSandbox({ dataDir: DATA_DIR, ...sinks }),
-						worktree: () => createCoreWorktree(),
-						// 原生 CLI：内核只持有账（身份 / 标题 / 归属），PTY / hook / 转录 / 状态 / 标题写回都在
-						// `server/native-cli-host.ts`（老树抽出来的单源叶子两边共用），这里只把宿主那几件事递进去。
-						nativeCli: (sinks) =>
-							createCoreNativeCli({
-								dataDir: DATA_DIR,
-								terminalOf: (id, cwd) => asCoreNativeCliTerminals(sinks.terminalOf(id, cwd)),
-								emit: (msg) => sinks.emit(msg),
-								publish: () => sinks.publish(),
-								refreshSessions: () => sinks.refreshSessions(),
-								renameConversation: (id, title) => sinks.renameConversation?.(id, title),
-								inheritModel: (preset) => sinks.inheritModel(preset),
-								// 手机不在浏览器里：四种 CLI 事件沿用老实现那条引擎级通知通道。
-								notify: (input) => sinks.notifyMobile?.(input),
-								remoteService: () => getGlobalRemoteSshService(),
-							}),
-						// Bot 私聊：本机注册表与私聊转录锚点都是宿主叶子，`agentDir` 只有组合根知道。
-						bots: () => createCoreBotChat({ agentDir: getAgentDir() }),
-						// 模式开关：转录条目（重启后恢复）/ 写工具门禁 / 提示词重载三处都要 SDK 会话句柄，适配器归宿主。
-						chatMode: (sinks) => createCoreChatModePort(sinks),
-						// 目标运行：执行 / 审查对话 + 逐轮评估全在宿主适配器里，偏好读同一份 `client-state`。
-						goalRun: (sinks) => createCoreGoalRunPort({ sinks, stateStore: sharedStateStore }),
-						// 权限预设条目：与模式开关同一棵树（转录里的 `permission/preset`），写侧归宿主。
-						presetTranscript: (sinks) => createCorePresetTranscriptPort(sinks),
-						// 工具信息：提示词覆盖表与载荷截断在宿主（内核只投影哪条工具、默认文案、是否活动）。
-						toolInfo: (sinks) => createCoreToolInfoAdapter(sinks),
-						// 随手问：转录摘取与磁盘历史读都在宿主叶子里，内核只解析会话。
-						quickAsk: () => createCoreQuickAskAdapter(),
-						// UI 桥：装 pi CLI 的进程归宿主，探针真值读宿主环境（`env.piConfigured` / `piAgentInstalled`）。
-						uiBridge: (clientId, send) => coreUiBridges.portOf(clientId, coreWebUiOf(clientId, send)),
-						// 引擎专属面（DSH 补丁 6 + claude 权限模式）：都不是 pi 引擎的语义，内核只转发；
-						// 这里包的是老派发路径本来就用的**同一个会话对象**（`EngineService.get(clientId)`，即 legacy 里的 `cs`），
-						// 不替它起引擎；引擎不对 / 没这会话时就地回可读错（不静默假成功）。
-						dshPatches: (sinks) =>
-							createCoreDshPatches({
-								clientId: sinks.clientId,
-								engine: () => resolveClientEngine(sinks.clientId),
-								session: () => dshServiceInstance?.get(sinks.clientId),
-							}),
-						// 换活动对话时「保留还是退役」里只有宿主知道的几项（老 shouldRetainActive 同一条口径）：
-						// 三份扫描都读 PI_SUBAGENTS_TEMP_ROOT 下的运行态账，内核不认这个目录布局。
-						retainEvidence: (_clientId, conv) => ({
-							hasActiveSubagentRun: hasActiveSubagentRun({ sessionId: conv.meta.sessionFile }),
-							hasPendingWake: hasPendingWaitSubscription({ sessionId: conv.meta.sessionFile }),
-							hasRunningBackgroundTask: hasRunningBackgroundTask({
-								cwd: conv.meta.cwd,
-								sessionFile: conv.meta.sessionFile,
-							}),
-						}),
-						// LSP：客户端/语言服务器子进程全在宿主叶子 `server/lsp-tool.ts`（内核不 spawn）。
-						// `patch` 的实时诊断与 `lsp` 工具本体都从这里进去；没装语言服务器时诊断返回 null（老口径：尽力而为）。
-						lsp: {
-							liveDiagnostics: (absPath, cwd) => getLiveLspDiagnostics(absPath, cwd),
-							tool: ({ cwd, lang }) => makeLspTool({ cwd, lang }),
-						},
-						enginePermissionMode: (sinks) =>
-							createCoreEnginePermissionMode({
-								clientId: sinks.clientId,
-								engine: () => resolveClientEngine(sinks.clientId),
-								session: () => claudeServiceInstance?.get(sinks.clientId),
-							}),
-					}) as unknown as AgentService)
-				: new AgentService(CWD, sharedStateStore);
+		console.log(`[engine] pi → keel (packages/keel)${resolvePiEngineAttach() ? "" : " · attach off"}`);
+		piServiceInstance = new CoreEngine(CWD, {
+			version: VERSION,
+			agentDir: getAgentDir(),
+			// 设置/项目/模型记忆的唯一写者：进程里共用这一份（两套实例写同一个文件会互相覆盖）。
+			stateStore: sharedStateStore,
+			modelAdmin: (sinks) => createCoreModelAdmin({ agentDir: getAgentDir(), ...sinks }),
+			// 远程工作区里的内置写/编辑工具要用 SFTP：只有宿主知道怎么建这些操作。
+			terminalManager: ({ emit, cwd, lang }) => new TerminalManager(emit, cwd, lang),
+			remoteOpsOf: (cwd) => (isRemoteWorkspaceUri(cwd) ? createRemoteSdkOperations(cwd) : undefined),
+			settingsFrame: (sinks) => createCoreSettingsAdapter({ ...sinks, stateStore: sharedStateStore }),
+			slashCommands: (sinks) => createCoreSlashCommands(sinks),
+			// 附件：解析 / 落盘 / `<file>` 旁注全在宿主 `server/attachments.ts`，内核只交端口。
+			attachments: () => createCoreAttachments(),
+			files: (sinks) => createCoreFiles(sinks),
+			// SCM 提交信息：git 采集与一次独立推断都在宿主叶子（`server/scm-commitmsg.ts`），
+			// 模型运行时 / 凭证 / 提示词口径全归宿主；内核只转发并回一帧。
+			scmCommitMessage: (sinks) =>
+				createCoreScmCommitMessage({ agentDir: getAgentDir(), stateStore: sharedStateStore, ...sinks }),
+			// 后台任务面：`BgServerTracker` + `JobRegistry` 都是进程级叶子，这里只把本客户端的帧出口接上。
+			background: (sinks) => createCoreBackground({ dataDir: DATA_DIR, ...sinks }),
+			plugins: (sinks) =>
+				createCorePlugins({
+					...sinks,
+					agentDir: getAgentDir(),
+					dataDir: DATA_DIR,
+					version: VERSION,
+					mcpProjects: () => mcpProjects,
+				}),
+			mcpProjects: () => mcpProjects,
+			// 插件工具「装进已开会话」：SDK 的会话工具表只能创建期组，就地刷新要用宿主那份
+			// `syncPluginToolsIntoSession`（`server/plugins.ts` 的单源，不在这里重写一遍）。
+			pluginToolSync: () => createCorePluginToolSync(),
+			workspaceHost: () => createCoreWorkspace({ dataDir: DATA_DIR }),
+			sandbox: (sinks) => createCoreSandbox({ dataDir: DATA_DIR, ...sinks }),
+			worktree: () => createCoreWorktree(),
+			// 原生 CLI：内核只持有账（身份 / 标题 / 归属），PTY / hook / 转录 / 状态 / 标题写回都在
+			// `server/native-cli-host.ts`（老树抽出来的单源叶子两边共用），这里只把宿主那几件事递进去。
+			nativeCli: (sinks) =>
+				createCoreNativeCli({
+					dataDir: DATA_DIR,
+					terminalOf: (id, cwd) => asCoreNativeCliTerminals(sinks.terminalOf(id, cwd)),
+					emit: (msg) => sinks.emit(msg),
+					publish: () => sinks.publish(),
+					refreshSessions: () => sinks.refreshSessions(),
+					renameConversation: (id, title) => sinks.renameConversation?.(id, title),
+					inheritModel: (preset) => sinks.inheritModel(preset),
+					// 手机不在浏览器里：四种 CLI 事件沿用老实现那条引擎级通知通道。
+					notify: (input) => sinks.notifyMobile?.(input),
+					remoteService: () => getGlobalRemoteSshService(),
+				}),
+			// Bot 私聊：本机注册表与私聊转录锚点都是宿主叶子，`agentDir` 只有组合根知道。
+			bots: () => createCoreBotChat({ agentDir: getAgentDir() }),
+			// 模式开关：转录条目（重启后恢复）/ 写工具门禁 / 提示词重载三处都要 SDK 会话句柄，适配器归宿主。
+			chatMode: (sinks) => createCoreChatModePort(sinks),
+			// 目标运行：执行 / 审查对话 + 逐轮评估全在宿主适配器里，偏好读同一份 `client-state`。
+			goalRun: (sinks) => createCoreGoalRunPort({ sinks, stateStore: sharedStateStore }),
+			// 权限预设条目：与模式开关同一棵树（转录里的 `permission/preset`），写侧归宿主。
+			presetTranscript: (sinks) => createCorePresetTranscriptPort(sinks),
+			// 工具信息：提示词覆盖表与载荷截断在宿主（内核只投影哪条工具、默认文案、是否活动）。
+			toolInfo: (sinks) => createCoreToolInfoAdapter(sinks),
+			// 随手问：转录摘取与磁盘历史读都在宿主叶子里，内核只解析会话。
+			quickAsk: () => createCoreQuickAskAdapter(),
+			// UI 桥：装 pi CLI 的进程归宿主，探针真值读宿主环境（`env.piConfigured` / `piAgentInstalled`）。
+			uiBridge: (clientId, send) => coreUiBridges.portOf(clientId, coreWebUiOf(clientId, send)),
+			// 引擎专属面（DSH 补丁 6 + claude 权限模式）：都不是 pi 引擎的语义，内核只转发；
+			// 这里包的是老派发路径本来就用的**同一个会话对象**（`EngineService.get(clientId)`，即 legacy 里的 `cs`），
+			// 不替它起引擎；引擎不对 / 没这会话时就地回可读错（不静默假成功）。
+			dshPatches: (sinks) =>
+				createCoreDshPatches({
+					clientId: sinks.clientId,
+					engine: () => resolveClientEngine(sinks.clientId),
+					session: () => dshServiceInstance?.get(sinks.clientId),
+				}),
+			// 换活动对话时「保留还是退役」里只有宿主知道的几项（老 shouldRetainActive 同一条口径）：
+			// 三份扫描都读 PI_SUBAGENTS_TEMP_ROOT 下的运行态账，内核不认这个目录布局。
+			retainEvidence: (_clientId, conv) => ({
+				hasActiveSubagentRun: hasActiveSubagentRun({ sessionId: conv.meta.sessionFile }),
+				hasPendingWake: hasPendingWaitSubscription({ sessionId: conv.meta.sessionFile }),
+				hasRunningBackgroundTask: hasRunningBackgroundTask({
+					cwd: conv.meta.cwd,
+					sessionFile: conv.meta.sessionFile,
+				}),
+			}),
+			// LSP：客户端/语言服务器子进程全在宿主叶子 `server/lsp-tool.ts`（内核不 spawn）。
+			// `patch` 的实时诊断与 `lsp` 工具本体都从这里进去；没装语言服务器时诊断返回 null（老口径：尽力而为）。
+			lsp: {
+				liveDiagnostics: (absPath, cwd) => getLiveLspDiagnostics(absPath, cwd),
+				tool: ({ cwd, lang }) => makeLspTool({ cwd, lang }),
+			},
+			enginePermissionMode: (sinks) =>
+				createCoreEnginePermissionMode({
+					clientId: sinks.clientId,
+					engine: () => resolveClientEngine(sinks.clientId),
+					session: () => claudeServiceInstance?.get(sinks.clientId),
+				}),
+		});
 		for (let i = 0; i < sharedSocketCount; i++) piServiceInstance.noteSocketOpen();
 		if (sharedQuiesced) piServiceInstance.quiesce();
 		wireEngineHooks?.(piServiceInstance);
@@ -1919,7 +1914,9 @@ const service: EngineService = {
 	 */
 	async dismissConversation(clientId, msg) {
 		const engine = ensureEngine(resolveClientEngine(clientId));
-		if (engine instanceof AgentService) return engine.dismissConversation(clientId, msg);
+		if (resolveClientEngine(clientId) === "pi" && engine.dismissConversation) {
+			return engine.dismissConversation(clientId, msg);
+		}
 		const cs = engine.get(clientId);
 		if (!cs?.dismissConversation) return false;
 		await cs.dismissConversation(msg.id, msg.withFinishedSubagents, msg.force);
@@ -1951,7 +1948,10 @@ const service: EngineService = {
 		return piServiceInstance?.readConversationForPlugins?.(options) ?? null;
 	},
 	chatFromPlugin(pluginId, req) {
-		const piSvc = ensureEngine("pi") as AgentService;
+		const piSvc = ensureEngine("pi");
+		if (!piSvc.chatFromPlugin) {
+			return Promise.reject(new Error("当前引擎不支持无头调用（仅标准 pi 引擎）"));
+		}
 		return piSvc.chatFromPlugin(pluginId, req);
 	},
 };
@@ -2244,7 +2244,6 @@ const mcpProjects = new McpProjectRuntimeRegistry({
 	onNotice: (_cwd, level, text, textEn) => pushNoticeToAll(level, text, textEn),
 	log: (...a) => console.log("[mcp]", ...a),
 });
-ClientSession.mcpProjects = mcpProjects;
 pluginMgr.mcpProjects = mcpProjects;
 wireEngineHooks = (svc: EngineService) => {
 	svc.onNotificationEvent = async (event) => {
@@ -2371,9 +2370,9 @@ backgroundExecutors.register({
 	type PluginSteerClient = {
 		steerForPlugins?: (cid: string, t: string) => Promise<{ ok: boolean; error?: string }>;
 	};
-	const pickClient = (): ReturnType<AgentService["pluginClient"]> => {
+	const pickClient = (): ReturnType<NonNullable<EngineService["pluginClient"]>> => {
 		try {
-			return piServiceInstance ? piServiceInstance.pluginClient() : undefined;
+			return piServiceInstance?.pluginClient?.();
 		} catch {
 			return undefined;
 		}
@@ -2429,7 +2428,7 @@ backgroundExecutors.register({
 	(pm as any).runAborter = async (id: string) => {
 		try {
 			if (id.startsWith("pr-")) {
-				if (!piServiceInstance) return { ok: false, error: "not supported" };
+				if (!piServiceInstance?.abortPluginRun) return { ok: false, error: "not supported" };
 				return await piServiceInstance.abortPluginRun(id);
 			}
 			const cs = pickClient() as PluginAbortClient | undefined;
