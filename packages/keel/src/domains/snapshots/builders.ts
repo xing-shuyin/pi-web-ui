@@ -71,6 +71,7 @@ export function buildSnapshotState(rev: number, env: SnapshotEnvView, conv: Snap
 		...sandboxAndWorktree(env),
 		pendingQuestion: conv.pendingQuestion ?? null,
 		bot: conv.bot ?? null,
+		...(conv.nativeCli ? { nativeCli: conv.nativeCli } : {}),
 		tools: [...conv.tools],
 	};
 }

@@ -491,7 +491,14 @@ export class ClientRuntime {
 		const stats = view.stats ?? this.sessionStatsOf(conv);
 		const bot =
 			view.bot ?? (conv.meta.botId ? { id: conv.meta.botId, name: conv.meta.botName ?? conv.meta.botId } : null);
-		return { ...view, isEphemeral: conv.ephemeral, bot, ...(stats ? { stats } : {}) };
+		const nativeCli = view.nativeCli ?? this.nativeCliOf(conv.id);
+		return {
+			...view,
+			isEphemeral: conv.ephemeral,
+			bot,
+			...(stats ? { stats } : {}),
+			...(nativeCli ? { nativeCli } : {}),
+		};
 	}
 
 	private sessionStatsOf(conv: Conversation): SnapshotConversationView["stats"] {

@@ -125,6 +125,17 @@ describe("core 原生 CLI · 真链路（CoreEngine → 适配器 → 终端叶�
 		await vi.waitFor(() => expect(cliRow()?.nativeCli?.status?.phase).toBe("running"));
 		expect(cliRow()?.nativeCli?.terminalId).toBe(`cli-${conversationId}`);
 
+		// ①'' snapshot 帧也必须带着 nativeCli：前端据此从新对话页切到 NativeCliPanel。
+		const cliSnapshot = () =>
+			[...sent]
+				.reverse()
+				.find(
+					(message): message is Extract<ServerMessage, { type: "snapshot" }> =>
+						message.type === "snapshot" && message.state.conversationId === conversationId,
+				);
+		await vi.waitFor(() => expect(cliSnapshot()?.state.nativeCli?.terminalId).toBe(`cli-${conversationId}`));
+		expect(cliSnapshot()?.state.nativeCli?.config.preset).toBe("custom");
+
 		// ② 转录落盘：历史列表读的那份文件里同时有 CLI 配置与绑定（重扫是异步的，等一帧）。
 		const findCliSession = () => {
 			const frame = [...sent]

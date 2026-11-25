@@ -59,6 +59,7 @@ export interface SnapshotConversationView {
 	pendingApprovals?: UiToolApproval[];
 	pendingQuestion?: import("../protocol.js").UiPendingQuestion | null;
 	bot?: { id: string; name: string } | null;
+	nativeCli?: import("../protocol.js").NativeCliConversation;
 }
 
 export interface SnapshotView {
