@@ -30,6 +30,20 @@
 | DSH                         | 6    | `listDshPatches` `installDshPatch` `fetchDshMarket`                                                                                     |
 | 其它                        | 17   | `scmQuery` `searchSessions` `pageCall` `resolvePhoneCall` `getToolPrompt` …                                                             |
 
+## 0.1 现状（2026-11-25，与本文件的历史计划对照）
+
+| 阶段 | 计划内容                                            | 现状                                                                                                                 |
+| ---- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| P1   | 30 个老叶子搬进 keel（13,526 行）                   | **已完成**（保留预算表豁免的 6 个超 600 行文件）                                                                     |
+| P2   | 4 个宿主模块反转成端口                              | **已完成**（`contracts/` 下有 30+ 端口；`server/core-*-adapter.ts` 是实现侧）                                        |
+| P3   | 165 个 handler 从抛变真                             | **已完成**（分发面 **185/185**，`scripts/gen-core-dispatch-surface.mjs --check` 守卫）                               |
+| P4   | 子系统对等（插件 / 画布 / 设备中心 / SCM / 更新）   | **已完成**（全部走端口 + 宿主适配器，`PluginManager` 原样复用）                                                      |
+| P5   | 独立发布（workspaces / `dist` 产物 / 老 shim 退场） | **未做**：`package.json` 仍无 `workspaces`，主应用靠相对路径引 `packages/keel/src`；要发布再动，属于节奏问题不是缺口 |
+| P6   | 老树退场（删 `agent-service.ts`）                   | **等拍板**（见下方清单的实际状态）                                                                                   |
+
+`lsp` 这类**会拉起子进程**的能力按铁律 3 处理：执行体留宿主（`server/lsp-tool.ts`），
+keel 只定义端口 `contracts/lsp.ts`（`liveDiagnostics` / `tool`）——内核里 `node:child_process` 保持 0 import。
+
 ## 1. 铁律（每个子代理的任务书里都要复述）
 
 1. **不改协议**：`server/protocol.ts` 的类型与 `PROTOCOL_VERSION` 不碰；要加字段先回主会话裁定。
@@ -130,10 +144,17 @@
 
 `agent-service.ts` 删除的前置条件（缺一不可）：
 
-- [ ] `PI_WEB_PI_ENGINE=core` 成为默认，且 `npm run smoke` **全量**通过；
-- [ ] 165 个 handler 全部有真实现（或有记录明确的「本引擎不支持」）；
-- [ ] 18 个红线守卫全部重定向到 keel；
-- [ ] 71 个白盒测试（`fakeClientSession`）按域重写到 keel，`tests/helpers/fake-session.ts` 删除。
+- [x] `PI_WEB_PI_ENGINE=core` 已成为默认（`app/engine-mode.ts`，回滚开关 `legacy` 仍在）；
+      `npm run smoke` 全量 **96/98**，两条红都与引擎无关（`universal-stream-ui-test` 前端 fixture、
+      `native-cli-smoke-test` 用 `legacy` 跑同样红）；
+- [x] 165（实际 **185**）个 handler 全部有真实现，无「本引擎不支持」的空白项；
+- [x] 红线守卫已重定向到 keel（`core-boundaries` 分层/行数/SDK 边界、`snapshot-channel`、
+      `session-turn-single-source`、`host-faces-wiring` 等）；
+- [ ] 71 个白盒测试按域重写到 keel：`tests/helpers/fake-session.ts` 仍被 **78** 个测试引用，未迁移。
+
+**下线 `legacy` 的代价**：删 `server/agent-service.ts`（约 1.6 万行）+ 上面那批白盒测试重写。
+收益只是「不留一份会漂移的第二实现」；风险是丢失唯一的外部对照基线。
+建议：先按现状发布（两套引擎都在、默认走 keel），等 keel 独自跑满一个发布周期再删。
 
 ## 3. 子代理协作协议
 

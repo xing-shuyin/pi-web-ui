@@ -9,7 +9,7 @@ pi 的默认引擎**已是 keel（`CoreEngine`）**；**分发面 185/185、P1~P
 
 | 口径                                                          | 结果                                               |
 | ------------------------------------------------------------- | -------------------------------------------------- |
-| `npx vitest run tests/unit`                                   | 16000 用例 / 0 ✗（并行跑有 3~6 条已知抖动，见 §6） |
+| `npx vitest run tests/unit`                                   | 16018 用例 / 0 ✗（并行跑有 3~6 条已知抖动，见 §6） |
 | `node tests/run-smoke.mjs --no-build`（默认 keel）            | **96/98**                                          |
 | `PI_WEB_PI_ENGINE=legacy node tests/run-smoke.mjs --no-build` | 对照基线（同机 95~96）                             |
 
@@ -22,29 +22,31 @@ pi 的默认引擎**已是 keel（`CoreEngine`）**；**分发面 185/185、P1~P
 
 ## 0.1 2026-11-25 这一轮修掉的（每条都是真根因，逐条可复验）
 
-| 症状                                                      | 根因                                                                                                                                                                                                 | 证据                                                 |
-| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| message-window / bot-chat-reopen / subagent-template 全红 | `statsOfSession` 直接吃 SDK `getSessionStats()`，它对**没有 `usage` 的 assistant 会抛** → 抛在出帧里，整条出帧链断                                                                                   | 三条转绿                                             |
-| snapshot-frame-budget                                     | attach 收尾 `flush({forceFull:true})` 与连接期那帧重复；`publisher.flush()` 又被 60ms 合并闸静默吞掉                                                                                                 | 转绿                                                 |
-| 附件 / 回滚 / 工作区根                                    | `client-assembly.createHostFaces({...})` **漏传** `attachments` / `presetTranscript`（重建装配表时少两行）                                                                                           | 转绿 + `KNOWN_UNWIRED` 清空                          |
-| 扩展 `session_start` 从没发过                             | keel 从没调 `session.bindExtensions()`；现在 `UiBridgePort.uiContextFor` → `openTurnSession` 里绑                                                                                                    | subagent-ui-context 转绿                             |
-| 启动不恢复最近会话 / 运行列表被拆                         | ① keel 恒建空白对话（老 `continueRecent`）→ 新 `app/leading-session.ts`；② 换活动对话从不判「保留」→ 判据单源 `domains/sessions/retain.ts`，装配层只喂宿主证据（子代理运行 / 等唤醒订阅 / 后台任务） | left-panel-delete / takeover-rollback 转绿           |
-| 项目发现不了                                              | 扫盘根写成 `dataDir/sessions`，会话实际住 `agentDir/sessions`（分目录部署必红）                                                                                                                      | 同上                                                 |
-| 删当前会话                                                | 老实现先挑开（次新，无则空白）再删；keel 直接删 → 剩一条挂着死文件的对话                                                                                                                             | `app/session-delete.ts`                              |
-| 过户回滚把在跑的会话弄没                                  | 回滚无条件 `transferFrom`，把目标那份空壳盖在来源活会话上                                                                                                                                            | 只搬「真插进目标」的 + `transferFrom` 不覆盖已有会话 |
-| 别处（elsewhere）行消失                                   | `findSessionOwner` 跳过离线持有方且不透出 `connected` → 每个新连接都续上别人的转录                                                                                                                   | idle/offline-takeover 转绿                           |
-| 按需加载全空                                              | 没有门控重放点、`load_tools` 本体没搬、JIT 自动激活没接                                                                                                                                              | `lazy-tools-test` 20/20                              |
-| 切项目后不看项目                                          | 扫盘根 + 连接期恢复 + 跨项目切对话不带 cwd（老 `applyCwdSideEffects`）                                                                                                                               | conv-cross-project 转绿                              |
+| 症状                                                      | 根因                                                                                                                                                                                                                                                                                 | 证据                                                               |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| message-window / bot-chat-reopen / subagent-template 全红 | `statsOfSession` 直接吃 SDK `getSessionStats()`，它对**没有 `usage` 的 assistant 会抛** → 抛在出帧里，整条出帧链断                                                                                                                                                                   | 三条转绿                                                           |
+| snapshot-frame-budget                                     | attach 收尾 `flush({forceFull:true})` 与连接期那帧重复；`publisher.flush()` 又被 60ms 合并闸静默吞掉                                                                                                                                                                                 | 转绿                                                               |
+| 附件 / 回滚 / 工作区根                                    | `client-assembly.createHostFaces({...})` **漏传** `attachments` / `presetTranscript`（重建装配表时少两行）                                                                                                                                                                           | 转绿 + `KNOWN_UNWIRED` 清空                                        |
+| 扩展 `session_start` 从没发过                             | keel 从没调 `session.bindExtensions()`；现在 `UiBridgePort.uiContextFor` → `openTurnSession` 里绑                                                                                                                                                                                    | subagent-ui-context 转绿                                           |
+| 启动不恢复最近会话 / 运行列表被拆                         | ① keel 恒建空白对话（老 `continueRecent`）→ 新 `app/leading-session.ts`；② 换活动对话从不判「保留」→ 判据单源 `domains/sessions/retain.ts`，装配层只喂宿主证据（子代理运行 / 等唤醒订阅 / 后台任务）                                                                                 | left-panel-delete / takeover-rollback 转绿                         |
+| 项目发现不了                                              | 扫盘根写成 `dataDir/sessions`，会话实际住 `agentDir/sessions`（分目录部署必红）                                                                                                                                                                                                      | 同上                                                               |
+| 删当前会话                                                | 老实现先挑开（次新，无则空白）再删；keel 直接删 → 剩一条挂着死文件的对话                                                                                                                                                                                                             | `app/session-delete.ts`                                            |
+| 过户回滚把在跑的会话弄没                                  | 回滚无条件 `transferFrom`，把目标那份空壳盖在来源活会话上                                                                                                                                                                                                                            | 只搬「真插进目标」的 + `transferFrom` 不覆盖已有会话               |
+| 别处（elsewhere）行消失                                   | `findSessionOwner` 跳过离线持有方且不透出 `connected` → 每个新连接都续上别人的转录                                                                                                                                                                                                   | idle/offline-takeover 转绿                                         |
+| 按需加载全空                                              | 没有门控重放点、`load_tools` 本体没搬、JIT 自动激活没接                                                                                                                                                                                                                              | `lazy-tools-test` 20/20                                            |
+| 切项目后不看项目                                          | 扫盘根 + 连接期恢复 + 跨项目切对话不带 cwd（老 `applyCwdSideEffects`）                                                                                                                                                                                                               | conv-cross-project 转绿                                            |
+| `patch` 没有 LSP 诊断 / `lsp` 工具在 keel 下恒不可用      | 执行体（语言客户端 + 语言服务器子进程）**不搬进 keel**（内核 `node:child_process` 必须 0 import）；改为宿主端口 `contracts/lsp.ts`（`LspPort.liveDiagnostics` / `LspPort.tool`），`patch` 追加诊断、`lsp` 工具由宿主定义内核挂载                                                     | `core-tools-lsp-bridge.test.ts` 3 条                               |
+| 出厂设置第一次 `set_settings` 就被清空                    | `client-state.saveSettings()` 拿**裸磁盘 partial** 当 `cur`：缺键回退成 `[]` → 按需加载名单清零（7 个重量级工具从此常驻）、`disabledPluginTools`（~30 个工具）与 `customSystemPrompt`/`quickPhrases` 等出厂默认全丢。改成「生效设置打底 + 磁盘现值覆盖」                             | `lazy-tools-test` 新增「缺键不清空名单」断言                       |
+| 冒烟 `subagent-template-test`「磁盘同步删除用户模板」常红 | **真 bug，不是 flake**：主文件用裸 `writeJsonAtomic`，而 `save_/delete_subagent_template` 都是 `void` 派发 → 两笔并发写乱序落盘（删掉的模板被上一笔刚写的列表盖回）。同族 `approval-rules` / `composer-drafts` 一并改成每文件一条 `serialized-json-writer` 队列                      | 单跑 3/3 绿 + 新并发单测                                           |
+| 「刚点发送就切对话」会把在途消息连对话一起退役            | keel 没有 `conv.promptInFlight`：`feedTurn` 的 `ensure` 窗口（消息已受理、会话还没开起来）里换对话会退役它。补 `ClientRuntime.turnInFlight`（`feedTurn` 进出场），保留判据与腾位 notice 都读它；`vacateActive` 的继任者也补上老口径 `conv.listed`（`ConversationPinIndex.isListed`） | `core-domain-sessions-retain` / `core-app-client-runtime` 各 +1 条 |
 
 ### 已知但**故意未修**（写清原因，别当漏项）
 
-- 宿主 `server/client-state.ts` 的加载/保存两处：状态文件缺 `toolOnDemandTools` 键时会被写成 `[]`，
-  把出厂名单（7 个重量级工具）清零 → 工具 schema 从 ~7k 涨回 33k。**两套引擎同源**，而且
-  `lazy-tools-test` 的「名单为空」用例**依赖**这个行为；修它要连带改那条用例（另开一个改动）。
-- `patch` 工具没带 LSP 实时诊断：`server/lsp-tool.ts`（1522 行）还没迁进 keel。
-- 老 `displaceActive` 的两支还没搬：`conv.transferring`（过户中不换）与 `promptInFlight &&
-!isStreaming` 的 info notice；`promptedSinceActive` 内核也没有状态位（`listed && promptedSinceActive`
-  这一支今天不可达 → 「打开过但没说过话、被切走」的对话老引擎留、keel 会退役）。
+- 老 `displaceActive` 的 `conv.transferring`（过户中不换）**在 keel 里不可达、故意不实现**：keel 的过户
+  （`app/engine-takeover.ts`）从「换走活动指针」到「从来源摘除」之间没有任何 `await`，全程不用
+  `displaceActive`——它直接 `registry.activate(remaining)`，所以不存在「搬一半被腾位退役」的窗口。
+  老实现必须先打 `transferring` 是因为它会在过户中途 `await switchConversation/newChat`。
+  真要加，必须先有「过户中途让出事件循环」的路径，否则就是一段没人能触发的死代码。
 
 ## 1. 开关（回滚只要一条环境变量）
 
@@ -118,26 +120,26 @@ npm run lint
 
 `npx vitest run tests/unit` 并行跑时偶发、**单跑必绿**（重子进程 / 端口争用 / 临时目录占用）：
 
-| 用例                                                                  | 现象                                                                          |
-| --------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `canvas-runtime-i18n.test.ts`                                         | 「replaces stale in-progress action metadata after server restart」偶发       |
-| `device-mobile-notifications.test.ts`                                 | 「keeps a bounded outbox…」偶发                                               |
-| `group-ecosystem-http-ws.test.ts`                                     | `ENOTEMPTY`                                                                   |
-| `device-center-portals` / `plugin-sparse-install` / `systemd-install` | 并行下偶发，单跑全绿                                                          |
-| 冒烟 `subagent-template-test`                                         | 「磁盘同步删除用户模板」偶发（删完 300ms 读盘）；单跑多数绿，失败一次复跑即绿 |
-| 冒烟 `plugin-test`                                                    | 「custom file should be back to empty」偶发；单跑连跑两次都绿                 |
+| 用例                                                                  | 现象                                                                    |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `canvas-runtime-i18n.test.ts`                                         | 「replaces stale in-progress action metadata after server restart」偶发 |
+| `device-mobile-notifications.test.ts`                                 | 「keeps a bounded outbox…」偶发                                         |
+| `group-ecosystem-http-ws.test.ts`                                     | `ENOTEMPTY`                                                             |
+| `bili-dm.test.ts`                                                     | 「bounds long model prompts…」偶发（并行）                              |
+| `device-center-portals` / `plugin-sparse-install` / `systemd-install` | 并行下偶发，单跑全绿                                                    |
+| 冒烟 `plugin-test`                                                    | 「custom file should be back to empty」偶发；单跑连跑两次都绿           |
 
 判定口径：**先单跑**。单跑红才是回归。
 
 ## 7. 下一批
 
-全量冒烟 **96/98**，剩下两条都与 keel 无关（见 §0）。真正还要做的：
+全量冒烟 **96/98**，剩下两条都与 keel 无关（见 §0）。功能对等层面**已无已知缺口**，剩下的是收尾：
 
-1. `patch` 的 LSP 实时诊断（`server/lsp-tool.ts` 未迁移）。
-2. 宿主 `client-state.ts` 的 `toolOnDemandTools` 清零 bug（见 §0.1「故意未修」）。
-3. 老 `displaceActive` 剩下的意识差：`conv.transferring`（过户中不换）与 `promptInFlight && !isStreaming` 的 info notice；
-   `vacateActive` 的继任者判据现在是「还在跑 / 已有内容」（老读 `conv.listed`，内存态只写不读），
-   要逐字对齐得给 `SessionConversations` 加 `isListed(id)` 读口。
+1. 发布收尾：`MIGRATION-PLAN.md` §P5/§P6 的清单按现状勾选；**是否下线 `PI_WEB_PI_ENGINE=legacy`
+   回滚开关需要用户拍板**（下线 = 删 `server/agent-service.ts` 与 `tests/helpers/fake-session.ts`，
+   约 1.6 万行；不下线也能跑，只是留着一份会漂移的第二实现）。
+2. 剩下的「省事但没验证」项：`lsp` 工具在真实语言服务器下的端到端行为（本机没装
+   `typescript-language-server`，桥接单测只覆盖「宿主给了 / 没给 / 抛错」三种口径）。
 
 ## 8. 用子代理的方式（本会话实操，建议照搬）
 
