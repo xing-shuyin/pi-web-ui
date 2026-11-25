@@ -10,16 +10,15 @@ pi 的默认引擎**已是 keel（`CoreEngine`）**；**分发面 185/185、P1~P
 | 口径                                                          | 结果                                               |
 | ------------------------------------------------------------- | -------------------------------------------------- |
 | `npx vitest run tests/unit`                                   | 16000 用例 / 0 ✗（并行跑有 3~6 条已知抖动，见 §6） |
-| `node tests/run-smoke.mjs --no-build`（默认 keel）            | **95/98**                                          |
+| `node tests/run-smoke.mjs --no-build`（默认 keel）            | **96/98**                                          |
 | `PI_WEB_PI_ENGINE=legacy node tests/run-smoke.mjs --no-build` | 对照基线（同机 95~96）                             |
 
-### 仍然红的三条（都已定性，不是「不知道」）
+### 仍然红的两条（都已定性，不是「不知道」）
 
-| 测试                       | 归属             | 事实                                                                               |
-| -------------------------- | ---------------- | ---------------------------------------------------------------------------------- |
-| `universal-stream-ui-test` | **与 keel 无关** | 纯前端 fixture + Vite，不碰引擎                                                    |
-| `native-cli-smoke-test`    | **与 keel 无关** | legacy 跑同样红（PTY/环境），不是迁移缺口                                          |
-| `running-list-test`        | keel 缺口        | 前 8 条断言绿；卡在「切回一条已经跑完的后台对话」时活动指针没跟过去（legacy 全绿） |
+| 测试                       | 归属             | 事实                                      |
+| -------------------------- | ---------------- | ----------------------------------------- |
+| `universal-stream-ui-test` | **与 keel 无关** | 纯前端 fixture + Vite，不碰引擎           |
+| `native-cli-smoke-test`    | **与 keel 无关** | legacy 跑同样红（PTY/环境），不是迁移缺口 |
 
 ## 0.1 2026-11-25 这一轮修掉的（每条都是真根因，逐条可复验）
 
@@ -99,7 +98,7 @@ npm run lint
 
 ## 4. 剩余冒烟失败
 
-见 §0「仍然红的三条」。上面 P7 那两例（`scm-features-test` / `device-project-collaboration-test`）
+见 §0「仍然红的两条」。上面 P7 那两例（`scm-features-test` / `device-project-collaboration-test`）
 已经绿了，别再按旧清单找。
 
 ## 5. 架构红线（改之前务必读）
@@ -119,27 +118,26 @@ npm run lint
 
 `npx vitest run tests/unit` 并行跑时偶发、**单跑必绿**（重子进程 / 端口争用 / 临时目录占用）：
 
-| 用例                                                                  | 现象                                                                    |
-| --------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `canvas-runtime-i18n.test.ts`                                         | 「replaces stale in-progress action metadata after server restart」偶发 |
-| `device-mobile-notifications.test.ts`                                 | 「keeps a bounded outbox…」偶发                                         |
-| `group-ecosystem-http-ws.test.ts`                                     | `ENOTEMPTY`                                                             |
-| `device-center-portals` / `plugin-sparse-install` / `systemd-install` | 并行下偶发，单跑全绿                                                    |
-| 冒烟 `subagent-template-test`                                         | 并行跑偶发，单跑 6/6 绿                                                 |
+| 用例                                                                  | 现象                                                                          |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `canvas-runtime-i18n.test.ts`                                         | 「replaces stale in-progress action metadata after server restart」偶发       |
+| `device-mobile-notifications.test.ts`                                 | 「keeps a bounded outbox…」偶发                                               |
+| `group-ecosystem-http-ws.test.ts`                                     | `ENOTEMPTY`                                                                   |
+| `device-center-portals` / `plugin-sparse-install` / `systemd-install` | 并行下偶发，单跑全绿                                                          |
+| 冒烟 `subagent-template-test`                                         | 「磁盘同步删除用户模板」偶发（删完 300ms 读盘）；单跑多数绿，失败一次复跑即绿 |
+| 冒烟 `plugin-test`                                                    | 「custom file should be back to empty」偶发；单跑连跑两次都绿                 |
 
 判定口径：**先单跑**。单跑红才是回归。
 
 ## 7. 下一批
 
-全量冒烟 95/98，剩下三条已定性（见 §0）。真正还要做的：
+全量冒烟 **96/98**，剩下两条都与 keel 无关（见 §0）。真正还要做的：
 
-1. **`running-list-test`**：切回「已跑完的后台对话」时活动指针不动（legacy 全绿）。
-   起手：先把 `switch_conversation` 的**真实派发链**找出来（我打过探针的四处都没触发，
-   说明不是我以为的那条路），再查目标对话是否已被退役（帧里有行 ≠ 注册表里有它）。
-2. `patch` 的 LSP 实时诊断（`server/lsp-tool.ts` 未迁移）。
-3. 宿主 `client-state.ts` 的 `toolOnDemandTools` 清零 bug（见 §0.1「故意未修」）。
-4. 老 `displaceActive` 剩下两支（`conv.transferring` / `promptInFlight` 的 info notice）与
-   `promptedSinceActive` 状态位。
+1. `patch` 的 LSP 实时诊断（`server/lsp-tool.ts` 未迁移）。
+2. 宿主 `client-state.ts` 的 `toolOnDemandTools` 清零 bug（见 §0.1「故意未修」）。
+3. 老 `displaceActive` 剩下的意识差：`conv.transferring`（过户中不换）与 `promptInFlight && !isStreaming` 的 info notice；
+   `vacateActive` 的继任者判据现在是「还在跑 / 已有内容」（老读 `conv.listed`，内存态只写不读），
+   要逐字对齐得给 `SessionConversations` 加 `isListed(id)` 读口。
 
 ## 8. 用子代理的方式（本会话实操，建议照搬）
 
