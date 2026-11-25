@@ -158,8 +158,8 @@ describe("domains/terminals · 终端宿主", () => {
 		managerAt(0).emit({ type: "terminal_output", terminalId: "t1", data: "hi" });
 		managerAt(0).emit({ type: "terminal_exit", terminalId: "t1", exitCode: 0 });
 		expect(sent).toEqual([
-			{ type: "terminal_output", terminalId: "t1", data: "hi" },
-			{ type: "terminal_exit", terminalId: "t1", exitCode: 0 },
+			{ type: "terminal_output", terminalId: "t1", data: "hi", conversationId: "c1" },
+			{ type: "terminal_exit", terminalId: "t1", exitCode: 0, conversationId: "c1" },
 		]);
 	});
 
@@ -244,5 +244,35 @@ describe("domains/terminals · 终端宿主", () => {
 		host.disposeAll();
 		expect(() => host.disposeConversation("c1")).not.toThrow();
 		expect(manager.killCalls).toEqual(["t-live"]);
+	});
+
+	it("terminal_output / terminal_exit / terminal_list 必须带 conversationId（前端 terminalBridge 按对话路由）", () => {
+		const { host, sent } = hostFor();
+		host.managerFor("c-cli", "/work/c-cli");
+		const manager = managerAt(0);
+		manager.emit({ type: "terminal_output", terminalId: "cli-c-cli", data: "hello", ownerKind: "conversation" });
+		manager.emit({ type: "terminal_exit", terminalId: "cli-c-cli", exitCode: 0, ownerKind: "conversation" });
+		manager.emit({ type: "terminal_list", terminals: [] });
+		expect(sent).toEqual([
+			{
+				type: "terminal_output",
+				terminalId: "cli-c-cli",
+				data: "hello",
+				ownerKind: "conversation",
+				conversationId: "c-cli",
+			},
+			{
+				type: "terminal_exit",
+				terminalId: "cli-c-cli",
+				exitCode: 0,
+				ownerKind: "conversation",
+				conversationId: "c-cli",
+			},
+			{
+				type: "terminal_list",
+				terminals: [],
+				conversationId: "c-cli",
+			},
+		]);
 	});
 });

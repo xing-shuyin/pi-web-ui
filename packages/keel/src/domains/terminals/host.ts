@@ -36,13 +36,23 @@ export interface TerminalHost {
 export function createTerminalHost(input: TerminalHostInput): TerminalHost {
 	const byConversation = new Map<string, TerminalManagerLike>();
 
-	const emit = (msg: ServerMessage): void => {
-		if (input.transport.isClosed()) return;
-		input.transport.send(msg);
-	};
+	const emitFor =
+		(conversationId: string) =>
+		(msg: ServerMessage): void => {
+			if (input.transport.isClosed()) return;
+			if (msg.type === "terminal_output" || msg.type === "terminal_exit" || msg.type === "terminal_list") {
+				input.transport.send({ ...msg, conversationId } as ServerMessage);
+				return;
+			}
+			input.transport.send(msg);
+		};
 
 	const createManager = (conversationId: string, cwd: string): TerminalManagerLike =>
-		input.createManager({ emit, cwd: () => input.cwdOf(conversationId) || cwd, lang: input.lang });
+		input.createManager({
+			emit: emitFor(conversationId),
+			cwd: () => input.cwdOf(conversationId) || cwd,
+			lang: input.lang,
+		});
 
 	/** 活终端从叶子的清单里读（`running` 才算活），宿主不维护第二份 id 表。 */
 	const killLive = (manager: TerminalManagerLike): void => {
