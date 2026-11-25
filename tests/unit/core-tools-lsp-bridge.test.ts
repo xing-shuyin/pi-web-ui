@@ -1,9 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computeFileHash } from "../../packages/keel/src/hashline-engine.js";
 import { makePatchTool, type PatchToolOptions } from "../../packages/keel/src/adapters/tools/patch.js";
+import type { LspPort } from "../../packages/keel/src/contracts/lsp.js";
+import { clearResolveBinaryCache, getLiveLspDiagnostics, globalLspPool, makeLspTool } from "../../server/lsp-tool.js";
 
 /**
  * `patch` 的 LSP 桥：宿主把 `getLiveLspDiagnostics` 注入成 `PatchToolOptions.liveDiagnostics`
@@ -44,7 +46,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	rmSync(tempDir, { recursive: true, force: true });
+	try {
+		rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+	} catch {}
 });
 
 describe("adapters/tools · patch 的 LSP 诊断桥", () => {
@@ -88,5 +92,114 @@ describe("adapters/tools · patch 的 LSP 诊断桥", () => {
 		expect(text).not.toContain("language server exploded");
 		expect(text).toContain("下一处编辑锚点");
 		expect(readFileSync(join(tempDir, FILE), "utf8")).toContain("const msg = 'hi';");
+	});
+});
+
+describe("宿主 LspPort · 真实 stdio 语言服务器子进程端到端", () => {
+	afterAll(async () => {
+		await globalLspPool.shutdownAll();
+		clearResolveBinaryCache();
+	});
+
+	it("LspPort.tool + LspPort.liveDiagnostics 经由真实 stdio JSON-RPC 子进程完成 hover 与 patch 实时诊断", async () => {
+		const serverScript = join(tempDir, "e2e-lsp-server.mjs");
+		writeFileSync(
+			serverScript,
+			`
+let buffer = Buffer.alloc(0);
+process.stdin.on("data", (chunk) => {
+	buffer = Buffer.concat([buffer, chunk]);
+	while (true) {
+		const headerEnd = buffer.indexOf("\\r\\n\\r\\n");
+		if (headerEnd === -1) break;
+		const header = buffer.slice(0, headerEnd).toString("utf8");
+		const lenMatch = header.match(/Content-Length:\\s*(\\d+)/i);
+		if (!lenMatch) {
+			buffer = buffer.slice(headerEnd + 4);
+			continue;
+		}
+		const len = parseInt(lenMatch[1], 10);
+		if (buffer.length < headerEnd + 4 + len) break;
+		const body = JSON.parse(buffer.slice(headerEnd + 4, headerEnd + 4 + len).toString("utf8"));
+		buffer = buffer.slice(headerEnd + 4 + len);
+		handle(body);
+	}
+});
+
+function send(msg) {
+	const payload = JSON.stringify(msg);
+	process.stdout.write(\`Content-Length: \${Buffer.byteLength(payload, "utf8")}\\r\\n\\r\\n\${payload}\`);
+}
+
+function handle(msg) {
+	if (msg.method === "initialize") {
+		send({ jsonrpc: "2.0", id: msg.id, result: { capabilities: { hoverProvider: true } } });
+	} else if (msg.method === "textDocument/hover") {
+		send({
+			jsonrpc: "2.0",
+			id: msg.id,
+			result: { contents: { kind: "markdown", value: "function greet(): string" } },
+		});
+	} else if (msg.method === "textDocument/didOpen" || msg.method === "textDocument/didChange") {
+		const text = msg.params?.textDocument?.text ?? msg.params?.contentChanges?.[0]?.text ?? "";
+		const diagnostics = text.includes("const msg = 'hi'")
+			? [{
+					range: { start: { line: 1, character: 2 }, end: { line: 1, character: 19 } },
+					severity: 1,
+					code: "TS9001",
+					message: "E2E diagnostic: msg reassigned",
+				}]
+			: [];
+		send({
+			jsonrpc: "2.0",
+			method: "textDocument/publishDiagnostics",
+			params: { uri: msg.params.textDocument.uri, diagnostics },
+		});
+	} else if (msg.method === "shutdown") {
+		send({ jsonrpc: "2.0", id: msg.id, result: null });
+	}
+}
+`,
+		);
+
+		const binDir = join(tempDir, "node_modules", ".bin");
+		mkdirSync(binDir, { recursive: true });
+		if (process.platform === "win32") {
+			writeFileSync(join(binDir, "vtsls.cmd"), `@echo off\r\n"${process.execPath}" "${serverScript}" %*\r\n`);
+		} else {
+			const binPath = join(binDir, "vtsls");
+			writeFileSync(binPath, `#!/bin/sh\nexec "${process.execPath}" "${serverScript}" "$@"\n`);
+			chmodSync(binPath, 0o755);
+		}
+		clearResolveBinaryCache();
+
+		const lspPort: LspPort = {
+			liveDiagnostics: (absPath, cwd) => getLiveLspDiagnostics(absPath, cwd),
+			tool: ({ cwd, lang }) => makeLspTool({ cwd, lang }),
+		};
+
+		const lspTool = lspPort.tool!({ cwd: tempDir, lang: () => "zh" }) as {
+			execute: (
+				id: string,
+				params: Record<string, unknown>,
+			) => Promise<{ content: Array<{ type: string; text: string }>; details: { ok: boolean } }>;
+		};
+
+		// 1. 先通过 LspPort.tool 拉起真实 stdio 语言服务器并执行 hover
+		const hoverRes = await lspTool.execute("call-hover", {
+			action: "hover",
+			path: FILE,
+			line: 1,
+			character: 10,
+		});
+		expect(hoverRes.details.ok).toBe(true);
+		expect(hoverRes.content.map((c) => c.text).join("")).toContain("function greet(): string");
+
+		// 2. 再通过 LspPort.liveDiagnostics 走 patch，验证真实子进程推送的 publishDiagnostics 进补丁输出
+		const patchRes = await runPatch({ liveDiagnostics: lspPort.liveDiagnostics });
+		expect(patchRes.details.ok).toBe(true);
+		const patchTextOut = patchRes.content.map((c) => c.text).join("");
+		expect(patchTextOut).toContain(`${FILE} 的实时 LSP 诊断：`);
+		expect(patchTextOut).toContain("E2E diagnostic: msg reassigned (TS9001)");
 	});
 });

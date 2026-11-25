@@ -152,7 +152,8 @@ npm run lint
    回滚开关需要用户拍板**（下线 = 删 `server/agent-service.ts` 与 `tests/helpers/fake-session.ts`，
    约 1.6 万行；不下线也能跑，只是留着一份会漂移的第二实现）。
 2. 剩下的「省事但没验证」项：`lsp` 工具在真实语言服务器下的端到端行为（本机没装
-   `typescript-language-server`，桥接单测只覆盖「宿主给了 / 没给 / 抛错」三种口径）。
+   `typescript-language-server`；`tests/unit/core-tools-lsp-bridge.test.ts` 已补齐经由真实 stdio
+   JSON-RPC 子进程的 `LspPort.tool` `hover` + `LspPort.liveDiagnostics` `patch` 实时诊断端到端单测，4/4 绿）。
 
 ## 8. 用子代理的方式（本会话实操，建议照搬）
 
