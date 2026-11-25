@@ -103,6 +103,7 @@ export interface CoreNativeCliSinks {
 	publish(): void;
 	/** 历史列表重扫（标题写回 / 新转录落盘之后）。 */
 	refreshSessions(): void;
+	renameConversation?(conversationId: string, title: string): void;
 	/** 「继承当前对话模型」开关：客户端设置里的开关 + 当前对话的模型，两者都只有宿主知道。 */
 	inheritModel(preset: string): { provider: string; id: string } | undefined;
 	/** 手机通知（手机不在浏览器里，只能由引擎级回调送出去）；缺省 = 不推手机。 */
@@ -550,9 +551,8 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 			runtime.publisher.request();
 			runtime.pushConversations();
 		},
-		refreshSessions: () => {
-			void frames.refreshSessions();
-		},
+		refreshSessions: () => void frames.refreshSessions(),
+		renameConversation: (conversationId, title) => runtime.registry.get(conversationId)?.rename(title),
 		// 「继承当前对话模型」开关：开关在设置里，模型在当前对话的会话上。
 		inheritModel: (preset) => {
 			const inherit = stateStore.getSettingsSnapshot(clientId).nativeCliInheritModel as

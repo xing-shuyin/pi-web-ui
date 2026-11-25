@@ -73,6 +73,8 @@ export interface NativeCliHostOptions {
 	publish(): void;
 	/** 历史列表重扫（标题写回 / 新转录落盘之后）。 */
 	refreshSessions(): void;
+	/** 宿主回填标题时同步改内核对话实体标题。 */
+	renameConversation?(conversationId: string, title: string): void;
 	/** 全局 SSH 服务（远端工作区 / keep-alive 才用得到）。 */
 	remoteService(): RemoteSshService | null;
 	/** 「继承当前对话模型」开关的宿主判定：模型选择不归内核。 */
@@ -367,6 +369,8 @@ export class NativeCliHost {
 			cwd: entry.cwd,
 			title,
 		});
+		this.options.renameConversation?.(entry.conversationId, title);
+		this.options.publish();
 	}
 
 	private async cleanupStaging(entry: CliEntry): Promise<void> {

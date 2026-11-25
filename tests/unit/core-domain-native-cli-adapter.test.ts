@@ -75,6 +75,7 @@ function sinks(
 		emit: (msg: ServerMessage) => void calls.push(["emit", msg.type]),
 		publish: () => void calls.push(["publish"]),
 		refreshSessions: () => void calls.push(["refreshSessions"]),
+		renameConversation: (conversationId, title) => void calls.push(["renameConversation", conversationId, title]),
 		inheritModel: () => undefined,
 		remoteService: () => null,
 		...overrides,
@@ -272,6 +273,27 @@ describe("宿主侧 native-cli 适配器 · 终端归属那几个动作", () => 
 		await expect(
 			port.launch({ conversationId: "c-1", config: { preset: "claude" }, cwd: root, title: "x" }),
 		).rejects.toThrow("CLI terminal manager is not available for this conversation");
+	});
+
+	it("hook 事件触发标题回填时，同步调用 renameConversation 与 publish（左栏才跟着改名）", async () => {
+		const calls: Call[] = [];
+		const manager = fakeTerminals(calls);
+		(manager as unknown as { getRawOutput: () => string }).getRawOutput = () => "> 修一下登录页";
+		const port = createCoreNativeCli(sinks(calls, manager));
+		await port.launch({
+			conversationId: "c-1",
+			config: { preset: "custom", executable: process.execPath },
+			cwd: root,
+			title: "custom CLI",
+		});
+		const onEvent = manager.nativeCliRuntime?.onEvent as (id: string, ev: unknown) => void;
+		onEvent("cli-c-1", {
+			type: "working",
+			eventId: "ev-title-1",
+			occurredAt: Date.now(),
+		});
+		expect(calls).toContainEqual(["renameConversation", "c-1", "修一下登录页"]);
+		expect(calls).toContainEqual(["publish"]);
 	});
 });
 

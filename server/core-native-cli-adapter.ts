@@ -51,6 +51,8 @@ export interface CoreNativeCliSinks {
 	publish?(): void;
 	/** 历史列表重扫（标题写回 / 新转录落盘之后）。 */
 	refreshSessions?(): void;
+	/** 宿主回填标题时同步改内核对话实体标题。 */
+	renameConversation?(conversationId: string, title: string): void;
 	/** 「继承当前对话模型」开关（宿主设置 + 当前对话模型）；缺省 = 不继承。 */
 	inheritModel?(preset: NativeCliConfig["preset"]): NativeCliConfig["model"] | undefined;
 	/** 手机通知（可广播的四种 CLI 事件）；缺省 = 不推手机。 */
@@ -92,6 +94,7 @@ export function createCoreNativeCli(sinks: CoreNativeCliSinks): NativeCliPort {
 		emit: (msg) => sinks.emit?.(msg),
 		publish: () => sinks.publish?.(),
 		refreshSessions: () => sinks.refreshSessions?.(),
+		...(sinks.renameConversation ? { renameConversation: sinks.renameConversation } : {}),
 		remoteService: () => sinks.remoteService?.() ?? null,
 		...(sinks.inheritModel ? { inheritModel: sinks.inheritModel } : {}),
 		...(sinks.notify ? { notify: sinks.notify } : {}),

@@ -1705,6 +1705,7 @@ function ensureEngine(engine: EngineId): EngineService {
 								emit: (msg) => sinks.emit(msg),
 								publish: () => sinks.publish(),
 								refreshSessions: () => sinks.refreshSessions(),
+								renameConversation: (id, title) => sinks.renameConversation?.(id, title),
 								inheritModel: (preset) => sinks.inheritModel(preset),
 								// 手机不在浏览器里：四种 CLI 事件沿用老实现那条引擎级通知通道。
 								notify: (input) => sinks.notifyMobile?.(input),
