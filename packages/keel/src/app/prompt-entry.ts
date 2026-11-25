@@ -34,6 +34,8 @@ export interface PromptEntryDeps {
 	publisher: SnapshotPublisher;
 	/** 运行列表帧（新建对话后必须推：客户端据此换到新对话）。 */
 	pushConversations(): void;
+	/** 记一笔「用户在这条对话里喂过轮」（老 `conv.promptedSinceActive = true`）：保留判据的一半。 */
+	markPrompted?(conversationId: string): void;
 	/** 唯一喂轮出口。 */
 	feedTurn(text: string, queue?: boolean): Promise<void>;
 	/** 只注册并激活一条对话（`botId` → 会话级 Bot 身份）。 */
@@ -152,6 +154,9 @@ export function createPromptEntry(deps: PromptEntryDeps): PromptEntry {
 		if (deps.dispatchDelegate && (await deps.dispatchDelegate(text))) return;
 		// 附件先落进会话（老实现同序：asides → `sendCustomMessage(nextTurn)` → 喂轮）。
 		await deliverAttachments(attachments);
+		// 老 `promptedSinceActive = true`：在这一条对话里真的喂过轮 = 用户用过它，
+		// 换对话时据此保留（否则��过的对话一切走就被退役）。
+		if (active) deps.markPrompted?.(active.id);
 		deps.checkParallelWork?.(active);
 		await deps.feedTurn(text, queue);
 	}

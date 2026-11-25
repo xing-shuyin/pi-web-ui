@@ -348,6 +348,7 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 		transport: runtime.options.transport,
 		publisher: runtime.publisher,
 		pushConversations: () => runtime.pushConversations(),
+		markPrompted: (conversationId) => surface.conversations().markPrompted(conversationId),
 		feedTurn: (text, queue) => runtime.feedTurn(text, queue),
 		createConversation: (init) => runtime.createConversation(init),
 		workspace: () => surface.workspace(),
@@ -467,9 +468,9 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 			// 临时对话（`ephemeral`）不复用空白对话：老实现同口径，它要的是一条新记录。
 			const previous = runtime.registry.activeConv();
 			const conv = promptEntry.startNewChat(botId, ephemeral !== true, botName);
+			if (previous && previous.id !== conv.id) displacePrevious(previous);
 			// 老 `newChat` 的 `displaceActive()`：换到新对话后立刻给旧对话腾位——正在跑 / 被保留的记进运行列表，
 			// 否则它这一轮跑完就从列表里消失（`inRunningList` 按 `listed` 判）。复用空白对话时 `previous === conv`，不腾。
-			if (previous && previous.id !== conv.id) displacePrevious(previous);
 			// 开会话**不等**、也不占工作区队列：new_chat 的语义是「立刻换到新对话」，而开会话可能被正在跑的
 			// 那一轮拖住（SDK 侧一条条来）。等它会把队列后面的 switch_conversation / set_cwd 一起卡死。
 			// 会话仍先开（第一轮不必再等），失败只记一笔：真错误在喂轮时会带着回来。

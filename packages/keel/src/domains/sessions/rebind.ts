@@ -41,6 +41,8 @@ export interface RebindContext {
 	 * 缺省 = 只保留、不列入。
 	 */
 	markListed?(conversationId: ConversationId): void;
+	/** 同上，另一头：老 `conv.promptedSinceActive = true`（保留判据的一半）。 */
+	markPrompted?(conversationId: ConversationId): void;
 }
 
 export interface RebindConversationInit {
@@ -81,7 +83,10 @@ function retire(conversation: Conversation): void {
 }
 
 /** 腾位只需要这四样：注册表、会话释放口、保留判据、列入运行列表。 */
-export type DisplaceContext = Pick<RebindContext, "registry" | "sessions" | "shouldRetainPrevious" | "markListed">;
+export type DisplaceContext = Pick<
+	RebindContext,
+	"registry" | "sessions" | "shouldRetainPrevious" | "markListed" | "markPrompted"
+>;
 
 /**
  * 换活动对话前的「腾位」（老 `displaceActive`）：按判据决定**保留**还是**退役**。

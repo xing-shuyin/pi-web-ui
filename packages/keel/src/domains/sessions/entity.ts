@@ -20,6 +20,11 @@ export interface SessionEntityOptions {
 	 * 不记的话，从历史打开的对话一旦切走就从运行列表消失（它没有标题/内容撑着 `inRunningList`）。
 	 */
 	markListed?(conversationId: ConversationId): void;
+	/**
+	 * 标记「用户真的用过它」（老 `switchSession` 里的 `conv.promptedSinceActive = true`）：
+	 * 保留判据（`listed && promptedSinceActive`）靠它，否则切回已打开的对话时窗口要从盘上重开。
+	 */
+	markPrompted?(conversationId: ConversationId): void;
 	frames: RebindFrames;
 	/** 当前工作区：转录 header 里读不出 cwd 时用它兜底。 */
 	cwd(): string;
@@ -87,6 +92,7 @@ export function createSessionEntityHandlers(options: SessionEntityOptions): Sess
 		options.registry.activate(conversation.id);
 		// 老 `switchSession` 打开历史会话时记的 `conv.listed = true`：用户是明确回来看它的。
 		options.markListed?.(conversation.id);
+		options.markPrompted?.(conversation.id);
 		options.noteSessionFile?.(target);
 		options.frames.flush(true);
 		void options.frames.pushSessions?.();
@@ -118,6 +124,9 @@ export function createSessionEntityHandlers(options: SessionEntityOptions): Sess
 				// 先从历史打开的对话也要先进运行列表（老 `switchSession` 的 `conv.listed = true`）：
 				// 它此刻是活动对话、标题还是默认值，`inRunningList` 不会自己收它。
 				options.markListed?.(result.conversation.id);
+				// 老 `switchSession` 同一处的 `conv.promptedSinceActive = true`：从历史里明确打开过 = 用户用过它，
+				// 换对话时要保留（否则切回来只能从盘上重开，已展开的历史窗口丢了）。
+				options.markPrompted?.(result.conversation.id);
 				options.noteSessionFile?.(target);
 				// 重绑末尾那一帧是「已列出」之前的，再推一次运行列表，客户端手上的那一行才不会凭空消失。
 				options.frames.pushConversations?.();

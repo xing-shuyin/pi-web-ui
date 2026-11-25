@@ -11,6 +11,7 @@ import {
 	shouldRetainOnDisplace,
 } from "../../packages/keel/src/domains/sessions/retain.js";
 import { createWorkspaceSwitcher } from "../../packages/keel/src/domains/sessions/workspace.js";
+import { ConversationPinIndex, mergePinState } from "../../packages/keel/src/domains/sessions/pins.js";
 
 interface Harness {
 	registry: ConversationRegistry<Conversation>;
@@ -344,5 +345,32 @@ describe("createWorkspaceSwitcher · setCwd 的重绑目标（老 setCwd 的 ope
 		expect(h.registry.get("c-old")).toBe(previous);
 		expect(h.listed).toStrictEqual(["c-old"]);
 		expect(h.closed).toStrictEqual([]);
+	});
+});
+
+describe("保留判据的最后一支：listed && promptedSinceActive（老 `shouldRetainActive`）", () => {
+	it("从历史里明确打开过（listed + prompted）的对话，换对话时保留", () => {
+		const index = new ConversationPinIndex();
+		index.markListed("c1");
+		index.markPrompted("c1");
+		const state = mergePinState(index.stateOf("c1"), false);
+		expect(state.listed).toBe(true);
+		expect(state.prompted).toBe(true);
+		expect(shouldRetainOnDisplace({ listed: state.listed, promptedSinceActive: state.prompted })).toBe(true);
+	});
+
+	it("只列入未用过（listed 但没 prompted）：不保留 —— 退役才能把空壳从运行列表收走", () => {
+		const index = new ConversationPinIndex();
+		index.markListed("c1");
+		const state = mergePinState(index.stateOf("c1"), false);
+		expect(state.prompted).toBeUndefined();
+		expect(shouldRetainOnDisplace({ listed: state.listed, promptedSinceActive: state.prompted === true })).toBe(false);
+	});
+
+	it("prompted 与 listed 一起被钉住位保全（setPinned 不丢位）", () => {
+		const index = new ConversationPinIndex();
+		index.markPrompted("c1");
+		index.setPinned("c1", true);
+		expect(index.stateOf("c1")).toMatchObject({ pinned: true, listed: true, prompted: true });
 	});
 });

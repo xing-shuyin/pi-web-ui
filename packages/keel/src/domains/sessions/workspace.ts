@@ -37,6 +37,8 @@ export interface WorkspaceSwitcherOptions {
 	shouldRetainPrevious?(conversation: Conversation): boolean;
 	/** 保留的旧对话要记进运行列表（老 `conv.listed = true`）；缺省 = 只保留、不列入。 */
 	markListed?(conversationId: ConversationId): void;
+	/** 同上，另一头：老 `conv.promptedSinceActive = true`（保留判据的一半，见 `retain.ts`）。 */
+	markPrompted?(conversationId: ConversationId): void;
 	/** 设置项 `openRecentSessionOnProjectSwitch`（老 `setCwd` 的 `openRecent`）；缺省 `false` = 不恢复。 */
 	openRecentSession?(): boolean;
 	/** 目标工作区最近一份转录（宿主扫盘：内核不拼 SDK 目录布局）；拿不到就返回 `undefined`。 */
@@ -88,6 +90,7 @@ export function createWorkspaceSwitcher(options: WorkspaceSwitcherOptions): Work
 		...(options.onActivated ? { onActivated: options.onActivated } : {}),
 		...(options.shouldRetainPrevious ? { shouldRetainPrevious: options.shouldRetainPrevious } : {}),
 		...(options.markListed ? { markListed: options.markListed } : {}),
+		...(options.markPrompted ? { markPrompted: options.markPrompted } : {}),
 		notice: options.notice,
 	};
 

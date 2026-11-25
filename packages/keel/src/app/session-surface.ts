@@ -134,6 +134,8 @@ export interface SessionConversations {
 	push(): void;
 	/** 标记对话已列入运行列表。 */
 	markListed(id: string): void;
+	/** 标记「用户真的用过它」（历史打开 / 喂过轮）：老 `promptedSinceActive`，保留判据的一半。 */
+	markPrompted(id: string): void;
 }
 
 /**
@@ -152,7 +154,7 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 	 * `domains/sessions/retain.ts`，这里只喂「只有装配层拿得到」的事实。
 	 * 故意不传的几项（宿主才有）：`reviewing` / `wizardRunning`（目标/问卷域）、`promptInFlight`
 	 * （`server/conversation-delivery.ts`）、`compacting`（宿主 `session.isCompacting`）、
-	 * `openTerminals`（终端叶子）、`promptedSinceActive`（内核暂无此状态位）、
+	 * `openTerminals`（终端叶子）、
 	 * `hasActiveSubagentRun` / `hasPendingWake` / `hasRunningBackgroundTask`（`wait-subscription-scan`）。
 	 * 缺失 = false，与老口径「没在跑就不保留」一致。
 	 */
@@ -180,8 +182,12 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 		keepsFinished: () => options.store?.()?.getSettingsSnapshot(options.clientId).retainFinishedConversations === true,
 		pinned: (conv) => pinIndex.isPinned(conv.id),
 		listed: (conv) => pinIndex.stateOf(conv.id)?.listed === true,
+		// 老判据的最后一条：`listed && promptedSinceActive`。没有这一位，从历史打开的对话在
+		// 换对话 / 新建对话时会被退役 —— 切回来只能从盘上重开，已展开的历史窗口就丢了。
+		promptedSinceActive: (conv) => pinIndex.stateOf(conv.id)?.prompted === true,
 	});
 	const markListed = (id: ConversationId): void => pinIndex.markListed(id);
+	const markPrompted = (id: ConversationId): void => pinIndex.markPrompted(id);
 	/** 已开会话 → 条目树窄面；会话没接时不了（handler 同步抛，不拿半死句柄）。 */
 	const editorOf = (conversationId: ConversationId): MessageEditSession | undefined => {
 		const opened = options.sessions?.get(conversationId);
@@ -265,6 +271,7 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 		onActivated: options.onActivated,
 		shouldRetainPrevious,
 		markListed,
+		markPrompted,
 		notice: options.notice,
 	});
 	const rebind = async (request: Parameters<typeof rebindSession>[1]) => {
@@ -307,6 +314,7 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 			...(host ? { host } : {}),
 			shouldRetainPrevious,
 			markListed,
+			markPrompted,
 			// 老 `setCwd` 的 `openRecent`（设置项缺省 true）。
 			openRecentSession: () => store.getSettingsSnapshot(options.clientId).openRecentSessionOnProjectSwitch === true,
 			// 会话目录布局只在装配层拼（与 `app/engine-elsewhere.ts` 同一口径）。
@@ -327,6 +335,7 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 				registry,
 				rebind,
 				markListed,
+				markPrompted,
 				displace: (conversation) =>
 					void displacePrevious({ registry, sessions: sessionsOf(), shouldRetainPrevious, markListed }, conversation),
 				frames: options.frames,
@@ -380,7 +389,8 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 
 		conversations: () => ({
 			push: pushConversations,
-			markListed: (id) => pinIndex.markListed(id),
+			markListed,
+			markPrompted,
 		}),
 
 		/**

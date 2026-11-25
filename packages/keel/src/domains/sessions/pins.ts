@@ -17,6 +17,12 @@ export interface ConversationPinState {
 	pinned: boolean;
 	/** 已经进入运行列表：之后切换离开也继续占一行（老树 `conv.listed`）。 */
 	listed: boolean;
+	/**
+	 * 用户真的用过它（老树 `conv.promptedSinceActive`）：从历史里明确打开过，或在这个对话里喂过轮。
+	 * 换活动对话时它和 `listed` 一起决定「保留还是退役」（老 `shouldRetainActive` 的最后一条）——
+	 * 退役就等于把已经展开的历史窗口、会话句柄一起丢掉，切回来只能从盘上重开。
+	 */
+	prompted?: boolean;
 }
 
 /** 运行列表内存态的唯一持有者：按对话 id 记账，不塞进对话聚合（`kernel` 只认身份与相位）。 */
@@ -34,13 +40,20 @@ export class ConversationPinIndex {
 	/** 钉住一定带上 `listed`：钉住的对话不该因为「切走了」而从运行列表消失。 */
 	setPinned(id: ConversationId, pinned: boolean): void {
 		const current = this.byConversation.get(id) ?? { pinned: false, listed: false };
-		this.byConversation.set(id, { pinned, listed: pinned || current.listed });
+		this.byConversation.set(id, { ...current, pinned, listed: pinned || current.listed });
 	}
 
 	markListed(id: ConversationId): void {
 		const current = this.byConversation.get(id) ?? { pinned: false, listed: false };
 		if (current.listed) return;
-		this.byConversation.set(id, { pinned: current.pinned, listed: true });
+		this.byConversation.set(id, { ...current, listed: true });
+	}
+
+	/** 记一次「用户真的用过它」（老 `conv.promptedSinceActive = true`）：单调，不需要复位。 */
+	markPrompted(id: ConversationId): void {
+		const current = this.byConversation.get(id) ?? { pinned: false, listed: false };
+		if (current.prompted) return;
+		this.byConversation.set(id, { ...current, prompted: true });
 	}
 
 	/**
@@ -58,7 +71,11 @@ export class ConversationPinIndex {
  */
 export function mergePinState(memory: ConversationPinState | undefined, storedPinned: boolean): ConversationPinState {
 	const pinned = memory?.pinned ?? storedPinned;
-	return { pinned, listed: pinned || memory?.listed === true };
+	return {
+		pinned,
+		listed: pinned || memory?.listed === true,
+		...(memory?.prompted ? { prompted: true } : {}),
+	};
 }
 
 export interface SessionPinsOptions {
