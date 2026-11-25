@@ -2748,6 +2748,18 @@ wss.on("connection", (ws) => {
 						"已热切换至 DSH 引擎（其他引擎后台会话保持运行，可随时切回）",
 						"Switched to DSH engine in-place (other background conversations keep running)",
 					);
+				} else if (targetEngine === "codex") {
+					newCs.emitNotice(
+						"info",
+						"已热切换至 Codex 引擎（其他引擎后台会话保持运行，可随时切回）",
+						"Switched to Codex engine in-place (other background conversations keep running)",
+					);
+				} else if (targetEngine === "durable") {
+					newCs.emitNotice(
+						"info",
+						"已热切换至 Pi Durable 引擎（其他引擎后台会话保持运行，可随时切回）",
+						"Switched to Pi Durable engine in-place (other background conversations keep running)",
+					);
 				} else {
 					newCs.emitNotice(
 						"info",
