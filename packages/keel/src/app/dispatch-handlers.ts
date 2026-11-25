@@ -215,6 +215,7 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 		transport: runtime.options.transport,
 		cwd: () => runtime.cwd,
 		...(runtime.options.viewOf ? { viewOf: runtime.options.viewOf } : {}),
+		onActivated: (id) => runtime.publisher.switchConversation(id),
 		requestSnapshot: () => runtime.publisher.request(),
 		now: () => runtime.options.clock.now(),
 		...(runtime.options.isAllowedPath ? { isAllowedPath: runtime.options.isAllowedPath } : {}),
@@ -323,6 +324,7 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 		clientSettings: () =>
 			runtime.options.stateStore?.()?.getSettingsSnapshot(runtime.options.clientId) ?? ({} as never),
 		getLang: () => runtime.options.getLang?.() ?? "zh",
+		checkParallelWork: (conv) => runtime.options.checkParallelWork?.(conv),
 		dispatchDelegate: (text) =>
 			dispatchToDelegate(
 				{

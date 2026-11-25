@@ -478,7 +478,7 @@ export function makeSubagentTool(
 			cwd,
 			spec.templateName,
 			spec.model,
-			undefined,
+			selfIdOf(),
 			spec.persist,
 			spec.thinking,
 			spec.notifyOnDone,
@@ -922,7 +922,7 @@ export function makeSubagentTool(
 							p.cwd ?? ctx.cwd,
 							templateName,
 							single.model,
-							undefined,
+							selfIdOf(),
 							single.persist,
 							single.thinking,
 							single.notifyOnDone,
@@ -1491,9 +1491,9 @@ export function makeSubagentTool(
 							}
 							const consults = collectConsults();
 							if (consults) return consults;
-							const allDone = Array.from(wanted).every(isSettled);
-							if (allDone) break;
-							const wake = await host.waitForSubagentSettle(Array.from(wanted), {
+							const pending = Array.from(wanted).filter((id) => !isSettled(id));
+							if (pending.length === 0) break;
+							const wake = await host.waitForSubagentSettle(pending, {
 								timeoutMs: Math.min(remainingMs, SETTLE_SLICE_MS),
 								signal,
 							});

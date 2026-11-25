@@ -12,6 +12,21 @@ export interface AskUserWaiter {
 	pendingForSnapshot(conversationId: string): Array<{ id: string; questions: UiQuestion[] }>;
 	/** 会话收尾：本会话的提问全部结算成取消，返回结算条数。 */
 	cancelConversation(conversationId: string, reason: string): number;
+	/** 全量待答提问（问卷队列 `question_queue` 用）。 */
+	list(): Array<{ id: string; conversationId: string; questions: UiQuestion[]; createdAt: number }>;
+	/** 过户移出：将属于给定会话集合的 pending 提问移出本 waiter，发送 retraction 帧，返回移出的条目。 */
+	transferOut(conversationIds: ReadonlySet<string>): PendingAskTransfer[];
+	/** 过户移入：将提问移入本 waiter，向 transport 发送 question_pending 帧。 */
+	transferIn(transfers: readonly PendingAskTransfer[]): void;
+}
+
+export interface PendingAskTransfer {
+	readonly id: string;
+	readonly conversationId: string;
+	readonly questions: UiQuestion[];
+	readonly createdAt: number;
+	readonly settle: (result: QuestionResult) => void;
+	readonly detachAbort: () => void;
 }
 
 type QuestionFrame = Extract<ServerMessage, { type: "question_pending" }>;
@@ -19,6 +34,7 @@ type QuestionFrame = Extract<ServerMessage, { type: "question_pending" }>;
 interface PendingAsk {
 	readonly conversationId: string;
 	readonly questions: UiQuestion[];
+	readonly createdAt: number;
 	readonly settle: (result: QuestionResult) => void;
 	/** 撤掉 abort 监听：结算后再来一次 abort 不许再动已结算的条目。 */
 	readonly detachAbort: () => void;
@@ -56,12 +72,22 @@ export function createAskUserWaiter(input: {
 	transport: TransportPort;
 	/** 缺省 `q-<递增序号>`；注入了就完全用注入的（同一 id 只许登记一次，重复即拒）。 */
 	nextId?: () => string;
+	onChanged?: () => void;
 }): AskUserWaiter {
 	const { inbox, transport } = input;
 	const pending = new Map<string, PendingAsk>();
+	const usedIds = new Set<string>();
 	let idSeq = 0;
 	let seq = 0;
-	const nextId = input.nextId ?? (() => `q-${++idSeq}`);
+	const defaultNextId = () => {
+		let id: string;
+		do {
+			id = `q-${++idSeq}`;
+		} while (usedIds.has(id));
+		usedIds.add(id);
+		return id;
+	};
+	const nextId = input.nextId ?? defaultNextId;
 
 	/**
 	 * 结算唯一出口：先摘本域（幂等短路），再撤 abort 监听、结算 promise，最后通知对端与收件箱。
@@ -81,6 +107,7 @@ export function createAskUserWaiter(input: {
 			}
 		}
 		inbox.settle("question", id, result);
+		input.onChanged?.();
 		return true;
 	};
 
@@ -89,13 +116,20 @@ export function createAskUserWaiter(input: {
 			if (transport.isClosed()) return cancelled(TRANSPORT_CLOSED_REASON);
 			if (signal.aborted) return cancelled(ABORTED_REASON);
 			const id = nextId();
+			usedIds.add(id);
+			const seqMatch = /^q-(\d+)$/.exec(id);
+			if (seqMatch) {
+				const num = parseInt(seqMatch[1], 10);
+				if (Number.isFinite(num) && num > idSeq) idSeq = num;
+			}
 			// 本域只认会话内的提问：调用方没给会话 id 的按空串登记（帧里也不带这个字段）。
 			const owner = conversationId ?? "";
 			// 快照与帧共用一份列表：调用方回头改自己的数组不该影响还在等的这条。
 			const asked = [...questions];
 			const { promise, settle } = deferred<QuestionResult>();
+			const nowSeq = ++seq;
 			// `createdAt` 只当登记序号用：本域不读时钟，这里只要保住登记顺序。
-			if (!inbox.register({ kind: "question", id, conversationId: owner, createdAt: ++seq })) {
+			if (!inbox.register({ kind: "question", id, conversationId: owner, createdAt: nowSeq })) {
 				return cancelled(`提问 id 重复：${id}`);
 			}
 			const onAbort = () => settleEntry(id, cancelled(ABORTED_REASON));
@@ -103,6 +137,7 @@ export function createAskUserWaiter(input: {
 			pending.set(id, {
 				conversationId: owner,
 				questions: asked,
+				createdAt: nowSeq,
 				settle,
 				detachAbort: () => signal.removeEventListener("abort", onAbort),
 			});
@@ -111,6 +146,7 @@ export function createAskUserWaiter(input: {
 			} catch {
 				settleEntry(id, cancelled(SEND_FAILED_REASON));
 			}
+			input.onChanged?.();
 			return promise;
 		},
 
@@ -122,6 +158,14 @@ export function createAskUserWaiter(input: {
 			const out: Array<{ id: string; questions: UiQuestion[] }> = [];
 			for (const [id, entry] of pending) {
 				if (entry.conversationId === conversationId) out.push({ id, questions: entry.questions });
+			}
+			return out;
+		},
+
+		list(): Array<{ id: string; conversationId: string; questions: UiQuestion[]; createdAt: number }> {
+			const out: Array<{ id: string; conversationId: string; questions: UiQuestion[]; createdAt: number }> = [];
+			for (const [id, entry] of pending) {
+				out.push({ id, conversationId: entry.conversationId, questions: entry.questions, createdAt: entry.createdAt });
 			}
 			return out;
 		},
@@ -138,6 +182,56 @@ export function createAskUserWaiter(input: {
 				if (settleEntry(id, cancelled(reason))) settled++;
 			}
 			return settled;
+		},
+
+		transferOut(conversationIds: ReadonlySet<string>): PendingAskTransfer[] {
+			const out: PendingAskTransfer[] = [];
+			for (const [id, entry] of pending) {
+				if (conversationIds.has(entry.conversationId)) {
+					pending.delete(id);
+					out.push({
+						id,
+						conversationId: entry.conversationId,
+						questions: entry.questions,
+						createdAt: entry.createdAt,
+						settle: entry.settle,
+						detachAbort: entry.detachAbort,
+					});
+					if (!transport.isClosed()) {
+						try {
+							transport.send({ type: "question_retracted", id });
+						} catch {}
+					}
+				}
+			}
+			if (out.length > 0) input.onChanged?.();
+			return out;
+		},
+
+		transferIn(transfers: readonly PendingAskTransfer[]): void {
+			if (transfers.length === 0) return;
+			for (const t of transfers) {
+				usedIds.add(t.id);
+				const seqMatch = /^q-(\d+)$/.exec(t.id);
+				if (seqMatch) {
+					const num = parseInt(seqMatch[1], 10);
+					if (Number.isFinite(num) && num > idSeq) idSeq = num;
+				}
+				pending.set(t.id, {
+					conversationId: t.conversationId,
+					questions: t.questions,
+					createdAt: t.createdAt,
+					settle: t.settle,
+					detachAbort: t.detachAbort,
+				});
+				inbox.register({ kind: "question", id: t.id, conversationId: t.conversationId, createdAt: t.createdAt });
+				if (!transport.isClosed()) {
+					try {
+						transport.send(questionFrame(t.id, t.questions, t.conversationId));
+					} catch {}
+				}
+			}
+			input.onChanged?.();
 		},
 	};
 }

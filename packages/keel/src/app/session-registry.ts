@@ -45,6 +45,14 @@ export class SessionRegistry {
 		return this.byConversation.get(conversationId);
 	}
 
+	transferFrom(other: SessionRegistry, sourceId: string, targetId: string): OpenedSession | undefined {
+		const opened = other.byConversation.get(sourceId);
+		if (!opened) return undefined;
+		other.byConversation.delete(sourceId);
+		this.byConversation.set(targetId, opened);
+		return opened;
+	}
+
 	async ensure(conv: Conversation, options?: { cwd?: string }): Promise<OpenedSession> {
 		const existing = this.byConversation.get(conv.id);
 		if (existing) return existing;

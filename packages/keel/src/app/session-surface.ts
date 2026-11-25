@@ -79,9 +79,15 @@ export interface SessionSurfaceOptions {
 	/** 允许打开哪些转录（缺省 fail-closed）。 */
 	isAllowedPath?(path: string): boolean;
 	notice(level: "info" | "warning" | "error", text: string, textEn: string): void;
+	/** 跨客户端会话占用查询 */
+	findSessionOwner?: (sessionFile: string) => { title: string; isStreaming: boolean } | undefined;
 	progress?(kind: "cwd" | "session", target: string, phase: "done" | "error", text: string, textEn: string): void;
 	/** 换完工作区后重列文件树（文件域的实现自己发 `files` 帧）；缺省 = 不重列。 */
 	refreshFiles?(): void | Promise<void>;
+	/** 某对话当前是否有问卷在等待。 */
+	hasQuestionOf?(conversationId: ConversationId): boolean;
+	/** 外部运行中行（跨客户端 / 离线行）。 */
+	elsewhere?(): readonly import("../protocol.js").ElsewhereRunning[];
 	/** 客户端通道是否已关（关了就只算账不出帧）。 */
 	isClosed(): boolean;
 }
@@ -106,6 +112,8 @@ export interface SessionSurface {
 export interface SessionConversations {
 	/** 推一帧 `conversations`：钉住变了、激活变了、轮次结算了都要推。 */
 	push(): void;
+	/** 标记对话已列入运行列表。 */
+	markListed(id: string): void;
 }
 
 /**
@@ -145,6 +153,7 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 				isStreaming: session?.isStreaming === true || conv.phase === "running",
 				updatedAt: conv.meta.lastActiveAt,
 				hasHistoryRow: conv.meta.sessionFile !== undefined,
+				...(options.hasQuestionOf?.(conv.id) ? { hasQuestion: true } : {}),
 				...(conv.ephemeral ? { isEphemeral: true } : {}),
 				...(nativeCli ? { nativeCli } : {}),
 				...(conv.meta.parentId ? { parentId: conv.meta.parentId } : {}),
@@ -169,7 +178,13 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 		const list = registry.list();
 		// 退役 / 被换掉的对话不再占内存态（只保留磁盘钉子，重开时自动恢复）。
 		pinIndex.retain(new Set(list.map((conv) => conv.id)));
-		return { conversations: facts(list), activeId: registry.activeId(), stateOf };
+		const elsewhere = options.elsewhere?.() ?? [];
+		return {
+			conversations: facts(list),
+			activeId: registry.activeId(),
+			stateOf,
+			...(elsewhere.length > 0 ? { elsewhere } : {}),
+		};
 	};
 
 	const pushConversations = (): void => {
@@ -253,6 +268,7 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 				openSessionIdOf: (conversationId) => options.sessions?.get(conversationId)?.sessionId,
 				...(options.noteSessionFile ? { noteSessionFile: options.noteSessionFile } : {}),
 				notice: options.notice,
+				...(options.findSessionOwner ? { findSessionOwner: options.findSessionOwner } : {}),
 				...(options.progress ? { progress: options.progress } : {}),
 			})),
 
@@ -294,7 +310,10 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 				notice: options.notice,
 			})),
 
-		conversations: () => ({ push: pushConversations }),
+		conversations: () => ({
+			push: pushConversations,
+			markListed: (id) => pinIndex.markListed(id),
+		}),
 
 		sandbox: () =>
 			(sandbox ??= createSandboxHandlers({

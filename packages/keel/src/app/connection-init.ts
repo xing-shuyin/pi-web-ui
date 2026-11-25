@@ -179,6 +179,10 @@ function pushConnectFrames(input: ConnectFrameInput, dispatch: DispatchSession):
 	runtime.optionalFrames()?.pushDefaultModel();
 	// 12 智能体预设目录（`dsh_presets`）：缺省预设是客户端徽标的源。
 	void dispatch.refreshAgentPresets?.();
+	// 13 历史会话列表（sessions 帧）：连接期推一次，让历史面板首屏有内容。
+	void runtime.optionalFrames()?.refreshSessions();
+	// 14 待答问卷队列（question_queue）：连接期推一次，恢复待处理问卷。
+	runtime.pushQuestionQueue();
 }
 
 export interface ConnectionInitInput extends ConnectFrameInput {

@@ -57,6 +57,7 @@ export interface SnapshotConversationView {
 	delegateConvId?: string | null;
 	draft?: { text: string; ts: number } | null;
 	pendingApprovals?: UiToolApproval[];
+	pendingQuestion?: import("../protocol.js").UiPendingQuestion | null;
 	bot?: { id: string; name: string } | null;
 }
 

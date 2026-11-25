@@ -54,6 +54,7 @@ export interface PromptEntryDeps {
 	/** 客户端设置快照（附件 asides 的视觉桥接 / 上传上限读它；缺省 = 空设置）。 */
 	clientSettings(): ClientSettings;
 	getLang(): string;
+	checkParallelWork?: (conv: Conversation | undefined) => void;
 }
 
 export interface PromptEntry {
@@ -151,6 +152,7 @@ export function createPromptEntry(deps: PromptEntryDeps): PromptEntry {
 		if (deps.dispatchDelegate && (await deps.dispatchDelegate(text))) return;
 		// 附件先落进会话（老实现同序：asides → `sendCustomMessage(nextTurn)` → 喂轮）。
 		await deliverAttachments(attachments);
+		deps.checkParallelWork?.(active);
 		await deps.feedTurn(text, queue);
 	}
 

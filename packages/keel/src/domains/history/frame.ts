@@ -140,6 +140,7 @@ function inRunningList(fact: ConversationFrameFact, state: ConversationFrameStat
 	// 所以切走之后也继续占一行，直到转正（有转录）或被关掉。
 	if (fact.isEphemeral) return true;
 	if (fact.isStreaming || fact.completionPending || fact.hasQuestion) return true;
+	if (fact.kind === "subagent" || Boolean(fact.parentId)) return true;
 	if (fact.id !== activeId) return false;
 	if (fact.botId) return true;
 	if (fact.title !== DEFAULT_CONV_TITLE) return true;

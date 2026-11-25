@@ -19,6 +19,8 @@ export interface SessionEntityOptions {
 	/** 打开成功后把「历史根 = 这份转录所在目录」交给出帧层。 */
 	noteSessionFile?(file: string | undefined): void;
 	notice(level: "info" | "warning" | "error", text: string, textEn: string): void;
+	/** 跨客户端会话占用查询：避免双写或误判 */
+	findSessionOwner?: (sessionFile: string) => { title: string; isStreaming: boolean } | undefined;
 	/** 进度帧（客户端据此收起切换蒙层）：`done` 才落定，`error` 明确失败。 */
 	progress?(kind: "cwd" | "session", target: string, phase: "done" | "error", text: string, textEn: string): void;
 }
@@ -86,6 +88,23 @@ export function createSessionEntityHandlers(options: SessionEntityOptions): Sess
 			}
 
 			const target = resolve(trimmed);
+			const owner = options.findSessionOwner?.(target);
+			if (owner?.isStreaming) {
+				options.notice(
+					"warning",
+					`该对话正在另一处运行中（「${owner.title}」），为避免两个 agent 同时写同一份记录，已停止打开。请等它结束后再试，或回到原窗口继续。`,
+					`This conversation is running in another window ("${owner.title}"). Opening it here would create a second writer for the same transcript, so it was blocked. Wait for it to finish, or continue in the original window.`,
+				);
+				options.frames.flush(false);
+				return Promise.resolve();
+			}
+			if (owner && !owner.isStreaming) {
+				options.notice(
+					"info",
+					`该对话在另一处也开着（「${owner.title}」），这里已同时打开。若两边同时发送，两个 agent 会分别写记录，请避免并发操作。`,
+					`This conversation is also open in another window ("${owner.title}"). Opened here as well; avoid sending from both sides concurrently to prevent conflicting transcript writes.`,
+				);
+			}
 			const isAllowedPath = options.isAllowedPath;
 			if (isAllowedPath && !isAllowedPath(target)) {
 				options.notice(

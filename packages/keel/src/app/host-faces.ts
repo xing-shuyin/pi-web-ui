@@ -277,6 +277,10 @@ export interface HostFaceDeps extends HostFaceFactories {
 	setLang(next: ServerLang): void;
 	/** 本客户端的运行时是否已被换掉 / 卸掉（宿主面据此停止出帧）。 */
 	isDisposed(): boolean;
+	/** 引擎共享子代理账本（跨客户端过户共用） */
+	subagentsRegistry?: import("../domains/subagents/registry.js").SubagentRegistry;
+	getRuntimes?: () => Iterable<ClientRuntime>;
+	findRuntime?: (clientId: string) => ClientRuntime | undefined;
 	/** 模式开关的唯一切换点（写工具门禁与快照投影都读它）。 */
 	applyChatMode(kind: "plan" | "delegate", enabled: boolean, conversationId?: string): void;
 	/** 引擎级手机通知回调（`svc.onNotificationEvent`）；缺省 = 不推手机。 */
@@ -464,7 +468,14 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 			return opened?.session.settingsManager?.getEnabledModels?.();
 		},
 	});
-	const subagents = createSubagentRuntime({ runtime, sessions, now: () => Date.now() });
+	const subagents = createSubagentRuntime({
+		runtime,
+		sessions,
+		now: () => Date.now(),
+		...(deps.subagentsRegistry ? { registry: deps.subagentsRegistry } : {}),
+		...(deps.getRuntimes ? { getRuntimes: deps.getRuntimes } : {}),
+		...(deps.findRuntime ? { findRuntime: deps.findRuntime } : {}),
+	});
 	const frames: ClientFrames = {
 		// 设置面没注入 = 能力未接（不再由内核自建 SettingsService）。
 		pushSettings: () => settingsFrame?.push(),

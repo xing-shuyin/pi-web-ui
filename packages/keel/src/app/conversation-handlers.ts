@@ -14,6 +14,7 @@ export interface ConversationDispatchOptions {
 	viewOf?(conversation: Conversation): SnapshotConversationView | undefined;
 	/** 出快照（切对话 / 计数变化后）。 */
 	requestSnapshot(): void;
+	onActivated?(id: string): void;
 	now(): number;
 	isAllowedPath?(path: string): boolean;
 	closeSession?(conversationId: string): void;
@@ -73,6 +74,7 @@ export function createConversationDispatchHandlers(options: ConversationDispatch
 				return;
 			}
 			options.registry.activate(id);
+			options.onActivated?.(id);
 			options.requestSnapshot();
 		},
 

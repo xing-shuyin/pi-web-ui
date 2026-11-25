@@ -1,20 +1,13 @@
 import type { DispatchSession, EngineService } from "../engine-service.js";
-import type { ServerMessage } from "../protocol.js";
+import type { ElsewhereRunning, ServerMessage } from "../protocol.js";
 import { toServiceInfo, launchOrigin } from "../launch-origin.js";
-import { join as joinPath, resolve as resolveFsPath } from "node:path";
-import type { ClockPort, TransportPort } from "../contracts/ports.js";
+import type { TransportPort } from "../contracts/ports.js";
 import type { ModelAdminPort } from "../contracts/model-admin.js";
 import type { SettingsStorePort } from "../contracts/settings-store.js";
 import { QuiesceRejectedError } from "../contracts/quiesce.js";
 import type { PluginAgentToolFilter } from "../adapters/tools/plugin-agent-tools.js";
 import { PluginToolsBinder } from "./plugin-tools-binder.js";
-import type { GoalRunPort } from "../contracts/goals.js";
-import { createGoalRunSinks, type GoalRunSinks } from "../domains/goals/index.js";
-import { isInsideRoots } from "../path-boundary.js";
-import { isInsideSessionsDir } from "../session-search.js";
 import { createProjectSource } from "../adapters/state/index.js";
-import { createModelMemory } from "../adapters/state/model-memory.js";
-import { conversationViewFromSession } from "../adapters/sdk/view.js";
 import {
 	chatFromPlugin,
 	mcpProjectCwds,
@@ -22,7 +15,6 @@ import {
 	pickPluginClient,
 	readConversationForPlugins,
 	refreshMcpProject,
-	subscribePluginSessionEvents,
 } from "./plugin-engine-hooks.js";
 import type {
 	PluginChatRequest,
@@ -31,29 +23,16 @@ import type {
 	PluginRunEvent,
 	PluginToolEvent,
 } from "../contracts/plugin.js";
-import { ChatModeState, DEFAULT_AGENT_PRESET, PresetState, resolveToolLoadout } from "../domains/tools/index.js";
-import { NativeCliConversations } from "../domains/native-cli/index.js";
-import { conversationPresetViewOf, gateConversationPreset } from "./preset-handlers.js";
-import { withChatModeGates } from "../adapters/sdk/chat-mode.js";
-import { InteractionInbox, createApprovalWaiter, createAskUserWaiter } from "../domains/interactions/index.js";
-import { createAskQuestionTool } from "../adapters/tools/ask-question.js";
-import { createGuardedBuiltinTools } from "../adapters/tools/guarded.js";
-import { renameSessionFile } from "../adapters/sdk/session-info.js";
-import { createTerminalHost } from "../domains/terminals/index.js";
-import type { SubagentRuntime } from "./subagent-runtime.js";
+import type { AskUserWaiter } from "../domains/interactions/index.js";
 import { DEFAULT_PI_CAPABILITIES } from "../engine-capabilities.js";
 import type { AgentEngineCapabilities } from "../protocol.js";
 import type { MobileNotificationEvent } from "../mobile-notification-events.js";
+import { SubagentRegistry } from "../domains/subagents/registry.js";
 import { ClientRuntime } from "./client-runtime.js";
-import { SessionRegistry } from "./session-registry.js";
-import { createEngineSessionRegistry } from "./engine-sessions.js";
-import type { OpenedSession } from "../adapters/sdk/session-opener.js";
 import type { Conversation } from "../kernel/conversation/index.js";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
 import { resolvePiEngineAttach } from "./engine-mode.js";
 import { resolveServerLang, type ServerLang } from "../i18n.js";
-import { createHostFaces, type HostFaceFactories, type HostFaces } from "./host-faces.js";
-import { BashKills } from "../domains/background/index.js";
 import { saveInterruptedRuns } from "./interrupted-runs.js";
 import { activeConversationsOf, pendingMessagesOf, serviceStatusOf } from "./engine-status.js";
 import { initializeConnection } from "./connection-init.js";
@@ -64,21 +43,37 @@ import {
 	refreshBackgroundServers,
 	type PluginRefreshHost,
 } from "./plugin-refresh.js";
+import {
+	findSessionOwner,
+	checkParallelWork,
+	chatFromScheduler,
+	releaseSchedulerClient,
+} from "./engine-coordination.js";
+import {
+	armOfflineRowExpiry,
+	checkHeldSessionNotice,
+	clearOfflineRows,
+	handleClientDetach,
+	listExternalRunning,
+	offlineRowsTtlMs,
+} from "./engine-elsewhere.js";
+import { findAdoptableOrphan } from "./engine-orphans.js";
+import {
+	executeTakeOverConversation,
+	peekElsewhereQuestion,
+	navigateQuestion,
+	answerElsewhereQuestion,
+	resolveGlobalQuestion,
+} from "./engine-takeover.js";
+import { isOrphanAdoptionExcludedClientId } from "../client-id-utils.js";
+import { assembleClient } from "./client-assembly.js";
 
 export { CoreEngineNotReadyError };
 import type { CoreEngineOptions } from "./core-engine-options.js";
 export type * from "./core-engine-options.js";
 
-const systemClock: ClockPort = {
-	now: () => Date.now(),
-	after: (ms, fn) => {
-		const timer = setTimeout(fn, ms);
-		return () => clearTimeout(timer);
-	},
-};
-
 /** 一条连接的帧出口（老实现的 `SinkDeliver`）：只认「往哪条 socket 发」。 */
-type FrameSender = (msg: ServerMessage) => void;
+export type FrameSender = (msg: ServerMessage) => void;
 
 /**
  * 新树的对外门面：只持有 EngineService 的生命周期与按客户端的运行时。
@@ -105,6 +100,11 @@ export class CoreEngine implements EngineService {
 	pluginBgTasksProvider?: EngineService["pluginBgTasksProvider"];
 	pluginStopBgTask?: EngineService["pluginStopBgTask"];
 	private readonly runtimes = new Map<string, ClientRuntime>();
+	private readonly offlineSince = new Map<string, number>();
+	private readonly offlineTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	private readonly takeoverFlights = new Map<string, Promise<void>>();
+	private readonly askWaiters = new Map<string, AskUserWaiter>();
+	private readonly subagentsRegistry = new SubagentRegistry({ now: () => Date.now() });
 	/** 语言是「每客户端」的（`client-state` 里按 clientId 存 locale），不是进程级。 */
 	private readonly langs = new Map<string, ServerLang>();
 	private socketCount = 0;
@@ -151,219 +151,93 @@ export class CoreEngine implements EngineService {
 
 	async attach(clientId: string, send: FrameSender): Promise<DispatchSession> {
 		if (!(this.options.attach ?? resolvePiEngineAttach())) throw new CoreEngineNotReadyError("attach");
+		this.clearOffline(clientId);
 		const existing = this.runtimes.get(clientId);
 		if (existing) {
 			// 同 clientId 重连（刷新 / 重开标签页）：换到新 socket 出帧（旧 socket 不再收到帧），
 			// 并把连接期初始态重推一遍——新连接没有任何基线（老实现每 sink 一份 `SnapshotChannel`）。
 			this.bindSender(clientId, send);
 			this.connectFrames.get(clientId)?.();
+			existing.publisher.flush({ forceFull: true });
+			this.notifyExternalRunning(clientId);
 			return existing.handlers();
+		}
+		const orphan = isOrphanAdoptionExcludedClientId(clientId)
+			? null
+			: findAdoptableOrphan(this.runtimes, this.sockets, clientId);
+		if (orphan) {
+			this.runtimes.delete(orphan.oldId);
+			this.clearOffline(orphan.oldId);
+			const orphanWaiter = this.askWaiters.get(orphan.oldId);
+			if (orphanWaiter) {
+				this.askWaiters.delete(orphan.oldId);
+				this.askWaiters.set(clientId, orphanWaiter);
+			}
+			this.runtimes.set(clientId, orphan.runtime);
+			orphan.runtime.updateClientId(clientId);
+			this.bindSender(clientId, send);
+			const connectFn = this.connectFrames.get(orphan.oldId);
+			if (connectFn) {
+				this.connectFrames.delete(orphan.oldId);
+				this.connectFrames.set(clientId, connectFn);
+			}
+			send({
+				type: "notice",
+				level: "info",
+				text: "已恢复你关闭浏览器前的工作会话（连同未完成的后台任务）。",
+				textEn: "Restored your session from before you closed the browser (including unfinished background tasks).",
+			});
+			this.connectFrames.get(clientId)?.();
+			orphan.runtime.publisher.flush({ forceFull: true });
+			this.notifyExternalRunning();
+			return orphan.runtime.handlers();
 		}
 		// 排空期只拒**新建**（老实现同一处：`agent-service-daemon.ts` 的 `if (this.quiesced) throw`）；
 		// 已持有运行时的客户端照常重连——排空要能观察存量，不该把正在看的页面锁在外面。
 		if (this.isQuiesced()) throw new QuiesceRejectedError("新连接被拒绝，请等服务器恢复后重试");
 		this.bindSender(clientId, send);
-		/** 一帧发给这个连接：走 `senders` 现取，重连换过 socket 之后旧 socket 就不会再收到帧。 */
-		const deliver = (msg: ServerMessage): void => this.senders.get(clientId)?.(msg);
-		const transport: TransportPort = { send: deliver, isClosed: () => !this.runtimes.has(clientId) };
-		const unsubscribers = new Map<string, () => void>();
-		const terminalHost = createTerminalHost({
-			transport,
-			cwdOf: (conversationId) => runtime.registry.get(conversationId)?.meta.cwd ?? this.cwd,
-			lang: () => this.langOf(clientId),
-			// PTY 归宿主叶子；没注入就退回「终端能力未接」（与旧版一致）。
-			createManager: (input) => {
-				const factory = this.options.terminalManager;
-				if (!factory) throw new CoreEngineNotReadyError("terminal.manager");
-				return factory(input);
-			},
-		});
-		let goalPort: GoalRunPort | undefined;
-		// 模式开关的运行态：写工具门禁与快照投影读的都是这一份（唯一切换点是 `setMode`）。
-		const chatModes = new ChatModeState();
-		// CLI 的运行态账：`newCliChat` 记、`getNativeCliConversation` / 运行列表帧读（一份账，两处投影）。
-		const cliConversations = new NativeCliConversations();
-		// 预设的运行态：`selectAgentPreset` / `setPermissionPreset` 写它，快照 `agentPreset` / `permission` 读它。
-		const presets = new PresetState();
-		// 对话级 bash 中止表：工具执行登记（`guarded.ts`）、`abortBash` 中止，两边必须是同一份。
-		const bashKills = new BashKills();
-		const inbox = new InteractionInbox(() => {});
-		const approvalWaiter = createApprovalWaiter({ inbox, transport });
-		const askWaiter = createAskUserWaiter({ inbox, transport });
-		let runtime: ClientRuntime;
-		let faces: HostFaces;
-		let subagents: SubagentRuntime | undefined;
-		const sessions = createEngineSessionRegistry({
-			agentDir: this.options.agentDir ?? this.cwd,
-			cwd: this.cwd,
+		const heldNotice = await checkHeldSessionNotice(
+			this.runtimes,
+			this.sockets,
+			this.options.agentDir ?? this.cwd,
+			this.cwd,
 			clientId,
-			stateStore: this.stateStore,
-			chatModes,
-			presets,
-			bashKills,
-			subagents: () => subagents,
-			askWaiter,
-			approvalWaiter,
-			transport,
-			pluginTools: this.pluginTools,
-			pluginToolFilter: (cid, conv) => this.pluginToolFilter(cid, conv),
-			toolGuard: () => this.toolGuard,
-			remoteOpsOf: this.options.remoteOpsOf,
-			langOf: (cid) => this.langOf(cid),
-			mcpProjects: this.options.mcpProjects,
-			bots: this.options.bots,
-			getRuntime: () => runtime,
-			getFaces: () => faces,
-			onToolEvent: (ev) => this.onToolEvent?.(ev),
-			onRunEvent: (ev) => this.onRunEvent?.(ev),
-		});
-		// 运行时先建（宿主面工厂反过来要它），宿主面本身在它之后由 `createHostFaces` 一次装配。
-		runtime = new ClientRuntime({
+		);
+		const { runtime, faces, sessions, deliver } = assembleClient({
 			clientId,
 			cwd: this.cwd,
-			// 额外工作区根是持久化状态（`client-state` 按「客户端 + cwd」记账）：连接期就带回来。
-			workspaceRoots: this.stateStore.getWorkspaceRoots(clientId, this.cwd),
-			clock: systemClock,
-			transport,
-			sessions,
-			turnEvents: {
-				onTurnSettled: (conversationId, outcome) => {
-					subagents?.settle(conversationId, outcome === "done" ? "done" : outcome === "aborted" ? "stopped" : "failed");
-					goalPort?.onTurnSettled?.(conversationId, outcome);
-					runtime.pushConversations();
-				},
-			},
-			// 目标运行的宿主面：子对话**不激活**地并存、轮次走唯一喂轮出口、收尾走上面的 onTurnSettled。
-			goalRun: this.options.goalRun
-				? (hooks) =>
-						(goalPort = this.options.goalRun!(
-							createGoalRunSinks({
-								runtime,
-								sessions,
-								resolveModel: (provider, id) => faces.resolveModel(provider, id),
-								// 目标运行的帧也走本连接的出口（重连后落到新 socket，不是建面时那个）。
-								emit: deliver,
-								isDisposed: () => this.runtimes.get(clientId) !== runtime,
-								getLang: () => this.langOf(clientId),
-								...(hooks?.setPlan ? { setPlan: hooks.setPlan } : {}),
-							}),
-						))
-				: undefined,
-			// 只会删自己会话目录里的文件：根 = agentDir/sessions（与 SDK 落盘位置一致）。
-			getLang: () => this.langOf(clientId),
-			resolveToolApproval: (id, decision, editedParams, reason) =>
-				approvalWaiter.resolve(id, decision, editedParams, reason),
-			resolveQuestion: (id, answers, cancelled, cancelReason) => askWaiter.answer(id, answers, cancelled, cancelReason),
-			answerQuestion: async (id, answers, cancelled, cancelReason) => {
-				askWaiter.answer(id, answers, cancelled, cancelReason);
-			},
-			persistSessionTitle: (sessionFile, title) => void renameSessionFile({ sessionFile, title }),
-			// 宿主面（端口 + 帧出口 + 子代理）在下面统一装配：全部用 thunk 懒取，避免与运行时成环。
-			settingsFrame: () => faces.settingsFrame,
-			slashCommands: () => faces.slashCommands,
-			attachments: () => faces.attachments,
-			files: () => faces.files,
-			nativeCli: () => faces.nativeCli,
-			bots: () => faces.bots,
-			chatMode: () => faces.chatMode,
-			presets,
-			chatModes,
-			presetTranscript: () => faces.presetTranscript,
-			// 内核这份 CLI 账（对话 ↔ 终端归属）：CLI 域与 `conversations` 帧共用同一份。
-			nativeCliState: cliConversations,
-			// 工具信息 / 随手问 / UI 桥：同样是宿主面，装配在 `createHostFaces` 里（这里只递 thunk）。
-			toolInfo: () => faces.toolInfo,
-			quickAskConversation: () => faces.quickAsk,
-			uiBridge: () => faces.uiBridge,
-			// 引擎专属面（DSH 补丁 / claude 权限模式）：内核只有转发，判定在宿主适配器里。
-			dshPatches: () => faces.dshPatches,
-			enginePermissionMode: () => faces.enginePermissionMode,
-			plugins: () => faces.plugins,
-			background: () => faces.background,
-			bashKills,
-			scmCommitMessage: () => faces.scmCommitMessage,
-			sandbox: () => faces.sandbox,
-			stateStore: () => this.stateStore,
-			workspaceHost: () => faces.workspaceHost,
-			worktree: () => this.options.worktree?.(),
-			commandCwd: () => runtime.registry.activeConv()?.meta.cwd ?? this.cwd,
-			commandsPathOf: this.options.commandsPathOf,
-			releasePendingApprovals: (reason) => approvalWaiter.settleAll("approve", reason),
-			modelAdmin: this.modelAdminPort(),
-			modelMemory: createModelMemory(this.stateStore),
-			resolveModel: (provider, id) => faces.resolveModel(provider, id),
-			onCwdChanged: (cwd, roots) => this.onClientCwdChanged?.(cwd, [...roots]),
-			onConversationChanged: () => this.onConversationChanged?.(),
-			onSessionModelChanged: (conversationId) => {
-				this.options.onSessionModelChanged?.(clientId, conversationId);
-				this.notifyPluginModelChange(clientId, conversationId);
-			},
-			terminalManagerFor: (conversationId) => terminalHost.managerFor(conversationId, this.cwd),
-			isAllowedPath: (target) => isInsideSessionsDir(this.options.agentDir ?? this.cwd, target),
-			viewOf: (conv) => ({
-				...conversationViewFromSession(conv, sessions.get(conv.id)?.session),
-				planMode: chatModes.planModeOf(conv.id),
-				delegateMode: chatModes.delegateModeOf(conv.id),
-				delegateConvId: chatModes.delegateConvIdOf(conv.id),
-				...conversationPresetViewOf({
-					conversationId: conv.id,
-					queued: conv.queues.total(),
-					session: sessions.get(conv.id)?.session,
-					settings: this.stateStore.getSettingsSnapshot(clientId),
-					presets,
-					chatModes,
-					lang: this.langOf(clientId),
-				}),
-				pendingApprovals: approvalWaiter.pendingForSnapshot(conv.id),
-				bot: conv.meta.botId ? { id: conv.meta.botId, name: conv.meta.botName ?? conv.meta.botId } : null,
-			}),
-			// 环境视图是**导出值**（不是状态）：探针真值 / 设置版本随每次组帧现算，装完 pi CLI 不必重连就翻真。
-			env: () => ({
-				settingsVersion: this.stateStore.getSettingsVersion(),
-				piConfigured: faces.uiBridge?.probe().piConfigured ?? false,
-				piAgentInstalled: faces.uiBridge?.probe().piAgentInstalled ?? false,
-				capabilities: DEFAULT_PI_CAPABILITIES,
-			}),
-		});
-		// 宿主面（设置/文件/插件/沙盒/后台/终端/CLI/Bot/模式开关 + 帧出口 + 子代理）由 `createHostFaces` 一次装配：
-		// 工厂顺序与老 `attach()` 一致，门面这里只把本客户端的现成东西递进去、拿回一组 port。
-		faces = createHostFaces({
-			settingsFrame: this.options.settingsFrame,
-			slashCommands: this.options.slashCommands,
-			files: this.options.files,
-			plugins: this.options.plugins,
-			background: this.options.background,
-			sandbox: this.options.sandbox,
-			workspaceHost: this.options.workspaceHost,
-			nativeCli: this.options.nativeCli,
-			bots: this.options.bots,
-			chatMode: this.options.chatMode,
-			toolInfo: this.options.toolInfo,
-			quickAsk: this.options.quickAsk,
-			uiBridge: this.options.uiBridge,
-			dshPatches: this.options.dshPatches,
-			enginePermissionMode: this.options.enginePermissionMode,
-			clientId,
-			cwd: this.cwd,
-			agentDir: this.options.agentDir ?? this.cwd,
-			transport,
-			runtime,
-			sessions,
-			terminalHost,
+			options: this.options,
 			stateStore: this.stateStore,
 			projectSource: this.projectSource,
-			langOf: () => this.langOf(clientId),
-			setLang: (next) => this.langs.set(clientId, next),
-			isDisposed: () => this.runtimes.get(clientId) !== runtime,
-			applyChatMode: (kind, enabled, conversationId) => chatModes.setMode(kind, enabled, conversationId),
-			// 手机通知走引擎级回调（`wireEngineHooks` 装的 `svc.onNotificationEvent`）：内核只转发，不自己投递。
-			notifyMobile: (event) => void this.onNotificationEvent?.(event),
-			// 插件命令目录 / 常驻任务行同样是引擎级钩子（`wireEngineHooks` 装上）：三条都是懒取，没装就没有。
-			...(this.pluginCommandsProvider ? { pluginCommands: () => this.pluginCommandsProvider?.() ?? [] } : {}),
-			...(this.pluginBgTasksProvider ? { pluginTasks: () => this.pluginBgTasksProvider?.() ?? [] } : {}),
-			...(this.pluginStopBgTask ? { stopBgTask: (taskId: string) => this.pluginStopBgTask?.(taskId) ?? false } : {}),
+			pluginTools: this.pluginTools,
+			deliverTo: (cid, msg) => this.deliverTo(cid, msg),
+			runtimes: this.runtimes,
+			sockets: this.sockets,
+			askWaiters: this.askWaiters,
+			modelAdminPort: () => this.modelAdminPort(),
+			langOf: (cid) => this.langOf(cid),
+			setLang: (cid, next) => this.langs.set(cid, next),
+			listExternalRunning: (cid) => this.listExternalRunning(cid),
+			notifyExternalRunning: (cid) => this.notifyExternalRunning(cid),
+			toolGuard: this.toolGuard,
+			pluginToolFilter: (cid, conv) => this.pluginToolFilter(cid, conv),
+			onToolEvent: this.onToolEvent,
+			onRunEvent: this.onRunEvent,
+			onClientCwdChanged: this.onClientCwdChanged,
+			onTurnSettledOffline: (cid, rt) => {
+				armOfflineRowExpiry(cid, rt, this.offlineSince, this.offlineTimers, () => this.notifyExternalRunning());
+				this.notifyExternalRunning();
+			},
+			onConversationChanged: this.onConversationChanged,
+			onNotificationEvent: this.onNotificationEvent,
+			pluginCommandsProvider: this.pluginCommandsProvider,
+			pluginBgTasksProvider: this.pluginBgTasksProvider,
+			pluginStopBgTask: this.pluginStopBgTask,
+			notifyPluginModelChange: (cid, convId) => this.notifyPluginModelChange(cid, convId),
+			subagentsRegistry: this.subagentsRegistry,
+			findSessionOwner: (target, excludeClientId) => this.findSessionOwner(target, excludeClientId),
+			checkParallelWork: (clientId, conv) => this.checkParallelWork(clientId, conv),
 		});
-		subagents = faces.subagents;
 		this.runtimes.set(clientId, runtime);
 		// A + K + B：连接期建首条空白对话、挂 quiesce 门、推初始态帧（重连时同一份重推）。
 		this.connectFrames.set(
@@ -379,9 +253,19 @@ export class CoreEngine implements EngineService {
 				isQuiesced: () => this.isQuiesced(),
 			}),
 		);
+		runtime.publisher.flush({ forceFull: true });
+		if (heldNotice) deliver(heldNotice);
+		this.notifyExternalRunning(clientId);
 		this.onClientCwdChanged?.(runtime.cwd, [...runtime.roots]);
 		this.onConversationChanged?.();
 		return runtime.handlers();
+	}
+
+	deliverTo(clientId: string, msg: ServerMessage): void {
+		const sockets = this.sockets.get(clientId);
+		if (sockets) {
+			for (const send of sockets) send(msg);
+		}
 	}
 
 	/** 记一个活着的帧出口：最新那一个负责收帧，旧的只留账（拆运行时要看还有没有活 socket）。 */
@@ -401,10 +285,19 @@ export class CoreEngine implements EngineService {
 		}
 		this.sockets.delete(clientId);
 		this.connectFrames.delete(clientId);
-		const runtime = this.runtimes.get(clientId);
-		if (runtime) runtime.dispose();
-		this.runtimes.delete(clientId);
 		this.senders.delete(clientId);
+		const runtime = this.runtimes.get(clientId);
+		if (!runtime) return;
+		const shouldDispose = handleClientDetach(clientId, runtime, this.offlineSince, this.offlineTimers, () => {
+			this.notifyExternalRunning(clientId);
+		});
+		if (shouldDispose) {
+			this.runtimes.delete(clientId);
+			this.askWaiters.delete(clientId);
+			this.clearOffline(clientId);
+			runtime.dispose();
+		}
+		this.notifyExternalRunning(clientId);
 	}
 
 	get(clientId: string): DispatchSession | undefined {
@@ -415,6 +308,10 @@ export class CoreEngine implements EngineService {
 		// 先记账再拆：老实现同口径（`disposeAll()` 里第一件事就是 `recordInterruptedRuns()`），
 		// 否则正在跑的对话在拆的时候还「跑着」，记录却已经写不进了。
 		this.recordInterruptedRuns();
+		for (const timer of this.offlineTimers.values()) clearTimeout(timer);
+		this.offlineTimers.clear();
+		this.offlineSince.clear();
+		this.askWaiters.clear();
 		for (const runtime of this.runtimes.values()) runtime.dispose();
 		this.runtimes.clear();
 		this.senders.clear();
@@ -529,7 +426,113 @@ export class CoreEngine implements EngineService {
 	refreshMcpProject(cwd: string): void {
 		refreshMcpProject(this.runtimes, cwd);
 	}
+	private get elsewhereDeps() {
+		return {
+			runtimes: this.runtimes,
+			sockets: this.sockets,
+			offlineSince: this.offlineSince,
+			hasQuestionOf: (cid: string, convId: string) =>
+				Boolean(this.askWaiters.get(cid)?.pendingForSnapshot(convId).length),
+		};
+	}
+	private get takeoverDeps() {
+		return {
+			runtimes: this.runtimes,
+			takeoverFlights: this.takeoverFlights,
+			notifyExternalRunning: (changed?: string) => this.notifyExternalRunning(changed),
+			sendNotice: (id: string, notice: ServerMessage) => this.runtimes.get(id)?.options.transport.send(notice),
+			askWaiters: this.askWaiters,
+			subagentsRegistry: this.subagentsRegistry,
+		};
+	}
+	listExternalRunning(excludeClientId: string): ElsewhereRunning[] {
+		return listExternalRunning(this.elsewhereDeps, excludeClientId, offlineRowsTtlMs());
+	}
+	private notifyExternalRunning(excludeClientId?: string): void {
+		for (const [id, r] of this.runtimes) {
+			if (id !== excludeClientId) {
+				try {
+					r.pushConversations();
+				} catch {}
+			}
+		}
+	}
+	private clearOffline(clientId: string): void {
+		clearOfflineRows(clientId, this.offlineSince, this.offlineTimers);
+	}
+	async takeOverConversation(targetId: string, ownerId: string, convId: string): Promise<void> {
+		await executeTakeOverConversation(this.takeoverDeps, targetId, ownerId, convId);
+	}
+	async peekElsewhereQuestion(targetId: string, ownerId: string, convId: string): Promise<void> {
+		peekElsewhereQuestion(this.takeoverDeps, targetId, ownerId, convId);
+	}
+	async navigateQuestion(targetId: string, id: string): Promise<void> {
+		await navigateQuestion(this.takeoverDeps, targetId, id);
+	}
+	async answerElsewhereQuestion(
+		targetId: string,
+		ownerId: string,
+		id: string,
+		answers: { id: string; selected: string[]; custom?: string }[],
+		cancelled?: boolean,
+		cancelReason?: string,
+	): Promise<void> {
+		answerElsewhereQuestion(this.takeoverDeps, targetId, ownerId, id, answers, cancelled, cancelReason);
+	}
+	resolveGlobalQuestion(
+		id: string,
+		answers: { id: string; selected: string[]; custom?: string }[],
+		cancelled?: boolean,
+		cancelReason?: string,
+	): boolean {
+		return resolveGlobalQuestion(this.askWaiters, id, answers, cancelled, cancelReason);
+	}
 	getCapabilities(): AgentEngineCapabilities {
 		return DEFAULT_PI_CAPABILITIES;
+	}
+
+	findSessionOwner(sessionFile: string, excludeClientId?: string) {
+		return findSessionOwner(this.runtimes, this.sockets, sessionFile, excludeClientId);
+	}
+
+	private checkParallelWork(clientId: string, conv: Conversation | undefined): void {
+		checkParallelWork(
+			{
+				runtimes: this.runtimes,
+				sockets: this.sockets,
+				deliverTo: (cid, msg) => this.deliverTo(cid, msg),
+			},
+			clientId,
+			conv,
+		);
+	}
+
+	chatFromScheduler(task: {
+		id: string;
+		name?: string;
+		cwd: string;
+		prompt: string;
+		model?: string;
+		thinkingLevel?: string;
+	}) {
+		return chatFromScheduler(
+			{
+				isQuiesced: () => this.isQuiesced(),
+				attach: (cid, send) => this.attach(cid, send),
+				runtimes: this.runtimes,
+			},
+			task,
+		);
+	}
+
+	releaseSchedulerClient(taskId: string): void {
+		releaseSchedulerClient(
+			{
+				runtimes: this.runtimes,
+				clearOffline: (cid) => this.clearOffline(cid),
+				notifyExternalRunning: () => this.notifyExternalRunning(),
+			},
+			taskId,
+		);
 	}
 }

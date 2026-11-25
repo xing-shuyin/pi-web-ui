@@ -7,6 +7,7 @@ import {
 import { withChatModeGates } from "../adapters/sdk/chat-mode.js";
 import { createAskQuestionTool } from "../adapters/tools/ask-question.js";
 import { createGuardedBuiltinTools } from "../adapters/tools/guarded.js";
+import { makeBrowserPageTool } from "../browser-page-tool.js";
 import type { BashKills } from "../domains/background/index.js";
 import { gateConversationPreset } from "./preset-handlers.js";
 import { subscribePluginSessionEvents } from "./plugin-engine-hooks.js";
@@ -35,6 +36,10 @@ export interface EngineSessionDeps {
 	bashKills: BashKills;
 	subagents?: () => SubagentRuntime | undefined;
 	askWaiter: ReturnType<typeof import("../domains/interactions/index.js").createAskUserWaiter>;
+	findAskWaiter?: (
+		clientId: string,
+	) => ReturnType<typeof import("../domains/interactions/index.js").createAskUserWaiter> | undefined;
+	findRuntime?: (clientId: string) => ClientRuntime | undefined;
 	approvalWaiter: ReturnType<typeof import("../domains/interactions/index.js").createApprovalWaiter>;
 	transport: TransportPort;
 	pluginTools: PluginToolsBinder;
@@ -74,8 +79,37 @@ export function createEngineSessionRegistry(deps: EngineSessionDeps): SessionReg
 		customToolsFor: (conv) => [
 			...withChatModeGates(
 				[
-					createAskQuestionTool({ waiter: deps.askWaiter, conversationId: conv.id }),
-					...(deps.subagents?.() ? [deps.subagents()!.toolFor(conv.id)] : []),
+					createAskQuestionTool({
+						waiter: {
+							askUser: (questions, signal) => {
+								const currentClientId = conv.meta.clientId;
+								const targetWaiter =
+									(typeof currentClientId === "string" && currentClientId.length > 0
+										? deps.findAskWaiter?.(currentClientId)
+										: undefined) ?? deps.askWaiter;
+								return targetWaiter.askUser(questions, signal, conv.id);
+							},
+						},
+						conversationId: conv.id,
+					}),
+					...(deps.subagents?.() ? [deps.subagents()!.toolFor(() => conv.id)] : []),
+					makeBrowserPageTool(
+						{
+							pageCall: (req, sig) => {
+								const currentClientId = conv.meta.clientId;
+								const targetRt =
+									typeof currentClientId === "string" && currentClientId.length > 0
+										? deps.findRuntime?.(currentClientId)
+										: undefined;
+								const caller = targetRt ?? deps.getRuntime();
+								return (
+									caller.handlers().pageCall?.(req, sig, conv.id) ??
+									Promise.resolve({ ok: false, error: "pageCall not ready" })
+								);
+							},
+						},
+						conv.id,
+					),
 					...createGuardedBuiltinTools({
 						cwd: deps.cwd,
 						...(deps.remoteOpsOf ? { remoteOpsOf: deps.remoteOpsOf } : {}),
@@ -161,7 +195,14 @@ export function createEngineSessionRegistry(deps: EngineSessionDeps): SessionReg
 					conv,
 					clientId: deps.clientId,
 					sessionId: opened.sessionId,
-					onChange: () => runtime.publisher.request(),
+					onChange: () => {
+						const currentClientId = conv.meta.clientId;
+						const targetRt =
+							typeof currentClientId === "string" && currentClientId.length > 0
+								? deps.findRuntime?.(currentClientId)
+								: undefined;
+						(targetRt ?? runtime).publisher.request();
+					},
 					onToolEvent: (ev) => deps.onToolEvent?.(ev),
 					onRunEvent: (ev) => deps.onRunEvent?.(ev),
 				}),

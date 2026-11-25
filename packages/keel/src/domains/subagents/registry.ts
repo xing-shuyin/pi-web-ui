@@ -11,6 +11,7 @@ export interface SubagentRecord {
 	startedAt: number;
 	settledAt?: number;
 	error?: string;
+	prompt?: string;
 }
 
 export type SubagentTimerHandle = ReturnType<typeof setTimeout>;
@@ -106,7 +107,7 @@ export class SubagentRegistry {
 	}
 
 	/** 重复 id 抛 `SubagentRegistryError`：账本不覆盖已有记录。 */
-	register(input: { id: string; parentId: string; title: string; type: string }): SubagentRecord {
+	register(input: { id: string; parentId: string; title: string; type: string; prompt?: string }): SubagentRecord {
 		if (this.records.has(input.id)) throw new SubagentRegistryError(`subagent ${input.id} already registered`);
 		const record: SubagentRecord = {
 			id: input.id,
@@ -115,6 +116,7 @@ export class SubagentRegistry {
 			type: input.type,
 			state: "running",
 			startedAt: this.now(),
+			...(input.prompt ? { prompt: input.prompt } : {}),
 		};
 		this.records.set(record.id, record);
 		return copyOf(record);
@@ -142,6 +144,35 @@ export class SubagentRegistry {
 	get(id: string): SubagentRecord | undefined {
 		const record = this.records.get(id);
 		return record ? copyOf(record) : undefined;
+	}
+
+	/**
+	 * 跨客户端会话过户重编：将已登记的子代理 id 及等待它的 waiter 一起换成新 id。
+	 */
+	remap(oldId: string, newId: string, parentId?: string): void {
+		const record = this.records.get(oldId);
+		if (!record) return;
+		this.records.delete(oldId);
+		record.id = newId;
+		if (parentId) record.parentId = parentId;
+		this.records.set(newId, record);
+		for (const waiter of this.waiters) {
+			if (waiter.ids.has(oldId)) {
+				waiter.ids.delete(oldId);
+				waiter.ids.add(newId);
+			}
+		}
+	}
+
+	/**
+	 * 父会话撞号重编时，把属于该父对话的子代理的 parentId 一起翻修。
+	 */
+	updateParentId(oldParentId: string, newParentId: string): void {
+		for (const record of this.records.values()) {
+			if (record.parentId === oldParentId) {
+				record.parentId = newParentId;
+			}
+		}
 	}
 
 	/** `startedAt` 升序；同刻按登记顺序（稳定排序）。`scope.parentId` 只看直系。 */

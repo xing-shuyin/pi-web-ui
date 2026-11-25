@@ -27,6 +27,7 @@ import { Conversation, ConversationRegistry, type ConversationInit } from "../ke
 import { createSnapshotBuilders, SnapshotPublisher, type SnapshotBuilders } from "../domains/snapshots/index.js";
 import { statsOfSession } from "../adapters/sdk/session-stats.js";
 import { sessionDirOfBase } from "../adapters/sdk/session-persist.js";
+import { piSessionsRoot } from "../session-search.js";
 import { resolveWorkspaceSessionDir } from "../remote-workspace.js";
 import { TurnRunner, type TurnRunnerDeps } from "../domains/turns/index.js";
 import type { SessionListScanState } from "../session-list-scan.js";
@@ -158,6 +159,13 @@ export interface ClientRuntimeOptions extends GoalHostPorts {
 	resolveModel?(provider: string, id: string): Promise<unknown | undefined>;
 	/** 换完模型后的宿主收尾（压缩预留重算、插件通知）：C 类能力一律留在宿主。 */
 	onSessionModelChanged?(conversationId: ConversationId): void;
+	/** 问卷待答队列查询。 */
+	getQueuedQuestions?: () => import("../protocol.js").UiQueuedQuestion[];
+	hasQuestionOf?: (conversationId: ConversationId) => boolean;
+	elsewhere?: () => readonly import("../protocol.js").ElsewhereRunning[];
+	findSessionOwner?: (sessionFile: string) => { title: string; isStreaming: boolean } | undefined;
+	findRuntime?: (clientId: string) => ClientRuntime | undefined;
+	checkParallelWork?: (conv: Conversation | undefined) => void;
 }
 
 /**
@@ -187,6 +195,11 @@ export class ClientRuntime {
 		this.surface().conversations().push();
 		this.options.onConversationChanged?.();
 	};
+	/** `question_queue` 帧出口。 */ readonly pushQuestionQueue = () => {
+		if (this.disposed || !this.options.getQueuedQuestions) return;
+		const questions = this.options.getQueuedQuestions();
+		this.options.transport.send({ type: "question_queue", questions });
+	};
 
 	constructor(readonly options: ClientRuntimeOptions) {
 		this.workspaceCwd = options.cwd;
@@ -202,6 +215,9 @@ export class ClientRuntime {
 
 	get clientId(): ClientId {
 		return this.options.clientId;
+	}
+	updateClientId(newClientId: ClientId): void {
+		this.options.clientId = newClientId;
 	}
 	get cwd(): string {
 		return this.workspaceCwd;
@@ -279,6 +295,9 @@ export class ClientRuntime {
 					}
 				: {}),
 			...(this.options.isAllowedPath ? { isAllowedPath: this.options.isAllowedPath } : {}),
+			...(this.options.hasQuestionOf ? { hasQuestionOf: this.options.hasQuestionOf } : {}),
+			...(this.options.elsewhere ? { elsewhere: this.options.elsewhere } : {}),
+			...(this.options.findSessionOwner ? { findSessionOwner: this.options.findSessionOwner } : {}),
 			notice: (level, text, textEn) => {
 				if (this.disposed || this.options.transport.isClosed()) return;
 				this.options.transport.send({ type: "notice", level, text, textEn });
@@ -360,6 +379,8 @@ export class ClientRuntime {
 		// 学到的目录优先（`noteSessionFile` = 本进程真开过会话，换 cwd 时会跟着更新），
 		// 否则再按老公式现算——两者都拿不到才算「不知道」。
 		if (this.historyRootPath) return this.historyRootPath;
+		const extra = piSessionsRoot();
+		if (extra) return extra;
 		try {
 			const base = resolveWorkspaceSessionDir(this.options.stateStore?.()?.dataDir, this.workspaceCwd);
 			return sessionDirOfBase(base) ?? undefined;
@@ -393,13 +414,17 @@ export class ClientRuntime {
 		return conv;
 	}
 
-	openChildConversation(init: { parentId: string; title: string; cwd?: string }): Conversation {
-		return this.newConversation({
+	openChildConversation(init: { parentId: string; title: string; cwd?: string; id?: string }): Conversation {
+		const conv = this.newConversation({
+			id: init.id ?? `sa-${this.registry.nextSeq()}`,
 			kind: "subagent",
 			parentId: init.parentId,
 			title: init.title,
 			cwd: init.cwd,
 		});
+		this.surface().conversations().markListed(conv.id);
+		this.pushConversations();
+		return conv;
 	}
 
 	activeConversationId(): string | undefined {
@@ -467,17 +492,38 @@ export class ClientRuntime {
 	async feedTurn(text: string, queue?: boolean): Promise<void> {
 		if (this.disposed) return;
 		const conv = this.registry.activeConv() ?? this.createConversation();
+		if ((conv.meta.title === "新对话" || conv.meta.title === "New Chat") && text.trim()) {
+			const first = text.trim().split("\n")[0].trim();
+			const clean = first.length > 30 ? `${first.slice(0, 30)}…` : first;
+			if (clean) conv.rename(clean, Date.now());
+		}
 		try {
 			const sessions = this.options.sessions;
 			if (!sessions) throw new Error("core: session registry is not wired");
 			const opened = await sessions.ensure(conv);
-			await this.turns.start(conv, opened.session, text, queue ? { deliverAs: "followUp" } : undefined);
+			if (conv.phase === "running") {
+				if (queue) {
+					await this.turns.start(conv, opened.session, text, { deliverAs: "followUp" });
+				} else {
+					await this.turns.steer(conv, opened.session, text);
+				}
+			} else {
+				await this.turns.start(conv, opened.session, text);
+			}
 		} catch (error) {
 			if (this.options.onTurnError) this.options.onTurnError(conv.id, error);
 			else console.error("[core] turn failed:", error);
 		} finally {
 			this.publisher.flush({ forceFull: true });
 			this.pushConversations();
+			const currentClientId = conv.meta.clientId;
+			if (currentClientId && currentClientId !== this.clientId) {
+				const target = this.options.findRuntime?.(currentClientId);
+				if (target) {
+					target.publisher.flush({ forceFull: true });
+					target.pushConversations();
+				}
+			}
 		}
 	}
 
