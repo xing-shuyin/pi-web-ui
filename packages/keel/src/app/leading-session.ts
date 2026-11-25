@@ -33,6 +33,7 @@ export async function resolveLeadingSessionFile(input: LeadingSessionInput): Pro
 		if (owner && (owner.connected === true || owner.isStreaming)) return undefined;
 	} catch {
 		// 归属查不到 = 不敢假设安全：宁可开空白对话，也不拿两份写者去覆写同一份转录。
+		return undefined;
 	}
 	return recent;
 }

@@ -120,7 +120,7 @@ export function findSessionOwner(
 	sockets: ReadonlyMap<string, Set<FrameSender>>,
 	sessionFilePath: string,
 	excludeClientId: string,
-): { ownerId: string; title: string; isStreaming: boolean; connected: boolean } | null {
+): { ownerId: string; conversationId: string; title: string; isStreaming: boolean; connected: boolean } | null {
 	let targetNorm = "";
 	try {
 		targetNorm = resolve(sessionFilePath);
@@ -135,7 +135,7 @@ export function findSessionOwner(
 				if (resolve(conv.meta.sessionFile) === targetNorm) {
 					const connected = (sockets.get(id)?.size ?? 0) > 0;
 					const isStreaming = conv.phase === "running";
-					return { ownerId: id, title: conv.meta.title, isStreaming, connected };
+					return { ownerId: id, conversationId: conv.id, title: conv.meta.title, isStreaming, connected };
 				}
 			} catch {}
 		}

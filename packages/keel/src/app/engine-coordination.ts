@@ -1,38 +1,36 @@
 import { statSync } from "node:fs";
-import { resolve } from "node:path";
 import type { ClientRuntime } from "./client-runtime.js";
 import type { FrameSender } from "./core-engine.js";
 import type { Conversation } from "../kernel/conversation/index.js";
 import type { DispatchSession } from "../engine-service.js";
 import type { ServerMessage } from "../protocol.js";
+import { findSessionOwner as findElsewhereSessionOwner } from "./engine-elsewhere.js";
 
+/**
+ * 转录占用查询：**单源在 `app/engine-elsewhere.ts`**（它同时是 `listExternalRunning` /
+ * `checkHeldSessionNotice` 的判据来源）。这里是面向 dispatch 端口的命名适配，不另有一套判据：
+ *
+ * - `connected` 必须一并透出：连接期「最近那份转录被别人开着（即使对方空闲）就落空白对话」、
+ *   切工作区恢复、`switchSession` 撞上「别处开着」三处都靠它区分「在线持有」与「离线残骸」。
+ * - **不跳过离线持有方**：断线但这一轮还在跑的那条对话依旧是有主的，碰它就是两个写者
+ *   （老 `agent-service-daemon.ts:758` 同一口径：任何持有者都返回，只标 connected）。
+ * - `clientId` / `conversationId` 是过户地址（issue #567）。
+ */
 export function findSessionOwner(
 	runtimes: Map<string, ClientRuntime>,
 	sockets: ReadonlyMap<string, Set<FrameSender>>,
 	sessionFile: string,
 	excludeClientId?: string,
-): { title: string; isStreaming: boolean; clientId: string; conversationId: string } | undefined {
-	const norm = resolve(sessionFile);
-	for (const [cid, rt] of runtimes) {
-		if (cid === excludeClientId) continue;
-		if ((sockets.get(cid)?.size ?? 0) === 0) continue;
-		for (const conv of rt.registry.list()) {
-			if (conv.meta.sessionFile) {
-				try {
-					if (resolve(conv.meta.sessionFile) === norm) {
-						return {
-							title: conv.meta.title,
-							isStreaming: conv.phase === "running",
-							// 占用者身份：`switchSession` 撞上「别处开着」时要按它发起过户（issue #567 的单写者保护）。
-							clientId: cid,
-							conversationId: conv.id,
-						};
-					}
-				} catch {}
-			}
-		}
-	}
-	return undefined;
+): { title: string; isStreaming: boolean; connected: boolean; clientId: string; conversationId: string } | undefined {
+	const owner = findElsewhereSessionOwner(runtimes, sockets, sessionFile, excludeClientId ?? "");
+	if (!owner) return undefined;
+	return {
+		title: owner.title,
+		isStreaming: owner.isStreaming,
+		connected: owner.connected,
+		clientId: owner.ownerId,
+		conversationId: owner.conversationId,
+	};
 }
 
 export function checkParallelWork(
