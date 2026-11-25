@@ -199,6 +199,11 @@ export class ClientRuntime {
 	/** 沙盒全貌：`null` = 不是沙盒（宿主写）。 */ private sandboxInfo: SandboxInfo | null = null;
 	/** 会话列表条数：`sessions` 帧与 `setSessionListLimit` 共读。 */ readonly sessionLimits = new Map<string, number>();
 	/** 输入框草稿：不传就按 `dataDir/composer-drafts.json` 建（构造不读盘，首次访问才读）。 */ readonly drafts: ComposerDraftsStore;
+	/**
+	 * 「消息已受理、这一轮还没真正开始」（老 `conv.promptInFlight`）：`feedTurn` 的 `ensure` 窗口。
+	 * 保留判据（`domains/sessions/retain.ts`）与腾位时的 info notice 都读它。
+	 */
+	private readonly turnInFlight = new Set<string>();
 	/** `conversations` 帧出口。 */ readonly pushConversations = () => {
 		this.surface().conversations().push();
 		this.options.onConversationChanged?.();
@@ -298,6 +303,7 @@ export class ClientRuntime {
 			},
 			noteSessionFile: (file) => this.noteSessionFile(file),
 			...(this.options.retainEvidence ? { retainEvidence: (conv) => this.options.retainEvidence?.(conv) ?? {} } : {}),
+			turnInFlight: (conversationId) => this.turnInFlight.has(conversationId),
 			...(this.options.nativeCliState
 				? {
 						nativeCliOf: (conversationId: ConversationId) => this.nativeCliOf(conversationId),
@@ -512,6 +518,8 @@ export class ClientRuntime {
 	async feedTurn(text: string, queue?: boolean): Promise<void> {
 		if (this.disposed) return;
 		const conv = this.registry.activeConv() ?? this.createConversation();
+		// 从「受理」到「会话真的开起来」之间有一整段 await（ensure）：老 `conv.promptInFlight` 就是这一段。
+		this.turnInFlight.add(conv.id);
 		if ((conv.meta.title === "新对话" || conv.meta.title === "New Chat") && text.trim()) {
 			const first = text.trim().split("\n")[0].trim();
 			const clean = first.length > 30 ? `${first.slice(0, 30)}…` : first;
@@ -534,6 +542,7 @@ export class ClientRuntime {
 			if (this.options.onTurnError) this.options.onTurnError(conv.id, error);
 			else console.error("[core] turn failed:", error);
 		} finally {
+			this.turnInFlight.delete(conv.id);
 			this.publisher.flush({ forceFull: true });
 			this.pushConversations();
 			const currentClientId = conv.meta.clientId;

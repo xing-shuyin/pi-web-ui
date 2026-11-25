@@ -355,6 +355,18 @@ describe("app · 会话管理 handler", () => {
 		expect(runtime.registry.activeId()).not.toBe("");
 	});
 
+	it("dismissConversation 挑继任者先认「已在运行列表」（老 vacateActive 读 conv.listed），不是另开空白对话", async () => {
+		const { runtime } = adminRuntime();
+		// c1 是当前对话；c2 没进过运行列表（既没在跑也没有消息），c3 明确列入过。
+		runtime.createConversation({ id: "c1", kind: "user", createdAt: 1, sessionFile: "/agent/sessions/x.jsonl" });
+		runtime.createConversation({ id: "c2", kind: "user", createdAt: 1 });
+		runtime.createConversation({ id: "c3", kind: "user", createdAt: 1 });
+		runtime.surface().conversations().markListed("c3");
+		await runtime.handlers().dismissConversation("c1");
+		expect(runtime.registry.activeId()).toBe("c3");
+		expect(runtime.registry.has("c1")).toBe(false);
+	});
+
 	it("deleteSession 在路径不被允许时不动注册表", async () => {
 		const { runtime } = adminRuntime();
 		runtime.createConversation({ id: "c1", kind: "user", createdAt: 1, sessionFile: "/agent/sessions/x.jsonl" });

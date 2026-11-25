@@ -37,6 +37,11 @@ export class ConversationPinIndex {
 		return this.byConversation.get(id)?.pinned === true;
 	}
 
+	/** 已经进入运行列表（老 `conv.listed`）：`vacateActive` 挑继任者读这一位。 */
+	isListed(id: ConversationId): boolean {
+		return this.byConversation.get(id)?.listed === true;
+	}
+
 	/** 钉住一定带上 `listed`：钉住的对话不该因为「切走了」而从运行列表消失。 */
 	setPinned(id: ConversationId, pinned: boolean): void {
 		const current = this.byConversation.get(id) ?? { pinned: false, listed: false };

@@ -241,6 +241,44 @@ describe("rebindSession · 换活动对话时按判据保留 / 退役", () => {
 		expect(dropped.phase).toBe("retired");
 		expect(h.closed).toStrictEqual(["dropped"]);
 	});
+
+	it("displacePrevious：保留的是「消息刚受理」的对话时说明一声（老 displaceActive 的 info notice）", () => {
+		const h = harness();
+		const kept = conversation(h.registry, { id: "kept", title: "在跑的对话" });
+		const notices: { level: string; text: string; textEn: string }[] = [];
+		const ctx = {
+			...h.ctx,
+			notice: (level: string, text: string, textEn: string) => void notices.push({ level, text, textEn }),
+			shouldRetainPrevious: () => true,
+			inFlight: (conv: Conversation) => conv.id === "kept",
+		} as unknown as RebindContext & { inFlight: (conv: Conversation) => boolean };
+
+		expect(displacePrevious(ctx, kept)).toBe(true);
+		expect(notices).toStrictEqual([
+			{
+				level: "info",
+				text: "「在跑的对话」的消息正在投递，已为你保留该对话",
+				textEn: '"在跑的对话" is still sending your message — kept in the running list',
+			},
+		]);
+		expect(h.listed).toStrictEqual(["kept"]);
+	});
+
+	it("displacePrevious：已经开始流式就不再多说一句（老口径：只解释还没开始的窗口）", () => {
+		const h = harness();
+		const kept = conversation(h.registry, { id: "kept" });
+		kept.beginTurn(1);
+		const notices: string[] = [];
+		const ctx = {
+			...h.ctx,
+			notice: (_level: string, text: string) => void notices.push(text),
+			shouldRetainPrevious: () => true,
+			inFlight: () => true,
+		} as unknown as RebindContext & { inFlight: (conv: Conversation) => boolean };
+
+		expect(displacePrevious(ctx, kept)).toBe(true);
+		expect(notices).toStrictEqual([]);
+	});
 });
 
 describe("createWorkspaceSwitcher · setCwd 的重绑目标（老 setCwd 的 openRecent）", () => {

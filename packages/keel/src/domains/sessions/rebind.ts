@@ -41,6 +41,11 @@ export interface RebindContext {
 	 * 缺省 = 只保留、不列入。
 	 */
 	markListed?(conversationId: ConversationId): void;
+	/**
+	 * 消息已受理、这一轮还没真正开始（老 `conv.promptInFlight`）：运行时在 `feedTurn` 的 `ensure` 窗口里记住它。
+	 * 保留的对话正处于这个窗口时，腾位会说明一声（老 `displaceActive` 的 info notice）。
+	 */
+	inFlight?(conversation: Conversation): boolean;
 	/** 同上，另一头：老 `conv.promptedSinceActive = true`（保留判据的一半）。 */
 	markPrompted?(conversationId: ConversationId): void;
 }
@@ -82,10 +87,13 @@ function retire(conversation: Conversation): void {
 	conversation.finishRetire();
 }
 
-/** 腾位只需要这四样：注册表、会话释放口、保留判据、列入运行列表。 */
+/**
+ * 腾位只需要这几样：注册表、会话释放口、保留判据、列入运行列表、
+ * 以及「为什么留着」那句话（老 `displaceActive` 的 info notice）。
+ */
 export type DisplaceContext = Pick<
 	RebindContext,
-	"registry" | "sessions" | "shouldRetainPrevious" | "markListed" | "markPrompted"
+	"registry" | "sessions" | "shouldRetainPrevious" | "markListed" | "markPrompted" | "notice" | "inFlight"
 >;
 
 /**
@@ -99,6 +107,16 @@ export function displacePrevious(ctx: DisplaceContext, conversation: Conversatio
 	if (ctx.shouldRetainPrevious?.(conversation) === true) {
 		// 保留 = 会话一个字节都不动 + 继续占运行列表一行（老 `conv.listed = true`）。
 		ctx.markListed?.(conversation.id);
+		// 老 `displaceActive` 在同一处还解释了一句：消息刚受理、还没开始流式，所以先不换。
+		// 没有这句，用户会觉得「点了切对话却没切」——它不改变任何状态。
+		if (ctx.inFlight?.(conversation) === true && conversation.phase !== "running") {
+			const title = conversation.meta.title;
+			ctx.notice?.(
+				"info",
+				`「${title}」的消息正在投递，已为你保留该对话`,
+				`"${title}" is still sending your message — kept in the running list`,
+			);
+		}
 		return true;
 	}
 	retire(conversation);

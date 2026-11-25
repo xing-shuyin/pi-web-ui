@@ -226,15 +226,16 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 
 	/**
 	 * 移出当前对话前的腾位（老 `vacateActive`）：活动指针必须先离开要移出的那条，否则快照与运行列表的
-	 * `conversationId` 还指着一条已摘出注册表的对话。继任者同老意图「挑一条用户看得见的行」：优先还在跑 /
-	 * 已有内容的对话，都没有就开一条空白对话（老实现读 `conv.listed`；内存态只写不读，这里换了等价证据）。
-	 * **先切后拆**——建不出接替者就不移出（返回 false）。
+	 * `conversationId` 还指着一条已摘出注册表的对话。继任者先认老口径「已经列入运行列表」（`conv.listed`），
+	 * 再拓到「还在跑 / 已有内容」；都没有才开一条空白对话。**先切后拆**——建不出接替者就不移出。
 	 */
 	async function vacateActive(id: string): Promise<boolean> {
 		if (runtime.registry.activeId() !== id) return true;
 		const sessions = runtime.options.sessions;
+		const isListed = (convId: string): boolean => surface.conversations().isListed(convId);
 		const other = runtime.registry.list().find((conv) => {
 			if (conv.id === id) return false;
+			if (isListed(conv.id)) return true;
 			if (conv.phase === "running") return true;
 			const messages = sessions?.get(conv.id)?.session.messages;
 			return Array.isArray(messages) && messages.length > 0;

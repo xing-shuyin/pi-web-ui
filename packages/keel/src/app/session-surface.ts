@@ -105,6 +105,12 @@ export interface SessionSurfaceOptions {
 	 * 缺项 = 不知道（按 false 处理，老口径同）。
 	 */
 	retainEvidence?(conversation: Conversation): Partial<DisplaceRetainFacts>;
+	/**
+	 * 消息已受理、这一轮还没真正开始（老 `conv.promptInFlight` 的内核对应）：
+	 * 运行时在 `feedTurn` 的 `ensure` 窗口里记住它。没有这一位，「刚点了发送就切对话」会把那条
+	 * 对话退役掉——在飞的消息随之丢失；老实现正是靠 `promptInFlight` 保留它的。
+	 */
+	turnInFlight?(conversationId: ConversationId): boolean;
 }
 
 export interface SessionSurface {
@@ -136,6 +142,8 @@ export interface SessionConversations {
 	markListed(id: string): void;
 	/** 标记「用户真的用过它」（历史打开 / 喂过轮）：老 `promptedSinceActive`，保留判据的一半。 */
 	markPrompted(id: string): void;
+	/** 已经在运行列表里（老 `conv.listed`）：移出当前对话时挑继任者读这一位。 */
+	isListed(id: string): boolean;
 }
 
 /**
@@ -175,7 +183,7 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 		openTerminals: (conv) => evidenceOf(conv).openTerminals,
 		reviewing: (conv) => evidenceOf(conv).reviewing,
 		wizardRunning: (conv) => evidenceOf(conv).wizardRunning,
-		promptInFlight: (conv) => evidenceOf(conv).promptInFlight,
+		promptInFlight: (conv) => evidenceOf(conv).promptInFlight ?? options.turnInFlight?.(conv.id),
 		streaming: (conv) => evidenceOf(conv).streaming,
 		started: (conv) =>
 			pinIndex.stateOf(conv.id)?.listed === true || (options.sessions?.get(conv.id)?.session.messages?.length ?? 0) > 0,
@@ -188,6 +196,9 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 	});
 	const markListed = (id: ConversationId): void => pinIndex.markListed(id);
 	const markPrompted = (id: ConversationId): void => pinIndex.markPrompted(id);
+	/** 腾位时说一句「为什么留着」用：宿主证据优先，拿不到就用内核自己的在飞账。 */
+	const inFlightOf = (conv: Conversation): boolean =>
+		evidenceOf(conv).promptInFlight ?? options.turnInFlight?.(conv.id) === true;
 	/** 已开会话 → 条目树窄面；会话没接时不了（handler 同步抛，不拿半死句柄）。 */
 	const editorOf = (conversationId: ConversationId): MessageEditSession | undefined => {
 		const opened = options.sessions?.get(conversationId);
@@ -273,6 +284,7 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 		markListed,
 		markPrompted,
 		notice: options.notice,
+		inFlight: inFlightOf,
 	});
 	const rebind = async (request: Parameters<typeof rebindSession>[1]) => {
 		const result = await rebindSession(rebindCtx(), request);
@@ -337,7 +349,17 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 				markListed,
 				markPrompted,
 				displace: (conversation) =>
-					void displacePrevious({ registry, sessions: sessionsOf(), shouldRetainPrevious, markListed }, conversation),
+					void displacePrevious(
+						{
+							registry,
+							sessions: sessionsOf(),
+							shouldRetainPrevious,
+							markListed,
+							notice: options.notice,
+							inFlight: inFlightOf,
+						},
+						conversation,
+					),
 				frames: options.frames,
 				cwd: () => registry.activeConv()?.meta.cwd ?? options.cwd(),
 				...(options.isAllowedPath ? { isAllowedPath: options.isAllowedPath } : {}),
@@ -391,6 +413,7 @@ export function createSessionSurface(options: SessionSurfaceOptions): SessionSur
 			push: pushConversations,
 			markListed,
 			markPrompted,
+			isListed: (id: string) => pinIndex.isListed(id),
 		}),
 
 		/**
