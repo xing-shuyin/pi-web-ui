@@ -1,7 +1,13 @@
 import { contextWindowOf, modelKeyOf } from "./agent-formatters.js";
 import { effectiveSoftCap, softCapToReserve, DEFAULT_COMPACTION_RESERVE_TOKENS } from "./soft-cap.js";
 import { pruneContextHierarchically } from "./context-budget.js";
-import type { Conversation } from "./agent-service.js";
+
+export interface ContextBudgetConversation {
+	session?: Parameters<typeof contextWindowOf>[0] &
+		Parameters<typeof modelKeyOf>[0] & {
+			agent: { state: { messages: Parameters<typeof pruneContextHierarchically>[0] } };
+		};
+}
 
 export interface ContextPruningResult {
 	pruned: boolean;
@@ -9,7 +15,7 @@ export interface ContextPruningResult {
 }
 
 export function executeContextBudgetPruning(
-	conv: Conversation,
+	conv: ContextBudgetConversation,
 	settings: {
 		softCapTokens?: number;
 		softCapByModel?: Record<string, number>;

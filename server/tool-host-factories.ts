@@ -10,15 +10,26 @@ import type { CompactContextHost, PendingCompaction } from "./compact-context-to
 import { queuedCompaction } from "./conversation-delivery.js";
 import type { SkillToolHost } from "./skill-tool.js";
 import type { AgentMessage } from "./serialize.js";
-import type { Conversation } from "./agent-service.js";
 import { MAX_TRANSCRIPT_SCAN_BYTES, piSessionsRoot } from "./session-search.js";
 import { projectSessionText } from "./session-projection.js";
+
+export interface ConversationReadLike {
+	id: string;
+	title: string;
+	cwd: string;
+	isSubagent?: boolean;
+	parentId?: string;
+	session: {
+		getSessionStats(): { totalMessages: number };
+		isStreaming: boolean;
+	};
+}
 
 export function createScheduleToolHost(ctx: {
 	getSchedulerStore: () => SchedulerStore | undefined;
 	getCwd: () => string;
 	getActiveId: () => string;
-	getConversation: (id: string) => Conversation | undefined;
+	getConversation: (id: string) => { cwd?: string; session: { sessionFile?: string | null } } | undefined;
 }): ScheduleToolHost {
 	return {
 		store: () => ctx.getSchedulerStore(),
@@ -43,11 +54,11 @@ export function createScheduleToolHost(ctx: {
 	};
 }
 
-export function createConversationReadHost(ctx: {
-	getConversations: () => Iterable<Conversation>;
-	getConversation: (id: string) => Conversation | undefined;
+export function createConversationReadHost<T extends ConversationReadLike = ConversationReadLike>(ctx: {
+	getConversations: () => Iterable<T>;
+	getConversation: (id: string) => T | undefined;
 	getConvTranscript: (
-		conv: Conversation,
+		conv: T,
 	) => Parameters<ConversationReadHost["readRunningConversation"]>[0] extends undefined ? never : any;
 	getCwd: () => string;
 }): ConversationReadHost {
@@ -159,7 +170,7 @@ export function createConversationReadHost(ctx: {
 }
 
 export function createClaimToolHost(ctx: {
-	resolveTarget: (ownerId?: string) => Conversation | undefined;
+	resolveTarget: (ownerId?: string) => { id: string; title: string; cwd: string } | undefined;
 	getActiveId: () => string;
 	getCwd: () => string;
 	getClaimStore: () => ClaimStore | undefined;
@@ -177,7 +188,13 @@ export function createClaimToolHost(ctx: {
 }
 
 export function createCompactContextHost(ctx: {
-	resolveTarget: (ownerId?: string) => Conversation | undefined;
+	resolveTarget: (ownerId?: string) =>
+		| {
+				id: string;
+				compaction?: ReturnType<typeof queuedCompaction> | null;
+				session: { messages: AgentMessage[] };
+		  }
+		| undefined;
 	getActiveId: () => string;
 	ownerId?: string;
 }): CompactContextHost {
@@ -229,7 +246,23 @@ export function createCompactContextHost(ctx: {
 }
 
 export function createSkillToolHost(ctx: {
-	resolveTarget: (ownerId?: string) => Conversation | undefined;
+	resolveTarget: (ownerId?: string) =>
+		| {
+				session: {
+					resourceLoader: {
+						getSkills(): {
+							skills: Array<{
+								name: string;
+								description?: string;
+								filePath?: string;
+								source?: string;
+								scope?: string;
+							}>;
+						};
+					};
+				};
+		  }
+		| undefined;
 	getDisabledSkills: () => string[];
 	getMaxFileBytes?: () => number;
 	ownerId?: string;

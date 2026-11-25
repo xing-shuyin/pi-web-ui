@@ -515,3 +515,18 @@ export interface EngineService {
 	onClientCwdChanged?: ((cwd: string, roots: string[]) => void) | undefined;
 	pluginClient?(): DispatchSession | undefined;
 }
+
+export interface SessionOwnerInfo {
+	clientId: string;
+	convId: string;
+	title: string;
+	cwd: string;
+	isStreaming: boolean;
+	connected: boolean;
+}
+
+export interface ProjectRunnerInfo {
+	clientId: string;
+	title: string;
+	sessionFile?: string;
+}

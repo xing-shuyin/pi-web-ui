@@ -602,13 +602,8 @@ const SUBAGENT_RECYCLE_INTERVAL_MS = (() => {
 /** 已结束子代理空闲多久后可回收 runtime（issue #944：此前永不回收，只能手动清）。 */
 const SUBAGENT_RECYCLE_IDLE_MS = 15 * 60_000;
 
-export class QuiesceRejectedError extends Error {
-	readonly code = "QUIESCED";
-	constructor(detail: string) {
-		super(`服务器正在排空存量工作（quiesce）——${detail}`);
-		this.name = "QuiesceRejectedError";
-	}
-}
+import { QuiesceRejectedError } from "../packages/keel/src/contracts/quiesce.js";
+export { QuiesceRejectedError };
 
 import { appendConstraints, buildPlatformConstraints } from "./platform-constraints.js";
 import { splitAgentStartPrompt } from "./persona-chain.js";
@@ -897,20 +892,8 @@ import {
 } from "./session-parser.js";
 import { conversationRowKind } from "./conversation-rows.js";
 
-export interface SessionOwnerInfo {
-	clientId: string;
-	convId: string;
-	title: string;
-	cwd: string;
-	isStreaming: boolean;
-	connected: boolean;
-}
-
-export interface ProjectRunnerInfo {
-	clientId: string;
-	title: string;
-	sessionFile?: string;
-}
+import type { ProjectRunnerInfo, SessionOwnerInfo } from "./engine-service.js";
+export type { ProjectRunnerInfo, SessionOwnerInfo };
 
 import { pickAdoptableOrphan, sameCwd, type OrphanCandidate } from "./orphan-manager.js";
 export { pickAdoptableOrphan, sameCwd, type OrphanCandidate };

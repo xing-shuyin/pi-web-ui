@@ -47,15 +47,9 @@ import type {
 	PluginChatResult,
 } from "./plugins.js";
 import type { SchedulerStore } from "./scheduler-tasks.js";
-import {
-	ClientSession,
-	QuiesceRejectedError,
-	OFFLINE_ROW_TTL_MS,
-	type Conversation,
-	type SessionOwnerInfo,
-	type ProjectRunnerInfo,
-	type TakeoverPayload,
-} from "./agent-service.js";
+import { QuiesceRejectedError } from "../packages/keel/src/contracts/quiesce.js";
+import type { SessionOwnerInfo, ProjectRunnerInfo } from "./engine-service.js";
+import { ClientSession, OFFLINE_ROW_TTL_MS, type Conversation, type TakeoverPayload } from "./agent-service.js";
 
 /**
  * 左栏行级会话操作：只影响某一行的删除/重命名/固定/保存。

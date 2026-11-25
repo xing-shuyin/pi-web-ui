@@ -1,11 +1,50 @@
 import type { SubagentSnapshot, SubagentState } from "./subagents.js";
 import type { RoleWaitOutcome } from "./goal-service.js";
-import type { Conversation } from "./agent-service.js";
 import { SUBAGENT_PROMPT_SNAPSHOT_CAP } from "./agent-formatters.js";
 import { conversationIdentity, parentConversationIdentity, conversationParent } from "./conversation-identity.js";
 import { classifyModelError, type ModelErrorInfo } from "./model-error.js";
 
-export function isSubagentActive(conv: Conversation): boolean {
+export interface SubagentConversationLike {
+	id: string;
+	title: string;
+	createdAt: number;
+	isSubagent?: boolean;
+	parentId?: string;
+	promptInFlight?: boolean;
+	retryState?: unknown;
+	subagentTaskPending?: () => boolean;
+	subagentRunGeneration?: number;
+	subagentConsumedByParent?: boolean;
+	subagentDoneNotified?: boolean;
+	subagentTaskStopped?: boolean;
+	subagentType?: string;
+	subagentThinking?: string;
+	subagentPrompt?: string;
+	subagentTemplate?: { model?: string };
+	subagentTask?: { mode?: string | boolean; summary?: string };
+	subagentEvidence?: SubagentSnapshot["evidence"];
+	peerHandoffTo?: Iterable<string>;
+	peerHandoffFrom?: Iterable<string>;
+	subagentWorktree?: {
+		worktreePath: string;
+		branch: string;
+		cleanedUp?: boolean;
+		isDirty?: boolean;
+		uncommittedCount?: number;
+		aheadCount?: number;
+		error?: string;
+	};
+	session: {
+		isStreaming: boolean;
+		thinkingLevel?: string;
+		model?: { provider: string; id: string };
+		agent: { state: { messages: readonly unknown[] } };
+		getSessionStats(): { totalMessages: number; tokens?: { input: number; output: number } };
+		getLastAssistantText(): string | undefined;
+	};
+}
+
+export function isSubagentActive(conv: SubagentConversationLike): boolean {
 	if (!conv.isSubagent) return false;
 	if (conv.promptInFlight || conv.subagentTaskPending?.()) return true;
 	try {
@@ -15,7 +54,7 @@ export function isSubagentActive(conv: Conversation): boolean {
 	}
 }
 
-export function countActiveSubagents(convs: Iterable<Conversation>, spawningCount = 0): number {
+export function countActiveSubagents(convs: Iterable<SubagentConversationLike>, spawningCount = 0): number {
 	let count = Math.max(0, Math.floor(spawningCount));
 	for (const c of convs) {
 		if (isSubagentActive(c)) count++;
@@ -31,7 +70,7 @@ export function countActiveSubagents(convs: Iterable<Conversation>, spawningCoun
  * 「真在跑」= 有提示词在飞 / 还在流式 / 还有未收尾的任务（含待投递的完成请求）。
  */
 export function subagentLedgerStateOf(
-	conv: Conversation,
+	conv: SubagentConversationLike,
 	opts: { taskPending?: boolean } = {},
 ): "running" | LedgerState {
 	const { error, canceled } = subagentRunOutcome(conv);
@@ -63,7 +102,7 @@ export type SubagentNoticeVerdict = "deliver" | "defer" | "invalidate";
  * - `deliver`：发。
  */
 export function subagentNoticeVerdict(
-	conv: Conversation,
+	conv: SubagentConversationLike,
 	generation: number,
 	taskPending: boolean,
 ): SubagentNoticeVerdict {
@@ -80,7 +119,7 @@ export function subagentNoticeVerdict(
 }
 
 /** 子代理结论：`error` 是原文（会话文件、左栏悬停提示、账本都保留原文）。 */
-export function subagentRunOutcome(conv: Conversation): { error?: string; canceled?: boolean } {
+export function subagentRunOutcome(conv: SubagentConversationLike): { error?: string; canceled?: boolean } {
 	if (conv.subagentTaskStopped) return { canceled: true };
 	if (conv.retryState) return {};
 	try {
@@ -106,19 +145,19 @@ export function subagentRunOutcome(conv: Conversation): { error?: string; cancel
  * 子代理失败的分类投影（issue #978）：通知与 verdict 只消费这份，不各自拼文案。
  * 判据只有 `server/model-error.ts` 一处；`error` 本身仍是原文，线协议形状不变。
  */
-export function subagentErrorInfo(conv: Conversation): ModelErrorInfo | undefined {
+export function subagentErrorInfo(conv: SubagentConversationLike): ModelErrorInfo | undefined {
 	const { error } = subagentRunOutcome(conv);
 	return error ? classifyModelError(error) : undefined;
 }
 
-export function roleOutcomeOf(conv: Conversation): RoleWaitOutcome {
+export function roleOutcomeOf(conv: SubagentConversationLike): RoleWaitOutcome {
 	const { error, canceled } = subagentRunOutcome(conv);
 	if (error) return "error";
 	if (canceled) return "canceled";
 	return "done";
 }
 
-export function toSubagentSnapshot(conv: Conversation): SubagentSnapshot {
+export function toSubagentSnapshot(conv: SubagentConversationLike): SubagentSnapshot {
 	let sessionStreaming = false;
 	try {
 		sessionStreaming = Boolean(conv.session.isStreaming);
@@ -171,7 +210,7 @@ export function toSubagentSnapshot(conv: Conversation): SubagentSnapshot {
 		model: modelKey,
 		thinkingLevel,
 		output: conv.session.getLastAssistantText() ?? "",
-		parentId: (conversationParent(conv) as Conversation | undefined)?.id,
+		parentId: (conversationParent(conv) as { id?: string } | undefined)?.id,
 		persisted: isPersisted,
 		evidence: conv.subagentEvidence,
 		usage,
@@ -192,7 +231,7 @@ export function toSubagentSnapshot(conv: Conversation): SubagentSnapshot {
 }
 
 export function listSubagentSnapshots(
-	convs: Iterable<Conversation>,
+	convs: Iterable<SubagentConversationLike>,
 	scope?: "all" | "subagent" | "persistent",
 ): SubagentSnapshot[] {
 	return [...convs]

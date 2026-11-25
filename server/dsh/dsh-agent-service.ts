@@ -30,7 +30,7 @@ import { buildToolsSchemaText, type ToolSchemaEntry } from "../prompt-composer.j
 import { FilesService, workspacePath, desktopDirWire } from "../files-service.js";
 import { SandboxManager, isSameOrSubpath, evaluateSandboxJail } from "../sandbox-service.js";
 import { assertEngineWorkspaceSupported } from "../sandbox-engines.js";
-import { QuiesceRejectedError } from "../agent-service.js";
+import { QuiesceRejectedError } from "../../packages/keel/src/contracts/quiesce.js";
 
 import { NATIVE_COMMANDS, parseSlash } from "../slash-commands.js";
 import { discoverDiskSkills, readSkillInstruction } from "../skill-discovery.js";
@@ -39,8 +39,7 @@ import {
 	formatPromptWithSkills,
 	formatUnavailableCanvasReference,
 } from "../universal/universal-attachments.js";
-import type { ProjectRunnerInfo, SessionOwnerInfo } from "../agent-service.js";
-import type { EngineService } from "../engine-service.js";
+import type { EngineService, ProjectRunnerInfo, SessionOwnerInfo } from "../engine-service.js";
 import { buildSnapshotProduct, SnapshotSinkSet } from "../snapshot-sinks.js";
 import type { SnapshotProduct } from "../snapshot-channel.js";
 import { bilingual, pick, resolveServerLang, type ServerLang } from "../i18n.js";

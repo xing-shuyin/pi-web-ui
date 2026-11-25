@@ -1,6 +1,5 @@
-import type { Conversation } from "./agent-service.js";
+import { subagentErrorInfo, subagentRunOutcome, type SubagentConversationLike } from "./subagent-helpers.js";
 import { pick, type ServerLang } from "./i18n.js";
-import { subagentErrorInfo, subagentRunOutcome } from "./subagent-helpers.js";
 import { formatEvidenceSummary } from "./subagent-evidence.js";
 import { formatModelErrorBrief } from "./model-error.js";
 
@@ -28,7 +27,7 @@ function shortId(id: string): string {
 }
 
 export function formatSubagentsCompletionNotice(
-	subagents: Conversation[],
+	subagents: SubagentConversationLike[],
 	lang: ServerLang = "en",
 	fallbackOriginalParentId?: string,
 ): string {

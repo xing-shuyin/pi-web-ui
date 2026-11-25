@@ -1,7 +1,7 @@
 import { createServer, createConnection, type Server, type Socket } from "node:net";
 import { chmodSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentService } from "./agent-service.js";
+import type { EngineService } from "./engine-service.js";
 import type { UiServiceInfo } from "./protocol.js";
 
 const CONTROL_PROBE_TIMEOUT_MS = 300;
@@ -23,7 +23,7 @@ function probeControlPath(path: string): Promise<string | null> {
 	});
 }
 
-type ControlService = Pick<AgentService, "serviceStatus" | "quiesce" | "unquiesce">;
+type ControlService = Pick<EngineService, "serviceStatus" | "quiesce" | "unquiesce">;
 
 const CONTROL_IDLE_TIMEOUT_MS = 5_000;
 
