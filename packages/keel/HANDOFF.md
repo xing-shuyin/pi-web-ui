@@ -2,6 +2,9 @@
 
 > 分支 `keel/migration`（未 push）。本文件是给下一位接手者的事实清单，**不含推测**；
 > 每条都带可复跑的命令或 `文件:行`。
+>
+> **换会话/换模型接手：把 [`HANDOFF-PROMPT.md`](HANDOFF-PROMPT.md) 整段粘进新会话即可**
+> （它是可直接复制的最小上下文，指向本文件与 `MIGRATION-PLAN.md`）。
 
 ## 0. 一句话状态（2026-11-25 更新）
 
@@ -12,6 +15,16 @@ pi 的默认引擎**已是 keel（`CoreEngine`）**；**分发面 185/185、P1~P
 | `npx vitest run tests/unit`                                   | 16018 用例 / 0 ✗（并行跑有 3~6 条已知抖动，见 §6） |
 | `node tests/run-smoke.mjs --no-build`（默认 keel）            | **96/98**                                          |
 | `PI_WEB_PI_ENGINE=legacy node tests/run-smoke.mjs --no-build` | 对照基线（同机 95~96）                             |
+
+### 本轮提交（`b4e4b451..7390ff5e`，都在 `keel/migration` 上，未 push）
+
+| commit     | 内容                                                                                    |
+| ---------- | --------------------------------------------------------------------------------------- |
+| `5e577853` | LSP 走宿主端口：`patch` 实时诊断 + `lsp` 工具本体（执行体留 `server/lsp-tool.ts`）      |
+| `6cda9d9b` | `client-state.saveSettings()` 首次保存不再清空出厂默认（`toolOnDemandTools` 等 7 个键） |
+| `99b232fe` | 三个真值 store（子代理模板 / 审批规则 / 草稿）主文件改为排队写，并发不再丢更新          |
+| `78509301` | `turnInFlight`（老 `promptInFlight`）+ 腾位 notice + `vacateActive` 认 `conv.listed`    |
+| `7390ff5e` | 本文件与 `MIGRATION-PLAN.md` 记实                                                       |
 
 ### 仍然红的两条（都已定性，不是「不知道」）
 
@@ -61,9 +74,9 @@ pi 的默认引擎**已是 keel（`CoreEngine`）**；**分发面 185/185、P1~P
 
 ```bash
 npm run typecheck                                   # 6 个 tsconfig，当前 0 错误
-npx vitest run tests/unit                           # 16000 用例 / 0 ✗
+npx vitest run tests/unit                           # 16018 用例 / 0 ✗（并行 flake 见 §6）
 rm -rf dist/packages dist/server && npm run build    # 干净产物（并行构建会互相踩）
-node tests/run-smoke.mjs --no-build                  # 当前 95/98
+node tests/run-smoke.mjs --no-build                  # 当前 96/98（余 2 条与 keel 无关）
 node tests/run-smoke.mjs --no-build <test-name>      # 单跑（--no-build 复用已有 dist）
 PI_WEB_PI_ENGINE=legacy node tests/run-smoke.mjs --no-build   # 对照
 node .scratch/app-deps.mjs                          # keel 对宿主模块依赖：必须是 0
