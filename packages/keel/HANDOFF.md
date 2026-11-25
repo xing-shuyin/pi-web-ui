@@ -3,27 +3,49 @@
 > 分支 `keel/migration`（未 push）。本文件是给下一位接手者的事实清单，**不含推测**；
 > 每条都带可复跑的命令或 `文件:行`。
 
-## 0. 一句话状态
+## 0. 一句话状态（2026-11-25 更新）
 
 pi 的默认引擎**已是 keel（`CoreEngine`）**；**分发面 185/185、P1~P7 批次全部落地**。
 
-**但「全量冒烟」与「单用例」给出的数不一致，必须先弄清再往下做**：
+| 口径                                                          | 结果                                               |
+| ------------------------------------------------------------- | -------------------------------------------------- |
+| `npx vitest run tests/unit`                                   | 16000 用例 / 0 ✗（并行跑有 3~6 条已知抖动，见 §6） |
+| `node tests/run-smoke.mjs --no-build`（默认 keel）            | **95/98**                                          |
+| `PI_WEB_PI_ENGINE=legacy node tests/run-smoke.mjs --no-build` | 对照基线（同机 95~96）                             |
 
-| 口径                                         | 结果                                                        |
-| -------------------------------------------- | ----------------------------------------------------------- |
-| `npx vitest run`                             | **15847 ✓ / 0 ✗ / 53 ○**                                    |
-| `node tests/run-smoke.mjs`（全量，本机两次） | **81/98**、**80/98**                                        |
-| 单个用例单跑（`--no-build <name>`）          | scm-features ✅ 19/19 · device-project-collaboration ✅ 1/1 |
+### 仍然红的三条（都已定性，不是「不知道」）
 
-即：P7 两条单独跑都绿，但**全量跑仍有 17~18 条红**（title/命名、provider key、常驻执行对话、
-subagent thinking、extension session_start、message-window/history 系列）。两种可能：
-(a) 全量并行下的互相干扰（端口/遗留 server/data dir，历史上 `conv-cwd` 就有这毛病）；
-(b) 这两天的批次里有真回归（`historyRoot()` 改成「学到的目录优先」、`connectFrames` 生命周期、
-出帧扇出都能影响上述用例）。
+| 测试                       | 归属             | 事实                                                                               |
+| -------------------------- | ---------------- | ---------------------------------------------------------------------------------- |
+| `universal-stream-ui-test` | **与 keel 无关** | 纯前端 fixture + Vite，不碰引擎                                                    |
+| `native-cli-smoke-test`    | **与 keel 无关** | legacy 跑同样红（PTY/环境），不是迁移缺口                                          |
+| `running-list-test`        | keel 缺口        | 前 8 条断言绿；卡在「切回一条已经跑完的后台对话」时活动指针没跟过去（legacy 全绿） |
 
-**下一步第一件事**：`node tests/run-smoke.mjs --jobs=1` 复跑一次。若全绿 → 就是并行干扰，给 runner
-加隔离（独立 data dir / 端口段）或标记串行；若仍红 → 直接对这 17 条重新分诊（`.scratch/smoke-triage.md`
-的套路照用：两轮 core/legacy 差集 + 日志证据）。
+## 0.1 2026-11-25 这一轮修掉的（每条都是真根因，逐条可复验）
+
+| 症状                                                      | 根因                                                                                                                                                                                                 | 证据                                                 |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| message-window / bot-chat-reopen / subagent-template 全红 | `statsOfSession` 直接吃 SDK `getSessionStats()`，它对**没有 `usage` 的 assistant 会抛** → 抛在出帧里，整条出帧链断                                                                                   | 三条转绿                                             |
+| snapshot-frame-budget                                     | attach 收尾 `flush({forceFull:true})` 与连接期那帧重复；`publisher.flush()` 又被 60ms 合并闸静默吞掉                                                                                                 | 转绿                                                 |
+| 附件 / 回滚 / 工作区根                                    | `client-assembly.createHostFaces({...})` **漏传** `attachments` / `presetTranscript`（重建装配表时少两行）                                                                                           | 转绿 + `KNOWN_UNWIRED` 清空                          |
+| 扩展 `session_start` 从没发过                             | keel 从没调 `session.bindExtensions()`；现在 `UiBridgePort.uiContextFor` → `openTurnSession` 里绑                                                                                                    | subagent-ui-context 转绿                             |
+| 启动不恢复最近会话 / 运行列表被拆                         | ① keel 恒建空白对话（老 `continueRecent`）→ 新 `app/leading-session.ts`；② 换活动对话从不判「保留」→ 判据单源 `domains/sessions/retain.ts`，装配层只喂宿主证据（子代理运行 / 等唤醒订阅 / 后台任务） | left-panel-delete / takeover-rollback 转绿           |
+| 项目发现不了                                              | 扫盘根写成 `dataDir/sessions`，会话实际住 `agentDir/sessions`（分目录部署必红）                                                                                                                      | 同上                                                 |
+| 删当前会话                                                | 老实现先挑开（次新，无则空白）再删；keel 直接删 → 剩一条挂着死文件的对话                                                                                                                             | `app/session-delete.ts`                              |
+| 过户回滚把在跑的会话弄没                                  | 回滚无条件 `transferFrom`，把目标那份空壳盖在来源活会话上                                                                                                                                            | 只搬「真插进目标」的 + `transferFrom` 不覆盖已有会话 |
+| 别处（elsewhere）行消失                                   | `findSessionOwner` 跳过离线持有方且不透出 `connected` → 每个新连接都续上别人的转录                                                                                                                   | idle/offline-takeover 转绿                           |
+| 按需加载全空                                              | 没有门控重放点、`load_tools` 本体没搬、JIT 自动激活没接                                                                                                                                              | `lazy-tools-test` 20/20                              |
+| 切项目后不看项目                                          | 扫盘根 + 连接期恢复 + 跨项目切对话不带 cwd（老 `applyCwdSideEffects`）                                                                                                                               | conv-cross-project 转绿                              |
+
+### 已知但**故意未修**（写清原因，别当漏项）
+
+- 宿主 `server/client-state.ts` 的加载/保存两处：状态文件缺 `toolOnDemandTools` 键时会被写成 `[]`，
+  把出厂名单（7 个重量级工具）清零 → 工具 schema 从 ~7k 涨回 33k。**两套引擎同源**，而且
+  `lazy-tools-test` 的「名单为空」用例**依赖**这个行为；修它要连带改那条用例（另开一个改动）。
+- `patch` 工具没带 LSP 实时诊断：`server/lsp-tool.ts`（1522 行）还没迁进 keel。
+- 老 `displaceActive` 的两支还没搬：`conv.transferring`（过户中不换）与 `promptInFlight &&
+!isStreaming` 的 info notice；`promptedSinceActive` 内核也没有状态位（`listed && promptedSinceActive`
+  这一支今天不可达 → 「打开过但没说过话、被切走」的对话老引擎留、keel 会退役）。
 
 ## 1. 开关（回滚只要一条环境变量）
 
@@ -37,17 +59,24 @@ subagent thinking、extension session_start、message-window/history 系列）�
 ## 2. 复现与验收
 
 ```bash
-npm run typecheck                     # 6 个 tsconfig，当前 0 错误
-npx vitest run                        # 当前 15831 ✓ / 0 ✗ / 53 ○（1 个 clock flake 见 §6）
-node tests/run-smoke.mjs              # 当前 ~96/98（基线 96/98）
-PI_WEB_PI_ENGINE=legacy node tests/run-smoke.mjs   # 基线 95~96/98（对照用）
-node .scratch/app-deps.mjs            # keel 对宿主模块依赖：必须是 0
+npm run typecheck                                   # 6 个 tsconfig，当前 0 错误
+npx vitest run tests/unit                           # 16000 用例 / 0 ✗
+rm -rf dist/packages dist/server && npm run build    # 干净产物（并行构建会互相踩）
+node tests/run-smoke.mjs --no-build                  # 当前 95/98
+node tests/run-smoke.mjs --no-build <test-name>      # 单跑（--no-build 复用已有 dist）
+PI_WEB_PI_ENGINE=legacy node tests/run-smoke.mjs --no-build   # 对照
+node .scratch/app-deps.mjs                          # keel 对宿主模块依赖：必须是 0
 node scripts/gen-core-dispatch-surface.mjs --check  # 185 成员
 node scripts/gen-core-ownership.mjs --check
-npm run lint                          # 0 错误
+npm run lint
 ```
 
-冒烟支持按名跑单个用例：`node tests/run-smoke.mjs --no-build <test-name>`。
+调试冒烟的注意事项（都踩过）：
+
+- 冒烟 spawn 的 server 是 `stdio: "ignore"`：`console.error` **看不到**，要落盘就用
+  `appendFileSync`，**提交前删干净**；
+- 端口是固定的（8900~9100）：同一时刻只跑一份，跑前 `netstat -ano | grep -E ":(89|90)"` 看一眼；
+- `--no-build` 只认已有 `dist/server/index.js`；产物不全时 runner 会直接报「产物不存在」。
 
 ## 3. 已完成批次（P1 ~ P6 全部落地）
 
@@ -68,17 +97,10 @@ npm run lint                          # 0 错误
    - `packages/keel/src/domains/history/frame.ts`：修复已完成子代理在侧栏的常驻收口展示（`inRunningList` 涵盖 subagent 与 parentId）。
    - 冒烟用例 `conversation-takeover`、`orphan-*` 7 个用例、`subagent-takeover`（12/12 ALL PASS）全绿。
 
-## 4. 剩余冒烟失败（仅剩 P7 最后 2 个用例）
+## 4. 剩余冒烟失败
 
-### P7 · 两条待收尾用例
-
-1. **`scm-features-test`**（15 通过 / 4 失败）：
-   - 前 15 项（status/branch/history/diff/stats 等）全绿；
-   - 仅挂在末尾的 4 项：`scm_commitmsg` 20s 内未收到回包（`FAIL: scm_commitmsg answered` / `kind echo` / `fails without credentials` / `carries an error message`）；
-   - 代码线索：`packages/keel/src/domains/scm/handlers.ts:41-52` 与 `server/core-scm-adapter.ts:52-66`。排查重点：端口内部调用 `ModelRuntime.create` 或无凭证推断时是否出现未捕获 promise 挂住或超时。
-2. **`device-project-collaboration-test`**：
-   - 表现：Hub 派活成功，但设备端 mock `Requests: []`（SDK 0 次调用），任务停在未终态；
-   - 排查线索：设备中心任务分发到 local runner 的 bridge 链路（`server/device-center/` 与 `server/device-collaboration` 调度）。
+见 §0「仍然红的三条」。上面 P7 那两例（`scm-features-test` / `device-project-collaboration-test`）
+已经绿了，别再按旧清单找。
 
 ## 5. 架构红线（改之前务必读）
 
@@ -95,27 +117,29 @@ npm run lint                          # 0 错误
 
 ## 6. 已知 flake（不要当回归）
 
-| 用例                           | 现象                                     | 判定                 |
-| ------------------------------ | ---------------------------------------- | -------------------- |
-| `scheduler-tasks.test.ts`      | cron 排期在并行负载下偶发 1 条           | 单跑 34/34 绿        |
-| `universal-subagent-record`    | `EPERM rmdir`                            | Windows 临时目录占用 |
-| `group-ecosystem-http-ws`      | `ENOTEMPTY`                              | 同上                 |
-| `desktop-files` 硬链接 staging | 并行下偶发                               | 单跑绿               |
-| `conv-cwd`（冒烟）             | `--jobs=2` 下偶发连到别的用例遗留 server | 单跑 `--jobs=1` 稳定 |
+`npx vitest run tests/unit` 并行跑时偶发、**单跑必绿**（重子进程 / 端口争用 / 临时目录占用）：
 
-## 7. 下一批（P7 收尾目标）
+| 用例                                                                  | 现象                                                                    |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `canvas-runtime-i18n.test.ts`                                         | 「replaces stale in-progress action metadata after server restart」偶发 |
+| `device-mobile-notifications.test.ts`                                 | 「keeps a bounded outbox…」偶发                                         |
+| `group-ecosystem-http-ws.test.ts`                                     | `ENOTEMPTY`                                                             |
+| `device-center-portals` / `plugin-sparse-install` / `systemd-install` | 并行下偶发，单跑全绿                                                    |
+| 冒烟 `subagent-template-test`                                         | 并行跑偶发，单跑 6/6 绿                                                 |
 
-P1 ~ P6 已全部落地，当前冒烟已追平 legacy（~96/98）。最后仅剩 P7 两条用例：
+判定口径：**先单跑**。单跑红才是回归。
 
-1. **`scm-features-test`**（15 通过 / 4 挂在 `scm_commitmsg`）：
-   - 执行：`node tests/run-smoke.mjs --no-build scm-features-test`
-   - 排查 `server/core-scm-adapter.ts:52-66` 的 `generateCommitMessage`：当缺少配置或凭证时，端口内部应当迅速抛错或返回错误对象，排查为何 20s 未发出 `scm_data` 回包。
-2. **`device-project-collaboration-test`**：
-   - 执行：`node tests/run-smoke.mjs --no-build device-project-collaboration-test`
-   - 排查 Hub 派活给本机设备时的执行器接收端。
-3. **两项追平后收尾发布**：
-   - 全量冒烟：`node tests/run-smoke.mjs`
-   - 将 `resolvePiEngineMode` 的 `legacy` 标记为已完成迁移（进入 `packages/keel/MIGRATION-PLAN.md` 阶段）。
+## 7. 下一批
+
+全量冒烟 95/98，剩下三条已定性（见 §0）。真正还要做的：
+
+1. **`running-list-test`**：切回「已跑完的后台对话」时活动指针不动（legacy 全绿）。
+   起手：先把 `switch_conversation` 的**真实派发链**找出来（我打过探针的四处都没触发，
+   说明不是我以为的那条路），再查目标对话是否已被退役（帧里有行 ≠ 注册表里有它）。
+2. `patch` 的 LSP 实时诊断（`server/lsp-tool.ts` 未迁移）。
+3. 宿主 `client-state.ts` 的 `toolOnDemandTools` 清零 bug（见 §0.1「故意未修」）。
+4. 老 `displaceActive` 剩下两支（`conv.transferring` / `promptInFlight` 的 info notice）与
+   `promptedSinceActive` 状态位。
 
 ## 8. 用子代理的方式（本会话实操，建议照搬）
 
