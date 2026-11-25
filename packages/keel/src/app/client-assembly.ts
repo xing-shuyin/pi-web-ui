@@ -159,6 +159,8 @@ export function assembleClient(ctx: ClientAssemblyContext): {
 		toolGuard: () => ctx.toolGuard,
 		remoteOpsOf: options.remoteOpsOf,
 		langOf: (cid) => ctx.langOf(cid),
+		// LSP：诊断查询与 `lsp` 工具定义都从宿主叶子进来（内核不 spawn 语言服务器）。
+		lsp: options.lsp,
 		mcpProjects: options.mcpProjects,
 		bots: options.bots,
 		getRuntime: () => runtime,

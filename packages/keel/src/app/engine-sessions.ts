@@ -34,6 +34,7 @@ import type { ClientRuntime } from "./client-runtime.js";
 import type { PluginToolsBinder } from "./plugin-tools-binder.js";
 import type { PluginAgentToolFilter } from "../adapters/tools/plugin-agent-tools.js";
 import type { PluginRunEvent, PluginToolEvent } from "../contracts/plugin.js";
+import type { LspPort } from "../contracts/lsp.js";
 
 export interface EngineSessionDeps {
 	agentDir: string;
@@ -56,6 +57,8 @@ export interface EngineSessionDeps {
 	toolGuard?: () => ToolGuardHook | undefined;
 	remoteOpsOf?: RemoteSdkOperationsFactory;
 	langOf(clientId: string): string;
+	/** LSP（宿主叶子 `server/lsp-tool.ts`）：内核只挂载工具定义与转发诊断，不 spawn 语言服务器。 */
+	lsp?: LspPort;
 	mcpProjects?: () => { retain(cwd: string): () => void; prepare(cwd: string): Promise<unknown> } | undefined;
 	bots?: () => BotChatPort | undefined;
 	getRuntime(): ClientRuntime;
@@ -157,6 +160,17 @@ export function createEngineSessionRegistry(deps: EngineSessionDeps): SessionReg
 		runtime.publisher.request();
 	};
 
+	/**
+	 * `lsp` 工具定义归宿主（`LspPort.tool` 要拉起语言服务器子进程，内核不 spawn），内核只挂载：
+	 * 给了就进同一个模式门控数组，没给（缺省 = 能力未接）就一条也不注册。
+	 * 数组元素本来就走 `unknown`（宿主给的 SDK 工具定义，形状由 SDK 保证），所以这里不需要 cast。
+	 */
+	const lspToolsOf = (conv: Conversation): unknown[] => {
+		const makeTool = deps.lsp?.tool;
+		if (!makeTool) return [];
+		return [makeTool({ cwd: conv.meta.cwd, lang: () => deps.langOf(deps.clientId) })];
+	};
+
 	return createRegistry();
 
 	function createRegistry(): SessionRegistry {
@@ -256,7 +270,12 @@ export function createEngineSessionRegistry(deps: EngineSessionDeps): SessionReg
 						 * 而它又是按需加载的典型样例（名单里最常被加载的一个）。
 						 */
 						wrapPatchToolWithPermission(
-							makePatchTool({ cwd: conv.meta.cwd, lang: () => deps.langOf(deps.clientId) }),
+							makePatchTool({
+								cwd: conv.meta.cwd,
+								lang: () => deps.langOf(deps.clientId),
+								// 实时诊断只转发宿主的查询（语言服务器子进程在宿主叶子里，内核不 spawn）。
+								...(deps.lsp?.liveDiagnostics ? { liveDiagnostics: deps.lsp.liveDiagnostics } : {}),
+							}),
 							conv.meta.cwd,
 							() =>
 								deps.presets.permissionOf(conv.id) ??
@@ -273,6 +292,8 @@ export function createEngineSessionRegistry(deps: EngineSessionDeps): SessionReg
 								}),
 							() => conv.id,
 						),
+						// `lsp` 工具本体（定义归宿主）：与 `patch` 同一批门控，缺省（宿主没接）= 不注册。
+						...lspToolsOf(conv),
 					],
 					{
 						planMode: () => deps.chatModes.planModeOf(conv.id),

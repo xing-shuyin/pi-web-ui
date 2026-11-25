@@ -11,6 +11,7 @@ import type { HostFaceFactories } from "./host-faces.js";
 import type { Conversation } from "../kernel/conversation/index.js";
 import type { TerminalManagerLike } from "../engine-service.js";
 import type { CoreMcpProjectsPort } from "../contracts/plugins.js";
+import type { LspPort } from "../contracts/lsp.js";
 
 export type {
 	CoreBackgroundSinks,
@@ -41,6 +42,12 @@ export interface CoreEngineOptions extends HostFaceFactories {
 		clientId: string,
 		conversation: Conversation,
 	) => Partial<import("../domains/sessions/retain.js").DisplaceRetainFacts>;
+	/**
+	 * LSP 面（宿主实现：宿主叶子 `server/lsp-tool.ts` 的 `getLiveLspDiagnostics` / `makeLspTool`）。
+	 * 语言客户端与语言服务器子进程全在宿主（内核不 spawn），这里只拿「一次诊断查询」与「工具定义」。
+	 * 缺省 = 能力未接：`patch` 不附带诊断、`lsp` 工具不注册（老口径本来就是尽力而为，不抛）。
+	 */
+	lsp?: LspPort;
 	version: string;
 	attach?: boolean;
 	agentDir?: string;

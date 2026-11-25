@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { pick, type ServerLang } from "../../i18n.js";
@@ -12,9 +13,10 @@ import { PATCH_TOOL_NAME } from "../../tool-names.js";
 /**
  * `patch` 工具（老实现 `server/patch-tool.ts` 搬进内核）：Hashline 补丁的应用入口。
  *
- * 补丁语法、锚点回写与失败文案逐字保留；差异只有一处 —— **LSP 实时诊断**还在老树的
- * `server/lsp-tool.ts`（内核没搬 `lsp`），所以这一版不附带诊断（老实现里它本身就是
- * `try {} catch {}` 的最尽力而为项，缺了不影响补丁本身）。
+ * 补丁语法、锚点回写与失败文案逐字保留；差异只有一处 —— **LSP 实时诊断**的执行体仍住在老树的
+ * `server/lsp-tool.ts`（语言客户端与语言服务器子进程都不搬进内核），由宿主面注入成
+ * `PatchToolOptions.liveDiagnostics`（=`LspPort.liveDiagnostics`）；缺省不附带诊断。
+ * 诊断本来就是老实现里 `try {} catch {}` 的最尽力而为项：没接、或它抛错，都不影响补丁本身。
  *
  * 审批/权限闸不在这里：装配时由 `wrapPatchToolWithPermission()`（`tool-guards.ts`，老实现同名函数）
  * 包一层，与 `write` / `edit` 走同一个审批口。
@@ -22,11 +24,17 @@ import { PATCH_TOOL_NAME } from "../../tool-names.js";
 export interface PatchToolOptions {
 	cwd: string;
 	lang?: () => ServerLang;
+	/**
+	 * 实时 LSP 诊断（宿主 `server/lsp-tool.ts` 的 `getLiveLspDiagnostics` 原样接入）。
+	 * 缺省 = 不附带诊断；抛错按老口径吞掉，补丁本身照旧成功。
+	 */
+	liveDiagnostics?: (absPath: string, cwd: string) => Promise<string | null>;
 }
 
 export function makePatchTool(options: PatchToolOptions) {
 	const cwd = options.cwd;
 	const getLang = options.lang ?? (() => "en");
+	const liveDiagnostics = options.liveDiagnostics;
 
 	return defineTool({
 		name: PATCH_TOOL_NAME,
@@ -69,7 +77,7 @@ Success returns the next anchor tag and live LSP diagnostics.`,
 
 			const timeoutSec = params.timeout ? Math.min(Math.max(1, params.timeout), 300) : null;
 
-			const finish = () => {
+			const finish = async () => {
 				const report = applyHashlinePatch(patchText, {
 					cwd,
 					snapshotStore: globalSnapshotStore,
@@ -98,6 +106,20 @@ Success returns the next anchor tag and live LSP diagnostics.`,
 								`\nNext edit anchor for ${targetPath}: \`${formatHashlineHeader(targetPath, r.newHash)}\``,
 							),
 						);
+						// 实时诊断是尽力而为项：宿主没接、或它抛错，都不影响补丁本身（老实现同一个 catch）。
+						try {
+							const fullPath = resolve(cwd, targetPath);
+							const diags = liveDiagnostics ? await liveDiagnostics(fullPath, cwd) : null;
+							if (diags) {
+								textOutput.push(
+									pick(
+										L,
+										`\n${targetPath} 的实时 LSP 诊断：\n${diags}`,
+										`\nLive LSP diagnostics for ${targetPath}:\n${diags}`,
+									),
+								);
+							}
+						} catch {}
 					}
 				}
 

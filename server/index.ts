@@ -147,7 +147,7 @@ import { SchedulerStore } from "./scheduler-tasks.js";
 import { deliverScheduledRun, type SchedulerWakeReceipt } from "./scheduler-delivery.js";
 import { BackgroundExecutorRegistry } from "./background-executors.js";
 import { initHttpProxy } from "./http-proxy.js";
-import { globalLspPool } from "./lsp-tool.js";
+import { getLiveLspDiagnostics, globalLspPool, makeLspTool } from "./lsp-tool.js";
 import { buildPiWebTokenCookie, decodeCookieToken, isTlsRequest } from "./auth-cookie.js";
 import { authBlocked, noteAuthFailure, resetAuth } from "./auth-throttle.js";
 import { AUTH_ERROR_PARAM, AUTH_LOGIN_PATH, loginFailureLocation, sanitizeNextPath } from "./auth-login.js";
@@ -1743,6 +1743,12 @@ function ensureEngine(engine: EngineId): EngineService {
 								sessionFile: conv.meta.sessionFile,
 							}),
 						}),
+						// LSP：客户端/语言服务器子进程全在宿主叶子 `server/lsp-tool.ts`（内核不 spawn）。
+						// `patch` 的实时诊断与 `lsp` 工具本体都从这里进去；没装语言服务器时诊断返回 null（老口径：尽力而为）。
+						lsp: {
+							liveDiagnostics: (absPath, cwd) => getLiveLspDiagnostics(absPath, cwd),
+							tool: ({ cwd, lang }) => makeLspTool({ cwd, lang }),
+						},
 						enginePermissionMode: (sinks) =>
 							createCoreEnginePermissionMode({
 								clientId: sinks.clientId,
