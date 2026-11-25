@@ -2,8 +2,6 @@ import { createSessionEditor, type EditSessionHost } from "../adapters/sdk/sessi
 import { isPersistedSession, persistSessionFile } from "../adapters/sdk/session-persist.js";
 import { sessionMessageSeqOf } from "../adapters/sdk/view.js";
 import { resolveWorkspaceSessionDir } from "../remote-workspace.js";
-import { appendFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import type { DispatchHandlers } from "../adapters/wire/index.js";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
 import type { Conversation, ConversationInit, ConversationRegistry } from "../kernel/conversation/index.js";
@@ -434,12 +432,13 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 			}
 			// 临时对话（`ephemeral`）不复用空白对话：老实现同口径，它要的是一条新记录。
 			const conv = promptEntry.startNewChat(botId, ephemeral !== true, botName);
-			try {
-				if (runtime.options.sessions) {
-					await runtime.options.sessions.ensure(conv);
-				}
-			} catch (err) {
-				console.error("[newChat session.ensure error]", err);
+			// 开会话**不等**、也不占工作区队列：new_chat 的语义是「立刻换到新对话」，而开会话可能被正在跑的
+			// 那一轮拖住（SDK 侧一条条来）。等它会把队列后面的 switch_conversation / set_cwd 一起卡死。
+			// 会话仍先开（第一轮不必再等），失败只记一笔：真错误在喂轮时会带着回来。
+			if (runtime.options.sessions) {
+				void runtime.options.sessions.ensure(conv).catch((err) => {
+					console.error("[newChat session.ensure error]", err);
+				});
 			}
 			promptEntry.publishNewChat(true);
 			onReady?.(conv.id);

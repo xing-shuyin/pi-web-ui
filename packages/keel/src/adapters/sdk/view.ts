@@ -44,10 +44,23 @@ export function projectStreamingMessage(session: TurnCapableSession | undefined)
 	return serializeStreamingMessage(last as AgentMessage);
 }
 
+/**
+ * 会话的活跃工具名（老实现 `state.tools` 的同一口径：`session.agent.state.tools` = **声明给模型的**那一批）。
+ * `TurnCapableSession` 没有写这三个方法，假体/半成品会话就回空数组。
+ */
+function activeToolNamesOf(session: TurnCapableSession | undefined): string[] {
+	const surface = session as { getActiveToolNames?(): readonly string[] } | undefined;
+	try {
+		return [...(surface?.getActiveToolNames?.() ?? [])];
+	} catch {
+		return [];
+	}
+}
+
 export function conversationViewFromSession(
 	conv: Conversation,
 	session: TurnCapableSession | undefined,
-	tools: readonly string[] = [],
+	tools?: readonly string[],
 ): SnapshotConversationView {
 	return {
 		conversationId: conv.id,
@@ -62,7 +75,7 @@ export function conversationViewFromSession(
 		thinkingLevel: session?.thinkingLevel ?? "off",
 		availableThinkingLevels: session?.getAvailableThinkingLevels?.() ?? [],
 		bot: conv.meta.botId ? { id: conv.meta.botId, name: conv.meta.botName ?? conv.meta.botId } : null,
-		tools: [...tools],
+		tools: [...(tools ?? activeToolNamesOf(session))],
 		steering: conv.queues.texts("steer"),
 		followUp: conv.queues.texts("followUp"),
 	};

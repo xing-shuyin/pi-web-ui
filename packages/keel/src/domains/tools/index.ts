@@ -15,6 +15,8 @@ export {
 	loadedLazyToolsOf,
 	markLazyToolsLoaded,
 } from "./lazy-state.js";
+export { pendingLazyToolNames, planLazyTools, type LazyLoadPlan } from "./lazy-load.js";
+export { autoActivateLazyTool, replayToolGate, type ToolGateReplayResult } from "./gate-replay.js";
 export { resolveToolLoadout, type ToolLoadout, type ToolLoadoutInput } from "./loadout.js";
 export { createToolInfoHandlers, type ToolInfoHandlers, type ToolInfoHandlersOptions } from "./info.js";
 export {

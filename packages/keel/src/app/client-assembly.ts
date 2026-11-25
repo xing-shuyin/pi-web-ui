@@ -338,7 +338,11 @@ export function assembleClient(ctx: ClientAssemblyContext): {
 		langOf: () => ctx.langOf(runtime.clientId),
 		setLang: (next) => ctx.setLang(runtime.clientId, next),
 		isDisposed: () => ctx.runtimes.get(runtime.clientId) !== runtime,
-		applyChatMode: (kind, enabled, conversationId) => chatModes.setMode(kind, enabled, conversationId),
+		applyChatMode: (kind, enabled, conversationId) => {
+			chatModes.setMode(kind, enabled, conversationId);
+			// 模式是门控的输入（计划模式剔写工具）：拨完开关必须重放，否则「快照说计划模式、活跃集里写工具还在」。
+			if (conversationId) sessions.replayToolGating(conversationId);
+		},
 		notifyMobile: (event) => void ctx.onNotificationEvent?.(event),
 		...(ctx.pluginCommandsProvider ? { pluginCommands: () => ctx.pluginCommandsProvider?.() ?? [] } : {}),
 		...(ctx.pluginBgTasksProvider ? { pluginTasks: () => ctx.pluginBgTasksProvider?.() ?? [] } : {}),

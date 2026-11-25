@@ -20,6 +20,10 @@ export interface SessionRegistryOptions {
 	uiContextOf?(conversation: Conversation): unknown;
 	onOpened?(conversation: Conversation, opened: OpenedSession): void;
 	onClosed?(conversationId: string): void;
+	/** 注册表把所有会话都关掉之后（客户端断开）：长生命周期的订阅在这里收口。 */
+	onCloseAll?(): void;
+	/** 门控重放（计划/审查者模式拨开关之后）：活动集的写口在 app 层，注册表只负责转发。 */
+	replayToolGating?(conversationId?: string): void;
 }
 
 export class SessionUnavailableError extends Error {
@@ -59,6 +63,11 @@ export class SessionRegistry {
 
 	get(conversationId: string): OpenedSession | undefined {
 		return this.byConversation.get(conversationId);
+	}
+
+	/** 模式开关拨完之后的门控重放（会话没开就什么也不做：开会话时 `onOpened` 会重放一次）。 */
+	replayToolGating(conversationId?: string): void {
+		this.options.replayToolGating?.(conversationId);
 	}
 
 	transferFrom(other: SessionRegistry, sourceId: string, targetId: string): OpenedSession | undefined {
@@ -120,6 +129,7 @@ export class SessionRegistry {
 
 	closeAll(): void {
 		for (const id of this.byConversation.keys()) this.close(id);
+		this.options.onCloseAll?.();
 	}
 
 	openCount(): number {

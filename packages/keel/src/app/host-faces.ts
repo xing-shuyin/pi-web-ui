@@ -193,6 +193,13 @@ export interface CoreSettingsSinks {
 	getApprovalPolicy(): UiApprovalPolicyState;
 	/** 语言由引擎持有（`SettingsService` 只管读，写口在这里）。 */
 	lang: { get(): ServerLang; set(next: ServerLang): void };
+	/**
+	 * 设置变了之后的工具门控重放（老实现 SettingsService → host.applyToolGating()）：
+	 * **单一实现**在内核（domains/tools/gate-replay.ts），宿主那条旧分支看到这个口就不再自己算，
+	 * 否则「按需加载 / 预设 / 禁用」会有两套判据（加载过的工具会被没有已加载集的第二套误卸）。
+	 * 不给 conversationId = 所有已开会话都重放。
+	 */
+	replayToolGating?(conversationId?: string): void;
 	/** 设置变更后要刷新的对话帧；新树的快照域在 W5 接上，缺省不发。 */
 	flushSnapshot?(): void;
 }
@@ -346,11 +353,13 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 		flushSnapshot: () => runtime.publisher.request(),
 		transcriptOf: (conversationId) => {
 			const conv = chatModeConv(conversationId);
-			return conv ? chatModeTranscriptOf(sessions.get(conv.id)) : undefined;
+			return conv ? chatModeTranscriptOf(sessions.get(conv.id), () => sessions.replayToolGating(conv.id)) : undefined;
 		},
 		ensureTranscript: async (conversationId) => {
 			const conv = chatModeConv(conversationId);
-			return conv ? chatModeTranscriptOf(await sessions.ensure(conv)) : undefined;
+			return conv
+				? chatModeTranscriptOf(await sessions.ensure(conv), () => sessions.replayToolGating(conv.id))
+				: undefined;
 		},
 		setMode: (kind, enabled, conversationId) => deps.applyChatMode(kind, enabled, chatModeConv(conversationId)?.id),
 	});
@@ -377,6 +386,7 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 			return opened.session;
 		},
 		getSessionOf: (conversationId) => sessions.get(conversationId)?.session,
+		replayToolGating: (conversationId) => sessions.replayToolGating(conversationId),
 		cwd,
 		agentDir,
 		isStreaming: () => runtime.streamingCount() > 0,

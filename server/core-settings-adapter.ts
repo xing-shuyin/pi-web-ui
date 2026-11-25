@@ -384,7 +384,27 @@ export function createCoreSettingsHost(options: CoreSettingsAdapterOptions): Set
 		} catch {}
 	};
 
+	const applyToolPromptOverridesFor = (
+		sess: unknown,
+		settings: { toolPromptOverrides?: Record<string, any> },
+	): void => {
+		if (!sess) return;
+		const sessionOverrides: Record<string, any> = {};
+		for (const [k, v] of Object.entries(settings.toolPromptOverrides ?? {})) {
+			sessionOverrides[k] = { ...v, promptGuidelines: [] };
+		}
+		applyToolPromptOverrides(sess as unknown as ToolPromptSessionLike, sessionOverrides);
+	};
+
 	const applyToolGating = (): void => {
+		// 内核给了重放口 = 门控**只走内核**（判据含按需已加载集合，单一实现在
+		// packages/keel/src/domains/tools/gate-replay.ts）；这里只剩「提示词覆写」这一半，
+		// 它不归门控判据管，所以不能跟着一起 return 掉。
+		if (options.replayToolGating) {
+			options.replayToolGating();
+			applyToolPromptOverridesFor(options.getSession(), options.stateStore.getSettings(options.clientId));
+			return;
+		}
 		try {
 			const sess = options.getSession() as any;
 			if (!sess) return;
@@ -406,11 +426,7 @@ export function createCoreSettingsHost(options: CoreSettingsAdapterOptions): Set
 			applyAgentToolsGating(sess, [...disabled], targetPreset, {
 				forceActive: lazyOn && targetPreset !== "ask" ? [LOAD_TOOLS_TOOL_NAME, ...loadedNames] : [],
 			});
-			const sessionOverrides: Record<string, any> = {};
-			for (const [k, v] of Object.entries(settings.toolPromptOverrides ?? {})) {
-				sessionOverrides[k] = { ...v, promptGuidelines: [] };
-			}
-			applyToolPromptOverrides(sess as unknown as ToolPromptSessionLike, sessionOverrides);
+			applyToolPromptOverridesFor(sess, settings);
 		} catch {}
 	};
 

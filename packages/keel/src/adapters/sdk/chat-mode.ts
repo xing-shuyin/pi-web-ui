@@ -21,13 +21,26 @@ export interface ChatModeTranscript {
 }
 
 /** 会话 → 转录窄面；会话还没开 / 已退役 / 拿不到条目树时返回 `undefined`（调用方按失败处理）。 */
-export function chatModeTranscriptOf(opened: OpenedSession | undefined): ChatModeTranscript | undefined {
+export function chatModeTranscriptOf(
+	opened: OpenedSession | undefined,
+	/** reload 之后跑一次（SDK 重载会把全部自定义工具重新激活，门控必须在这之后重放）。 */
+	afterReload?: () => void,
+): ChatModeTranscript | undefined {
 	const session = opened?.session as unknown as Partial<Pick<AgentSession, "sessionManager" | "reload">> | undefined;
 	const manager = session?.sessionManager;
 	if (!manager || typeof manager.appendCustomEntry !== "function") return undefined;
 	const reload = session?.reload;
 	if (typeof reload !== "function") return { manager };
-	return { manager, reload: () => Promise.resolve(reload.call(session)) };
+	return {
+		manager,
+		reload: async () => {
+			try {
+				await reload.call(session);
+			} finally {
+				afterReload?.();
+			}
+		},
+	};
 }
 
 export interface ChatModeGateOptions {

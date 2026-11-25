@@ -8,6 +8,9 @@
 > `lazyLoadingDisabledTools`）、`server/prompt-composer.ts`（提示词目录段）、
 > `server/tool-prompt-overrides.ts`（逐工具文案覆盖）、`server/agent-service.ts`
 > 的 `applyToolGating` / `lazyToolCatalog` / `promptToolCatalog` / `loadLazyTools`。
+> keel 引擎（默认引擎）的同一套语义在 `packages/keel/src/domains/tools/gate-replay.ts`（门控重放 + JIT）、
+> `domains/tools/lazy-load.ts`（`load_tools` 判定）、`adapters/tools/load-tools.ts`（工具本体）、
+> `app/tool-gating.ts`（宿主口接线）。
 
 ## 请求级只读结果去重
 
