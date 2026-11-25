@@ -14,6 +14,18 @@ export interface ConversationDispatchOptions {
 	viewOf?(conversation: Conversation): SnapshotConversationView | undefined;
 	/** 出快照（切对话 / 计数变化后）。 */
 	requestSnapshot(): void;
+	/** `conversations` 帧（老 `emitConversations`）：换活动对话、移出一行之后要推。 */
+	pushConversations?(): void;
+	/**
+	 * 移出当前对话前先腾位（老 `vacateActive`）：返回活动指针是否已经离开 `id`。
+	 * 缺失 = 腾不了（保持老接口形状，没接端口时宁可不动）。
+	 */
+	vacateActive?(id: string): Promise<boolean>;
+	/**
+	 * 换活动对话前的腾位（老 `switchConversation` 开头的 `displaceActive()`）：
+	 * 正在跑 / 被保留的那条要记进运行列表，否则它这一轮跑完就从列表里消失。
+	 */
+	displacePrevious?(conversation: Conversation): void;
 	onActivated?(id: string): void;
 	now(): number;
 	isAllowedPath?(path: string): boolean;
@@ -78,10 +90,15 @@ export function createConversationDispatchHandlers(options: ConversationDispatch
 				notice("warning", "该对话不存在或已关闭", "This conversation does not exist or is already closed");
 				return;
 			}
+			// 老 `switchConversation` 的顺序：先把旧对话腾位（保留 / 退役），再换活动指针。
+			const previous = options.registry.activeConv();
+			if (previous && previous.id !== id) options.displacePrevious?.(previous);
 			options.registry.activate(id);
 			options.onActivated?.(id);
 			// 跨项目的运行中对话：切过去连项目一起切（老 `switchConversation` 末尾的 cwd 收尾）。
 			options.followActiveProject?.();
+			// 老顺序：`emitConversations()` 先（列表的 activeId 跟着走）再 `flushSnapshot()`。
+			options.pushConversations?.();
 			options.requestSnapshot();
 		},
 
@@ -131,6 +148,26 @@ export function createConversationDispatchHandlers(options: ConversationDispatch
 		},
 
 		async dismissConversation(id: string, withFinishedSubagents?: boolean): Promise<void> {
+			const conversation = options.registry.get(id as ConversationId);
+			if (!conversation) {
+				notice("warning", "该对话不存在或已关闭", "This conversation does not exist or is already closed");
+				return;
+			}
+			// 老 `vacateActive`：移出的就是当前对话时，先给活动指针找个接替者。腾不开就不移出——
+			// 否则活动指针（快照 / 列表的 `conversationId`）会指向一条已经摘出注册表的对话。
+			if (options.registry.activeId() === id) {
+				const vacated = (await options.vacateActive?.(id)) ?? false;
+				if (!vacated) {
+					notice(
+						"warning",
+						`当前对话「${conversation.meta.title}」暂时无法移出（无法创建接替对话）`,
+						`Cannot dismiss the active conversation "${conversation.meta.title}" right now (no replacement chat available)`,
+					);
+					options.pushConversations?.();
+					options.requestSnapshot();
+					return;
+				}
+			}
 			await dismissConversation({
 				registry: options.registry,
 				conversationId: id as ConversationId,
@@ -139,6 +176,9 @@ export function createConversationDispatchHandlers(options: ConversationDispatch
 				...(options.isAllowedPath ? { isAllowedPath: options.isAllowedPath } : {}),
 				closeSession: (convId) => options.closeSession?.(convId),
 			});
+			// 老 `emitConversations()` + `flushSnapshot()`：不移出帧，左栏还顶着已关掉的那一行。
+			options.pushConversations?.();
+			options.requestSnapshot();
 		},
 
 		async abort(): Promise<void> {

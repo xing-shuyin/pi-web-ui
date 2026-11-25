@@ -336,11 +336,23 @@ describe("app · 会话管理 handler", () => {
 
 	it("dismissConversation 退役并从注册表摘除，幂等", async () => {
 		const { runtime } = adminRuntime();
+		// 移出的是**非当前**对话（老 `shownInRunningList` 口径：当前空白对话不移出，它已经是“新对话”）。
 		runtime.createConversation({ id: "c1", kind: "user", createdAt: 1 });
+		runtime.createConversation({ id: "c2", kind: "user", createdAt: 1 });
 		const cs = runtime.handlers();
 		await cs.dismissConversation("c1");
 		expect(runtime.registry.has("c1")).toBe(false);
 		await expect(cs.dismissConversation("c1")).resolves.toBeUndefined();
+	});
+
+	it("dismissConversation 移出当前对话先腾位：活动指针落到接替者，旧的那条仍被摘除", async () => {
+		const { runtime } = adminRuntime();
+		// 带会话文件 = 已经开过（不是空白对话），`newChat` 不会复用它，腾位才能真的换指针。
+		runtime.createConversation({ id: "c1", kind: "user", createdAt: 1, sessionFile: "/agent/sessions/x.jsonl" });
+		await runtime.handlers().dismissConversation("c1");
+		expect(runtime.registry.has("c1")).toBe(false);
+		expect(runtime.registry.activeId()).not.toBe("c1");
+		expect(runtime.registry.activeId()).not.toBe("");
 	});
 
 	it("deleteSession 在路径不被允许时不动注册表", async () => {

@@ -46,6 +46,11 @@ export interface SessionEntityOptions {
 
 export interface SessionEntityHandlers {
 	switchSession(path: string, sessionId?: string, independent?: boolean): Promise<void>;
+	/**
+	 * 换活动对话前的腾位（老 `displaceActive`）：保留（记进运行列表）/ 否则退役并释放。
+	 * `switchSession` 的复用路径已经在内部走它；`switchConversation` / `new_chat` 也要走同一份。
+	 */
+	displace(conversation: Conversation): void;
 }
 
 /** 会话 header 里的真实 cwd（远程工作区 URI 会先还原）；读不出来就用当前工作区兜底。 */
@@ -125,6 +130,8 @@ export function createSessionEntityHandlers(options: SessionEntityOptions): Sess
 		});
 	};
 	return {
+		// 先腾位再换指针（`reuse` 与两个换对话入口共用这一份，不另写判据）。
+		displace: (conversation: Conversation) => options.displace?.(conversation),
 		// 不用 `async` 包：端口缺失的抛错必须是**同步**的（wire 层这里是 `void` 调用，不能变成 unhandled）。
 		switchSession(path: string, sessionId?: string, _independent?: boolean): Promise<void> {
 			const rebind = rebindOf("switchSession");

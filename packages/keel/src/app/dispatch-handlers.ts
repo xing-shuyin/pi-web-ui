@@ -118,6 +118,9 @@ export interface DispatchAssembly {
 export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssembly {
 	const frames = (): ClientFrames => runtime.requireFrames();
 	const surface = runtime.surface();
+	/** 腾位口晚绑定：`promptEntry` / 对话级派发在本函数后半段才成型，构造期不能自引（见 `vacateActive`）。 */
+	let switchTo: ((id: string) => Promise<void>) | undefined;
+	let newBlankChat: (() => Promise<unknown>) | undefined;
 
 	/** 供应商/模型管理面的 24 个 handler：全部转发给宿主端口，未注入即逐个同步抛 `CoreEngineNotReadyError`。 */
 	const providerHandlers = createProviderHandlers({
@@ -216,6 +219,31 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 		workspace: () => surface.workspace(),
 	});
 
+	/** 换活动对话前的腾位（老 `displaceActive`）：判据与吸收在 `domains/sessions`；没接会话注册表就无可释放。 */
+	const displacePrevious = (conversation: Conversation): void => {
+		if (runtime.options.sessions) surface.entity().displace(conversation);
+	};
+
+	/**
+	 * 移出当前对话前的腾位（老 `vacateActive`）：活动指针必须先离开要移出的那条，否则快照与运行列表的
+	 * `conversationId` 还指着一条已摘出注册表的对话。继任者同老意图「挑一条用户看得见的行」：优先还在跑 /
+	 * 已有内容的对话，都没有就开一条空白对话（老实现读 `conv.listed`；内存态只写不读，这里换了等价证据）。
+	 * **先切后拆**——建不出接替者就不移出（返回 false）。
+	 */
+	async function vacateActive(id: string): Promise<boolean> {
+		if (runtime.registry.activeId() !== id) return true;
+		const sessions = runtime.options.sessions;
+		const other = runtime.registry.list().find((conv) => {
+			if (conv.id === id) return false;
+			if (conv.phase === "running") return true;
+			const messages = sessions?.get(conv.id)?.session.messages;
+			return Array.isArray(messages) && messages.length > 0;
+		});
+		if (other) await switchTo?.(other.id);
+		else await newBlankChat?.();
+		return runtime.registry.activeId() !== id;
+	}
+
 	/** 对话级派发：只依赖注册表 + 帧出口 + 叶子（不碰会话实体）。 */
 	const conversationDispatch = createConversationDispatchHandlers({
 		registry: runtime.registry,
@@ -226,6 +254,10 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 		// 跨项目切对话（老 `applyCwdSideEffects`）：只跟工作区，不重绑会话。
 		followActiveProject: () => surface.followActiveProject(),
 		requestSnapshot: () => runtime.publisher.request(),
+		pushConversations: () => runtime.pushConversations(),
+		vacateActive,
+		// 老 `switchConversation` 开头的 `displaceActive()`。
+		displacePrevious,
 		now: () => runtime.options.clock.now(),
 		...(runtime.options.isAllowedPath ? { isAllowedPath: runtime.options.isAllowedPath } : {}),
 		closeSession: (id) => runtime.options.sessions?.close(id),
@@ -236,6 +268,8 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 			await opened?.session.abort?.();
 		},
 	});
+	// 腾位要切的对话与要开的空白对话，都在这份装配里（构造期不能自引，只在实际移出时取值）。
+	switchTo = (id) => conversationDispatch.switchConversation(id);
 
 	/** 选模型 / 思考档 / 全局默认模型：会话取「当前对话」；默认模型帧由组合根提供，没装配就不发。 */
 	const models = createModelSwitchers({
@@ -431,7 +465,11 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 				} catch {}
 			}
 			// 临时对话（`ephemeral`）不复用空白对话：老实现同口径，它要的是一条新记录。
+			const previous = runtime.registry.activeConv();
 			const conv = promptEntry.startNewChat(botId, ephemeral !== true, botName);
+			// 老 `newChat` 的 `displaceActive()`：换到新对话后立刻给旧对话腾位——正在跑 / 被保留的记进运行列表，
+			// 否则它这一轮跑完就从列表里消失（`inRunningList` 按 `listed` 判）。复用空白对话时 `previous === conv`，不腾。
+			if (previous && previous.id !== conv.id) displacePrevious(previous);
 			// 开会话**不等**、也不占工作区队列：new_chat 的语义是「立刻换到新对话」，而开会话可能被正在跑的
 			// 那一轮拖住（SDK 侧一条条来）。等它会把队列后面的 switch_conversation / set_cwd 一起卡死。
 			// 会话仍先开（第一轮不必再等），失败只记一笔：真错误在喂轮时会带着回来。
@@ -543,6 +581,8 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 		// 对话级派发（切对话 / 终端归属 / 脚本 / 计数 / 消息 / 改名 / 关闭 / 中止）。
 		...conversationDispatch,
 	};
+	// 分发表晚绑定：腾位（`vacateActive`）要用同一份 `newChat`（构造期不能自引，只在实际移出时取值）。
+	newBlankChat = async () => handlers.newChat?.();
 
 	return {
 		handlers,
