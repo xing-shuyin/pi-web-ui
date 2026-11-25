@@ -119,12 +119,12 @@ export const ENV_SPECS: readonly EnvSpec[] = [
 	{
 		name: "PI_WEB_PI_ENGINE",
 		scope: "internal",
-		note: "新树（server/core）接管 pi 引擎的开关；core 未完成前不进 env-vars.md。",
+		note: "Legacy：已不可达（server/index.ts 恒建 CoreEngine）。保留注册仅供 env 守卫审计。",
 	},
 	{
 		name: "PI_WEB_PI_ENGINE_ATTACH",
 		scope: "internal",
-		note: "新引擎 attach 的显式开关（快照投影未接前默认关闭）。",
+		note: "新引擎 attach 的显式开关（`PI_WEB_PI_ENGINE_ATTACH=0` 只建引擎不接连接）。",
 	},
 	{ name: "PI_WEB_PKG_ROOT", scope: "internal" },
 	{ name: "PI_WEB_PLUGIN_FORCE_REMOTE", scope: "internal" },

@@ -145,6 +145,7 @@ keel 只定义端口 `contracts/lsp.ts`（`liveDiagnostics` / `tool`）——内
 `agent-service.ts` 删除的前置条件（缺一不可）：
 
 - [x] `PI_WEB_PI_ENGINE=core` 已成为默认（`app/engine-mode.ts`，回滚开关 `legacy` 仍在）；
+      `server/index.ts` **已直连 `CoreEngine`**，不再经由 `AgentService` 或 `resolvePiEngineMode()` 分支；
       `npm run smoke` 全量 **96/98**，两条红都与引擎无关（`universal-stream-ui-test` 前端 fixture、
       `native-cli-smoke-test` 用 `legacy` 跑同样红）；
 - [x] 165（实际 **185**）个 handler 全部有真实现，无「本引擎不支持」的空白项；
@@ -154,7 +155,8 @@ keel 只定义端口 `contracts/lsp.ts`（`liveDiagnostics` / `tool`）——内
 
 **下线 `legacy` 的代价**：删 `server/agent-service.ts`（约 1.6 万行）+ 上面那批白盒测试重写。
 收益只是「不留一份会漂移的第二实现」；风险是丢失唯一的外部对照基线。
-建议：先按现状发布（两套引擎都在、默认走 keel），等 keel 独自跑满一个发布周期再删。
+**当前**：生产入口 `server/index.ts` 已不再引用 `AgentService`，legacy 在运行时不可达；
+`agent-service.ts` 和 `agent-service-daemon.ts` 仅被 78 个白盒测试通过 `fake-session.ts` 引用。
 
 ## 3. 子代理协作协议
 
