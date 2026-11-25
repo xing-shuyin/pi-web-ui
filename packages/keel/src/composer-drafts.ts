@@ -1,6 +1,6 @@
 import { readFileSync, renameSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import { writeJsonAtomic } from "./atomic-file.js";
+import { createSerializedJsonWriter, type SerializedJsonWriter } from "./serialized-json-writer.js";
 
 export const DRAFT_TEXT_MAX = 20_000;
 export const DRAFT_TTL_MS = 30 * 24 * 3600 * 1000;
@@ -34,6 +34,8 @@ function isValidDraft(d: unknown): d is ComposerDraft {
 interface DraftFileState {
 	cache: Record<string, ComposerDraft> | null;
 	clearedAt: Map<string, number>;
+	/** 同一文件只有一个写队列（多个 store 实例共用这份 state，否则并发写仍会互相覆盖）。 */
+	writer?: SerializedJsonWriter;
 }
 const draftFiles = new Map<string, DraftFileState>();
 
@@ -88,7 +90,9 @@ export class ComposerDraftsStore {
 	}
 
 	private async persist(next: Record<string, ComposerDraft>): Promise<void> {
-		await writeJsonAtomic(this.filePath, next);
+		// 草稿是真值且写得很频（每次输入都可能落盘）：主文件必须排队写，否则并发时旧草稿会覆盖新草稿。
+		this.state.writer ??= createSerializedJsonWriter(this.filePath, { label: "composer-drafts" });
+		await this.state.writer.writeNow(next);
 		this.state.cache = next;
 	}
 

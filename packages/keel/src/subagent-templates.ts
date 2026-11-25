@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs";
-import { writeJsonAtomic } from "./atomic-file.js";
 import { createSerializedJsonWriter, type SerializedJsonWriter } from "./serialized-json-writer.js";
 import type { PromptMode } from "./settings-schema.js";
 import { isTraditionalLocale, type ServerLang } from "./i18n.js";
@@ -611,16 +610,14 @@ function seededPathOf(filePath: string): string {
 
 export class SubagentTemplatesStore {
 	private templates: SubagentTemplate[] | null = null;
-	/** `.seeded.json` 的可重建标记：`load()` 是同步读，只能排队写；同一文件共用一个队列。 */
-	private seededWriter: SerializedJsonWriter | null = null;
+	/** 两条队列各管一份文件：`main` = 真值（save/delete 并发时不许互相覆盖），`seeded` = 可重建的播种标记。 */
+	private readonly writers: Record<"main" | "seeded", SerializedJsonWriter | null> = { main: null, seeded: null };
 
 	constructor(private readonly filePath: string) {}
 
-	private writer(): SerializedJsonWriter {
-		if (!this.seededWriter) {
-			this.seededWriter = createSerializedJsonWriter(this.seededPath(), { label: "subagent-templates.seeded" });
-		}
-		return this.seededWriter;
+	private writer(kind: "main" | "seeded"): SerializedJsonWriter {
+		const file = kind === "main" ? this.filePath : this.seededPath();
+		return (this.writers[kind] ??= createSerializedJsonWriter(file, { label: `subagent-templates.${kind}` }));
 	}
 
 	private load(): SubagentTemplate[] {
@@ -656,10 +653,13 @@ export class SubagentTemplatesStore {
 		return this.templates;
 	}
 
+	/** 主文件排队写：save / delete 都是 fire-and-forget 派发，裸写并发会让旧快照盖回新状态。 */
 	private async persist(): Promise<void> {
 		try {
-			await writeJsonAtomic(this.filePath, this.templates);
-		} catch {}
+			await this.writer("main").writeNow(this.templates);
+		} catch {
+			this.writers.main = null;
+		}
 	}
 
 	private seededNames: Set<string> | null = null;
@@ -685,10 +685,10 @@ export class SubagentTemplatesStore {
 		this.seededNames = names;
 		// 播种标记是投影（内存里刚刚已经记下），丢了顶多把内置模板再露一次：排队写。
 		// 队列的链一经拒绝就永久拒绝（见 `serialized-json-writer`），所以失败后换新链。
-		void this.writer()
+		void this.writer("seeded")
 			.writeNow([...names].sort())
 			.catch(() => {
-				this.seededWriter = null;
+				this.writers.seeded = null;
 			});
 	}
 

@@ -1,5 +1,4 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { writeJsonAtomic } from "./atomic-file.js";
 import { createSerializedJsonWriter, type SerializedJsonWriter } from "./serialized-json-writer.js";
 import { DEFAULT_APPROVAL_RULES } from "./approval-default-rules.js";
 import { isInsideRoots } from "./path-boundary.js";
@@ -499,12 +498,21 @@ export class ApprovalRulesStore {
 
 	private async persist(): Promise<void> {
 		try {
-			await writeJsonAtomic(this.filePath, this.rules ?? []);
+			// 主文件排队写：`save_approval_rules` / `delete_approval_rule` 都是 fire-and-forget 派发，
+			// 两笔裸写并发时旧快照可能后落盘（删掉的规则被上一笔刚写的列表盖回去）。
+			this.mainWriter ??= createSerializedJsonWriter(this.filePath, { label: "approval-rules" });
+			await this.mainWriter.writeNow(this.rules ?? []);
 			try {
 				this.lastMtime = statSync(this.filePath).mtimeMs;
 			} catch {}
-		} catch {}
+		} catch {
+			// 落盘失败不向调用方抛（老口径同一 catch）：队列链自愈，下一笔重新排队。
+			this.mainWriter = null;
+		}
 	}
+
+	/** 主文件写入器（懒建）：与 `.seeded.json` 各自的队列互不影响。 */
+	private mainWriter: SerializedJsonWriter | null = null;
 
 	list(): ApprovalRule[] {
 		return this.load().map((r) => ({ ...r, tools: [...r.tools] }));

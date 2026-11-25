@@ -90,6 +90,20 @@ describe("SubagentTemplatesStore", () => {
 		expect(raw.find((t) => t.name === "review")).toBeUndefined();
 	});
 
+	it("并发 save / delete 按提交顺序落盘（派发是 fire-and-forget，旧快照不许盖回新状态）", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "satpl-"));
+		dirs.push(dir);
+		const file = join(dir, "subagent-templates.json");
+		const store = new SubagentTemplatesStore(file);
+		// 两笔都不 await：真实派发是 `void cs.saveSubagentTemplate(...)` / `void cs.deleteSubagentTemplate(...)`。
+		const saving = store.upsert({ ...base, description: "并发保存" });
+		const removing = store.remove("reviewer");
+		await Promise.all([saving, removing]);
+		const raw = JSON.parse(readFileSync(file, "utf8")) as SubagentTemplate[];
+		// 后提交的是删除：磁盘上不许再有 reviewer（裸 `writeJsonAtomic` 并发时这里会被旧快照盖回去）。
+		expect(raw.find((t) => t.name === "reviewer")).toBeUndefined();
+	});
+
 	it("非法名称拒绝保存", async () => {
 		const store = tmpStore();
 		expect(await store.upsert({ ...base, name: "   " })).toMatch(/名称/);
