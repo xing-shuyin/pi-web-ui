@@ -59,6 +59,7 @@ import { resolvePiEngineAttach } from "../packages/keel/src/app/engine-mode.js";
 import { createGroupRouterModelDirectory } from "./group-router-models.js";
 import { createCoreModelAdmin } from "./core-model-adapter.js";
 import { createCoreSettingsAdapter } from "./core-settings-adapter.js";
+import { MarkerService } from "./marker-service.js";
 import { createCoreSlashCommands } from "./core-commands-adapter.js";
 import { createCoreAttachments } from "./core-attachments-adapter.js";
 import { createCoreFiles } from "./core-files-adapter.js";
@@ -91,6 +92,13 @@ import { scheduleUploadCleanup } from "./uploads.js";
 import { ensureWindowsBash, windowsBashDir } from "./ensure-bash.js";
 import { augmentNodePath, augmentNodePathFromShell } from "./node-path.js";
 import { listThemes, readThemeCss, resolveThemeFile } from "./themes.js";
+import {
+	installCommunityTheme,
+	OFFICIAL_THEME_CATALOG_URL,
+	readThemeCatalog,
+	syncThemeCatalog,
+	uninstallCommunityTheme,
+} from "./theme-catalog.js";
 import { isManaged, managedRefusal } from "./managed.js";
 import { launchOrigin, toServiceInfo } from "./launch-origin.js";
 import { acquireKernelLock, formatLockDenied, releaseKernelLock } from "../shared/instance-lock.js";
@@ -981,9 +989,53 @@ function resolvePkgRoot(): string {
 const pkgRoot = resolvePkgRoot();
 const BUILTIN_THEMES_DIR = join(pkgRoot, "themes");
 const USER_THEMES_DIR = join(DATA_DIR, "themes");
+const THEME_CATALOG_PATH = join(DATA_DIR, "theme-catalog.json");
+const BOOT_THEME_CATALOG_URL =
+	process.env.PI_WEB_THEME_CATALOG_URL === undefined
+		? OFFICIAL_THEME_CATALOG_URL
+		: process.env.PI_WEB_THEME_CATALOG_URL.trim();
+const bootThemeCatalogDisabled = !BOOT_THEME_CATALOG_URL || /^(0|off|false|no)$/i.test(BOOT_THEME_CATALOG_URL);
 
 app.get("/api/themes", (_req, res) => {
 	res.json({ themes: listThemes(BUILTIN_THEMES_DIR, USER_THEMES_DIR) });
+});
+app.get("/api/themes/catalog", (_req, res) => {
+	res.json({
+		...readThemeCatalog(THEME_CATALOG_PATH),
+		defaultUrl: OFFICIAL_THEME_CATALOG_URL,
+	});
+});
+app.post("/api/themes/catalog/sync", async (req, res) => {
+	const rawUrl = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+	const targetUrl = rawUrl || BOOT_THEME_CATALOG_URL || OFFICIAL_THEME_CATALOG_URL;
+	const result = await syncThemeCatalog(targetUrl, THEME_CATALOG_PATH);
+	if (!result.ok) {
+		res.status(502).json({ ok: false, error: result.error || "Theme catalog sync failed" });
+		return;
+	}
+	res.json({
+		ok: true,
+		...readThemeCatalog(THEME_CATALOG_PATH),
+		defaultUrl: OFFICIAL_THEME_CATALOG_URL,
+	});
+});
+app.post("/api/themes/install", async (req, res) => {
+	const id = typeof req.body?.id === "string" ? req.body.id.trim() : "";
+	const cssUrl = typeof req.body?.cssUrl === "string" ? req.body.cssUrl.trim() : undefined;
+	const result = await installCommunityTheme(id, USER_THEMES_DIR, THEME_CATALOG_PATH, { cssUrl });
+	if (!result.ok) {
+		res.status(400).json({ ok: false, error: result.error || "Failed to install theme" });
+		return;
+	}
+	res.json({ ok: true, themes: listThemes(BUILTIN_THEMES_DIR, USER_THEMES_DIR) });
+});
+app.delete("/api/themes/:id", (req, res) => {
+	const id = String(req.params.id ?? "").trim();
+	if (!uninstallCommunityTheme(id, USER_THEMES_DIR)) {
+		res.status(404).json({ ok: false, error: "Theme not installed or cannot be removed" });
+		return;
+	}
+	res.json({ ok: true, themes: listThemes(BUILTIN_THEMES_DIR, USER_THEMES_DIR) });
 });
 const DEFAULT_LOCALE = resolveSystemDefaultLocale();
 
@@ -1642,7 +1694,22 @@ function ensureEngine(engine: EngineId): EngineService {
 			// 远程工作区里的内置写/编辑工具要用 SFTP：只有宿主知道怎么建这些操作。
 			terminalManager: ({ emit, cwd, lang }) => new TerminalManager(emit, cwd, lang),
 			remoteOpsOf: (cwd) => (isRemoteWorkspaceUri(cwd) ? createRemoteSdkOperations(cwd) : undefined),
-			settingsFrame: (sinks) => createCoreSettingsAdapter({ ...sinks, stateStore: sharedStateStore }),
+			settingsFrame: (sinks) =>
+				createCoreSettingsAdapter({
+					...sinks,
+					stateStore: sharedStateStore,
+					markers: new MarkerService({
+						clientId: sinks.clientId,
+						stateStore: sharedStateStore,
+						emit: sinks.emit,
+						isDisposed: sinks.isDisposed,
+						getActiveConversationId: () => "",
+						getSessionManager: () => undefined,
+						renameConversation: () => {},
+						refreshMarkers: () => {},
+						lang: () => sinks.lang.get(),
+					}),
+				}),
 			slashCommands: (sinks) => createCoreSlashCommands(sinks),
 			// 附件：解析 / 落盘 / `<file>` 旁注全在宿主 `server/attachments.ts`，内核只交端口。
 			attachments: () => createCoreAttachments(),
@@ -3622,6 +3689,16 @@ if (!bootCatalogDisabled) {
 		} else {
 			console.log(`[catalog] 插件市场列表预同步完成（共 ${(r.entries ?? []).length} 个条目，按需安装）`);
 		}
+	});
+}
+
+if (!bootThemeCatalogDisabled) {
+	void syncThemeCatalog(BOOT_THEME_CATALOG_URL, THEME_CATALOG_PATH).then((r) => {
+		if (!r.ok) {
+			console.warn(`[theme-catalog] 社区主题目录预同步失败（不阻断启动）: ${r.error}`);
+			return;
+		}
+		console.log(`[theme-catalog] 社区主题目录预同步完成（共 ${(r.entries ?? []).length} 个条目，按需安装）`);
 	});
 }
 

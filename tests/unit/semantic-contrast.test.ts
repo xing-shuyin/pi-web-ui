@@ -85,8 +85,8 @@ describe("语义色实底的前景对比度", () => {
 	const themeFiles = readdirSync(THEMES_DIR).filter((f) => f.endsWith(".css"));
 	const cases = themeFiles.map((file) => ({ file, css: readFileSync(join(THEMES_DIR, file), "utf8") }));
 
-	it("扫描到了足够多的主题（防止解析器失效后静默全跳过）", () => {
-		expect(cases.length).toBeGreaterThanOrEqual(20);
+	it("扫描到了内置主题（防止解析器失效后静默全跳过）", () => {
+		expect(cases.length).toBeGreaterThanOrEqual(1);
 	});
 
 	for (const { file, css } of cases) {

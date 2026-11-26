@@ -10,8 +10,7 @@ const SPINNER_PATH = join(ROOT, "web", "src", "components", "HalfRingSpinner.tsx
 const THINKING_PATH = join(ROOT, "web", "src", "components", "ThinkingBlock.tsx");
 const TOOLCALL_PATH = join(ROOT, "web", "src", "components", "ToolCallBlock.tsx");
 const LEFT_PANEL_PATH = join(ROOT, "web", "src", "components", "LeftPanel.tsx");
-const THEME_FLOW_PATH = join(ROOT, "themes", "flow.css");
-const THEME_WALLPAPER_FLOW_PATH = join(ROOT, "themes", "wallpaper-flow.css");
+const THEME_FLOW_ZURICH_PATH = join(ROOT, "themes", "flow-zurich.css");
 const WP_ENGINE_STYLES_PATH = join(ROOT, "plugins", "wallpaper-engine", "client", "styles.mjs");
 
 describe("半圆环转动等待指示器 (HalfRingSpinner)", () => {
@@ -69,14 +68,10 @@ describe("半圆环转动等待指示器 (HalfRingSpinner)", () => {
 		expect(leftPanelSrc).not.toContain("FiLoader");
 	});
 
-	it("极简行文 (flow / wallpaper-flow) 与壁纸插件主题动画引用有效关键帧且支持旋转", () => {
-		const flowCss = readThemeCss(THEME_FLOW_PATH);
+	it("极简行文 (flow-zurich) 与壁纸插件主题动画引用有效关键帧且支持旋转", () => {
+		const flowCss = readThemeCss(THEME_FLOW_ZURICH_PATH);
 		expect(flowCss).not.toContain("conv-spin");
 		expect(flowCss).toContain("animation: spin 0.85s linear infinite");
-
-		const wpFlowCss = readThemeCss(THEME_WALLPAPER_FLOW_PATH);
-		expect(wpFlowCss).not.toContain("conv-spin");
-		expect(wpFlowCss).toContain("animation: spin 0.85s linear infinite");
 
 		const wpEngineStyles = readFileSync(WP_ENGINE_STYLES_PATH, "utf8");
 		expect(wpEngineStyles).not.toContain("conv-spin");

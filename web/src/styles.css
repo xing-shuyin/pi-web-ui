@@ -40086,3 +40086,122 @@
 	font: inherit;
 	cursor: pointer;
 }
+.theme-market-section {
+	margin-top: 12px;
+}
+.theme-market-header {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
+	margin-bottom: 10px;
+}
+.theme-market-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-shrink: 0;
+}
+.theme-market-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+	margin-bottom: 12px;
+}
+.theme-market-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+	gap: 10px;
+}
+.theme-market-card {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px 12px;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: var(--bg-elev);
+}
+.theme-market-card.active {
+	border-color: var(--accent);
+}
+.theme-market-card-top {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+.theme-market-card-title {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.theme-market-scheme {
+	font-size: 11px;
+	color: var(--text-dim);
+	background: var(--bg-elev2);
+	padding: 1px 6px;
+	border-radius: 4px;
+	flex-shrink: 0;
+}
+.theme-market-swatches {
+	display: flex;
+	gap: 5px;
+}
+.theme-market-swatch {
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	border: 1px solid var(--border);
+}
+.theme-market-desc {
+	font-size: 12px;
+	color: var(--text-dim);
+	line-height: 1.4;
+	flex: 1;
+}
+.theme-market-card-footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding-top: 6px;
+	border-top: 1px solid var(--border-soft);
+}
+.theme-market-author {
+	font-size: 11px;
+	color: var(--text-faint);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.theme-market-btns {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-shrink: 0;
+}
+.theme-market-badge-active {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 12px;
+	color: var(--accent);
+	font-weight: 500;
+}
+.spin {
+	animation: spin 1s linear infinite;
+}
+@keyframes spin {
+	from {
+		transform: rotate(0deg);
+	}
+	to {
+		transform: rotate(360deg);
+	}
+}

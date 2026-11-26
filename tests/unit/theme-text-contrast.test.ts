@@ -40,10 +40,10 @@ describe("主题文字令牌可读性", () => {
 	const themeFiles = readdirSync(THEMES_DIR).filter((f) => f.endsWith(".css"));
 	const cases = themeFiles.map((file) => ({ file, vars: vars(readFileSync(join(THEMES_DIR, file), "utf8")) }));
 
-	it("扫描到了足够多的主题及有效行内代码颜色（防止解析器失效后静默全跳过）", () => {
-		expect(cases.length).toBeGreaterThanOrEqual(20);
+	it("扫描到了内置主题及有效行内代码颜色（防止解析器失效后静默全跳过）", () => {
+		expect(cases.length).toBeGreaterThanOrEqual(1);
 		const inlineCases = cases.filter(({ vars }) => parseHex(vars.get("--link-soft")) && parseHex(vars.get("--bg")));
-		expect(inlineCases.length).toBeGreaterThanOrEqual(20);
+		expect(inlineCases.length).toBeGreaterThanOrEqual(1);
 	});
 
 	it("默认调色板（styles.css :root）满足全部门槛", () => {

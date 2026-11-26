@@ -2816,6 +2816,8 @@ export function App() {
 						>
 							<LeftPanel
 								quickAskReferenceMenus={chat.settings?.quickAskReferenceMenus !== false}
+								botDraftPrompt={chat.settings?.botDraftPrompt}
+								botDraftDefaultPrompt={chat.settings?.botDraftDefaultPrompt}
 								collapsible={!isMobile}
 								onToggleCollapse={toggleLeft}
 								panelSend={panelSend}
@@ -3604,6 +3606,10 @@ export function App() {
 						onSoundChange={setSound}
 						tts={tts}
 						onTtsChange={setTts}
+						themes={themes}
+						currentTheme={theme}
+						onThemeChange={switchTheme}
+						onReloadThemes={reloadThemes}
 					/>
 				</Suspense>
 			)}

@@ -100,8 +100,8 @@ describe("强调色实底的前景对比度", () => {
 		})
 		.filter((c) => c.accent !== null);
 
-	it("扫描到了足够多的主题（防止解析器失效后静默全跳过）", () => {
-		expect(cases.length).toBeGreaterThanOrEqual(20);
+	it("扫描到了内置主题（防止解析器失效后静默全跳过）", () => {
+		expect(cases.length).toBeGreaterThanOrEqual(1);
 	});
 
 	for (const { file, accent, fg } of cases) {
@@ -150,7 +150,7 @@ describe("强调色实底的前景对比度", () => {
 		expect(stylesCss).toMatch(/--button-primary-bg:\s*var\(--accent\)/);
 		expect(stylesCss).toMatch(/--button-primary-fg:\s*var\(--accent-contrast\)/);
 
-		const flowFiles = ["themes/flow.css", "themes/wallpaper-flow.css"];
+		const flowFiles = ["themes/flow-zurich.css"];
 		for (const rel of flowFiles) {
 			const css = readFileSync(join(ROOT, rel), "utf8");
 			expect(css).not.toMatch(/\.sandbox-banner-btn\.primary[^}]*color:\s*#000000/);

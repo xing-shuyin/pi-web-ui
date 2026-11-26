@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { requestJson } from "./api-client";
 import { useAppField } from "./app-globals";
 import { withToken } from "./auth-token";
 import { appResourceCrossOrigin, appResourceUrl, appUrl } from "./base-url";
@@ -12,8 +13,38 @@ export interface ThemeInfo {
 	scheme?: "dark" | "light";
 }
 
+export interface CommunityThemeEntry {
+	id: string;
+	name: string;
+	nameEn?: string;
+	author: string;
+	scheme: "dark" | "light";
+	group?: string;
+	description: string;
+	descriptionEn?: string;
+	palette: {
+		bg: string;
+		accent: string;
+		text: string;
+		accentContrast?: string;
+		swatches?: string[];
+	};
+	cssUrl?: string;
+	resolvedCssUrl?: string;
+	source?: string;
+	homepage?: string;
+	tags?: string[];
+}
+
+export interface ThemeCatalogResponse {
+	entries: CommunityThemeEntry[];
+	sourceUrl?: string;
+	syncedAt?: number;
+	defaultUrl?: string;
+}
+
 const STORAGE_KEY = "pi-web-ui:theme";
-export const DEFAULT_THEME_ID = "flow-ink";
+export const DEFAULT_THEME_ID = "flow-zurich";
 const LINK_ID = "theme-stylesheet";
 const THEME_ASSET_REV = Date.now().toString(36);
 let assetReload = 0;
@@ -115,6 +146,31 @@ export function applyTheme(id: string | null, options: { reload?: boolean } = {}
 			applyTheme(id);
 		}, delay);
 	};
+}
+
+export async function fetchThemeCatalog(): Promise<ThemeCatalogResponse> {
+	return requestJson<ThemeCatalogResponse>("/api/themes/catalog");
+}
+
+export async function syncThemeCatalog(url?: string): Promise<ThemeCatalogResponse & { ok: boolean }> {
+	return requestJson<ThemeCatalogResponse & { ok: boolean }>("/api/themes/catalog/sync", {
+		body: url ? { url } : {},
+	});
+}
+
+export async function installCommunityTheme(
+	id: string,
+	cssUrl?: string,
+): Promise<{ ok: boolean; themes: ThemeInfo[] }> {
+	return requestJson<{ ok: boolean; themes: ThemeInfo[] }>("/api/themes/install", {
+		body: cssUrl ? { id, cssUrl } : { id },
+	});
+}
+
+export async function uninstallCommunityTheme(id: string): Promise<{ ok: boolean; themes: ThemeInfo[] }> {
+	return requestJson<{ ok: boolean; themes: ThemeInfo[] }>(`/api/themes/${encodeURIComponent(id)}`, {
+		method: "DELETE",
+	});
 }
 
 async function fetchThemes(): Promise<ThemeInfo[]> {

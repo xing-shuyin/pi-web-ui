@@ -53,6 +53,8 @@ import { groupTabs } from "./settings-mobile/mobile-ia";
 import { useNarrowLayout } from "./settings-mobile/use-narrow-layout";
 import "./settings-mobile/settings-mobile.css";
 import { sortAgentPresets, presetText } from "./DshPresetBar";
+import { CommunityThemesSection } from "./CommunityThemesSection";
+import type { ThemeInfo } from "../theme";
 import { DSH_PERMISSION_ORDER, permDescKey, permLabelKey } from "./DshPermissionBar";
 import { InstalledPluginsPanel } from "./InstalledPluginsPanel";
 import { ToolPromptEditor } from "./ToolPromptEditor";
@@ -267,6 +269,10 @@ interface SettingsModalProps {
 	onSoundChange: (settings: SoundSettings) => void;
 	tts: TtsSettings;
 	onTtsChange: (settings: TtsSettings) => void;
+	themes?: ThemeInfo[];
+	currentTheme?: string | null;
+	onThemeChange?: (id: string | null) => void;
+	onReloadThemes?: () => void;
 }
 
 const CATALOG_SYNC_RECENT_KEY = "pi-web-ui:catalog-sync-urls";
@@ -597,6 +603,10 @@ function LoadedSettingsModal({
 	onSoundChange,
 	tts,
 	onTtsChange,
+	themes,
+	currentTheme,
+	onThemeChange,
+	onReloadThemes,
 }: SettingsModalProps & { serverSettings: UiSettingsState }) {
 	const t = useT();
 	const { locale } = useI18n();
@@ -3590,6 +3600,66 @@ function LoadedSettingsModal({
 										</FieldRow>
 									</>
 								)}
+								{(() => {
+									const blocked = isBlockedByPreset("codemode");
+									const active = !blocked && !disabledTools.has("codemode");
+									if (!active) return null;
+									const expanded = expandedToolConfigs.has("codemode");
+									return (
+										<div className="tool-sub-config-card">
+											<div className="tool-sub-config-row">
+												<label className="set-field-label">
+													{t("codemodeModeLabel")}
+													<HintTip text={t("codemodeModeHint")} />
+												</label>
+												<div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+													<button
+														type="button"
+														className={`set-icon-btn tool-sub-config-btn${expanded ? " active" : ""}`}
+														title={expanded ? t("collapseSection") : t("expandSection")}
+														aria-expanded={expanded}
+														aria-label={expanded ? t("collapseSection") : t("expandSection")}
+														onClick={() => toggleToolConfigExpand("codemode")}
+													>
+														<FiSliders />
+													</button>
+													<select
+														className="set-select"
+														style={{ width: "auto", minWidth: 140 }}
+														value={settings.codemodeMode ?? "on"}
+														onChange={(e) => setPartial({ codemodeMode: e.target.value as "on" | "only" })}
+													>
+														<option value="on">{t("codemodeModeOn")}</option>
+														<option value="only">{t("codemodeModeOnly")}</option>
+													</select>
+												</div>
+											</div>
+											{expanded && (
+												<div className="tool-sub-config-row">
+													<label className="set-field-label">
+														{t("codemodeInlineBudgetLabel")}
+														<HintTip text={t("codemodeInlineBudgetHint")} />
+													</label>
+													<input
+														type="number"
+														className="set-input"
+														style={{ width: 100, textAlign: "right" }}
+														min={500}
+														max={50000}
+														step={500}
+														value={settings.codemodeInlineBudget ?? 3000}
+														onChange={(e) => {
+															const val = parseInt(e.target.value, 10);
+															if (!isNaN(val) && val > 0) {
+																setPartial({ codemodeInlineBudget: val });
+															}
+														}}
+													/>
+												</div>
+											)}
+										</div>
+									);
+								})()}
 
 								{!isDsh && (
 									<div className="toolflow-top">
@@ -3943,68 +4013,6 @@ function LoadedSettingsModal({
 										</div>
 									</div>
 								)}
-
-								<div className="set-field-label">{t("toolsSectionOther")}</div>
-								{(() => {
-									const blocked = isBlockedByPreset("codemode");
-									const active = !blocked && !disabledTools.has("codemode");
-									if (!active) return null;
-									const expanded = expandedToolConfigs.has("codemode");
-									return (
-										<div className="tool-sub-config-card">
-											<div className="tool-sub-config-row">
-												<label className="set-field-label">
-													{t("codemodeModeLabel")}
-													<HintTip text={t("codemodeModeHint")} />
-												</label>
-												<div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-													<button
-														type="button"
-														className={`set-icon-btn tool-sub-config-btn${expanded ? " active" : ""}`}
-														title={expanded ? t("collapseSection") : t("expandSection")}
-														aria-expanded={expanded}
-														aria-label={expanded ? t("collapseSection") : t("expandSection")}
-														onClick={() => toggleToolConfigExpand("codemode")}
-													>
-														<FiSliders />
-													</button>
-													<select
-														className="set-select"
-														style={{ width: "auto", minWidth: 140 }}
-														value={settings.codemodeMode ?? "on"}
-														onChange={(e) => setPartial({ codemodeMode: e.target.value as "on" | "only" })}
-													>
-														<option value="on">{t("codemodeModeOn")}</option>
-														<option value="only">{t("codemodeModeOnly")}</option>
-													</select>
-												</div>
-											</div>
-											{expanded && (
-												<div className="tool-sub-config-row">
-													<label className="set-field-label">
-														{t("codemodeInlineBudgetLabel")}
-														<HintTip text={t("codemodeInlineBudgetHint")} />
-													</label>
-													<input
-														type="number"
-														className="set-input"
-														style={{ width: 100, textAlign: "right" }}
-														min={500}
-														max={50000}
-														step={500}
-														value={settings.codemodeInlineBudget ?? 3000}
-														onChange={(e) => {
-															const val = parseInt(e.target.value, 10);
-															if (!isNaN(val) && val > 0) {
-																setPartial({ codemodeInlineBudget: val });
-															}
-														}}
-													/>
-												</div>
-											)}
-										</div>
-									);
-								})()}
 							</div>
 						)}
 
@@ -4596,6 +4604,17 @@ function LoadedSettingsModal({
 										</div>
 									)}
 								</div>
+								{onThemeChange && onReloadThemes && (
+									<>
+										<hr className="set-sep" />
+										<CommunityThemesSection
+											themes={themes ?? []}
+											currentTheme={currentTheme ?? null}
+											onThemeChange={onThemeChange}
+											onReloadThemes={onReloadThemes}
+										/>
+									</>
+								)}
 							</div>
 						)}
 
