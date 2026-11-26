@@ -10,6 +10,37 @@
 
 ## [Unreleased]
 
+## [0.124.0] - 2026-11-27
+
+### Added
+
+- **后台任务工具 `bg_task` 与超时自动转后台**：新增 `bg_task` 工具（`packages/keel/src/adapters/tools/bg-task.ts`）并在 `JobRegistry` 中支持 `awaitCompletionOrTimeout` 与 `notificationTimeoutSec`，允许长命令在超出同步等待时间后自动转入后台托管并在完成或到期时通知。
+- **Antigravity（`agy`）Universal 驱动与多引擎代理**：新增 `server/universal/drivers/agy.ts` 驱动与 `server/multi-engine.ts` 多引擎调度器，支持在 Universal 引擎与原生终端模式间协同切换。
+- **访问会话管理（`AuthSessionSection`）**：新增 `server/auth-session.ts` 与设置面板访问会话管理组件 `AuthSessionSection.tsx`，支持查看已登录设备会话、单独下线及全部吊销。
+- **对话内 Bot 草案卡片与统一编辑器**：新增 `BotDraftInlineCard.tsx` 与 `BotEditorForm.tsx`，支持在对话中直接审阅、修改并创建智能体草案。
+- **社区主题市场集成**：整合 `pi-web-ui-plugins` 社区主题目录，保留 `flow-zurich` 为默认内置主题，并在设置与主题选择处提供「获取更多主题」与 `ThemeMarketModal` 入口。
+
+### Changed
+
+- **CLI 入口更名为 `keel`**：主入口切换为 `bin/keel.mjs`（保留 `keel` / `pi-web-ui` / `piwebui` / `pwu` 命令别名），同步更新 systemd / launchd / Windows Task Scheduler 部署清单与全局安装/重启辅助脚本（`scripts/install-global-local.mjs`、`scripts/restart-helper.mjs`）。
+- **桌面端默认构建切换为壳与全局运行时分离**：桌面构建默认采用 shell-only 模式配合全局 `keel` 运行时，修复 `dist/packages` 打包闭包及 macOS / POSIX 全局路径。
+
+### Fixed
+
+- **桌面端 Agent 视图重连（#1004）**：修复 Agent 视图未就绪或处于错误状态时的自动重连逻辑。
+- **后台任务流刷盘与隔离修复**：`JobRegistry.finish()` 等待日志流 `end()` 刷盘后再读取尾部输出与唤醒等待者；修复多引擎隔离、左栏样式分层与各单元测试/冒烟守卫。
+
+<!-- auto-i18n:start -->
+
+### i18n
+
+- 前端新增 key（39）：`themeGetMore`、`themeMarketTitle`、`themeMarketDesc`、`themeMarketSync`、`themeMarketSyncing`、`themeMarketSubmit`、`themeMarketSearchPh`、`themeMarketEmpty`、`themeMarketInstall`、`themeMarketInstalling`、`themeMarketApply`、`themeMarketActive`、`themeMarketUninstall`、`themeMarketAll`、`settingsEngineAgyTitle`、`settingsEngineAgyDesc`、`sshKeyCustom`、`lpEnvAll`、`lpEnvLocal`、`lpEnvRemote`、`bgTaskEnabledDesc`、`bgTaskOffHint`、`botDraftPrompt`、`botDraftPromptPlaceholder`、`botDraftPromptHint`、`botDraftPromptReset`、`authSessionsTitle`、`authSessionsLogout`、`authSessionsRevokeAll`、`authSessionsCurrentDevice`、`authSessionsRevoke`、`agentBotsInlineTitle`、`agentBotsInlineCreated`、`agentBotsInlineDiscarded`、`agentBotsInlineRevised`、`agentBotsRevisePlaceholder`、`agentBotsReviseBtn`、`agentBotsInlineHandled`、`agentBotsComposerBadge`
+- 前端删除 key（28）：`attachHint`、`tabProjects`、`goalComposerLead`、`goalComposerMaterials`、`goalComposerRefine`、`goalComposerHelp`、`quietActivity`、`botDraftFollowDefault`、`botDraftModelHint`、`botDraftThinkingHint`、`botDraftNoModels`、`scmCommitTarget`、`scmCommitNothingStaged`、`agentBotsDrafts`、`agentBotsDraftWhy`、`agentBotsDraftErrorDismiss`、`agentBotsTools`、`agentBotsTriggerReserved`、`agentBotsTriggerReservedHint`、`agentBotsCreating`、`agentBotsCreateDone`、`agentBotsCreateEmpty`、`agentBotsDraftErrorNoModel`、`agentBotsDraftErrorUnparsable`、`agentBotsDraftErrorTimeout`、`agentBotsDraftErrorRequest`、`agentBotsDraftWorkspaceError`、`agentBotsDraftErrorFailed`
+- 前端中文变更（5）：`openFiles`、`scmTitle`、`goalBarPlaceholder`、`botDraftSettingsDesc`、`agentBotsEmpty`
+- 前端英文变更（3）：`goalBarPlaceholder`、`botDraftSettingsDesc`、`agentBotsEmpty`
+
+<!-- auto-i18n:end -->
+
 ## [0.123.0] - 2026-11-26
 
 ### Changed
