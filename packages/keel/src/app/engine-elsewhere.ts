@@ -67,7 +67,7 @@ export function listExternalRunning(
 			const activity = conv.meta.lastActiveAt || 0;
 			if (offline && !streaming) {
 				const latest = Math.max(offlineTs, activity);
-				if (latest > 0 && now - latest > offlineTtlMs) continue;
+				if (latest > 0 && now - latest >= offlineTtlMs) continue;
 			}
 
 			let normFile: string | undefined;
@@ -169,7 +169,8 @@ export function armOfflineRowExpiry(
 		activity = Math.max(activity, conv.meta.lastActiveAt || 0);
 	}
 	const since = Math.max(offlineSince.get(clientId) ?? 0, activity || 0);
-	const delay = Math.max(100, since + ttl - Date.now());
+	// +50ms 缓冲：避免 Node.js 定时器提前 1ms 触发时 `now - since < ttl` 导致本次没清掉且再无下次定时器。
+	const delay = Math.max(100, since + ttl - Date.now() + 50);
 	const timer = setTimeout(() => {
 		offlineTimers.delete(clientId);
 		onExpire();
