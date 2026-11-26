@@ -34,7 +34,7 @@ export function findLocalPackageRoot(startDir = HERE) {
 		if (existsSync(pkgPath)) {
 			try {
 				const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
-				if (pkg.name === "pi-web-ui") return cur;
+				if (pkg.name === "keel" || pkg.name === "pi-web-ui") return cur;
 			} catch {}
 		}
 		const parent = dirname(cur);

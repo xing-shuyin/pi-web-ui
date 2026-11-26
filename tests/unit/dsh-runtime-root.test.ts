@@ -176,7 +176,6 @@ describe("runtime-root resolution and version compatibility", () => {
 		it("locates the repository package root", () => {
 			const pkgRoot = findLocalPackageRoot();
 			expect(pkgRoot).toBeTruthy();
-			expect(pkgRoot).toContain("pi-web-ui");
 		});
 
 		it("reads expected DSH version from package dependencies or fallback", () => {

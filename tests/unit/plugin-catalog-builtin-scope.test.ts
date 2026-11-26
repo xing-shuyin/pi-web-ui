@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT = process.cwd();
-const IN_TREE_SOURCE = /^xing-shuyin\/pi-web-ui\/plugins\/([A-Za-z0-9_-]+)$/;
+const IN_TREE_SOURCE = /^xing-shuyin\/keel\/plugins\/([A-Za-z0-9_-]+)$/;
 
 type Entry = { id?: unknown; source?: unknown; preinstall?: unknown };
 

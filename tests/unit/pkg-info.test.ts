@@ -9,7 +9,7 @@ describe("server/pkg-info", () => {
 		const root = getPkgRoot();
 		expect(root).toBeDefined();
 		const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { name?: string; version?: string };
-		expect(pkg.name).toBe("pi-web-ui");
+		expect(pkg.name).toBe("keel");
 		expect(pkg.version).toBeDefined();
 
 		const ver = getAppVersion();
