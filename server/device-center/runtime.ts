@@ -177,8 +177,6 @@ export function createDeviceRuntime(options: {
 	const transcriptWriter: SerializedJsonWriter | undefined = transcriptFile
 		? createSerializedJsonWriter(transcriptFile, { label: "bot-execution-conversations.json" })
 		: undefined;
-	let transcriptPersist: Promise<void> = Promise.resolve();
-	let transcriptPersistError: unknown;
 	let transcripts: Record<string, Transcript> = Object.create(null);
 	let transcriptLoadError: unknown;
 	if (transcriptFile) {

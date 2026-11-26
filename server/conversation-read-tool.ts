@@ -1,7 +1,6 @@
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { pick, type ServerLang } from "./i18n.js";
-import type { AgentMessage } from "./serialize.js";
 import {
 	extractTouches,
 	formatTouchEntry,

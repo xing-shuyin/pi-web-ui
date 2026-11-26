@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useState, type ReactNode } from "react";
-import { FiTarget, FiLock, FiUnlock, FiX, FiChevronUp, FiArrowUpRight, FiSquare, FiClock } from "react-icons/fi";
+import { FiTarget, FiLock, FiUnlock, FiX, FiChevronUp, FiArrowUpRight, FiSquare } from "react-icons/fi";
 import type { GoalStatus, ModelInfo } from "../types";
 import { isZhLocale, useT, useI18n } from "../i18n";
 import { appSend, useIsDsh, useEngineCapabilities } from "../app-globals";

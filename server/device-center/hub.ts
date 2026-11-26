@@ -227,7 +227,6 @@ function handoff(value: unknown): Handoff | undefined {
 }
 const token = () => randomBytes(32).toString("base64url");
 const PAIR_TTL = 10 * 60 * 1000;
-const HISTORY = GROUP_RETENTION_LIMIT;
 
 export async function createDeviceHub(options: DeviceHubOptions) {
 	function currentSettings(): DeviceExecutionSettings {
@@ -697,7 +696,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 					conversation.updatedAt = Date.now();
 				}
 			const notices = [];
-			for (const task of [...draft.tasks]) {
+			for (const task of draft.tasks) {
 				if (task.deviceId !== id || (isTerminal(task.status) && !task.recoveryUntil)) continue;
 				task.cancelRequested = true;
 				const notice = recordTaskOutcome(

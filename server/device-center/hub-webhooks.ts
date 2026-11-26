@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import type { Request } from "express";
-import type { DeviceHubStore, GroupWebhook, GroupWebhookEventType } from "./store.js";
+import type { DeviceHubStore, GroupWebhookEventType } from "./store.js";
 
 export const ALLOWED_WEBHOOK_EVENTS: readonly GroupWebhookEventType[] = [
 	"message",

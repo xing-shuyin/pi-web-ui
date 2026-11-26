@@ -8,7 +8,7 @@
  * 判定只看命令行特征（`dist/server/index.js` / `tests/*-test.mjs` / `tests/run-smoke.mjs`），
  * **不按端口段盲杀**：同一台机器上可能还有别人的 `npm run dev` 或另一份测试在跑。
  */
-import { findTestResidue, sweepTestResidue } from "../tests/lib/process-cleanup.mjs";
+import { sweepTestResidue } from "../tests/lib/process-cleanup.mjs";
 
 const kill = process.argv.includes("--kill");
 const { found, killed } = sweepTestResidue({ dryRun: !kill });

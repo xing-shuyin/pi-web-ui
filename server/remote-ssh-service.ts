@@ -1,6 +1,6 @@
 import { Client, type ClientChannel, type SFTPWrapper } from "ssh2";
-import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, promises as fs } from "node:fs";
+import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from "node:crypto";
+import { existsSync, promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -10,13 +10,7 @@ import { resolveDefaultPkgRoot } from "./plugin-updater.js";
 // shellQuotePosix 的单源在 shell-quote.ts；这里 re-export 是为了不让 6+ 个既有 import 点全部改一遍。
 import { shellQuotePosix } from "./shell-quote.js";
 import { IMAGE_SNIFF_BYTES, imageMimeOfExt, isAudioFile, previewKind, sniffImageMime } from "./text-sniff.js";
-import type {
-	EditOperations,
-	FindOperations,
-	LsOperations,
-	ReadOperations,
-	WriteOperations,
-} from "@earendil-works/pi-coding-agent";
+import type { FindOperations, LsOperations, ReadOperations, WriteOperations } from "@earendil-works/pi-coding-agent";
 import { openVersionedDoc, type VersionedDoc } from "./versioned-doc.js";
 import type {
 	RemoteSshDirItem,
@@ -46,11 +40,9 @@ export {
 	type ParsedRemoteUri,
 } from "../packages/keel/src/remote-workspace.js";
 import {
-	formatRemoteWorkspaceUri,
 	isRemoteWorkspaceUri,
 	parseRemoteWorkspaceUri,
 	resolveRemoteWorkspacePath,
-	resolveWorkspaceSessionDir,
 	restoreWorkspaceUriFromSessionDir,
 	type ParsedRemoteUri,
 } from "../packages/keel/src/remote-workspace.js";

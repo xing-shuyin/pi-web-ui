@@ -31,7 +31,6 @@ export const PHONE_READ_OPS = ["status", "dump", "screenshot"] as const;
 /** 操控档：会改变手机状态（点击/滑动/输入/按键/启动应用），每次都要用户审批（按 `PHONE_APPROVAL_GROUPS` 分档）。 */
 /** 审批分档的单源在 keel（`packages/keel/src/phone-approval.ts`）：这里只再导出一遍。 */
 export { PHONE_APPROVAL_GROUPS, PHONE_CONTROL_OPS, phoneOpRulePattern } from "../packages/keel/src/phone-approval.js";
-import { PHONE_APPROVAL_GROUPS, PHONE_CONTROL_OPS, phoneOpRulePattern } from "../packages/keel/src/phone-approval.js";
 
 type PhoneKey = (typeof PHONE_KEYS)[number];
 

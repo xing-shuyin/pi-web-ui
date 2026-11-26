@@ -177,7 +177,7 @@ export function assembleClient(ctx: ClientAssemblyContext): {
 		transport,
 		sessions,
 		turnEvents: {
-			onStreamingChanged: (conversationId, streaming) => {
+			onStreamingChanged: (_conversationId, _streaming) => {
 				runtime.pushConversations();
 				ctx.notifyExternalRunning(runtime.clientId);
 			},

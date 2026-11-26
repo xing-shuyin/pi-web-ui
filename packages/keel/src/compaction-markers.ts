@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { copyFileSync, existsSync, readFileSync, statSync } from "node:fs";
+import { copyFileSync, readFileSync, statSync } from "node:fs";
 import { writeAtomic } from "./atomic-file.js";
 import { reorderEntriesForMainBranch } from "./session-branch.js";
 

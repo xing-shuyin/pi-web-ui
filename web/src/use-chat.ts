@@ -9,7 +9,7 @@ import {
 	type TerminalOwnerKind,
 } from "./terminal-bridge";
 import { withToken } from "./auth-token";
-import { appUrl, appWsUrl } from "./base-url";
+import { appWsUrl } from "./base-url";
 import { isMobileRuntime } from "./mobile-runtime";
 import { handleNativeCliEvent, resolveNativeCliControlResult } from "./native-cli-events";
 import { notifySessionSwitch } from "./composer-bridge";

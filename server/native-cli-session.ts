@@ -258,7 +258,6 @@ export async function prepareNativeCliSessionLaunch(
 			const spool = join(nativeCliHookSpoolDir(ctx.dataDir), ref.key);
 			await mkdir(spool, { recursive: true, mode: 0o700 });
 			await chmod(spool, 0o700);
-			eventsDirectory = eventsDirectory;
 			spoolDirectory = spool;
 			hookEnv = { [NATIVE_CLI_HOOK_KEY_ENV]: ref.key };
 			dispatcherScript = script;

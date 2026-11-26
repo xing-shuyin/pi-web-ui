@@ -666,8 +666,6 @@ const ToolCallCard = memo(function ToolCallCard({
 		}
 	};
 
-	const ctxMenuAvailable = (uiContextToolCall ?? []).some((e) => e && e.hidden !== true && e.kind !== "divider");
-
 	const onHeadContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
 		const el = e.target;
 		if (el instanceof Element && el.closest("pre, code, a, input, textarea, [contenteditable='true']")) return;

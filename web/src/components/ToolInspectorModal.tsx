@@ -352,7 +352,7 @@ function BashInspectorDialog({
 	const copyCmd = useCopyFeedback({ duration: 1200 });
 	const copyOut = useCopyFeedback({ duration: 1200 });
 
-	const { args = "", output = "", details, isError = false, status, duration, exitHint } = state;
+	const { args = "", output = "", details, exitHint } = state;
 	const hints = state.hints || toolArgHints(args);
 	const command = hints.command || (args && !args.startsWith("{") ? args : "");
 
@@ -640,7 +640,7 @@ function ReadInspectorDialog({
 	const [viewMode, setViewMode] = useState<"preview" | "raw">("preview");
 	const copyOut = useCopyFeedback({ duration: 1200 });
 
-	const { name = "read", args = "", output = "", details, isError = false, status, duration, images } = state;
+	const { name = "read", args = "", output = "", details, images } = state;
 	const hints = state.hints || toolArgHints(args);
 	const targetPath = hints.path || "";
 	const targetQuery = hints.query || "";
@@ -899,7 +899,7 @@ function FileDiffInspectorDialog({
 	const [viewMode, setViewMode] = useState<"unified" | "split" | "raw">("unified");
 	const { copied, copy } = useCopyFeedback({ duration: 1200 });
 
-	const { name = "edit", args = "", details, output = "", isError = false, status, duration } = state;
+	const { name = "edit", args = "", details, output = "" } = state;
 	const isEdit = name === "edit" || name === "patch";
 	const data = useMemo(() => parseFileMutationArgs(name, args, details, output), [name, args, details, output]);
 
@@ -1125,7 +1125,7 @@ function GenericInspectorDialog({
 	const [viewMode, setViewMode] = useState<"preview" | "raw">("preview");
 	const copyAll = useCopyFeedback({ duration: 1200 });
 
-	const { name = "tool", args = "", details, output = "", isError = false, status, duration, images } = state;
+	const { name = "tool", args = "", details, output = "", isError = false, duration, images } = state;
 	const hints = state.hints || toolArgHints(args);
 	const headline = resolveToolHeadline({ name, argumentsText: args, hints });
 	const displayTitle = headline ? `${name}(${headline.text})` : name ? `${name}()` : t("toolInspectorTitle");

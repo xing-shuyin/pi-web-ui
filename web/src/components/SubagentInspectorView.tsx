@@ -1,16 +1,5 @@
 import { useMemo, useState } from "react";
-import {
-	FiArrowRight,
-	FiCheck,
-	FiCopy,
-	FiFolder,
-	FiGitBranch,
-	FiLayers,
-	FiLock,
-	FiTerminal,
-	FiUsers,
-	FiZap,
-} from "react-icons/fi";
+import { FiCheck, FiCopy, FiGitBranch, FiLayers, FiTerminal, FiUsers, FiZap } from "react-icons/fi";
 import { closeToolInspector } from "../tool-inspector-state";
 import { useCopyFeedback } from "../use-copy-feedback";
 import { useT, type Translate } from "../i18n";
@@ -164,7 +153,7 @@ export function SubagentInspectorView({
 	output,
 	duration,
 	statusClass,
-	isError,
+	isError: _isError,
 }: {
 	name: string;
 	args?: string;

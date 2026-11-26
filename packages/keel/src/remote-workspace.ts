@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { homedir } from "node:os";
 
 /** 远程工作区 URI 的解析结果（`ssh://user@host:port/path`）。 */
 export interface ParsedRemoteUri {

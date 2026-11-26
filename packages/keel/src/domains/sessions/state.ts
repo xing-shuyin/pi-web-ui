@@ -32,9 +32,6 @@ export function createConversationStateHandlers(options: ConversationStateOption
 		if (options.transport.isClosed()) return;
 		options.transport.send({ type: "notice", level, text, textEn });
 	};
-	const activeOr = (id?: string): Conversation | undefined =>
-		id ? options.registry.get(id) : options.registry.activeConv();
-
 	return {
 		async removeQueued(kind, text, index, id): Promise<void> {
 			const conv = id ? options.registry.get(id) : options.registry.activeConv();

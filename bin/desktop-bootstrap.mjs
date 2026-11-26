@@ -74,9 +74,8 @@ export async function runDesktopServiceInstaller(action) {
 		});
 		child.once("exit", (code) => {
 			clearTimeout(timer);
-			code === 0
-				? resolve()
-				: reject(Object.assign(new Error(`Desktop service installation cancelled or failed (${code})`), { code }));
+			if (code === 0) resolve();
+			else reject(Object.assign(new Error(`Desktop service installation cancelled or failed (${code})`), { code }));
 		});
 	});
 }

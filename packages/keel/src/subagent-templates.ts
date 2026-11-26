@@ -604,10 +604,6 @@ function normalize(raw: unknown): SubagentTemplate | null {
 	};
 }
 
-function seededPathOf(filePath: string): string {
-	return /.json$/i.test(filePath) ? filePath.replace(/.json$/i, ".seeded.json") : `${filePath}.seeded.json`;
-}
-
 export class SubagentTemplatesStore {
 	private templates: SubagentTemplate[] | null = null;
 	/** 两条队列各管一份文件：`main` = 真值（save/delete 并发时不许互相覆盖），`seeded` = 可重建的播种标记。 */

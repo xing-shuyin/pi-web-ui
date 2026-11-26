@@ -184,7 +184,6 @@ export async function requestNativeDesktopPermissions(
 	const status = nativeDesktopStatus();
 	if (!status.supported) throw new Error(status.reason);
 	return new Promise((resolve, reject) => {
-		let directory: string | undefined;
 		let child: ChildProcessWithoutNullStreams | undefined;
 		let stopChild: SpawnedChild["stop"] | undefined;
 		let settled = false;
@@ -196,7 +195,6 @@ export async function requestNativeDesktopPermissions(
 			closed = true;
 			clearTimeout(timeout);
 			signal?.removeEventListener("abort", abort);
-			if (directory) rm(directory, { recursive: true, force: true, maxRetries: 2 }, () => {});
 		}
 		function fail(error: Error) {
 			if (settled) return;

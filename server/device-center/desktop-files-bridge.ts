@@ -17,7 +17,7 @@ export function desktopFilesRequest(
 				...(local ? { "x-pi-local-files": "1" } : {}),
 				...(session ? { "x-pi-desktop-file-session": session() } : {}),
 			},
-			body: body === undefined ? undefined : JSON.stringify(body),
+			...(body === undefined ? {} : { body: JSON.stringify(body) }),
 		});
 		if (response.status === 204) return null;
 		const value: any = await response.json();

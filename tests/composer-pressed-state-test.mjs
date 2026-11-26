@@ -26,6 +26,11 @@ import { freePort, portUp } from "./lib/port-utils.mjs";
 const REPO_ROOT = fileURLToPath(new URL("../", import.meta.url));
 const PORT = 8961;
 
+if (!CHROME_PATH) {
+	console.log("SKIP composer-pressed-state: Chrome unavailable (set PI_WEB_CHROME)");
+	process.exit(0);
+}
+
 let failures = 0;
 const check = (name, ok, extra = "") => {
 	console.log(`${ok ? "✓" : "✗"} ${name}${extra ? " — " + extra : ""}`);

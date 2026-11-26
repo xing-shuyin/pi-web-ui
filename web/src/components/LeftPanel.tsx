@@ -25,7 +25,6 @@ import { DeviceGroupSection } from "./DeviceGroupSection";
 import { AgentBotsSection } from "./AgentBotsSection";
 import { NativeCliCreateEntry } from "./NativeCliCreateModal";
 import {
-	FiAlertCircle,
 	FiCheck,
 	FiChevronDown,
 	FiChevronLeft,
@@ -33,8 +32,6 @@ import {
 	FiChevronUp,
 	FiEdit2,
 	FiFolder,
-	FiFolderPlus,
-	FiGitBranch,
 	FiHardDrive,
 	FiMessageSquare,
 	FiMoreVertical,
@@ -60,7 +57,6 @@ import { useUnreadConversationKeys, clearConversationUnread } from "../unread-co
 import { applySashDrag } from "../panel-sash";
 import {
 	type LpSectionKey,
-	flexSectionKeys,
 	parseLpWeights,
 	planLeftSections,
 	sashPairs,
@@ -458,8 +454,8 @@ export const LeftPanel = memo(function LeftPanel({
 	uiContextProject,
 	uiProjectsActions,
 	uiLeftProject,
-	uiRunningActions,
-	uiHistoryActions,
+	uiRunningActions: _uiRunningActions,
+	uiHistoryActions: _uiHistoryActions,
 	uiSections,
 	renderPluginSectionBody,
 	uiPluginRunning,
@@ -568,8 +564,8 @@ export const LeftPanel = memo(function LeftPanel({
 		});
 	}, [sessions, projectSessions, conversations]);
 	const [collapseProjects, toggleProjects] = useCollapsed(LS_COLLAPSE_PROJECTS, false);
-	const [collapseConvs, toggleConvs] = useCollapsed(LS_COLLAPSE_CONVS, false);
-	const [collapseSessions, toggleSessions] = useCollapsed(LS_COLLAPSE_SESSIONS, false);
+	const [collapseConvs] = useCollapsed(LS_COLLAPSE_CONVS, false);
+	const [collapseSessions] = useCollapsed(LS_COLLAPSE_SESSIONS, false);
 	const [pluginCollapsed, togglePluginCollapsed] = usePluginSectionCollapse();
 	const [collapseGroups, setCollapseGroups] = useState(false);
 	const [collapsedSubagents, toggleSubagents] = useCollapsedSubagents();
@@ -1947,7 +1943,7 @@ export const LeftPanel = memo(function LeftPanel({
 		[panelSend],
 	);
 
-	const renderHistorySessionRow = (s: SessionSummary, projectPath?: string) => {
+	const renderHistorySessionRow = (s: SessionSummary, _projectPath?: string) => {
 		const normCur = normalizeSessionPathKey(currentFile);
 		const normPath = normalizeSessionPathKey(s.path);
 		const runInfo = getHistoryRunningInfo(s);
@@ -2163,7 +2159,7 @@ export const LeftPanel = memo(function LeftPanel({
 	};
 
 	const renderSingleConvRow = (
-		{ c, depth, hasKids, isCollapsed, descendantCount, hasStreaming, hasError, hasQuestion }: ConvRowItem,
+		{ c, depth, hasKids, isCollapsed, hasStreaming, hasQuestion }: ConvRowItem,
 		projectPath?: string,
 	) => {
 		const convSessionKey = normalizeSessionPathKey(c.sessionFile || c.sessionId || c.id);

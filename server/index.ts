@@ -47,7 +47,6 @@ import { registerTtsRoutes } from "./tts-routes.js";
 import express, { type Response } from "express";
 import { mobileCors, mobileOriginAuthorized } from "./mobile-origin.js";
 import { createMobilePushService } from "./mobile-push.js";
-import type { MobileNotificationEvent } from "./mobile-notification-events.js";
 import compression from "compression";
 import { WebSocket, WebSocketServer } from "ws";
 import { VERSION, getAgentDir } from "@earendil-works/pi-coding-agent";
@@ -118,15 +117,7 @@ import {
 	resolveSystemDefaultLocale,
 	unloadServerStrings,
 } from "./locales.js";
-import {
-	PluginManager,
-	resolvePluginClientFile,
-	resolvePluginSharedFile,
-	type PluginChatRequest,
-	type PluginConversationQuery,
-	type PluginConversationSnapshot,
-	type PluginRunEvent,
-} from "./plugins.js";
+import { PluginManager, resolvePluginClientFile, resolvePluginSharedFile } from "./plugins.js";
 import { confirmPluginInstall, PluginInstaller } from "./plugin-installer.js";
 import { syncPluginCatalog } from "./plugin-catalog-sync.js";
 import type { ServerLang } from "./i18n.js";

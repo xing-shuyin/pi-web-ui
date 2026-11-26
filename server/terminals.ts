@@ -1,7 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { sleep } from "./async-utils.js";
 import { chmodSync, existsSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";

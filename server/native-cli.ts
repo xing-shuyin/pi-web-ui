@@ -5,7 +5,7 @@ import type { NativeCliConfig, PromptAttachment, ServerMessage } from "./protoco
 import { isUploadDataTooLong, uploadLimitBytes, type UploadLimits } from "./payload-limits.js";
 import { CLIENT_ID_PATTERN, saveUpload, uploadsRoot } from "./uploads.js";
 import type { NativeCliDiscoveryOptions } from "./native-cli-discovery.js";
-import { ENGINE_CATALOG, isNativeCliEngineId } from "./engine-catalog.js";
+import { ENGINE_CATALOG } from "./engine-catalog.js";
 import { nativeCliModelLaunch, withClaudeSettingsEnv, type NativeCliModelConnection } from "./native-cli-model.js";
 import { resolveCliExecutableLaunch, resolveEngineCliLaunch } from "./engine-cli.js";
 import { isAbsoluteWirePath, wireToAbs } from "./files-service.js";

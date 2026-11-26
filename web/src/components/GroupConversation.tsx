@@ -111,7 +111,7 @@ function GroupRoom({
 	const [shareBusy, setShareBusy] = useState(false);
 	const [shareNotice, setShareNotice] = useState("");
 	const shareKey = useRef<string>("");
-	const shareZIndex = useOverlayZIndex(shareOpen);
+	useOverlayZIndex(shareOpen);
 	const openShare = useCallback(() => {
 		setShareOpen(true);
 		setShareNotice("");

@@ -139,7 +139,7 @@ export function mergeProviderConfigEntry(
 					const parsed = JSON.parse(model.customExtraBody.trim());
 					if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
 						merged.samplingParams = {
-							...((merged.samplingParams as Record<string, unknown>) ?? {}),
+							...(merged.samplingParams as Record<string, unknown>),
 							...parsed,
 						};
 					}

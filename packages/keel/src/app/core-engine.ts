@@ -1,7 +1,6 @@
 import type { DispatchSession, EngineService } from "../engine-service.js";
 import type { ElsewhereRunning, ServerMessage } from "../protocol.js";
 import { toServiceInfo, launchOrigin } from "../launch-origin.js";
-import type { TransportPort } from "../contracts/ports.js";
 import type { ModelAdminPort } from "../contracts/model-admin.js";
 import type { SettingsStorePort } from "../contracts/settings-store.js";
 import { QuiesceRejectedError } from "../contracts/quiesce.js";

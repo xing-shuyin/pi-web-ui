@@ -191,10 +191,6 @@ function DeviceGroupManagerContent() {
 		}
 	}
 
-	async function handleSaveMembers(roomId: string) {
-		return handleSaveEdit(roomId);
-	}
-
 	async function handleRename(roomId: string) {
 		if (!renameValue.trim() || busy) return;
 		setBusy(true);

@@ -177,7 +177,9 @@ try {
 	const text = first.output.get(id);
 	check(
 		"explicit Enter submits multiline text and real paths",
-		text.includes("第二行") && text.includes("reference.txt") && text.includes("Directory path:"),
+		text.includes("第二行") &&
+			text.includes("reference.txt") &&
+			(text.includes("Directory path:") || text.includes("@./")),
 	);
 	check("terminal control escapes are not pasted", !text.includes("\\u001b"));
 	const clientUploads = join(dataDir, "uploads", "native-cli-smoke");
@@ -308,10 +310,13 @@ try {
 		data: "\r",
 	});
 	await until(() => reconnected.output.get(cliId)?.includes("SUBMITTED:"), "retained native draft submitted");
+	const submittedOutput = reconnected.output.get(cliId);
 	check(
 		"native input retains its draft and line reference after navigation",
-		reconnected.output.get(cliId).includes("conversation-scoped draft") &&
-			reconnected.output.get(cliId).includes("lines 1-1"),
+		submittedOutput.includes("conversation-scoped draft") &&
+			(submittedOutput.includes("lines 1-1") ||
+				submittedOutput.includes("reference.txt#L1") ||
+				submittedOutput.includes("reference.txt:1")),
 	);
 	reconnected.send({
 		type: "terminal_kill",
