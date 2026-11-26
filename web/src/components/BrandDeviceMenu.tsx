@@ -113,7 +113,7 @@ export function BrandDeviceMenu({
 			<img
 				className={barItem ? "brand-logo bar-item-brand-logo bar-item-icon" : "brand-logo"}
 				src={`${appBase()}icons/icon-192.png`}
-				alt="pi-web-ui"
+				alt="keel"
 				width={26}
 				height={26}
 				draggable={false}

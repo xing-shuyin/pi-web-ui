@@ -7,7 +7,7 @@
  * - 缺 node 时该跑哪条命令（不替用户下载，先给确定可行的官方向导）
  *
  * 纯函数 + 可注入 `exists`/`env`，不 spawn、不读注册表，方便单测。
- * 服务配置路径与 `bin/pi-web-ui.mjs` 的 `serviceLabel` / `winServiceDir` / `systemdUnitPath`
+ * 服务配置路径与 `bin/keel.mjs` 的 `serviceLabel` / `winServiceDir` / `systemdUnitPath`
  * 必须保持一致（那边是 CLI 的单源；这里只做只读推导，改了要同步）。
  */
 import { join, sep } from "node:path";
@@ -79,9 +79,12 @@ export function parseNpmPrefix(stdout: string): string | null {
 	return candidate ?? null;
 }
 
-/** 全局包根：`<prefix>/node_modules/keel-agent`。Windows 上 prefix 常带反斜杠，统一成 `/` 拼接。 */
-export function globalKernelRoot(prefix: string): string {
-	return [prefix.replace(/[/\\]+$/, ""), "node_modules", "keel-agent"].join(sep);
+/** 全局包根：Windows 为 `<prefix>/node_modules/keel-agent`，POSIX（macOS/Linux）为 `<prefix>/lib/node_modules/keel-agent`。 */
+export function globalKernelRoot(prefix: string, platform: NodeJS.Platform = process.platform): string {
+	const clean = prefix.replace(/[/\\]+$/, "");
+	return platform === "win32"
+		? [clean, "node_modules", "keel-agent"].join(sep)
+		: [clean, "lib", "node_modules", "keel-agent"].join(sep);
 }
 
 /** 服务配置的落点（与 CLI 一致；只读判断"装没装"）。 */
@@ -90,7 +93,7 @@ export function serviceArtifactPath(platform: NodeJS.Platform, env: NodeJS.Proce
 		const appData = env.APPDATA?.trim() || join(home, "AppData", "Roaming");
 		return join(appData, "pi-web-ui", "pi-web-ui.ps1");
 	}
-	if (platform === "darwin") return join(home, "Library", "LaunchAgents", "com.xingshuyin.pi-web-ui.plist");
+	if (platform === "darwin") return join(home, "Library", "LaunchAgents", "com.xingshuyin.keel.plist");
 	// systemd 系统单元要 root 才读得到；普通用户查不到就是 unknown，不是 absent。
 	return "/etc/systemd/system/pi-web-ui.service";
 }
@@ -103,6 +106,12 @@ export function readServiceInstallState(input: {
 }): ServiceInstallState {
 	const path = serviceArtifactPath(input.platform, input.env, input.home);
 	if (input.exists(path)) return "installed";
+	if (
+		input.platform === "darwin" &&
+		input.exists(join(input.home, "Library", "LaunchAgents", "com.xingshuyin.pi-web-ui.plist"))
+	) {
+		return "installed";
+	}
 	// Linux 的单元文件在 /etc 下，普通用户看不到 → 不能说"没装"，只能说"不知道"。
 	return input.platform === "linux" ? "unknown" : "absent";
 }

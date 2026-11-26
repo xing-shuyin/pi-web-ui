@@ -6,7 +6,7 @@ import { execSync } from "node:child_process";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const releaseDir = join(repoRoot, "release");
-const unpackedDir = join(releaseDir, "win-unpacked");
+const unpackedDir = join(repoRoot, "release-portable", "win-unpacked");
 const portableDir = join(releaseDir, "PiWebUI-Portable");
 const launcherDir = join(repoRoot, "launcher");
 const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
@@ -34,9 +34,9 @@ async function main() {
 	console.log("=== 开始制作 Pi Web UI 便携版 ===");
 
 	if (!skipPack) {
-		console.log("[make-portable] 正在调用 electron-builder 打包最新构建到 win-unpacked...");
+		console.log("[make-portable] 正在调用 electron-builder 打包完整内核版到 release-portable/win-unpacked...");
 		try {
-			run("node scripts/run-electron-builder.mjs -c desktop/electron-builder.yml --win dir");
+			run("node scripts/run-electron-builder.mjs -c desktop/electron-builder.portable.yml --win dir");
 		} catch (err) {
 			if (existsSync(unpackedDir)) {
 				console.warn(`⚠ electron-builder 打包遇到网络波动（如 504 超时），回落复用已有的 win-unpacked: ${err.message}`);
@@ -253,7 +253,7 @@ async function main() {
 	console.log(`✔ 便携版制作完成: ${portableDir}`);
 
 	if (createZip) {
-		const zipName = `pi-web-ui-desktop-${version}-portable.zip`;
+		const zipName = `keel-${version}-portable.zip`;
 		const zipTarget = join(releaseDir, zipName);
 		console.log(`[make-portable] 正在压缩便携包到 ${zipTarget}...`);
 		try {

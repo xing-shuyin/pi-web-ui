@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
  * 新增一个 server 依赖而忘了打包 → 这里红，而不是等用户装了才发现。
  */
 const root = cwd();
-const shellYml = readFileSync(join(root, "desktop/electron-builder.shell.yml"), "utf8");
+const shellYml = readFileSync(join(root, "desktop/electron-builder.yml"), "utf8");
 
 /** 壳的入口集合：desktop 主进程/preload + 内置浏览器 UI（dist/browser 也是壳体）。 */
 function shellRoots(): string[] {
@@ -76,12 +76,15 @@ function importSpecifiers(source: string): string[] {
 interface Closure {
 	/** 落在 server/ 下的模块（相对仓库根，`/` 分隔）。 */
 	server: Set<string>;
+	/** 落在 packages/ 下的模块（相对仓库根，`/` 分隔）。 */
+	packages: Set<string>;
 	/** 落在 shared/ 下的模块。 */
 	shared: Set<string>;
 }
 
 function walkClosure(): Closure {
 	const server = new Set<string>();
+	const packages = new Set<string>();
 	const shared = new Set<string>();
 	const seen = new Set<string>();
 	const queue = shellRoots();
@@ -94,11 +97,12 @@ function walkClosure(): Closure {
 			if (!target) continue;
 			const rel = relative(root, target).split(sep).join("/");
 			if (rel.startsWith("server/")) server.add(rel);
+			if (rel.startsWith("packages/")) packages.add(rel);
 			if (rel.startsWith("shared/")) shared.add(rel);
 			queue.push(target);
 		}
 	}
-	return { server, shared };
+	return { server, packages, shared };
 }
 
 describe("纯壳包依赖闭包", () => {
@@ -118,17 +122,21 @@ describe("纯壳包依赖闭包", () => {
 		}
 	});
 
-	it("每一个被壳 require 的 server 模块都在 files 里显式列出（新增依赖 → 这里红）", () => {
+	it("每一个被壳 require 的 server / packages 模块都在 files 里显式列出（新增依赖 → 这里红）", () => {
 		for (const file of closure.server) {
 			// server/foo.ts → dist/server/foo.js（tsc 产物同名）
 			const built = file.replace(/^server\//, "dist/server/").replace(/\.ts$/, ".js");
 			expect(shellYml, `纯壳包缺少 ${built}（壳运行时会 MODULE_NOT_FOUND）`).toContain(built);
 		}
+		for (const file of closure.packages) {
+			const built = `dist/${file.replace(/\.ts$/, ".js")}`;
+			expect(shellYml, `纯壳包缺少 ${built}（壳运行时会 MODULE_NOT_FOUND）`).toContain(built);
+		}
 	});
 
 	it("列出的例外都是真实存在的索引文件（防悬空/防多列）", () => {
-		const listed = [...shellYml.matchAll(/^\s*-\s*(dist\/server\/[\w./-]+\.js)$/gm)].map((m) => m[1]!);
-		expect(listed.length).toBe(closure.server.size);
+		const listed = [...shellYml.matchAll(/^\s*-\s*(dist\/(?:server|packages)\/[\w./-]+\.js)$/gm)].map((m) => m[1]!);
+		expect(listed.length).toBe(closure.server.size + closure.packages.size);
 		for (const file of listed) {
 			expect(() => statSync(join(root, file.replace(/^dist\//, "").replace(/\.js$/, ".ts")))).not.toThrow();
 		}

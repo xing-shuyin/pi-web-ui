@@ -1,7 +1,7 @@
 {
-	"name": "keel — pi coding agent",
+	"name": "keel",
 	"short_name": "keel",
-	"description": "The polished browser cockpit for the pi coding agent. Stream conversations, inspect tool calls, manage files and run your workspace.",
+	"description": "The polished browser cockpit for the keel coding agent. Stream conversations, inspect tool calls, manage files and run your workspace.",
 	"start_url": "./",
 	"scope": "./",
 	"display": "standalone",

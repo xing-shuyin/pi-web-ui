@@ -4,6 +4,7 @@ import {
 	compareVersions,
 	fetchLatestVersion,
 	globalPackageManifestPath,
+	isLegacyGlobalBinConflict,
 	nodeInstallLaunch,
 	parsePackageVersion,
 	planUpgrade,
@@ -185,5 +186,18 @@ describe("环境摘要与按钮", () => {
 		const linux = { ...noNode, nodeInstall: { ...baseEnv.nodeInstall, canRun: false } };
 		expect(kernelEnvironmentActions(linux).installNode).toBe(false);
 		expect(kernelEnvironmentActions(null)).toEqual({ upgrade: false, installNode: false });
+	});
+});
+
+describe("isLegacyGlobalBinConflict", () => {
+	it("识别旧包 pi-web-ui 同名 bin 导致的 EEXIST 冲突", () => {
+		expect(
+			isLegacyGlobalBinConflict(
+				"npm error code EEXIST\nnpm error path /Users/c/.local/share/fnm/node-versions/v26.12.1/installation/bin/pwu",
+			),
+		).toBe(true);
+		expect(isLegacyGlobalBinConflict("npm error EEXIST File exists: C:\\npm\\pi-web-ui.cmd")).toBe(true);
+		expect(isLegacyGlobalBinConflict("npm error EACCES permission denied")).toBe(false);
+		expect(isLegacyGlobalBinConflict("npm error EEXIST File exists: /usr/local/bin/other-cli")).toBe(false);
 	});
 });

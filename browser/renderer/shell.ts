@@ -21,6 +21,7 @@ import {
 	globeIcon,
 	iconButton,
 	input,
+	keelBrandIcon,
 	keyIcon,
 	listenPanelEvents,
 	listenState,
@@ -60,7 +61,7 @@ async function browserAction(
 }
 
 const app = document.querySelector<HTMLElement>("#app")!;
-const chrome = element("header", "pb-chrome");
+const chrome = element("header", "pb-chrome pb-chrome-flush-left");
 const titlebar = element("div", "pb-chrome-row pb-tab-row");
 
 const tabs = element("div", "pb-tabs");
@@ -260,7 +261,11 @@ closeBtn.append(createSvg(13, 13, "0 0 10 10", [svgPath("M1.5 1.5l7 7M8.5 1.5l-7
 closeBtn.addEventListener("click", () => window.piDesktop?.window.close());
 
 if (window.piDesktop?.platform === "darwin") {
+	document.body.classList.add("pb-mac");
 	controls.style.display = "none";
+	window.piDesktop.window.onFullScreenChange?.((isFullScreen: boolean) => {
+		document.body.classList.toggle("pb-fullscreen", isFullScreen);
+	});
 }
 
 controls.append(minBtn, maxBtn, closeBtn);
@@ -611,7 +616,7 @@ function render(next: BrowserState): void {
 			});
 			mark.append(icon);
 		} else if (tab.internal) {
-			mark.textContent = "π";
+			mark.append(keelBrandIcon(12));
 		} else {
 			mark.append(globeIcon(12));
 		}
@@ -671,6 +676,7 @@ function updateChromePosition(next: BrowserState): void {
 		? Math.max(MIN_SPLIT_RATIO, Math.min(MAX_SPLIT_RATIO, next.splitRatio))
 		: 0.5;
 	const left = next.mode === "split" ? Math.floor(window.innerWidth * split) : 0;
+	chrome.classList.toggle("pb-chrome-flush-left", next.mode !== "split");
 	if (next.mode === "split") {
 		const right = Math.max(0, window.innerWidth - left);
 		chrome.style.display = "";

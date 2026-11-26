@@ -82,6 +82,12 @@ export function planUpgrade(input: { current: string | null; latest: string | nu
 	};
 }
 
+/** 检测 npm 全局安装是否因旧包 `pi-web-ui` 同名 bin（pi-web-ui / piwebui / pwu）冲突而报 EEXIST。 */
+export function isLegacyGlobalBinConflict(output: string): boolean {
+	if (!/\bEEXIST\b/.test(output)) return false;
+	return /(?:^|[\\/ ])(?:pi-web-ui|piwebui|pwu)(?:\.cmd|\.ps1)?(?:\s|$)/m.test(output);
+}
+
 export const DEFAULT_REGISTRY_LATEST_URL = "https://registry.npmjs.org/keel-agent/latest";
 
 /** 向 npm registry 问最新版本；超时/离线/坏 JSON 一律 null（UI 显示"未知"，不报错）。 */

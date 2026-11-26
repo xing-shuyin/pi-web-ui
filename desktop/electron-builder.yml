@@ -1,48 +1,77 @@
-appId: com.xingshuyin.pi-web-ui-desktop
-productName: pi-web-ui-desktop
+# 桌面端标准安装包（纯壳包）：只放壳，内核由全局 keel（keel-agent）提供；
+# 本机未安装 Node / keel 时，由壳的启动覆盖层提示安装相关环境。
+# 便携版需内置完整内核，请使用 `desktop/electron-builder.portable.yml`（`npm run desktop:portable`）。
+appId: com.xingshuyin.keel
+productName: keel
 directories:
   output: release
 files:
-  - bin
+  # 壳自己的代码 + 内置浏览器 UI + 三进程根共用的 dist/shared + 壳声明
   - dist/desktop
   - dist/browser
-  - dist/server
-  # 壳与 server 共用的小工具（锁协议 / 隐藏控制台开关）：两边都从 dist/shared 引，少它安装包直接 MODULE_NOT_FOUND
   - dist/shared
-  - web/dist
-  - themes
-  - plugin-sdk
-  - plugins/catalog.json
-  - docs/architecture-plugins.md
   - package.json
-  # 桌面主进程 requires 它（内部用 debug/ms），不进打包名单就会在安装版里 MODULE_NOT_FOUND
-  - node_modules/electron-chrome-extensions/**
+  # 关键（两个坑都要显式踩住）：
+  # 1. electron-builder 会按 package.json 的 `dependencies` **自动收全部生产依赖**，
+  #    只靠“不写”排不掉（实测：不取反时 node-pty/ffmpeg/device-p2p 照样进包，760 MB）。
+  # 2. 先全量取反内核目录与 node_modules，再把壳真正需要的模块和依赖放回来。
+  - "!node_modules/**/*"
+  - "!bin"
+  - "!dist/server"
+  - "!dist/packages"
+  # 例外：壳自己要用到的纯工具模块（CLI 启动链、web-build 验收等），由 desktop-shell-closure 单测守卫。
+  - dist/server/command-spawn.js
+  - dist/server/engine-catalog.js
+  - dist/server/engine-cli.js
+  - dist/server/global-loader.js
+  - dist/server/native-cli-discovery.js
+  - dist/server/process-utils.js
+  - dist/server/run-process.js
+  - dist/server/web-build.js
+  - dist/packages/keel/src/engine-catalog.js
+  - "!web/dist"
+  - "!themes"
+  - "!plugin-sdk"
+  - "!plugins/catalog.json"
+  - "!docs/architecture-plugins.md"
+  # >>> shell-deps（由 scripts/gen-shell-deps.mjs 生成，勿手改）
+  # 内容 = 壳源码的 import 闭包 + 这些包的传递依赖；改了壳的 import 就重跑生成器。
+  - node_modules/@isaacs/fs-minipass/**
+  - node_modules/argparse/**
+  - node_modules/builder-util-runtime/**
+  - node_modules/chownr/**
   - node_modules/debug/**
-  - node_modules/ms/**
-  # TOTP 验证器的扫码解码（browser/runtime/qr.ts 顶层 import）：漏了安装版主进程直接 MODULE_NOT_FOUND
+  - node_modules/electron-chrome-extensions/**
+  - node_modules/electron-updater/**
+  - node_modules/fs-extra/**
+  - node_modules/graceful-fs/**
+  - node_modules/js-yaml/**
+  - node_modules/jsonfile/**
   - node_modules/jsqr/**
+  - node_modules/lazy-val/**
+  - node_modules/lodash.escaperegexp/**
+  - node_modules/lodash.isequal/**
+  - node_modules/minipass/**
+  - node_modules/minizlib/**
+  - node_modules/ms/**
+  - node_modules/pend/**
+  - node_modules/sax/**
+  - node_modules/tar/**
+  - node_modules/tiny-typed-emitter/**
+  - node_modules/universalify/**
+  - node_modules/yauzl/**
+  # <<< shell-deps
 extraMetadata:
   main: dist/desktop/main.js
-# asar 打包：把 17000+ 散文件（主要是 node_modules）收进 app.asar，
-# MSI/WiX 不再逐文件计价/拷贝/替换，安装与更新只写几个大文件。
-# 注意：dist/server 必须留在 asar 内 —— Node 从 app.asar/dist/server/*.js
-# 向上解析 node_modules 时才能命中 app.asar/node_modules；
-# 一旦把 dist/server 解出来，相对查找会落到 app.asar.unpacked 之外，
-# 反而与包内依赖断链。所以只解压不可进 asar 执行的原生件/可执行文件。
 asar: true
-asarUnpack:
-  - "**/*.node"
-  - "bin/**/*"
-  - "node_modules/node-pty/**"
+# 没有原生件可解包：node-pty 属于内核（全局 keel 运行时），壳不需要它
+asarUnpack: []
 npmRebuild: false
 publish:
   provider: github
   owner: xing-shuyin
   repo: pi-web-ui
 win:
-  # 只留 nsis + dir：CI 的 windows job 直接跑 `--win`（.github/workflows/desktop-release.yml），
-  # 把 msi 加进来会让 CI 多打一个包、却不被 upload / attach 名单收（白等几分钟）。
-  # 要 MSI 就显式指定目标：npm run desktop:msi（= `--win msi`）。
   target:
     - nsis
     - dir
@@ -56,20 +85,13 @@ linux:
   target: AppImage
   icon: web/public/icons/icon-1024.png
 nsis:
-  # 安装器必须提权（实测：非提权启动会拿到低完整性令牌，安装目录不可写 →
-  # NSIS 报“不能打开要写入的文件：<目录>Uninstall …exe”，换任何目录都一样）。
-  # perMachine 是 NSIS 侧的提权开关；requestedExecutionLevel 只作用于应用 exe，别用那个。
+  # 安装器必须提权（实测：非提权启动会拿到低完整性令牌，安装目录不可写）
   perMachine: true
   oneClick: false
   allowToChangeInstallationDirectory: true
   artifactName: ${productName}-${version}-setup.${ext}
   # 安装/卸载前先清场：关掉旧版主进程 + 命令行指向安装目录的 node 侧车
-  # （股票 CHECK_APP_RUNNING 看不见镜像在安装目录之外的系统 node 侧车，见 §十二）。
-  # 路径相对项目根目录（app-builder getResource 先找 buildResourcesDir 再找项目根）。
   include: desktop/installer.nsh
-# MSI（可选目标，只有显式 `--win msi` 才出）：WiX 4 直接把 win-unpacked 压成安装包，不执行产物，
-# 所以本地 Windows 也能出——NSIS 那步本地要执行刚生成的 setup.exe 去生成卸载器，会被系统拦掉。
-# warningsAsErrors 必须关：msi target 默认带 WiX 的 -wx（警告当错误），一个 ICE 警告就整包失败。
 msi:
-  artifactName: pi-web-ui-desktop-${version}-win-${arch}.${ext}
+  artifactName: keel-${version}-win-${arch}.${ext}
   warningsAsErrors: false

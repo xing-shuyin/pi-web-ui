@@ -1,8 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- pi symbol favicon: violet rounded square + white π (drawn as paths,
-       no font dependency) -->
-  <rect width="64" height="64" rx="14" fill="#8b5cf6"/>
-  <rect x="14" y="17" width="36" height="6.5" rx="3.25" fill="#ffffff"/>
-  <rect x="17.5" y="23.5" width="6.5" height="25" rx="3.25" fill="#ffffff"/>
-  <rect x="40" y="23.5" width="6.5" height="25" rx="3.25" fill="#ffffff"/>
+  <rect width="64" height="64" rx="14" fill="#0f172a"/>
+  <path d="M18 15h7v14.5L39.5 15h8.5L32.5 31.5 48.5 49H39.8L25 32.5V49h-7V15z" fill="#f8fafc"/>
+  <path d="M39.5 15h8.5L35.5 28.2l-3.6-3.8z" fill="#38bdf8"/>
 </svg>

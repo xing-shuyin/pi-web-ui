@@ -959,7 +959,7 @@ function resolveKernelPkgRoot(): string {
 	if (activeRuntimeVersion) candidates.push(join(desktopRuntimeRootDir(), activeRuntimeVersion));
 	candidates.push(bundledAppRoot());
 	for (const root of candidates) {
-		if (existsSync(join(root, "bin", "pi-web-ui.mjs"))) return root;
+		if (existsSync(join(root, "bin", "keel.mjs"))) return root;
 	}
 	return candidates[candidates.length - 1] ?? bundledAppRoot();
 }

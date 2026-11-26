@@ -1,95 +1,16 @@
-# 纯壳包（shell-only）：安装包里**只放壳**，内核由「全局 npm 包 / userData 运行时」提供。
-#
-# 为什么单列一份配置而不是改主配置：主配置（electron-builder.yml）仍要出「带内核」的完整包，
-# 那是离线 / 没装 node 的机器唯一能起来的路。两种形态并存，命令分开（desktop:nsis / desktop:nsis:shell）。
-#
-# 一并解决的老问题：完整包把 node-pty 的 console helper 铺进 app.asar.unpacked，主进程被强杀后
-# 它们成孤儿抱着原生模块，覆盖安装就卡进度（docs/architecture-desktop-update.md §十二）。
-# 纯壳包不含这些文件，安装器要覆盖的只有自己的 exe。
-#
-# 权威链末端（包内自带）在这里不存在 → `desktop/kernel-authority.ts` 的 `pickKernelSource` 返回 null，
-# 壳把「安装内核 / 安装 Node」交给界面（browser/renderer/shell.ts 的 pb-boot-actions）。
+# 纯壳包独立输出别名（兼容 `npm run desktop:nsis:shell`）：
+# 主配置 `desktop/electron-builder.yml` 本身已是纯壳包，这里只覆盖输出目录与产物名，避免与主通道碰撞。
 extends: desktop/electron-builder.yml
 
 directories:
-  # 单独目录：和完整包共用 release/ 会互相覆盖 win-unpacked 与 latest.yml
   output: release-shell
 
-files:
-  # 壳自己的代码 + 内置浏览器 UI + 壳声明（electron-builder 从这里读 main/version）
-  - dist/desktop
-  - dist/browser
-  # 进程级「隐藏控制台」开关（三进程根共用同一份实现，见 shared/hide-console-windows.ts）：
-  # 壳要 spawn taskkill/powershell/更新器，没它就弹黑窗；放 server/ 下会让纯壳包 MODULE_NOT_FOUND。
-  - dist/shared
-  - package.json
-  # 关键（两个坑都要显式踩住）：
-  # 1. `extends` 是**数组拼接**：父配置的 files 会先拼进来，不等同于覆盖。
-  # 2. electron-builder 会按 package.json 的 `dependencies` **自动收全部生产依赖**，
-  #    只靠“不写”排不掉（实测：不取反时 node-pty/ffmpeg/device-p2p 照样进包，760 MB）。
-  # 所以：先全量取反父配置里的内核目录，再把壳真正需要的四个包放回来。
-  - "!node_modules/**/*"
-  - "!bin"
-  - "!dist/server"
-  # 例外：壳自己要用到的纯工具模块（CLI 启动链：把 Windows 的 npm .cmd shim 还原成 node <entry>；
-  # 壳要跑 `npm i -g pi-web-ui` 就必须有它；web-build 是「装包能不能提供界面」的唯一判据，
-  # 壳用它验收刚装完的包，必须与内核同一份推导）。这些不是内核，只是被壳 require 的库。
-  # 这份名单由 `tests/unit/desktop-shell-closure.test.ts` 的依赖闭包守卫校对：漏一个就红。
-  - dist/server/command-spawn.js
-  - dist/server/engine-catalog.js
-  - dist/server/engine-cli.js
-  - dist/server/global-loader.js
-  - dist/server/native-cli-discovery.js
-  - dist/server/process-utils.js
-  - dist/server/run-process.js
-  - dist/server/web-build.js
-  - "!web/dist"
-  - "!themes"
-  - "!plugin-sdk"
-  - "!plugins/catalog.json"
-  - "!docs/architecture-plugins.md"
-  # >>> shell-deps（由 scripts/gen-shell-deps.mjs 生成，勿手改）
-  # 内容 = 壳源码的 import 闭包 + 这些包的传递依赖；改了壳的 import 就重跑生成器。
-  - node_modules/@isaacs/fs-minipass/**
-  - node_modules/argparse/**
-  - node_modules/builder-util-runtime/**
-  - node_modules/chownr/**
-  - node_modules/debug/**
-  - node_modules/electron-chrome-extensions/**
-  - node_modules/electron-updater/**
-  - node_modules/fs-extra/**
-  - node_modules/graceful-fs/**
-  - node_modules/js-yaml/**
-  - node_modules/jsonfile/**
-  - node_modules/jsqr/**
-  - node_modules/lazy-val/**
-  - node_modules/lodash.escaperegexp/**
-  - node_modules/lodash.isequal/**
-  - node_modules/minipass/**
-  - node_modules/minizlib/**
-  - node_modules/ms/**
-  - node_modules/pend/**
-  - node_modules/sax/**
-  - node_modules/tar/**
-  - node_modules/tiny-typed-emitter/**
-  - node_modules/universalify/**
-  - node_modules/yauzl/**
-  # <<< shell-deps
-
-# 没有原生件可解包：node-pty 属于内核（运行时），壳不需要它
-asarUnpack: []
-
 nsis:
-  # 安装器必须提权（实测：非提权启动会拿到低完整性令牌，安装目录不可写 →
-  # NSIS 报“不能打开要写入的文件：<目录>Uninstall …exe”，换任何目录都一样）。
-  # perMachine 是 NSIS 侧的提权开关；requestedExecutionLevel 只作用于应用 exe，别用那个。
   perMachine: true
   oneClick: false
   allowToChangeInstallationDirectory: true
   artifactName: ${productName}-shell-${version}-setup.${ext}
-  # 安装/卸载前清场：纯壳包里只剩壳自己的 exe（同镜像），股票 CHECK_APP_RUNNING 已经够；
-  # 仍带上同一个宏，是为了「先装完整包、后装纯壳包」这种混装顺序不留下旧内核的孤儿进程。
   include: desktop/installer.nsh
 
-# 纯壳包不参与自更新：NSIS 的 latest.yml 只能有一份，混在一起会把完整包用户导到壳包上。
+# 独立别名通道不参与自更新：NSIS 的 latest.yml 只由主通道发布。
 publish: null

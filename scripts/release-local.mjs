@@ -130,7 +130,7 @@ if (!skipDesktop) {
 			"never",
 		]);
 		// 相对路径：Git Bash 的 GNU tar 会把 "E:..." 当成远程主机名。
-		const zipName = `pi-web-ui-desktop-${version}-win-x64-portable.zip`;
+		const zipName = `keel-${version}-win-x64-portable.zip`;
 		await run("tar", ["-a", "-c", "-f", `release/${zipName}`, "-C", "release/win-unpacked", "."]);
 		console.log(`  → release/${zipName}`);
 	} else {
@@ -138,8 +138,8 @@ if (!skipDesktop) {
 		await run("npx", ["electron-builder", "-c", "desktop/electron-builder.yml", ...target, "--publish", "never"]);
 	}
 	if (withPortable) {
-		step("打包便携版（内置 Git/Node，较慢）");
-		await run("node", ["scripts/make-portable.mjs", "--skip-pack", "--zip", "--with-git", "--with-node"]);
+		step("打包便携版（内置内核/Git/Node，较慢）");
+		await run("node", ["scripts/make-portable.mjs", "--zip", "--with-git", "--with-node"]);
 	}
 	const releaseDir = join(repoRoot, "release");
 	if (existsSync(releaseDir)) {

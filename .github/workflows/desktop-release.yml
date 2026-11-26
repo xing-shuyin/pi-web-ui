@@ -52,11 +52,11 @@ jobs:
       - name: Package Windows installer
         run: npx electron-builder -c desktop/electron-builder.yml --win --publish never
 
-      - name: Package Windows portable edition (with built-in Git & Node.js)
+      - name: Package Windows portable edition (with built-in kernel, Git & Node.js)
         shell: bash
-        run: node scripts/make-portable.mjs --skip-pack --zip --with-git --with-node
+        run: node scripts/make-portable.mjs --zip --with-git --with-node
 
-      # 壳 + 运行时双层模型：把这次打出来的 app 目录里「会变的那层」单独打成运行时归档并签名。
+      # 壳 + 运行时双层模型：从便携版的完整 app 目录里把「会变的那层」单独打成运行时归档并签名。
       # 没有 DESKTOP_RUNTIME_SIGNING_KEY（fork / 未配 secret）就跳过，不阻塞安装包发布。
       - name: Build runtime artifacts (shell + runtime)
         shell: bash
@@ -68,7 +68,7 @@ jobs:
             echo "::warning::没有 DESKTOP_RUNTIME_SIGNING_KEY，跳过运行时产物"
             exit 0
           fi
-          APP=$(ls -d release/win-unpacked/resources/app | head -n1)
+          APP=$(ls -d release-portable/win-unpacked/resources/app | head -n1)
           BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
           node scripts/build-desktop-runtime.mjs --platform win32 --arch x64 --from "$APP" --out release/runtime --base-url "$BASE"
           node scripts/verify-desktop-runtime.mjs             --manifest release/runtime/runtime-win32-x64.json             --signature release/runtime/runtime-win32-x64.sig             --public-key release/runtime/runtime-win32-x64.pub.pem             --archive release/runtime/core-*-win32-x64.tar.zst
@@ -180,7 +180,11 @@ jobs:
             exit 0
           fi
           case "$(uname -m)" in arm64|aarch64) ARCH=arm64 ;; *) ARCH=x64 ;; esac
-          APP=$(ls -d release/mac*/pi-web-ui-desktop.app/Contents/Resources/app | head -n1)
+          APP=$(ls -d release/mac*/keel.app/Contents/Resources/app | head -n1)
+          if [ ! -d "$APP/dist/server" ]; then
+            echo "shell-only package without built-in kernel, skipping runtime artifacts"
+            exit 0
+          fi
           BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
           node scripts/build-desktop-runtime.mjs --platform darwin --arch "$ARCH" --from "$APP" --out release/runtime --base-url "$BASE"
           node scripts/verify-desktop-runtime.mjs             --manifest "release/runtime/runtime-darwin-$ARCH.json"             --signature "release/runtime/runtime-darwin-$ARCH.sig"             --public-key "release/runtime/runtime-darwin-$ARCH.pub.pem"             --archive "release/runtime/core-*-darwin-$ARCH.tar.zst"
@@ -258,6 +262,10 @@ jobs:
             exit 0
           fi
           APP=$(ls -d release/linux-unpacked/resources/app | head -n1)
+          if [ ! -d "$APP/dist/server" ]; then
+            echo "shell-only package without built-in kernel, skipping runtime artifacts"
+            exit 0
+          fi
           BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
           node scripts/build-desktop-runtime.mjs --platform linux --arch x64 --from "$APP" --out release/runtime --base-url "$BASE"
           node scripts/verify-desktop-runtime.mjs             --manifest release/runtime/runtime-linux-x64.json             --signature release/runtime/runtime-linux-x64.sig             --public-key release/runtime/runtime-linux-x64.pub.pem             --archive release/runtime/core-*-linux-x64.tar.zst

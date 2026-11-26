@@ -35,7 +35,7 @@ This capability requires updating and restarting the desktop shell; updating onl
 | Windows NSIS installer `*-setup.exe`               | A fixed machine                                | Run the installer, choose the install directory, then open the app                                                                                 |
 | macOS `.dmg`                                       | Mac desktop app                                | Drag the `.app` into Applications, then open it                                                                                                    |
 | Linux `.AppImage`                                  | Linux desktop app                              | Make it executable and run it, e.g. `chmod +x ./文件名.AppImage`                                                                                   |
-| Windows `pi-web-ui-desktop-<version>-portable.zip` | Carry the program and data on a portable drive | Extract fully into a writable directory and run `启动Pi.bat` or `PiPortable.bat` in the root, see [portable build notes](../launcher/README.en.md) |
+| Windows `keel-<version>-portable.zip` | Carry the program and data on a portable drive (with built-in kernel) | Extract fully into a writable directory and run `启动Pi.bat` or `PiPortable.bat` in the root, see [portable build notes](../launcher/README.en.md) |
 
 The Windows portable ZIP is an Electron app plus a `.bat` launcher script and needs no Python to run; it isn't the same distribution form as the Python launcher. The current repo's `launcher/` contains no Python launcher. The macOS update ZIP is also not a Windows portable package.
 
@@ -44,8 +44,8 @@ Configure the model and authentication on first entry. `/setup` is for service a
 Unsigned or notarized packages may be blocked by the system; the downloaded artifact is the source of truth. Windows may show a SmartScreen prompt. If macOS reports 「已损坏」(damaged) or Gatekeeper blocks it, after confirming the source is trustworthy and placing the app in Applications, clear the quarantine attribute and open it:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/pi-web-ui-desktop.app
-open -a /Applications/pi-web-ui-desktop.app
+xattr -dr com.apple.quarantine /Applications/keel.app
+open -a /Applications/keel.app
 ```
 
 ## Data, ports and usage limits

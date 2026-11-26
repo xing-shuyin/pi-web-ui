@@ -33,11 +33,11 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 
-const DEFAULT_TARGET = "/Applications/pi-web-ui-desktop.app";
-const BACKUP = "/tmp/pi-web-ui-desktop.app.bak";
+const DEFAULT_TARGET = "/Applications/keel.app";
+const BACKUP = "/tmp/keel.app.bak";
 const LOCK = "/tmp/pi-app-update.lock";
 const LOG = "/tmp/pi-app-update.log";
-const APP_PROCESS = "pi-web-ui-desktop.app/Contents/MacOS/pi-web-ui-desktop";
+const APP_PROCESS = "keel.app/Contents/MacOS/keel";
 
 const args = process.argv.slice(2);
 const has = (name) => args.includes(`--${name}`);
@@ -50,10 +50,7 @@ const dryRun = has("dry-run");
 const relaunch = !has("no-relaunch");
 const delay = Math.max(0, Number(value("delay", "0")) || 0);
 const target = value("target", DEFAULT_TARGET);
-const source = value(
-	"source",
-	join("release", process.arch === "arm64" ? "mac-arm64" : "mac", "pi-web-ui-desktop.app"),
-);
+const source = value("source", join("release", process.arch === "arm64" ? "mac-arm64" : "mac", "keel.app"));
 
 /** 追加式日志：截断过一次就再也看不出跑过几轮了。 */
 function log(message) {
@@ -202,7 +199,7 @@ async function main() {
 		const pids = await appPids();
 		if (pids.length) {
 			log(`退出 app（pid ${pids.join(",")}）`);
-			await run("/usr/bin/osascript", ["-e", 'tell application "pi-web-ui-desktop" to quit']);
+			await run("/usr/bin/osascript", ["-e", 'tell application "keel" to quit']);
 			let quit = await waitUntilQuit(20_000);
 			if (!quit) {
 				// 拿不到自动化授权时 osascript 会静默失败：退化成 TERM（Electron 收到即正常退出）

@@ -35,7 +35,7 @@ describe("desktop/electron-builder.portable.yml & electron-builder.yml 打包清
 				new RegExp(`^\\s*-\\s+${requiredEntry.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "m"),
 			);
 		}
-		expect(existsSync(join(repoRoot, "bin", "pi-web-ui.mjs"))).toBe(true);
+		expect(existsSync(join(repoRoot, "bin", "keel.mjs"))).toBe(true);
 		expect(existsSync(join(repoRoot, "plugins", "catalog.json"))).toBe(true);
 		expect(existsSync(join(repoRoot, "plugin-sdk"))).toBe(true);
 	});

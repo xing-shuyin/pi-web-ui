@@ -80,8 +80,14 @@ describe("kernel-env", () => {
 		expect(parseNpmPrefix("\n\n")).toBeNull();
 	});
 
-	it("全局包根与平台分隔符一致", () => {
-		expect(globalKernelRoot("/usr/local/").replace(/\\/g, "/")).toBe("/usr/local/node_modules/keel-agent");
+	it("全局包根按平台区分（Windows 直接 node_modules，POSIX 走 lib/node_modules）", () => {
+		expect(globalKernelRoot("/usr/local/", "darwin").replace(/\\/g, "/")).toBe(
+			"/usr/local/lib/node_modules/keel-agent",
+		);
+		expect(globalKernelRoot("/usr/local/", "linux").replace(/\\/g, "/")).toBe("/usr/local/lib/node_modules/keel-agent");
+		expect(globalKernelRoot("C:\\Users\\c\\AppData\\Roaming\\npm\\", "win32").replace(/\\/g, "/")).toBe(
+			"C:/Users/c/AppData/Roaming/npm/node_modules/keel-agent",
+		);
 	});
 
 	it("装 node / 装内核都要求用户在终端执行（GUI 没有 TTY）", () => {
@@ -99,16 +105,25 @@ describe("kernel-env", () => {
 			"C:/AppData/pi-web-ui/pi-web-ui.ps1",
 		);
 		expect(serviceArtifactPath("darwin", {}, "/Users/c").replace(/\\/g, "/")).toBe(
-			"/Users/c/Library/LaunchAgents/com.xingshuyin.pi-web-ui.plist",
+			"/Users/c/Library/LaunchAgents/com.xingshuyin.keel.plist",
 		);
 		expect(serviceArtifactPath("linux", {}, "/home/c")).toBe("/etc/systemd/system/pi-web-ui.service");
 	});
 
-	it("装没装：Linux 读不到 /etc 时只能说 unknown（不是 absent）", () => {
+	it("装没装：Linux 读不到 /etc 时只能说 unknown（不是 absent）；macOS 兼容旧版 plist", () => {
 		const exists = () => false;
 		expect(readServiceInstallState({ platform: "win32", env: { APPDATA: "C:/A" }, home: "C:/h", exists })).toBe(
 			"absent",
 		);
+		expect(readServiceInstallState({ platform: "darwin", env: {}, home: "/Users/c", exists })).toBe("absent");
+		expect(
+			readServiceInstallState({
+				platform: "darwin",
+				env: {},
+				home: "/Users/c",
+				exists: (p) => p.endsWith("com.xingshuyin.pi-web-ui.plist"),
+			}),
+		).toBe("installed");
 		expect(readServiceInstallState({ platform: "linux", env: {}, home: "/home/c", exists })).toBe("unknown");
 		expect(
 			readServiceInstallState({ platform: "linux", env: {}, home: "/home/c", exists: (p) => p.includes("pi-web-ui") }),

@@ -13,25 +13,30 @@ import { describe, expect, it } from "vitest";
  * 3. `main.ts` 必须处理「权威链返回 null」，`browser-host` / 渲染层必须能展示修复入口。
  */
 const root = cwd();
+const mainYml = readFileSync(join(root, "desktop/electron-builder.yml"), "utf8");
 const shellYml = readFileSync(join(root, "desktop/electron-builder.shell.yml"), "utf8");
+const portableYml = readFileSync(join(root, "desktop/electron-builder.portable.yml"), "utf8");
 
-describe("electron-builder.shell.yml", () => {
-	it("继承主配置（main/appId 等壳行为都在那边单源）", () => {
-		// extends 以 **项目根** 为基准解析，不是配置文件所在目录（写 ./ 会报 Cannot find parent config file）
-		expect(shellYml).toContain("extends: desktop/electron-builder.yml");
-	});
-
+describe("electron-builder.yml（默认桌面安装包 = 纯壳包，使用全局 keel）", () => {
 	it("内核目录只以取反形式出现（不是被打进包）", () => {
-		const filesAt = shellYml.indexOf("\nfiles:");
+		const filesAt = mainYml.indexOf("\nfiles:");
 		expect(filesAt).toBeGreaterThan(-1);
-		const block = shellYml.slice(filesAt, shellYml.indexOf("asarUnpack:", filesAt));
+		const block = mainYml.slice(filesAt, mainYml.indexOf("extraMetadata:", filesAt));
 		// 逐行看：内核路径出现在包里 = 忘了写 `!`；写成 `- "!dist/server"` 才是正确的排除。
 		const entries = block
 			.split("\n")
 			.map((line) => line.trim())
 			.filter((line) => line.startsWith("-") && !line.startsWith("#"))
 			.map((line) => line.replace(/^-\s*/, "").replace(/^["']|["']$/g, ""));
-		const forbidden = ["bin", "dist/server", "web/dist", "themes", "plugin-sdk", "plugins/catalog.json"];
+		const forbidden = [
+			"bin",
+			"dist/server",
+			"dist/packages",
+			"web/dist",
+			"themes",
+			"plugin-sdk",
+			"plugins/catalog.json",
+		];
 		for (const entry of entries) {
 			if (entry.startsWith("!")) continue;
 			for (const path of forbidden) {
@@ -56,14 +61,36 @@ describe("electron-builder.shell.yml", () => {
 			"node_modules/ms/**",
 			"node_modules/jsqr/**",
 		]) {
-			expect(shellYml, `缺少 ${pkg}`).toContain(pkg);
+			expect(mainYml, `缺少 ${pkg}`).toContain(pkg);
 		}
 	});
+});
 
-	it("产物目录与发布通道独立，不覆盖完整包的 win-unpacked / latest.yml", () => {
+describe("electron-builder.shell.yml（独立输出别名）", () => {
+	it("继承主配置且产物目录与发布通道独立", () => {
+		expect(shellYml).toContain("extends: desktop/electron-builder.yml");
 		expect(shellYml).toContain("output: release-shell");
 		expect(shellYml).toContain("artifactName: ${productName}-shell-${version}-setup.${ext}");
 		expect(shellYml).toContain("publish: null");
+	});
+});
+
+describe("electron-builder.portable.yml（便携版必须内置完整内核）", () => {
+	it("包含完整内核目录且输出到独立的 release-portable", () => {
+		expect(portableYml).not.toContain("extends:");
+		expect(portableYml).toContain("output: release-portable");
+		for (const required of [
+			"bin",
+			"dist/server",
+			"dist/packages",
+			"web/dist",
+			"themes",
+			"plugin-sdk",
+			"plugins/catalog.json",
+		]) {
+			expect(portableYml, `便携版缺少 ${required}`).toContain(`- ${required}`);
+		}
+		expect(portableYml).toContain("node_modules/node-pty/**");
 	});
 });
 
@@ -99,14 +126,18 @@ describe("壳侧的三处接线", () => {
 		expect(contracts).toContain("kernelMissing?:");
 	});
 
-	it("npm 脚本存在，且不跑完整 build（纯壳包不需要 server/web）", () => {
+	it("标准桌面打包不跑完整 build（纯壳包不需要 server/web），便携版保留完整 build", () => {
 		const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
 			scripts: Record<string, string>;
 		};
-		const script = pkg.scripts["desktop:nsis:shell"];
-		expect(script, "缺 desktop:nsis:shell").toBeTruthy();
-		expect(script).toContain("electron-builder.shell.yml");
-		expect(script).not.toContain("npm run build &&");
+		for (const name of ["desktop:dist", "desktop:nsis", "desktop:msi"]) {
+			const script = pkg.scripts[name];
+			expect(script, `缺 ${name}`).toBeTruthy();
+			expect(script).toContain("electron-builder.yml");
+			expect(script).not.toContain("npm run build &&");
+		}
+		expect(pkg.scripts["desktop:portable"]).toContain("npm run build &&");
+		expect(pkg.scripts["desktop:portable:full"]).toContain("npm run build &&");
 	});
 
 	it("纯壳包配置引用的 yml/nsh 真实存在（防悬空引用）", () => {

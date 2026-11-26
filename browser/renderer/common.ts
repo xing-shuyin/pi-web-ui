@@ -58,6 +58,7 @@ declare global {
 				close(): void;
 				isMaximized(): Promise<boolean>;
 				onMaximizedChange(callback: (maximized: boolean) => void): (() => void) | void;
+				onFullScreenChange?(callback: (isFullScreen: boolean) => void): (() => void) | void;
 			};
 		};
 	}
@@ -545,4 +546,17 @@ export function listenPanelEvents(callback: (name: BrowserPanelEvent) => void): 
 		})
 		.catch(reportError);
 }
-export const brand = (): HTMLElement => element("span", "pb-brand", "π");
+export const keelBrandIcon = (size = 13): SVGSVGElement => {
+	const svg = createSvg(size, size, "0 0 24 24", []);
+	const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	path.setAttribute("d", "M5 4h3.5v6.8L15.2 4H19l-7.2 7.6L19.4 20h-4.1L8.5 12.6V20H5V4z");
+	path.setAttribute("fill", "currentColor");
+	svg.append(path);
+	return svg;
+};
+
+export const brand = (): HTMLElement => {
+	const el = element("span", "pb-brand");
+	el.append(keelBrandIcon(14));
+	return el;
+};

@@ -29,11 +29,11 @@
 Requires **Node.js 22.19.0 or later**. Run these commands from your project directory.
 
 ```bash
-npm install -g pi-web-ui@latest
-pwu .
+npm install -g keel-agent@latest
+keel .
 ```
 
-`pwu`, `piwebui`, and `pi-web-ui` are equivalent commands; all subcommands and options work with each. Use `pwu [directory]` to start in a project directory.
+`keel`, `pwu`, `piwebui`, and `pi-web-ui` are equivalent commands; all subcommands and options work with each. Use `keel [directory]` to start in a project directory.
 
 Open `http://127.0.0.1:8787` if the browser does not open automatically.
 In workspace settings, configure a model provider and its credentials, select a model, and send your first task.

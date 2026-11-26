@@ -35,7 +35,7 @@ Office 支援文本/CSV 編輯，以及 DOCX/XLSX/PPTX 的只讀內容預覽；�
 | Windows NSIS 安裝包 `*-setup.exe`               | 固定電腦使用             | 執行安裝程式，選擇安裝目錄，再開啟應用                                                                            |
 | macOS `.dmg`                                    | Mac 桌面應用             | 將 `.app` 拖入 Applications 後開啟                                                                                |
 | Linux `.AppImage`                               | Linux 桌面應用           | 賦予執行許可權後執行，如 `chmod +x ./檔名.AppImage`                                                               |
-| Windows `pi-web-ui-desktop-<版本>-portable.zip` | 隨行動硬碟攜帶程式和資料 | 完整解壓到可寫目錄，執行根目錄的 `啟動Pi.bat` 或 `PiPortable.bat`，詳見 [便攜版說明](../launcher/README.zh-TW.md) |
+| Windows `keel-<版本>-portable.zip` | 隨行動硬碟攜帶程式和資料（內建完整核心） | 完整解壓到可寫目錄，執行根目錄的 `啟動Pi.bat` 或 `PiPortable.bat`，詳見 [便攜版說明](../launcher/README.zh-TW.md) |
 
 Windows 便攜 ZIP 是 Electron 應用加 `.bat` 啟動指令碼，執行它不需要 Python；它與 Python launcher 不是同一種分發形式。當前倉庫的 `launcher/` 不含 Python 啟動器。macOS 的更新用 ZIP 也不是 Windows 便攜包。
 
@@ -44,8 +44,8 @@ Windows 便攜 ZIP 是 Electron 應用加 `.bat` 啟動指令碼，執行它不�
 未經簽名或公證的包可能被系統攔截，具體以下載產物為準。Windows 可能顯示 SmartScreen 提示。macOS 若提示“已損壞”或被 Gatekeeper 攔截，在確認來源可信並將應用放入 Applications 後，可清除隔離屬性再開啟：
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/pi-web-ui-desktop.app
-open -a /Applications/pi-web-ui-desktop.app
+xattr -dr com.apple.quarantine /Applications/keel.app
+open -a /Applications/keel.app
 ```
 
 ## 資料、埠與使用限制

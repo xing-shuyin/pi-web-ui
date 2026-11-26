@@ -1,0 +1,45 @@
+# 便携版（portable）：必须内置完整内核（bin / dist/server / web/dist / themes / plugin-sdk / 全部生产依赖），
+# 确保拷贝到任何无网络、未装 Node / 全局 keel 的 Windows 机器也能开箱即用。
+#
+# 为什么不 extends desktop/electron-builder.yml：
+# 主配置已是纯壳包，files 里带 `!node_modules/**/*` 与 `!dist/server` 等取反项；
+# electron-builder 的 `extends` 对 `files` 做数组拼接而非覆盖，继承会导致内核被排掉。
+# 因此便携版独立声明完整打包清单，并输出到独立的 `release-portable/`。
+appId: com.xingshuyin.keel
+productName: keel
+directories:
+  output: release-portable
+files:
+  - bin
+  - dist/desktop
+  - dist/browser
+  - dist/server
+  - dist/packages
+  - dist/shared
+  - web/dist
+  - themes
+  - plugin-sdk
+  - plugins/catalog.json
+  - docs/architecture-plugins.md
+  - package.json
+  # 桌面主进程 requires 它（内部用 debug/ms），不进打包名单就会在安装版里 MODULE_NOT_FOUND
+  - node_modules/electron-chrome-extensions/**
+  - node_modules/debug/**
+  - node_modules/ms/**
+  # TOTP 验证器的扫码解码（browser/runtime/qr.ts 顶层 import）：漏了主进程直接 MODULE_NOT_FOUND
+  - node_modules/jsqr/**
+extraMetadata:
+  main: dist/desktop/main.js
+# asar 打包：把 17000+ 散文件（主要是 node_modules）收进 app.asar；
+# dist/server 留在 asar 内，使相对 require 命中 app.asar/node_modules。
+asar: true
+asarUnpack:
+  - "**/*.node"
+  - "bin/**/*"
+  - "node_modules/node-pty/**"
+npmRebuild: false
+publish: null
+win:
+  target:
+    - dir
+  icon: web/public/icons/icon-1024.png

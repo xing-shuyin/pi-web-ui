@@ -43,7 +43,7 @@ Windows 不允许程序自己改默认程序：注册只是让 pi 出现在「�
 | Windows NSIS 安装包 `*-setup.exe`               | 固定电脑使用             | 运行安装程序，选择安装目录，再打开应用                                                                      |
 | macOS `.dmg`                                    | Mac 桌面应用             | 将 `.app` 拖入 Applications 后打开                                                                          |
 | Linux `.AppImage`                               | Linux 桌面应用           | 赋予执行权限后运行，如 `chmod +x ./文件名.AppImage`                                                         |
-| Windows `pi-web-ui-desktop-<版本>-portable.zip` | 随移动硬盘携带程序和数据 | 完整解压到可写目录，运行根目录的 `启动Pi.bat` 或 `PiPortable.bat`，详见 [便携版说明](../launcher/README.md) |
+| Windows `keel-<版本>-portable.zip` | 随移动硬盘携带程序和数据（内置完整内核） | 完整解压到可写目录，运行根目录的 `启动Pi.bat` 或 `PiPortable.bat`，详见 [便携版说明](../launcher/README.md) |
 
 Windows 便携 ZIP 是 Electron 应用加 `.bat` 启动脚本，运行它不需要 Python；它与 Python launcher 不是同一种分发形式。当前仓库的 `launcher/` 不含 Python 启动器。macOS 的更新用 ZIP 也不是 Windows 便携包。
 
@@ -52,8 +52,8 @@ Windows 便携 ZIP 是 Electron 应用加 `.bat` 启动脚本，运行它不需�
 未经签名或公证的包可能被系统拦截，具体以下载产物为准。Windows 可能显示 SmartScreen 提示。macOS 若提示“已损坏”或被 Gatekeeper 拦截，在确认来源可信并将应用放入 Applications 后，可清除隔离属性再打开：
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/pi-web-ui-desktop.app
-open -a /Applications/pi-web-ui-desktop.app
+xattr -dr com.apple.quarantine /Applications/keel.app
+open -a /Applications/keel.app
 ```
 
 ## 数据、端口与使用限制
@@ -124,16 +124,16 @@ Remove-Item Env:PI_WEB_DESKTOP_URL
 | 命令                            | 构建内容与输出                                                                                |
 | ------------------------------- | --------------------------------------------------------------------------------------------- |
 | `npm run build:desktop`         | 仅用 `desktop/tsconfig.json` 编译桌面壳到 `dist/desktop/`                                     |
-| `npm run desktop:dist`          | 先构建应用与桌面壳，再按 electron-builder 配置生成当前平台产物，输出到 `release/`             |
-| `npm run desktop:msi`           | 先构建应用与桌面壳，再出 Windows MSI 安装包 `release/pi-web-ui-desktop-<版本>-win-x64.msi`    |
-| `npm run desktop:portable`      | 构建应用与桌面壳，再组装 Windows `release/PiWebUI-Portable/`；默认不下载 Git/Node，不生成 ZIP |
-| `npm run desktop:portable:full` | 同上，但增加 `--with-git`；名称中的 full 不表示包含独立 Node.js                               |
+| `npm run desktop:dist`          | 编译桌面壳，按 `electron-builder.yml` 生成当前平台纯壳包（使用全局 `keel-agent`），输出到 `release/` |
+| `npm run desktop:msi`           | 编译桌面壳，生成 Windows MSI 纯壳安装包 `release/keel-<版本>-win-x64.msi`                                  |
+| `npm run desktop:portable`      | 先构建应用与桌面壳，再按 `electron-builder.portable.yml` 内置完整内核并组装 `release/PiWebUI-Portable/`    |
+| `npm run desktop:portable:full` | 同上，并增加 `--with-git`；名称中的 full 不表示包含独立 Node.js                                            |
 
 Windows 便携组装建议在 Windows 上执行。已完成 `npm run build` 和 `npm run build:desktop` 后，可直接传组装参数：
 
 ```bash
 node scripts/make-portable.mjs --with-git --with-node --zip
-# 仅当 release/win-unpacked 已确认是本次目标构建时：
+# 仅当 release-portable/win-unpacked 已确认是本次目标构建时：
 node scripts/make-portable.mjs --skip-pack --with-git --with-node --zip
 ```
 
@@ -150,7 +150,7 @@ electron-builder 打印 `• packaging platform=win32 ...` 之后长时间无输
 
 想看它究竟停在哪一步，加 `DEBUG='electron-builder*,@electron/get*'` 重跑，日志会显示是等锁还是下载。
 
-`--with-git` / `PI_BUNDLE_PORTABLE_GIT=1` 下载 PortableGit，`--with-node` / `PI_BUNDLE_PORTABLE_NODE=1` 下载独立 Node.js；下载和解压需要网络及可用的 `curl`、解压工具。`--zip` 额外生成 `release/pi-web-ui-desktop-<版本>-portable.zip`。当前脚本固定下载 Windows x64 的 Git/Node，不是通用跨平台运行时。完整布局与手动补充方法见[便携版说明](../launcher/README.md)。
+`--with-git` / `PI_BUNDLE_PORTABLE_GIT=1` 下载 PortableGit，`--with-node` / `PI_BUNDLE_PORTABLE_NODE=1` 下载独立 Node.js；下载和解压需要网络及可用的 `curl`、解压工具。`--zip` 额外生成 `release/keel-<版本>-portable.zip`。当前脚本固定下载 Windows x64 的 Git/Node，不是通用跨平台运行时。完整布局与手动补充方法见[便携版说明](../launcher/README.md)。
 
 ## 开发架构与打包配置
 

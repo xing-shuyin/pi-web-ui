@@ -209,8 +209,8 @@ describe("归档安全", () => {
 		expect(checkArchiveEntryType("Directory", "dist").ok).toBe(true);
 	});
 
-	it("白名单覆盖 electron-builder.yml 的打包名单（漏一个就会打出残废运行时）", () => {
-		const yml = readFileSync(join(repoRoot, "desktop", "electron-builder.yml"), "utf8");
+	it("白名单覆盖 electron-builder.portable.yml 的打包名单（漏一个就会打出残废运行时）", () => {
+		const yml = readFileSync(join(repoRoot, "desktop", "electron-builder.portable.yml"), "utf8");
 		const filesBlock = yml.split(/^files:\s*$/m)[1]?.split(/^\S/m)[0] ?? "";
 		const entries = filesBlock
 			.split("\n")

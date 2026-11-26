@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 纯壳包的 node_modules 清单生成器（`desktop/electron-builder.shell.yml` 里 `shell-deps` 标记块）。
+ * 纯壳包的 node_modules 清单生成器（`desktop/electron-builder.yml` 里 `shell-deps` 标记块）。
  *
  * 为什么必须生成、不能手写：纯壳包的 `files` 先 `!node_modules/**` 全排掉，再逐个放回壳要用的包。
  * 手写清单必然漏 —— 已经漏过一次（`dist/browser/runtime/crx.js` 要 `yauzl`，装完启动就
@@ -22,7 +22,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const YML = join(root, "desktop/electron-builder.shell.yml");
+const YML = join(root, "desktop/electron-builder.yml");
 const BEGIN = "  # >>> shell-deps（由 scripts/gen-shell-deps.mjs 生成，勿手改）";
 const END = "  # <<< shell-deps";
 
@@ -157,6 +157,6 @@ if (check) {
 	console.log(`✔ 纯壳包依赖清单是最新的（${packages.size} 个包）`);
 } else {
 	writeFileSync(YML, yml.replace(actual, wanted), "utf8");
-	console.log(`[gen-shell-deps] ${packages.size} 个包 → desktop/electron-builder.shell.yml`);
+	console.log(`[gen-shell-deps] ${packages.size} 个包 → desktop/electron-builder.yml`);
 	console.log(`  ${[...packages].sort().join(", ")}`);
 }

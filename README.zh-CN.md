@@ -29,11 +29,11 @@
 需要 **Node.js 22.19.0 或更高版本**。在你的项目目录中运行：
 
 ```bash
-npm install -g pi-web-ui@latest
-pwu .
+npm install -g keel-agent@latest
+keel .
 ```
 
-`pwu`、`piwebui`、`pi-web-ui` 是等价命令，所有子命令和选项通用。用 `pwu [目录]` 即可在指定项目目录启动。
+`keel`、`pwu`、`piwebui`、`pi-web-ui` 是等价命令，所有子命令和选项通用。用 `keel [目录]` 即可在指定项目目录启动。
 
 默认打开浏览器，地址为 `http://127.0.0.1:8787`。
 首次使用，在设置中配置模型提供商、凭据与模型，即可开始对话。

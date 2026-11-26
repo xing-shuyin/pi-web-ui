@@ -33,8 +33,8 @@ describe("P2P 助手必须随桌面安装包分发", () => {
 		});
 	}
 
-	it("安装包白名单包含 bin/，且构建脚本支持 --host 单平台构建", () => {
-		expect(read("desktop/electron-builder.yml")).toMatch(/^files:\n(?: {2}- .*\n)*? {2}- bin$/m);
+	it("便携版安装包白名单包含 bin/，且构建脚本支持 --host 单平台构建", () => {
+		expect(read("desktop/electron-builder.portable.yml")).toMatch(/^files:\n(?: {2}- .*\n)*? {2}- bin$/m);
 		expect(read("scripts/build-device-p2p.mjs")).toContain('process.argv.includes("--host")');
 	});
 

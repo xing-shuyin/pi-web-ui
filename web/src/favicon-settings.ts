@@ -96,7 +96,7 @@ export function isLightColor(hex: string): boolean {
 
 export function generateFaviconSvg(bgFill: string): string {
 	const symbolFill = isLightColor(bgFill) ? "#1e1e2e" : "#ffffff";
-	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="${bgFill}"/><rect x="14" y="17" width="36" height="6.5" rx="3.25" fill="${symbolFill}"/><rect x="17.5" y="23.5" width="6.5" height="25" rx="3.25" fill="${symbolFill}"/><rect x="40" y="23.5" width="6.5" height="25" rx="3.25" fill="${symbolFill}"/></svg>`;
+	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="${bgFill}"/><path d="M18 15h7v14.5L39.5 15h8.5L32.5 31.5 48.5 49H39.8L25 32.5V49h-7V15z" fill="${symbolFill}"/></svg>`;
 }
 
 interface ServerConfig {

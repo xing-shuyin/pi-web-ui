@@ -331,6 +331,11 @@ body.pb-panel-layer [hidden] {
 	border-bottom: 1px solid var(--pb-line, #2a2c33);
 }
 
+/* macOS 红黄绿按钮由 Electron 原生绘制在左上角；浏览器模式（顶栏贴左）且非全屏时让出横向空间 */
+body.pb-mac:not(.pb-fullscreen) .pb-chrome-flush-left .pb-tab-row {
+	padding-left: 78px;
+}
+
 /* 第二行：固定工具栏（导航 + 页面动作 + 工具入口）。不随站点漂、不被页面压住、位置永不变 */
 .pb-tool-row {
 	background: var(--pb-header-bg, #1c1d21);
