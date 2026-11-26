@@ -29,7 +29,13 @@ import {
 	type UpdaterModeReason,
 	type UpdaterPrefs,
 } from "./updater.js";
-import { buildDesktopLoadUrl, DEFAULT_DESKTOP_PORT, resolveHealthTimeoutMs, waitForHealth } from "./startup.js";
+import {
+	buildDesktopLoadUrl,
+	DEFAULT_DESKTOP_PORT,
+	needsAgentReconnect,
+	resolveHealthTimeoutMs,
+	waitForHealth,
+} from "./startup.js";
 import {
 	isSameKernel,
 	planKernelBoot,
@@ -50,6 +56,7 @@ import { findNativeCliExecutable } from "../server/native-cli-discovery.js";
 import { WEB_BUILD_REPAIR_COMMAND, describeWebBuild, resolveWebBuild } from "../server/web-build.js";
 import {
 	fetchLatestVersion,
+	isLegacyGlobalBinConflict,
 	nodeInstallLaunch,
 	resolveLaunch,
 	planUpgrade,
@@ -686,7 +693,7 @@ async function readHealthVersion(url: string): Promise<string | null> {
 async function syncAgentUrl(url: string): Promise<void> {
 	if (!browserHost) return;
 	const target = buildDesktopLoadUrl(url, process.env);
-	if (browserHost.getState().agentUrl !== target) await browserHost.connectAgent(target, false);
+	if (needsAgentReconnect(browserHost.getState(), target)) await browserHost.connectAgent(target, false);
 }
 
 /**
@@ -913,7 +920,9 @@ function kernelServiceInstallState(): ServiceInstallState {
 /** 把界面切到目标内核并刷新面板状态（“连谁”的唯一写法）。 */
 async function switchAgentTo(url: string, mode: KernelMode, reason: BrowserKernelState["reason"]): Promise<void> {
 	const target = buildDesktopLoadUrl(url, process.env);
-	if (browserHost?.getState().agentUrl !== target) await browserHost?.connectAgent(target, false);
+	if (browserHost && needsAgentReconnect(browserHost.getState(), target)) {
+		await browserHost.connectAgent(target, false);
+	}
 	await refreshKernelState(target, mode, reason);
 }
 
@@ -1163,11 +1172,21 @@ async function upgradeKernel(): Promise<{ ok: boolean; message: string }> {
 	const node = findSystemNode();
 	// 关键：npm 的 install 脚本是 `cmd /c node install.js`，靠 PATH 找 node。
 	// 不补这一行，用 fnm/nvm 的机器会报「'node' 不是内部或外部命令」，整次安装失败。
-	const result = await runCommand("npm", ["i", "-g", "keel-agent@latest"], {
+	const cmdEnv = node ? envWithNodeOnPath(process.env, node) : process.env;
+	let result = await runCommand("npm", ["i", "-g", "keel-agent@latest"], {
 		timeoutMs: 300_000,
-		env: node ? envWithNodeOnPath(process.env, node) : process.env,
+		env: cmdEnv,
 	});
-	const output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n").slice(-2000);
+	let output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n").slice(-2000);
+	if (result.code !== 0 && isLegacyGlobalBinConflict(output)) {
+		console.log("[desktop] kernel: 检测到旧版 pi-web-ui 全局命令冲突，自动卸载 pi-web-ui 后重试");
+		await runCommand("npm", ["uninstall", "-g", "pi-web-ui"], { timeoutMs: 120_000, env: cmdEnv });
+		result = await runCommand("npm", ["i", "-g", "keel-agent@latest"], {
+			timeoutMs: 300_000,
+			env: cmdEnv,
+		});
+		output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n").slice(-2000);
+	}
 	if (result.code !== 0)
 		return {
 			ok: false,

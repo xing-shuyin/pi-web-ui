@@ -26,6 +26,21 @@ export function buildDesktopLoadUrl(baseUrl: string, env: Record<string, string 
 	}
 }
 
+export interface AgentConnectionState {
+	agentUrl: string;
+	agentReady: boolean;
+	agentError?: string;
+}
+
+/**
+ * 判定内核切换/同步时是否需要重新加载 Agent 页（issue #1004）：
+ * 仅有相同 URL 不算已连接——若上次预连接因内核未就绪而失败（agentError）或尚未就绪（!agentReady），
+ * 必须重新触发 connectAgent 以清掉错误状态并加载已健康的内核。
+ */
+export function needsAgentReconnect(state: AgentConnectionState | undefined | null, targetUrl: string): boolean {
+	return !state || state.agentUrl !== targetUrl || !state.agentReady || Boolean(state.agentError);
+}
+
 export interface WaitForHealthOptions {
 	timeoutMs?: number;
 	pollIntervalMs?: number;
