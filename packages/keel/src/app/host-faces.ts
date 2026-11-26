@@ -30,7 +30,8 @@ import type { TerminalHost } from "../domains/terminals/index.js";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
 import { lazyCatalogResolve } from "../domains/tools/lazy-state.js";
 import { createSubagentRuntime, type SubagentRuntime } from "./subagent-runtime.js";
-import { buildClientFrames, buildNativeCliPort } from "./host-frames.js";
+import { buildClientFrames, buildNativeCliPort, type CoreNativeCliSinks } from "./host-frames.js";
+export type { CoreNativeCliSinks };
 import type { SessionRegistry } from "./session-registry.js";
 import type { ClientFrames, ClientRuntime } from "./client-runtime.js";
 
@@ -92,22 +93,6 @@ export interface CoreWorkspaceSinks {
  * 宿主实现 `NativeCliPort` 时要拼的几块：内核能回答的是「这条对话的终端管理器」与「出帧」——
  * PTY / hook / 转录 / 状态机全在宿主叶子里（`server/terminals.ts`、`server/native-cli-*`）。
  */
-export interface CoreNativeCliSinks {
-	/** 每对话一支的终端管理器（宿主 `TerminalManager`）；`cwd` 只用于懒建时定工作区根。 */
-	terminalOf(conversationId: string, cwd?: string): unknown;
-	/** 出帧（宿主事件驱动的帧：`native_cli_event` / `native_cli_prompt_submitted`）。 */
-	emit(msg: ServerMessage): void;
-	/** 状态/归属变了：刷快照 + 推 `conversations` 帧。 */
-	publish(): void;
-	/** 历史列表重扫（标题写回 / 新转录落盘之后）。 */
-	refreshSessions(): void;
-	renameConversation?(conversationId: string, title: string): void;
-	/** 「继承当前对话模型」开关：客户端设置里的开关 + 当前对话的模型，两者都只有宿主知道。 */
-	inheritModel(preset: string): { provider: string; id: string } | undefined;
-	/** 手机通知（手机不在浏览器里，只能由引擎级回调送出去）；缺省 = 不推手机。 */
-	notifyMobile?(event: Omit<MobileNotificationEvent, "clientId">): void;
-}
-
 /** 宿主实现 `ToolInfoPort` 时要拼的几块：提示词覆盖表（客户端设置里的那一份，别名归一只在宿主）。 */
 export interface CoreToolInfoSinks {
 	toolPromptOverrides(): Record<string, UiToolPromptOverride> | undefined;

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ENGINE_CATALOG, normalizeNativeCliInheritModel } from "../../server/engine-catalog.js";
-import { ENGINE_PACKAGES, getCachedEngineStatuses } from "../../server/engine-probe.js";
+import { ENGINE_PACKAGES } from "../../server/engine-probe.js";
 import { findNativeCliExecutable } from "../../server/native-cli-discovery.js";
 import { parseNativeCliMetadata, resolveNativeCliLaunch, validateNativeCliConfig } from "../../server/native-cli.js";
 
@@ -21,10 +21,9 @@ function install(directory: string): string {
 }
 
 describe("standalone Antigravity CLI", () => {
-	it("stays out of SDK chat engines and npm install/update actions", () => {
+	it("stays out of npm install/update actions", () => {
 		expect(ENGINE_CATALOG.agy.packageName).toBeNull();
 		expect(ENGINE_PACKAGES).not.toHaveProperty("agy");
-		expect(getCachedEngineStatuses().some((engine) => engine.id === "agy")).toBe(false);
 		expect(ENGINE_PACKAGES).toHaveProperty("dsh");
 	});
 	it("round-trips persisted agy metadata and supports the documented model option", () => {

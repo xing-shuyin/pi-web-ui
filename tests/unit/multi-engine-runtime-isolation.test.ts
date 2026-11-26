@@ -97,9 +97,11 @@ describe("Universal stable turn ownership", () => {
 		sink.onTurnComplete({ usage: { inputTokens: 50 } } as any);
 		sink.onError("late error");
 		expect(JSON.stringify(store.listConversations(next))).toBe(before);
-		expect(store.loadConversation(root, oldId)?.messages.at(-1)?.content).toEqual([
-			{ type: "text", text: "old response" },
-		]);
+		await vi.waitFor(() => {
+			expect(store.loadConversation(root, oldId)?.messages.at(-1)?.content).toEqual([
+				{ type: "text", text: "old response" },
+			]);
+		});
 	});
 	it("does not send an old prompt when createSession resumes after a project switch", async () => {
 		const { driver, session } = universal();

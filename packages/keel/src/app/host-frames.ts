@@ -6,6 +6,7 @@ import { pushProjects } from "../domains/projects/index.js";
 import { refreshSessions, sessionListLimitOf } from "../domains/history/index.js";
 import type { ModelPusher } from "../domains/models/index.js";
 import type { Conversation } from "../kernel/conversation/index.js";
+import type { ServerMessage } from "../protocol.js";
 import type { NativeCliPort } from "../contracts/native-cli.js";
 import type { MobileNotificationEvent } from "../mobile-notification-events.js";
 import type { TerminalHost } from "../domains/terminals/index.js";
@@ -88,6 +89,22 @@ export function flushConversationAndPeer(
 			target.pushConversations();
 		}
 	}
+}
+
+export interface CoreNativeCliSinks {
+	/** 每对话一支的终端管理器（宿主 `TerminalManager`）；`cwd` 只用于懒建时定工作区根。 */
+	terminalOf(conversationId: string, cwd?: string): unknown;
+	/** 出帧（宿主事件驱动的帧：`native_cli_event` / `native_cli_prompt_submitted`）。 */
+	emit(msg: ServerMessage): void;
+	/** 状态/归属变了：刷快照 + 推 `conversations` 帧。 */
+	publish(): void;
+	/** 历史列表重扫（标题写回 / 新转录落盘之后）。 */
+	refreshSessions(): void;
+	renameConversation?(conversationId: string, title: string): void;
+	/** 「继承当前对话模型」开关：客户端设置里的开关 + 当前对话的模型，两者都只有宿主知道。 */
+	inheritModel(preset: string): { provider: string; id: string } | undefined;
+	/** 手机通知（手机不在浏览器里，只能由引擎级回调送出去）；缺省 = 不推手机。 */
+	notifyMobile?(event: Omit<MobileNotificationEvent, "clientId">): void;
 }
 
 /** Build the optional `nativeCli` host port for a `ClientRuntime`. */
