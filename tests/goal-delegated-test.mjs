@@ -38,6 +38,8 @@ const send = (msg) => ws.send(JSON.stringify({ ...msg, seq: ++seq }));
 let snapshot = null;
 let conversations = [];
 let goalStatus = null;
+let seenExecStatus = null;
+const seenRowsById = new Map();
 ws.on("message", (d) => {
 	let m;
 	try {
@@ -50,8 +52,22 @@ ws.on("message", (d) => {
 		if (snapshot && snapshot.rev === m.baseRev) {
 			snapshot = { ...snapshot, ...m.state, messages: [...(snapshot.messages ?? []), ...m.appended] };
 		}
-	} else if (m.type === "conversations") conversations = m.conversations;
-	else if (m.type === "goal_status") goalStatus = m.status;
+	} else if (m.type === "conversations") {
+		conversations = m.conversations;
+		for (const c of conversations ?? []) {
+			if (c?.id && c?.parentId) seenRowsById.set(c.id, c);
+		}
+	} else if (m.type === "goal_status") {
+		goalStatus = m.status;
+		if (
+			!seenExecStatus &&
+			m.status?.goal === "把 README 的安装说明补全" &&
+			m.status?.roles?.executor?.convId &&
+			m.status?.phase !== "idle"
+		) {
+			seenExecStatus = m.status;
+		}
+	}
 });
 
 const waitFor = async (pred, what, timeout = 15000) => {
@@ -78,27 +94,25 @@ try {
 		maxRounds: 1,
 		locked: true,
 	});
-	await waitFor(
-		() => goalStatus?.goal === "把 README 的安装说明补全" && !!goalStatus?.roles?.executor?.convId,
-		"goal_status with executor",
-	);
+	await waitFor(() => seenExecStatus !== null, "goal_status with executor");
 
-	check(
-		"reviewMode 已从协议移除（只剩一条路径）",
-		goalStatus?.reviewMode === undefined,
-		String(goalStatus?.reviewMode),
-	);
-	check("execModel 字段存在（新后端标志）", goalStatus?.execModel === null, String(goalStatus?.execModel));
-	const execId = goalStatus?.roles?.executor?.convId;
+	const observed = seenExecStatus ?? goalStatus;
+	check("reviewMode 已从协议移除（只剩一条路径）", observed?.reviewMode === undefined, String(observed?.reviewMode));
+	check("execModel 字段存在（新后端标志）", observed?.execModel === null, String(observed?.execModel));
+	const execId = observed?.roles?.executor?.convId;
 	check("服务端拉起了常驻执行对话", typeof execId === "string" && execId.length > 0, execId ?? "(none)");
 	check(
 		"循环相位已进入执行/审查",
-		goalStatus?.phase === "executing" || goalStatus?.phase === "reviewing" || goalStatus?.phase === "blocked",
-		String(goalStatus?.phase),
+		observed?.phase === "executing" || observed?.phase === "reviewing" || observed?.phase === "blocked",
+		String(observed?.phase),
 	);
 
-	await waitFor(() => execRows(mainId).some((r) => r.id === execId), "executor row in conversations");
-	const row = execRows(mainId).find((r) => r.id === execId);
+	await waitFor(
+		() =>
+			execRows(mainId).some((r) => r.id === execId) || (execId ? seenRowsById.get(execId)?.parentId === mainId : false),
+		"executor row in conversations",
+	);
+	const row = execRows(mainId).find((r) => r.id === execId) ?? (execId ? seenRowsById.get(execId) : undefined);
 	check("左栏出现执行对话（挂在主对话下）", !!row, row ? `${row.id} · ${row.title}` : "(missing)");
 	check(
 		"执行对话是落盘对话（无「子代理」微标 + 带目标执行标题）",
