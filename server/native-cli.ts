@@ -161,7 +161,7 @@ export function formatCliFileTarget(absPath: string, cwd: string, options?: Form
 		target += `:${start}${start !== end ? `-${end}` : ""}`;
 	}
 
-	if (/[\s"'`$*?~#&;|<>()\[\]{}]/.test(target)) {
+	if (/[\s"'`$*?~#&;|<>()[\]{}]/.test(target)) {
 		return `@"${target.replace(/"/g, '\\"')}"`;
 	}
 	return `@${target}`;

@@ -127,7 +127,6 @@ import {
 	type PluginConversationSnapshot,
 	type PluginRunEvent,
 } from "./plugins.js";
-import type { ToolPostRequest, ToolPreRequest } from "./plugin-tool-guard.js";
 import { confirmPluginInstall, PluginInstaller } from "./plugin-installer.js";
 import { syncPluginCatalog } from "./plugin-catalog-sync.js";
 import type { ServerLang } from "./i18n.js";
@@ -201,21 +200,7 @@ import { CanvasOrchestrator } from "./canvas/canvas-orchestrator.js";
 import { executeScheduledCanvas, validateScheduledCanvas } from "./canvas/canvas-scheduled-task.js";
 import { setCanvasBroadcaster, setCanvasRuntime } from "./canvas/canvas-agent-tool.js";
 import { handleCanvasMessage } from "./canvas/canvas-dispatch.js";
-import type {
-	BgServer,
-	ThinkingLevel,
-	ClientMessage,
-	UiApprovalRule,
-	UiLayoutPrefs,
-	CommandDef,
-	PromptAttachment,
-	ServerMessage,
-	UiServiceInfo,
-	UiSubagentTemplate,
-	AgentEngineCapabilities,
-	NativeCliConfig,
-	TerminalInfo,
-} from "./protocol.js";
+import type { ClientMessage, ServerMessage } from "./protocol.js";
 
 for (const k of Object.keys(process.env)) {
 	if (
@@ -1553,7 +1538,7 @@ import {
 } from "./engine-probe.js";
 import type { EngineId, EngineStatus } from "./protocol.js";
 
-import type { DispatchSession, EngineService, TerminalManagerLike } from "./engine-service.js";
+import type { DispatchSession, EngineService } from "./engine-service.js";
 import { TerminalManager } from "./terminals.js";
 import {
 	hasActiveSubagentRun,
@@ -2563,7 +2548,6 @@ wss.on("connection", (ws) => {
 			lastSnapshotBytes > 0 &&
 			ws.bufferedAmount > Math.max(SNAPSHOT_BACKPRESSURE_MIN_BYTES, SNAPSHOT_BACKPRESSURE_FACTOR * lastSnapshotBytes)
 		) {
-			const wasFull = msg.type === "snapshot";
 			if (!snapshotRetryTimer) {
 				snapshotRetryTimer = setTimeout(() => {
 					snapshotRetryTimer = null;

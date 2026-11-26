@@ -133,7 +133,7 @@ export function renderUnauthorizedHtml(options: UnauthorizedPageOptions): string
 				)}</option>`,
 		)
 		.join("");
-	const pageLang = /^zh/.test(lang) ? "zh-CN" : escapeAttr(lang);
+	const pageLang = lang.startsWith("zh") ? "zh-CN" : escapeAttr(lang);
 
 	return `<!doctype html>
 <html lang="${pageLang}">

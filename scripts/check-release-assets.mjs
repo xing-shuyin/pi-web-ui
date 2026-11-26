@@ -27,11 +27,11 @@ const skipNpm = argv.includes("--skip-npm");
 
 /** 资产分组：每组至少命中一条；手机包额外要求版本号对得上。 */
 const REQUIRED = [
-	{ key: "Windows 安装包", test: (n) => /setup\.exe$/.test(n) },
-	{ key: "macOS 安装包", test: (n) => /\.dmg$/.test(n) || /-mac\.zip$/.test(n) },
-	{ key: "Linux 安装包", test: (n) => /\.AppImage$/.test(n) },
+	{ key: "Windows 安装包", test: (n) => n.endsWith("setup.exe") },
+	{ key: "macOS 安装包", test: (n) => n.endsWith(".dmg") || n.endsWith("-mac.zip") },
+	{ key: "Linux 安装包", test: (n) => n.endsWith(".AppImage") },
 	{ key: "浏览器扩展", test: (n) => /^page-picker-extension.*\.zip$/.test(n) },
-	{ key: "手机 APK", test: (n) => /\.apk$/.test(n) },
+	{ key: "手机 APK", test: (n) => n.endsWith(".apk") },
 	{ key: "校验和", test: (n) => /^SHA256SUMS\.txt$/.test(n) },
 ];
 
@@ -77,7 +77,7 @@ for (const group of REQUIRED) {
 }
 
 // 手机包点名要本版那个：旧 revision 的 APK 混在里面同样算错。
-const apks = assets.filter((name) => /\.apk$/.test(name));
+const apks = assets.filter((name) => name.endsWith(".apk"));
 const apkForTag = apks.filter((name) => name.includes(`-${tagVersion}-`));
 if (apks.length > 0 && apkForTag.length === 0) {
 	missing.push(`手机 APK 版本不符（有 ${apks.join(", ")}，没有含 ${tagVersion} 的）`);

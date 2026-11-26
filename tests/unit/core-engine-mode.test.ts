@@ -1,24 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { CoreEngine, CoreEngineNotReadyError } from "../../packages/keel/src/app/core-engine.js";
-import { PI_ENGINE_ENV, resolvePiEngineMode } from "../../packages/keel/src/app/engine-mode.js";
 import { createFakeSettingsStore } from "../helpers/fake-settings-store.js";
 
 /** 装配参数里唯一必需的能力：设置存储端口（宿主在 core 模式下注入真 store）。 */
 function options(extra: { attach?: boolean } = {}) {
 	return { version: "test-version", stateStore: createFakeSettingsStore(), ...extra };
 }
-
-describe("core/app · 引擎开关", () => {
-	it("默认 keel（core），只有显式 legacy 才回老实现", () => {
-		expect(resolvePiEngineMode({})).toBe("core");
-		expect(resolvePiEngineMode({ [PI_ENGINE_ENV]: "" })).toBe("core");
-		expect(resolvePiEngineMode({ [PI_ENGINE_ENV]: "legacy" })).toBe("legacy");
-		expect(resolvePiEngineMode({ [PI_ENGINE_ENV]: " LEGACY " })).toBe("legacy");
-		expect(resolvePiEngineMode({ [PI_ENGINE_ENV]: " CORE " })).toBe("core");
-		// 未知值不能把用户带到「都得重新学」的另一套语义上：回默认（core）。
-		expect(resolvePiEngineMode({ [PI_ENGINE_ENV]: "nyan" })).toBe("core");
-	});
-});
 
 describe("core/app · CoreEngine 生命周期", () => {
 	it("quiesce / unquiesce 与 serviceStatus 自洽", async () => {

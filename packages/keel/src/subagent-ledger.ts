@@ -434,7 +434,7 @@ export class SubagentLedger {
 	}
 
 	flush(): Promise<void> {
-		return Promise.all([...this.queues.values()]).then(() => undefined);
+		return Promise.all(this.queues.values()).then(() => undefined);
 	}
 
 	/** 只保留最近 maxRuns 个 run 目录（活运行最后才考虑）。 */

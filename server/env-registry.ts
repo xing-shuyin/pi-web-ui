@@ -117,11 +117,6 @@ export const ENV_SPECS: readonly EnvSpec[] = [
 	{ name: "PI_WEB_NATIVE_CLI_APPROVAL", scope: "internal" },
 	{ name: "PI_WEB_NATIVE_CLI_KEY", scope: "internal" },
 	{
-		name: "PI_WEB_PI_ENGINE",
-		scope: "internal",
-		note: "Legacy：已不可达（server/index.ts 恒建 CoreEngine）。保留注册仅供 env 守卫审计。",
-	},
-	{
 		name: "PI_WEB_PI_ENGINE_ATTACH",
 		scope: "internal",
 		note: "新引擎 attach 的显式开关（`PI_WEB_PI_ENGINE_ATTACH=0` 只建引擎不接连接）。",

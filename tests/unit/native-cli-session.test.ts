@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { mkdir, mkdtemp, open, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -655,39 +656,48 @@ describe("native CLI event observation", () => {
 		await vi.waitFor(() => expect(received).toHaveLength(1));
 		expect(received[0].type).toBe("approval");
 	});
-	it("runs remote preparation and bounded polling with POSIX tools and retains its scripts", async () => {
-		const execute = vi.fn(
-			(_uri: string, command: string, options: any) =>
-				new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
-					const child = spawn("bash", ["-c", command], {
-						cwd: root,
-						env: { ...process.env, HOME: os.home.replace(/\\/g, "/"), CODEX_HOME: "", CLAUDE_CONFIG_DIR: "" },
-						signal: options.signal,
-					});
-					let stdout = "";
-					let stderr = "";
-					child.stdout.on("data", (data) => {
-						stdout += data;
-					});
-					child.stderr.on("data", (data) => {
-						stderr += data;
-					});
-					child.on("error", reject);
-					child.on("close", (code) => resolve({ stdout, stderr, exitCode: code ?? 1 }));
-				}),
-		);
-		ctx.service = { execInWorkspace: execute } as any;
-		ctx.cwd = "ssh://fixture/work";
-		const launch = await prepare("pi");
-		const directory = join(os.home, ".pi-web", "native-cli", key);
-		await writeFile(join(directory, "events", "100.json"), '{"eventId":"100","type":"done"}');
-		launch.start();
-		await vi.waitFor(() => expect(received).toEqual([{ type: "done", eventId: "100" }]));
-		await launch.dispose();
-		expect(await readFile(join(directory, "pi-extension.mjs"), "utf8")).toContain("agent_settled");
-		expect(execute.mock.calls.every((call) => call[2].timeoutMs === 5000)).toBe(true);
-		expect(execute.mock.calls.map((call) => call[1]).join("\\n")).not.toMatch(/python|node -/);
-	});
+	const BASH_BIN =
+		process.platform !== "win32"
+			? "bash"
+			: (["C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Program Files\\Git\\usr\\bin\\bash.exe"].find((p) =>
+					existsSync(p),
+				) ?? null);
+	it.skipIf(!BASH_BIN)(
+		"runs remote preparation and bounded polling with POSIX tools and retains its scripts",
+		async () => {
+			const execute = vi.fn(
+				(_uri: string, command: string, options: any) =>
+					new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
+						const child = spawn(BASH_BIN ?? "bash", ["-c", command], {
+							cwd: root,
+							env: { ...process.env, HOME: os.home.replace(/\\/g, "/"), CODEX_HOME: "", CLAUDE_CONFIG_DIR: "" },
+							signal: options.signal,
+						});
+						let stdout = "";
+						let stderr = "";
+						child.stdout.on("data", (data) => {
+							stdout += data;
+						});
+						child.stderr.on("data", (data) => {
+							stderr += data;
+						});
+						child.on("error", reject);
+						child.on("close", (code) => resolve({ stdout, stderr, exitCode: code ?? 1 }));
+					}),
+			);
+			ctx.service = { execInWorkspace: execute } as any;
+			ctx.cwd = "ssh://fixture/work";
+			const launch = await prepare("pi");
+			const directory = join(os.home, ".pi-web", "native-cli", key);
+			await writeFile(join(directory, "events", "100.json"), '{"eventId":"100","type":"done"}');
+			launch.start();
+			await vi.waitFor(() => expect(received).toEqual([{ type: "done", eventId: "100" }]));
+			await launch.dispose();
+			expect(await readFile(join(directory, "pi-extension.mjs"), "utf8")).toContain("agent_settled");
+			expect(execute.mock.calls.every((call) => call[2].timeoutMs === 5000)).toBe(true);
+			expect(execute.mock.calls.map((call) => call[1]).join("\\n")).not.toMatch(/python|node -/);
+		},
+	);
 	it("handles cancellation before launch with no listener or process left behind", async () => {
 		const abort = new AbortController();
 		abort.abort();

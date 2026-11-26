@@ -1717,7 +1717,7 @@ export function ModelConfigModal({
 																		type="button"
 																		className="param-pill"
 																		onClick={() => {
-																			const currentCompat = { ...(m.compat ?? {}) };
+																			const currentCompat = { ...m.compat };
 																			if (profile.thinkingFormat) {
 																				currentCompat.thinkingFormat = profile.thinkingFormat;
 																			} else if (profile.id === "fixed-deepseek" || profile.id === "claude-budget") {
@@ -1748,7 +1748,7 @@ export function ModelConfigModal({
 																			type="button"
 																			className="user-preset-btn"
 																			onClick={() => {
-																				const currentCompat = { ...(m.compat ?? {}) };
+																				const currentCompat = { ...m.compat };
 																				if (preset.thinkingFormat) {
 																					currentCompat.thinkingFormat = preset.thinkingFormat;
 																				} else {
@@ -1786,7 +1786,7 @@ export function ModelConfigModal({
 																		value={(m.compat?.thinkingFormat as string) ?? ""}
 																		onChange={(e) => {
 																			const fmt = e.target.value.trim();
-																			const currentCompat = { ...(m.compat ?? {}) };
+																			const currentCompat = { ...m.compat };
 																			if (fmt) {
 																				currentCompat.thinkingFormat = fmt;
 																			} else {
@@ -1901,7 +1901,7 @@ export function ModelConfigModal({
 																					type="checkbox"
 																					checked={isEnabled}
 																					onChange={(e) => {
-																						const currentMap = { ...(m.thinkingLevelMap ?? {}) };
+																						const currentMap = { ...m.thinkingLevelMap };
 																						if (e.target.checked) {
 																							delete currentMap[lvl];
 																						} else {
@@ -1921,7 +1921,7 @@ export function ModelConfigModal({
 																				placeholder={placeholder}
 																				title={t("modelConfigRawBodyTitle")}
 																				onChange={(e) => {
-																					const currentMap = { ...(m.thinkingLevelMap ?? {}) };
+																					const currentMap = { ...m.thinkingLevelMap };
 																					const val = e.target.value.trim();
 																					if (!val) {
 																						delete currentMap[lvl];

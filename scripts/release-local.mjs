@@ -68,7 +68,7 @@ function run(command, commandArgs, options = {}) {
 			cwd: options.cwd ?? repoRoot,
 			stdio: "inherit",
 			shell: options.shell ?? IS_WIN,
-			env: { ...process.env, ...(options.env ?? {}) },
+			env: { ...process.env, ...options.env },
 		});
 		child.on("error", reject);
 		child.on("exit", (code, signal) => {
@@ -149,7 +149,7 @@ if (!skipDesktop) {
 			const mine =
 				name.includes(`-${version}-`) || name.includes(`-${version}.`) || /^latest(-mac|-linux)?\.yml$/.test(name);
 			if (!mine) continue;
-			if (IS_WIN && /setup\.exe$/.test(name)) continue;
+			if (IS_WIN && name.endsWith("setup.exe")) continue;
 			if (/\.(exe|dmg|AppImage|zip|blockmap)$/.test(name) || /^latest(-mac|-linux)?\.yml$/.test(name)) {
 				assets.push(join(releaseDir, name));
 			}

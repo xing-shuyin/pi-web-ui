@@ -2798,7 +2798,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				contract = createWorkContract(
 					{
 						id: req.body?.contract?.id ?? stableFallbackId,
-						...(req.body?.contract ?? {}),
+						...req.body?.contract,
 						executionMode,
 					},
 					content,

@@ -1683,7 +1683,7 @@ export class ModelAdminService {
 			try {
 				const parsed = JSON.parse(m.customExtraBody.trim());
 				if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-					samplingParams = { ...(samplingParams ?? {}), ...parsed };
+					samplingParams = { ...samplingParams, ...parsed };
 				}
 			} catch {}
 		}

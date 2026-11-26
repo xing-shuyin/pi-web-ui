@@ -1113,7 +1113,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
 					sessions: action.sessions,
 					projectSessions: normCurrent
 						? {
-								...(state.projectSessions ?? {}),
+								...state.projectSessions,
 								[normCurrent]: action.sessions,
 							}
 						: state.projectSessions,
@@ -1125,7 +1125,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
 			return {
 				...state,
 				projectSessions: {
-					...(state.projectSessions ?? {}),
+					...state.projectSessions,
 					[normTarget]: action.sessions,
 				},
 				projectSessionsHasMore: withHasMore(normTarget),

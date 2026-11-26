@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -9,6 +10,13 @@ import {
 	nativeCliPosixReporter,
 	parseNativeCliHookEvent,
 } from "../../server/native-cli-session-hooks.js";
+
+const BASH_BIN =
+	process.platform !== "win32"
+		? "bash"
+		: (["C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Program Files\\Git\\usr\\bin\\bash.exe"].find((p) =>
+				existsSync(p),
+			) ?? null);
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -22,7 +30,7 @@ async function fixture() {
 }
 function hook(file: string, kind: string, payload: unknown): Promise<void> {
 	return new Promise((resolve, reject) => {
-		const child = spawn("bash", [file, kind], { stdio: ["pipe", "pipe", "pipe"] });
+		const child = spawn(BASH_BIN ?? "bash", [file, kind], { stdio: ["pipe", "pipe", "pipe"] });
 		const timer = setTimeout(() => {
 			child.kill();
 			reject(new Error("hook timeout"));
@@ -37,7 +45,7 @@ function hook(file: string, kind: string, payload: unknown): Promise<void> {
 	});
 }
 
-describe("native CLI lifecycle reporters", () => {
+describe.skipIf(!BASH_BIN)("native CLI lifecycle reporters", () => {
 	it("whitelists tiny stable events and drops all hook content", () => {
 		expect(
 			parseNativeCliHookEvent(

@@ -101,7 +101,7 @@ extract() {
    if (quoted) {
     if (escaped) { escaped=0; invalid=1; continue }
     if (c=="\\\\") { escaped=1; continue }
-    if (c=="\\\"") {
+    if (c=="\\"") {
      quoted=0
      if (depth==1 && !invalid) {
       if (role=="key") key=token
@@ -112,7 +112,7 @@ extract() {
     if (depth==1) token=token c
     continue
    }
-   if (c=="\\\"") { quoted=1; token=""; invalid=0; role=(depth==1 && (previous=="{" || previous==",") ? "key" : (depth==1 && previous==":" ? "value" : "other")); continue }
+   if (c=="\\"") { quoted=1; token=""; invalid=0; role=(depth==1 && (previous=="{" || previous==",") ? "key" : (depth==1 && previous==":" ? "value" : "other")); continue }
    if (c=="{" || c=="[") depth++
    if (c=="}" || c=="]") depth--
    if (c !~ /[[:space:]]/) previous=c
