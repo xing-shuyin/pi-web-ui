@@ -93,7 +93,10 @@ public final class LocalEngineService extends Service {
 			EngineState.setPhase(EngineState.PHASE_STARTING);
 			File rootfs = RuntimeInstaller.rootfsDir(this);
 			File node = new File(rootfs, "usr/local/bin/node");
-			File appRoot = new File(rootfs, "usr/local/lib/node_modules/pi-web-ui");
+			String appModuleName = new File(rootfs, "usr/local/lib/node_modules/keel-agent").isDirectory()
+				? "keel-agent"
+				: "pi-web-ui";
+			File appRoot = new File(rootfs, "usr/local/lib/node_modules/" + appModuleName);
 			File serverEntry = new File(appRoot, "dist/server/index.js");
 			File sdkHook = new File(appRoot, "dist/server/resolve-global-sdk.js");
 			File proot = new File(rootfs, "usr/local/bin/proot");
@@ -134,8 +137,8 @@ public final class LocalEngineService extends Service {
 				command.add(RENAME_COMPAT_GUEST_PATH);
 			}
 			command.add("--import");
-			command.add("/usr/local/lib/node_modules/pi-web-ui/dist/server/resolve-global-sdk.js");
-			command.add("/usr/local/lib/node_modules/pi-web-ui/dist/server/index.js");
+			command.add("/usr/local/lib/node_modules/" + appModuleName + "/dist/server/resolve-global-sdk.js");
+			command.add("/usr/local/lib/node_modules/" + appModuleName + "/dist/server/index.js");
 
 			ProcessBuilder builder = new ProcessBuilder(command);
 			builder.redirectErrorStream(false);

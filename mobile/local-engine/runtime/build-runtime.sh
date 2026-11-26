@@ -154,8 +154,8 @@ NODE_GOT="$(sha256sum "$WORK/$NODE_FILE" | awk '{print $1}')"
 [[ "$NODE_GOT" == "$NODE_WANT" ]] || { echo "Node sha256 不符（$NODE_GOT != $NODE_WANT）" >&2; exit 1; }
 tar -xJf "$WORK/$NODE_FILE" -C "$ROOT/usr/local" --strip-components=1
 
-echo "==> 4/7 安装 pi-web-ui@$PI_WEB_UI_VERSION 与 pi SDK@$PI_SDK_VERSION"
-if [[ -n "$PI_WEB_UI_TGZ" ]]; then cp "$PI_WEB_UI_TGZ" "$ROOT/pi-web-ui.tgz"; PI_WEB_UI_SPEC="/pi-web-ui.tgz"; else PI_WEB_UI_SPEC="pi-web-ui@$PI_WEB_UI_VERSION"; fi
+echo "==> 4/7 安装 keel-agent@$PI_WEB_UI_VERSION 与 pi SDK@$PI_SDK_VERSION"
+if [[ -n "$PI_WEB_UI_TGZ" ]]; then cp "$PI_WEB_UI_TGZ" "$ROOT/pi-web-ui.tgz"; PI_WEB_UI_SPEC="/pi-web-ui.tgz"; else PI_WEB_UI_SPEC="keel-agent@$PI_WEB_UI_VERSION"; fi
 cat > "$ROOT/install-packages.sh" <<EOF
 #!/bin/bash
 set -euo pipefail
@@ -163,7 +163,7 @@ export npm_config_registry="$NPM_REGISTRY"
 export npm_config_nodedir="/usr/local"   # node-gyp 用本地 headers，不走网络下载
 npm install -g --no-audit --no-fund "$PI_WEB_UI_SPEC"
 npm install -g --no-audit --no-fund "@earendil-works/pi-coding-agent@$PI_SDK_VERSION"
-node -e "require('/usr/local/lib/node_modules/pi-web-ui/node_modules/node-pty')" || { echo "node-pty native 绑定不可用" >&2; exit 1; }
+node -e "require('/usr/local/lib/node_modules/keel-agent/node_modules/node-pty')" || { echo "node-pty native 绑定不可用" >&2; exit 1; }
 node --version
 EOF
 if [[ "$NEED_QEMU" == "1" ]]; then cp "$QEMU_BIN" "$ROOT/usr/bin/"; fi
@@ -171,8 +171,8 @@ chroot "$ROOT" /usr/bin/env -i HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/u
 	bash /install-packages.sh
 if [[ "$NEED_QEMU" == "1" ]]; then rm -f "$ROOT/usr/bin/$QEMU"; fi
 rm -f "$ROOT/install-packages.sh" "$ROOT/pi-web-ui.tgz"
-[[ -f "$ROOT/usr/local/lib/node_modules/pi-web-ui/dist/server/index.js" ]] || { echo "pi-web-ui dist/server 缺失" >&2; exit 1; }
-[[ -f "$ROOT/usr/local/lib/node_modules/pi-web-ui/dist/server/resolve-global-sdk.js" ]] || { echo "SDK hook 缺失" >&2; exit 1; }
+[[ -f "$ROOT/usr/local/lib/node_modules/keel-agent/dist/server/index.js" ]] || { echo "keel-agent dist/server 缺失" >&2; exit 1; }
+[[ -f "$ROOT/usr/local/lib/node_modules/keel-agent/dist/server/resolve-global-sdk.js" ]] || { echo "SDK hook 缺失" >&2; exit 1; }
 [[ -d "$ROOT/usr/local/lib/node_modules/@earendil-works/pi-coding-agent" ]] || { echo "pi SDK 缺失" >&2; exit 1; }
 
 # App 沙箱的 zygote seccomp 过滤器对 renameat2 返回 ENOSYS，glibc 的 rename() 不回退：compile 一个
