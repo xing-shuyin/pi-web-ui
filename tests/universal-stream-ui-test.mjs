@@ -71,7 +71,7 @@ try {
 	let offset = 0;
 	const deliver = async () => {
 		for (const msg of frames.slice(offset)) {
-			if (msg.type === "snapshot" || msg.type === "message_delta") {
+			if (msg.type === "snapshot" || msg.type === "snapshot_delta" || msg.type === "message_delta") {
 				await page.evaluate((msg) => window.streamTest.frame(msg), msg);
 			}
 		}

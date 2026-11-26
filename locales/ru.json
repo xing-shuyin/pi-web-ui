@@ -617,7 +617,6 @@
 		"update": "Обновить",
 		"currentVersion": "Текущая версия",
 		"latestVersion": "Последняя версия",
-		"checkingUpdate": "Проверка…",
 		"checkUpdate": "Проверить обновления",
 		"upToDate": "У Вас уже последняя версия",
 		"updateAvailable": "Доступна новая версия v{version}",

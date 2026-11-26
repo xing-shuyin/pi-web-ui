@@ -337,6 +337,7 @@ export interface HostFaces {
 	frames: ClientFrames;
 	/** 按 `provider/id` 取模型对象（换模型用）。 */
 	resolveModel(provider: string, id: string): Promise<unknown | undefined>;
+	terminalOf?(conversationId: string, cliCwd?: string): unknown;
 }
 
 /**
@@ -592,5 +593,6 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 		subagents,
 		frames,
 		resolveModel: (provider, id) => modelPusher.getModel(provider, id),
+		terminalOf: (conversationId: string, cliCwd?: string) => terminalHost.managerFor(conversationId, cliCwd ?? cwd),
 	};
 }

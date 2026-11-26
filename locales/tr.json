@@ -617,7 +617,6 @@
 		"update": "Güncelle",
 		"currentVersion": "Geçerli sürüm",
 		"latestVersion": "En yeni sürüm",
-		"checkingUpdate": "Denetleniyor…",
 		"checkUpdate": "Güncellemeleri denetle",
 		"upToDate": "Zaten en yeni sürümdesiniz",
 		"updateAvailable": "Yeni sürüm v{version} bulundu",

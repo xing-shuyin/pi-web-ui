@@ -37,6 +37,8 @@ function render() {
 	frame(msg: any) {
 		if (msg.type === "snapshot") {
 			state = msg.state;
+		} else if (msg.type === "snapshot_delta") {
+			state = _chatReducerForTest({ state } as any, { type: "snapshot_delta", msg }).state;
 		} else if (msg.type === "message_delta") {
 			state = _chatReducerForTest({ state } as any, { type: "message_delta", msg }).state;
 		}

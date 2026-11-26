@@ -617,7 +617,6 @@
 		"update": "Actualizar",
 		"currentVersion": "Versión actual",
 		"latestVersion": "Última versión",
-		"checkingUpdate": "Comprobando…",
 		"checkUpdate": "Buscar actualizaciones",
 		"upToDate": "Ya está en la última versión",
 		"updateAvailable": "Nueva versión disponible v{version}",

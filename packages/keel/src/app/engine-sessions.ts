@@ -250,6 +250,10 @@ export function createEngineSessionRegistry(deps: EngineSessionDeps): SessionReg
 							},
 							conv.id,
 						),
+						...((
+							deps.getFaces().terminalOf?.(conv.id, conv.meta.cwd) as
+								{ persistentTools?: (cwd: string, lang?: () => string) => unknown[] } | undefined
+						)?.persistentTools?.(conv.meta.cwd, () => deps.langOf(deps.clientId)) ?? []),
 						...createGuardedBuiltinTools({
 							cwd: deps.cwd,
 							...(deps.remoteOpsOf ? { remoteOpsOf: deps.remoteOpsOf } : {}),

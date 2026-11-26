@@ -313,8 +313,15 @@ if (args.includes("--background")) {
 				"--package-lock=false",
 				source,
 			]);
-		const root = join(candidatePrefix, "node_modules/pi-web-ui"),
-			baselineRoot = join(baselinePrefix, "node_modules/pi-web-ui");
+		const findPkgRoot = (prefix) => {
+			for (const name of ["keel-agent", "pi-web-ui", "keel"]) {
+				const dir = join(prefix, "node_modules", name);
+				if (existsSync(join(dir, "package.json"))) return dir;
+			}
+			return join(prefix, "node_modules/keel-agent");
+		};
+		const root = findPkgRoot(candidatePrefix),
+			baselineRoot = findPkgRoot(baselinePrefix);
 		const candidateManifest = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 		const baselineManifest = JSON.parse(await readFile(join(baselineRoot, "package.json"), "utf8"));
 		report.candidateVersion = candidateManifest.version;

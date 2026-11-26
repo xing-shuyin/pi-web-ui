@@ -617,7 +617,6 @@
 		"update": "更新",
 		"currentVersion": "現在のバージョン",
 		"latestVersion": "最新バージョン",
-		"checkingUpdate": "確認中…",
 		"checkUpdate": "更新を確認します",
 		"upToDate": "最新バージョンです",
 		"updateAvailable": "新しいバージョン v{version} があります",

@@ -30,7 +30,7 @@ describe("canvas deletion lifecycle", () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
 		setCanvasRuntime(null);
-		rmSync(dir, { recursive: true, force: true });
+		rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 	});
 
 	it("duplicate run_node with a freshly loaded graph preserves downstream dispatch", async () => {

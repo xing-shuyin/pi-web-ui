@@ -617,7 +617,6 @@
 		"update": "업데이트",
 		"currentVersion": "현재 버전",
 		"latestVersion": "최신 버전",
-		"checkingUpdate": "확인 중…",
 		"checkUpdate": "업데이트 확인",
 		"upToDate": "이미 최신 버전이에요",
 		"updateAvailable": "새 버전 v{version}을 찾았어요",

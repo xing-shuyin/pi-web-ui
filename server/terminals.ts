@@ -773,6 +773,11 @@ export class TerminalManager {
 		this.emit = this.ownedEmit(emit);
 	}
 
+	/** 供内核挂载持久化终端工具（`terminal`），按会话/工作目录绑定。 */
+	persistentTools(cwd: string, lang?: () => ServerLang): ToolDefinition[] {
+		return makePersistentTerminalTools(this, cwd, lang ?? this.lang);
+	}
+
 	private get workspaceRoot(): string {
 		return typeof this.rootSource === "function" ? this.rootSource() : this.rootSource;
 	}

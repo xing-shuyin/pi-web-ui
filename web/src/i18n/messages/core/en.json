@@ -613,7 +613,6 @@
 	"update": "Update",
 	"currentVersion": "Current version",
 	"latestVersion": "Latest version",
-	"checkingUpdate": "Checking…",
 	"checkUpdate": "Check for updates",
 	"upToDate": "You're up to date",
 	"updateAvailable": "New version v{version} available",
