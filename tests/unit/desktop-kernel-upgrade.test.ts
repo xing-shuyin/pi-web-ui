@@ -55,7 +55,7 @@ describe("planUpgrade", () => {
 			kind: "upgrade",
 			current: "0.121.3",
 			latest: "0.121.4",
-			command: "npm i -g keel@latest",
+			command: "npm i -g keel-agent@latest",
 		});
 	});
 
@@ -155,7 +155,7 @@ const baseEnv: KernelEnvironmentView = {
 		installed: true,
 		version: "0.121.3",
 		latest: "0.121.4",
-		upgradeCommand: "npm i -g keel@latest",
+		upgradeCommand: "npm i -g keel-agent@latest",
 		canUpgrade: true,
 	},
 	service: { state: "absent" },

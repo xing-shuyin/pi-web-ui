@@ -25,7 +25,7 @@ export function parsePackageVersion(raw: string | null): string | null {
 	if (!raw) return null;
 	try {
 		const parsed = JSON.parse(raw) as { name?: unknown; version?: unknown };
-		if (parsed?.name !== "keel" && parsed?.name !== "pi-web-ui") return null;
+		if (parsed?.name !== "keel-agent" && parsed?.name !== "keel" && parsed?.name !== "pi-web-ui") return null;
 		return typeof parsed.version === "string" && parsed.version.trim() ? parsed.version.trim() : null;
 	} catch {
 		return null;
@@ -78,11 +78,11 @@ export function planUpgrade(input: { current: string | null; latest: string | nu
 		kind: "upgrade",
 		current: input.current,
 		latest: input.latest,
-		command: "npm i -g keel@latest",
+		command: "npm i -g keel-agent@latest",
 	};
 }
 
-export const DEFAULT_REGISTRY_LATEST_URL = "https://registry.npmjs.org/keel/latest";
+export const DEFAULT_REGISTRY_LATEST_URL = "https://registry.npmjs.org/keel-agent/latest";
 
 /** 向 npm registry 问最新版本；超时/离线/坏 JSON 一律 null（UI 显示"未知"，不报错）。 */
 export async function fetchLatestVersion(options: {

@@ -63,8 +63,8 @@ export function nodeInstallGuide(platform: NodeJS.Platform): CommandGuide {
 export function npmGlobalInstallGuide(): CommandGuide {
 	return {
 		kind: "npm",
-		command: "npm i -g keel@latest",
-		url: "https://www.npmjs.com/package/keel",
+		command: "npm i -g keel-agent@latest",
+		url: "https://www.npmjs.com/package/keel-agent",
 		needsTerminal: true,
 	};
 }
@@ -79,9 +79,9 @@ export function parseNpmPrefix(stdout: string): string | null {
 	return candidate ?? null;
 }
 
-/** 全局包根：`<prefix>/node_modules/keel`。Windows 上 prefix 常带反斜杠，统一成 `/` 拼接。 */
+/** 全局包根：`<prefix>/node_modules/keel-agent`。Windows 上 prefix 常带反斜杠，统一成 `/` 拼接。 */
 export function globalKernelRoot(prefix: string): string {
-	return [prefix.replace(/[/\\]+$/, ""), "node_modules", "keel"].join(sep);
+	return [prefix.replace(/[/\\]+$/, ""), "node_modules", "keel-agent"].join(sep);
 }
 
 /** 服务配置的落点（与 CLI 一致；只读判断"装没装"）。 */

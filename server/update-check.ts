@@ -565,7 +565,7 @@ export function collectTargets(
 	probePiCore: () => string | null = defaultProbePiCore,
 	opts?: { projectCwd?: string; extraTargets?: LocalPackage[] },
 ): LocalPackage[] {
-	const targets: LocalPackage[] = [{ name: "keel", version: webuiVersion, kind: "webui" }];
+	const targets: LocalPackage[] = [{ name: "keel-agent", version: webuiVersion, kind: "webui" }];
 	const coreVersion = probePiCore() ?? readVendoredPiCore(agentDir);
 	// (e.g. unreadable global install) instead of silently dropping it — an
 	targets.push({

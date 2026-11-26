@@ -620,7 +620,7 @@
 	"updateJustPublished": "v{version} was just published — npm cache may lag; if the new version isn't detected yet, re-check in a moment",
 	"updateNow": "Update in terminal",
 	"updateTabTitle": "Update pi-web-ui",
-	"updateTerminalHint": "Clicking runs npm i -g keel@latest in a visible terminal; restart the service afterwards to take effect (keel server restart).",
+	"updateTerminalHint": "Clicking runs npm i -g keel-agent@latest in a visible terminal; restart the service afterwards to take effect (keel server restart).",
 	"updateDesktopCheck": "Check for desktop updates",
 	"updateDesktopChecking": "Checking for desktop updates…",
 	"updateDesktopAvailable": "New desktop release v{version} available",

@@ -620,7 +620,7 @@
 	"updateJustPublished": "v{version} 刚刚发布，npm 缓存可能尚未同步——若未检测到新版本，请稍后重新检查",
 	"updateNow": "在终端中更新",
 	"updateTabTitle": "更新 pi-web-ui",
-	"updateTerminalHint": "点击后会在可见终端中运行 npm i -g keel@latest；完成后重启服务生效（keel server restart）。",
+	"updateTerminalHint": "点击后会在可见终端中运行 npm i -g keel-agent@latest；完成后重启服务生效（keel server restart）。",
 	"updateDesktopCheck": "检查桌面更新",
 	"updateDesktopChecking": "正在检查桌面更新…",
 	"updateDesktopAvailable": "发现桌面版新版本 v{version}",

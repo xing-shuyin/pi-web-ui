@@ -203,7 +203,7 @@ describe("collectTargets", () => {
 		const dir = makeAgentDir({ foo: "^1.0.0" }, [["foo", "foo", "1.0.0"]]);
 		try {
 			expect(collectTargets(dir, "0.48.0", () => "0.84.4")).toEqual([
-				{ name: "keel", version: "0.48.0", kind: "webui" },
+				{ name: "keel-agent", version: "0.48.0", kind: "webui" },
 				{ name: CORE, version: "0.84.4", kind: "pi-core" },
 				{ name: "foo", version: "1.0.0", kind: "package" },
 			]);
@@ -216,7 +216,7 @@ describe("collectTargets", () => {
 		const dir = makeAgentDir({ foo: "^1.0.0" }, [["foo", "foo", "1.0.0"]]);
 		try {
 			expect(collectTargets(dir, "0.48.0", () => null)).toEqual([
-				{ name: "keel", version: "0.48.0", kind: "webui" },
+				{ name: "keel-agent", version: "0.48.0", kind: "webui" },
 				{ name: CORE, version: "unknown", kind: "pi-core", error: "pluginupdate.piCore.unknown" },
 				{ name: "foo", version: "1.0.0", kind: "package" },
 			]);
@@ -232,7 +232,7 @@ describe("collectTargets", () => {
 		]);
 		try {
 			expect(collectTargets(dir, "0.48.0", () => null)).toEqual([
-				{ name: "keel", version: "0.48.0", kind: "webui" },
+				{ name: "keel-agent", version: "0.48.0", kind: "webui" },
 				{ name: CORE, version: "9.9.9", kind: "pi-core" },
 				{ name: "foo", version: "1.0.0", kind: "package" },
 			]);
@@ -249,7 +249,7 @@ describe("collectTargets", () => {
 		try {
 			const targets = collectTargets(dir, "0.48.0", () => "0.84.4");
 			expect(targets[0]).toEqual({
-				name: "keel",
+				name: "keel-agent",
 				version: "0.48.0",
 				kind: "webui",
 			});
@@ -266,7 +266,7 @@ describe("collectTargets", () => {
 		]);
 		try {
 			expect(collectTargets(dir, "0.48.0", () => null)).toEqual([
-				{ name: "keel", version: "0.48.0", kind: "webui" },
+				{ name: "keel-agent", version: "0.48.0", kind: "webui" },
 				{ name: CORE, version: "0.85.0", kind: "pi-core" },
 				{ name: "plain", version: "1.0.0", kind: "package" },
 			]);
@@ -297,7 +297,7 @@ describe("collectTargets", () => {
 		try {
 			const targets = collectTargets(dir, "0.48.0", () => "0.87.1");
 			expect(targets).toEqual([
-				{ name: "keel", version: "0.48.0", kind: "webui" },
+				{ name: "keel-agent", version: "0.48.0", kind: "webui" },
 				{ name: CORE, version: "0.87.1", kind: "pi-core" },
 				{ name: "foo", version: "1.0.0", kind: "package" },
 			]);
@@ -362,14 +362,14 @@ describe("detectPiSdkSplit (issue #321)", () => {
 describe("checkAll", () => {
 	it("shapes items, preserves order, degrades failures per-item", async () => {
 		const targets: LocalPackage[] = [
-			{ name: "keel", version: "0.48.0", kind: "webui" },
+			{ name: "keel-agent", version: "0.48.0", kind: "webui" },
 			{ name: "@earendil-works/pi-coding-agent", version: "1.0.0", kind: "pi-core" },
 			{ name: "foo", version: "1.0.0", kind: "package" },
 			{ name: "flaky", version: "2.0.0", kind: "package" },
 		];
 		const { fetcher } = makeFetcher(
 			{
-				keel: "0.49.0",
+				"keel-agent": "0.49.0",
 				"@earendil-works/pi-coding-agent": "1.0.0",
 				foo: "0.9.0",
 			},
@@ -504,7 +504,7 @@ describe("sortUpdateItems", () => {
 				upToDate: true,
 			},
 			{
-				name: "keel",
+				name: "keel-agent",
 				kind: "webui",
 				current: "0.48.0",
 				latest: "0.48.0",
@@ -513,7 +513,7 @@ describe("sortUpdateItems", () => {
 			},
 		] as Parameters<typeof sortUpdateItems>[0];
 		expect(sortUpdateItems(items).map((i) => i.name)).toEqual([
-			"keel",
+			"keel-agent",
 			"@earendil-works/pi-coding-agent",
 			"old-pkg",
 			"ok-pkg",
@@ -718,7 +718,7 @@ describe("collectTargets with git extensions (issue #178)", () => {
 			);
 			const targets = collectTargets(dir, "0.48.0", () => null, {});
 			expect(targets).toEqual([
-				{ name: "keel", version: "0.48.0", kind: "webui" },
+				{ name: "keel-agent", version: "0.48.0", kind: "webui" },
 				{
 					name: "@earendil-works/pi-coding-agent",
 					version: "unknown",

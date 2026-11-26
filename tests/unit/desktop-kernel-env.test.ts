@@ -81,7 +81,7 @@ describe("kernel-env", () => {
 	});
 
 	it("全局包根与平台分隔符一致", () => {
-		expect(globalKernelRoot("/usr/local/").replace(/\\/g, "/")).toBe("/usr/local/node_modules/keel");
+		expect(globalKernelRoot("/usr/local/").replace(/\\/g, "/")).toBe("/usr/local/node_modules/keel-agent");
 	});
 
 	it("装 node / 装内核都要求用户在终端执行（GUI 没有 TTY）", () => {
@@ -91,7 +91,7 @@ describe("kernel-env", () => {
 		}
 		expect(nodeInstallGuide("win32").command).toContain("winget");
 		expect(nodeInstallGuide("darwin").command).toContain("brew");
-		expect(npmGlobalInstallGuide().command).toBe("npm i -g keel@latest");
+		expect(npmGlobalInstallGuide().command).toBe("npm i -g keel-agent@latest");
 	});
 
 	it("服务配置落点：三平台各一处，与 CLI 一致", () => {

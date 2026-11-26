@@ -15,7 +15,7 @@ import { join } from "node:path";
 export const WEB_BUILD_ENTRY = "index.html";
 
 /** 修复命令：与桌面端「升级内核」、文档里给用户的是同一条。 */
-export const WEB_BUILD_REPAIR_COMMAND = "npm i -g keel@latest";
+export const WEB_BUILD_REPAIR_COMMAND = "npm i -g keel-agent@latest";
 
 /** 诊断页自动重试间隔（秒）：装包被补好后页面自己就该恢复，不需要用户理解发生了什么。 */
 export const WEB_BUILD_RETRY_SECONDS = 3;

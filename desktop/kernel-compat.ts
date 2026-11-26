@@ -68,10 +68,10 @@ export function describeKernelCompat(verdict: KernelCompatVerdict): string {
 		case "ok":
 			return "";
 		case "upgrade-kernel":
-			return `内核协议 v${verdict.kernelProtocol} 与本壳 v${verdict.shellProtocol} 不一致：请升级全局包（npm i -g keel@latest）`;
+			return `内核协议 v${verdict.kernelProtocol} 与本壳 v${verdict.shellProtocol} 不一致：请升级全局包（npm i -g keel-agent@latest）`;
 		case "upgrade-shell":
 			return `内核要求桌面应用能力 ≥${verdict.kernelMinShell}（本壳 ${verdict.shellCapability}）：请先更新桌面应用`;
 		case "unknown-kernel":
-			return `${verdict.detail}：请升级全局包（npm i -g keel@latest）`;
+			return `${verdict.detail}：请升级全局包（npm i -g keel-agent@latest）`;
 	}
 }
