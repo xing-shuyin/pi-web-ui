@@ -183,6 +183,14 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "scheduleTaskOffHint",
 	},
 	{
+		name: toolNames.BG_TASK_TOOL_NAME,
+		group: "other",
+		defaultOn: true,
+		dshVisible: false,
+		descKey: "bgTaskEnabledDesc",
+		offHintKey: "bgTaskOffHint",
+	},
+	{
 		name: toolNames.COMPACT_CONTEXT_TOOL_NAME,
 		group: "other",
 		defaultOn: true,

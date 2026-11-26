@@ -928,14 +928,19 @@ export function installLocalFrpcService({ dataDir }) {
 			),
 		);
 	} else if (process.platform === "darwin") {
-		const plistPath = join(homedir(), "Library", "LaunchAgents", "com.xingshuyin.pi-web-ui-frpc.plist");
+		const legacyPlistPath = join(homedir(), "Library", "LaunchAgents", "com.xingshuyin.pi-web-ui-frpc.plist");
+		if (existsSync(legacyPlistPath)) {
+			spawnSync("launchctl", ["unload", legacyPlistPath], { windowsHide: true, stdio: "ignore" });
+			rmSync(legacyPlistPath, { force: true });
+		}
+		const plistPath = join(homedir(), "Library", "LaunchAgents", "com.xingshuyin.keel-frpc.plist");
 		mkdirSync(dirname(plistPath), { recursive: true });
 		const plistContent = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.xingshuyin.pi-web-ui-frpc</string>
+    <string>com.xingshuyin.keel-frpc</string>
     <key>ProgramArguments</key>
     <array>
         <string>${binPath}</string>
@@ -1005,10 +1010,16 @@ export function uninstallLocalFrpcService({ dataDir }) {
 		if (existsSync(vbsPath)) rmSync(vbsPath, { force: true });
 		console.log(pick(`✔ 已移除 Windows 开机自启项`, `✔ Removed Windows autostart item`));
 	} else if (process.platform === "darwin") {
-		const plistPath = join(homedir(), "Library", "LaunchAgents", "com.xingshuyin.pi-web-ui-frpc.plist");
-		if (existsSync(plistPath)) {
-			spawnSync("launchctl", ["unload", plistPath], { windowsHide: true, stdio: "ignore" });
-			rmSync(plistPath, { force: true });
+		let removed = false;
+		for (const label of ["com.xingshuyin.keel-frpc", "com.xingshuyin.pi-web-ui-frpc"]) {
+			const plistPath = join(homedir(), "Library", "LaunchAgents", `${label}.plist`);
+			if (existsSync(plistPath)) {
+				spawnSync("launchctl", ["unload", plistPath], { windowsHide: true, stdio: "ignore" });
+				rmSync(plistPath, { force: true });
+				removed = true;
+			}
+		}
+		if (removed) {
 			console.log(pick(`✔ 已移除 macOS launchd 服务`, `✔ Removed macOS launchd service`));
 		}
 	} else {

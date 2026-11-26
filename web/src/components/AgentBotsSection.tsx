@@ -1,19 +1,16 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { createPortal } from "react-dom";
 import { FiChevronDown, FiChevronUp, FiCpu, FiSettings, FiUsers } from "react-icons/fi";
+import { useFloatingPanel } from "../use-floating-panel";
+import { appSend, useEngineCapabilities, useIsDsh } from "../app-globals";
 import { useT, type Translate } from "../i18n";
 import { DEVICE_GROUPS_CHANGED, deviceGroupRequest } from "./DeviceGroupSection";
 import { openBotChat, openBotManagement } from "../bot-chat";
 import { openContextMenu } from "../context-menu-state";
 import type { UiSlotEntry } from "../ui-slots";
 import { referenceBotInComposer } from "../bot-reference";
-import {
-	botDraftFailureText,
-	createBotDraft,
-	requestBotCreate,
-	subscribeBotCreateRequest,
-	type BotDraftFailure,
-} from "../bot-create";
-import { botDraftActionErrorText, type BotDraftActionFailure } from "../bot-draft-action";
+import { requestBotAiDraftMode, requestBotCreate, subscribeBotCreateRequest } from "../bot-create";
+import { focusComposer } from "../composer-bridge";
 import { copyTextToClipboard } from "../use-copy-feedback";
 import { BotMemoryDialog } from "./BotMemoryDialog";
 import { BotChatHistoryDialog } from "./BotChatHistoryDialog";
@@ -45,44 +42,7 @@ type BotRow = {
 	local?: boolean;
 };
 
-type BotDraft = {
-	id: string;
-	name: string;
-	description: string;
-	systemPrompt: string;
-	cwd: string;
-	tools: string[];
-	trigger: "on_demand" | "always_on" | "scheduled";
-	rationale?: string;
-	bootstrap: boolean;
-	highPrivilegeTools: string[];
-	createdBy: "model" | "human";
-	createdAt: number;
-};
-
 /** 本区块的文案住在 `web/src/i18n/messages/agent-bots/`，键名统一 `agentBots*` 前缀。 */
-/** 起草失败的文案表：`botDraftFailureText` 只认这五个类别。 */
-function draftWordTable(t: Translate): Record<BotDraftFailure, string> {
-	return {
-		"no-model": t("agentBotsDraftErrorNoModel"),
-		unparsable: t("agentBotsDraftErrorUnparsable"),
-		timeout: t("agentBotsDraftErrorTimeout"),
-		request: t("agentBotsDraftErrorRequest"),
-		workspace: t("agentBotsDraftWorkspaceError"),
-		failed: t("agentBotsDraftErrorFailed"),
-	};
-}
-
-/** 确认/取消失败的文案表：`botDraftActionErrorText` 只在没有 `detail` 时才用它。 */
-function draftActionWordTable(t: Translate): Record<BotDraftActionFailure, string> {
-	return {
-		"needs-approval": t("agentBotsDraftNeedsApproval"),
-		"cwd-invalid": t("agentBotsDraftCwdInvalid"),
-		busy: t("agentBotsDraftBusy"),
-		missing: t("agentBotsDraftMissing"),
-		failed: t("agentBotsDraftActionFailed"),
-	};
-}
 
 /** 行提示里的路径只留尾部：完整路径在设备中心，这里只需要知道它绑在哪个目录。 */
 function shortPath(path: string, max = 36): string {
@@ -110,52 +70,55 @@ export function AgentBotsSection({
 	active = true,
 	activeBotId,
 	cwd,
+	botDraftPrompt,
+	botDraftDefaultPrompt,
 }: {
 	active?: boolean;
 	/** 当前对话如果是某 Bot 的私聊，这里就是它的 id（私聊 = 普通对话 + Bot 身份）。 */
 	activeBotId?: string | null;
 	/** 当前项目（工作区）：新建 Bot 默认落在它下面，而不是服务端默认目录。 */
 	cwd?: string | null;
+	/** 设置中自定义的智能体生成提示词模板。 */
+	botDraftPrompt?: string;
+	/** 服务端下发的默认智能体生成提示词模板。 */
+	botDraftDefaultPrompt?: string;
 }) {
 	const t = useT();
+	const capabilities = useEngineCapabilities();
+	const isDsh = useIsDsh();
 	const [bots, setBots] = useState<BotRow[] | null>(null);
-	const [drafts, setDrafts] = useState<BotDraft[]>([]);
-	const [grants, setGrants] = useState<Record<string, string[]>>({});
-	const [approving, setApproving] = useState<string | null>(null);
 	const [memoryBot, setMemoryBot] = useState<BotRow | null>(null);
 	const [historyBot, setHistoryBot] = useState<BotRow | null>(null);
 	// 编辑就地弹窗（复用设备中心那份编辑器）：只存 id，不在左栏拼一份不完整的 Bot。
 	const [editBotId, setEditBotId] = useState<string | null>(null);
 	const [notice, setNotice] = useState("");
-	// 加号 = 新建智能体：一句话交给服务端 AI 起草（产草案），或切到设备中心手动填写。
-	const [creating, setCreating] = useState(false);
-	const [createText, setCreateText] = useState("");
-	// 手动填写：就地弹窗（复用设备中心那份编辑器），不切视图。
+	// 加号 = 新建智能体：下拉选择「AI 创建」（新建临时对话并聚焦输入框）或「手动创建」。
 	const [manualOpen, setManualOpen] = useState(false);
-	const [createBusy, setCreateBusy] = useState(false);
-	const [createError, setCreateError] = useState("");
+	const [createMenuOpen, setCreateMenuOpen] = useState(false);
+	const createMenuAnchor = useRef<HTMLButtonElement | null>(null);
+	const createMenu = useFloatingPanel({
+		open: createMenuOpen,
+		anchor: createMenuAnchor,
+		onClose: () => setCreateMenuOpen(false),
+		side: "top",
+		align: "right",
+	});
 	const [error, setError] = useState("");
-	// 确认/取消失败：与列表加载错误（`error`）分开——草案仍在待确认区，原因要贴在那里并可直接重试。
-	const [draftError, setDraftError] = useState<{ id: string; action: "confirm" | "discard"; text: string } | null>(
-		null,
-	);
 	const [collapsed, setCollapsed] = useState(false);
 	const [pending, setPending] = useState<string | null>(null);
 	const generation = useRef(0);
 
-	// Bot 列表的唯一数据源是服务端本机面板（`/api/device-center/bot-panel`）：Bot 身份与草案
-	// 都存在本机 `device-bots/`，Hub 只消费这份列表，离线不影响这块列表。
+	// Bot 列表的唯一数据源是服务端本机面板（`/api/device-center/bot-panel`）：Bot 身份
+	// 存在本机 `device-bots/`，Hub 只消费这份列表，离线不影响这块列表。
 	const load = useCallback(async () => {
 		const token = ++generation.current;
 		const controller = new AbortController();
 		try {
 			const panel = await deviceGroupRequest<{
 				bots?: BotRow[];
-				drafts?: BotDraft[];
 			}>("bot-panel", controller.signal);
 			if (token !== generation.current) return;
 			setBots((panel.bots ?? []).filter((bot) => bot.enabled).sort((a, b) => a.name.localeCompare(b.name)));
-			setDrafts(panel.drafts ?? []);
 			setError("");
 		} catch (cause) {
 			if (token !== generation.current) return;
@@ -169,13 +132,9 @@ export function AgentBotsSection({
 		const refresh = () => void load();
 		window.addEventListener(DEVICE_GROUPS_CHANGED, refresh);
 		window.addEventListener("pi-web-ui:device-bots-changed", refresh);
-		// 草案由主对话里的 agent_bot 工具产生（没有前端事件），这里低频轮询兜底：
-		// 5s 一次只读本地文件，比让用户"刷新页面才看到确认卡"更合理。
-		const timer = window.setInterval(refresh, 5000);
 		return () => {
 			window.removeEventListener(DEVICE_GROUPS_CHANGED, refresh);
 			window.removeEventListener("pi-web-ui:device-bots-changed", refresh);
-			window.clearInterval(timer);
 		};
 	}, [active, load]);
 
@@ -189,88 +148,6 @@ export function AgentBotsSection({
 		// 打开是同步派发，给一拍反馈就复位（会话真正就绪由快照驱动高亮）。
 		window.setTimeout(() => setPending(null), 400);
 	}, []);
-
-	// 一句话 → 草案（服务端跑一次模型，不占会话）；草案落到下方「待确认的新智能体」。
-	const draftWithAi = useCallback(async () => {
-		const sentence = createText.trim();
-		if (!sentence) {
-			setCreateError(t("agentBotsCreateEmpty"));
-			return;
-		}
-		const controller = new AbortController();
-		setCreateBusy(true);
-		setCreateError("");
-		try {
-			const draft = await createBotDraft(sentence, controller.signal, cwd ?? undefined);
-			setNotice(t("agentBotsCreateDone", { name: draft.name }));
-			setCreating(false);
-			setCreateText("");
-			await load();
-		} catch (cause) {
-			setCreateError(botDraftFailureText(cause, draftWordTable(t)));
-		} finally {
-			setCreateBusy(false);
-		}
-	}, [createText, cwd, load, t]);
-
-	const confirmDraft = useCallback(
-		async (draft: BotDraft) => {
-			const approved = grants[draft.id] ?? [];
-			if (draft.highPrivilegeTools.some((tool) => !approved.includes(tool))) {
-				setDraftError({ id: draft.id, action: "confirm", text: t("agentBotsDraftNeedsApproval") });
-				return;
-			}
-			const controller = new AbortController();
-			setApproving(draft.id);
-			setDraftError(null);
-			try {
-				const result = await deviceGroupRequest<{ bot?: { id: string } }>(
-					`bot-drafts/${encodeURIComponent(draft.id)}/approve`,
-					controller.signal,
-					{
-						approvedTools: [
-							...new Set([...draft.tools.filter((tool) => !draft.highPrivilegeTools.includes(tool)), ...approved]),
-						],
-					},
-				);
-				window.dispatchEvent(new CustomEvent("pi-web-ui:device-bots-changed"));
-				await load();
-				if (result.bot?.id) openBotChat(result.bot.id);
-			} catch (cause) {
-				setDraftError({
-					id: draft.id,
-					action: "confirm",
-					text: botDraftActionErrorText(cause, draftActionWordTable(t)),
-				});
-				// 服务端失败后草案仍留在待确认列表：重新拉一次，「重试」才有真实草案可点。
-				await load();
-			} finally {
-				setApproving(null);
-			}
-		},
-		[grants, load, t],
-	);
-	const discardDraft = useCallback(
-		async (draft: BotDraft) => {
-			const controller = new AbortController();
-			setApproving(draft.id);
-			setDraftError(null);
-			try {
-				await deviceGroupRequest(`bot-drafts/${encodeURIComponent(draft.id)}/discard`, controller.signal, {});
-				await load();
-			} catch (cause) {
-				setDraftError({
-					id: draft.id,
-					action: "discard",
-					text: botDraftActionErrorText(cause, draftActionWordTable(t)),
-				});
-				await load();
-			} finally {
-				setApproving(null);
-			}
-		},
-		[load, t],
-	);
 
 	// 右键菜单：Bot 行本身是「对话入口」，不做成编辑表单的入口。
 	// 菜单只放跳转与轻量动作（开私聊 / @ 引用 / 编辑就地弹窗 / 设备中心 / 记忆 / 复制 ID），
@@ -324,9 +201,6 @@ export function AgentBotsSection({
 		[startChat, t],
 	);
 
-	// 失败后草案仍在（服务端保留）：重试按钮要按 id 找回当前这份草案再重发。
-	const failedDraft = draftError ? drafts.find((draft) => draft.id === draftError.id) : undefined;
-
 	return (
 		<section className="lp-bots-section" aria-label={t("agentBotsTitle")} aria-busy={!bots && !error}>
 			<div className="lp-bots-header">
@@ -364,81 +238,53 @@ export function AgentBotsSection({
 					>
 						<FiSettings aria-hidden="true" />
 					</button>
-					<button
-						type="button"
-						className="lp-bots-import"
-						title={t("agentBotsCreateTitle")}
-						aria-label={t("agentBotsCreateTitle")}
-						aria-expanded={creating}
-						onClick={() => {
-							setCreating((value) => !value);
-							setCreateError("");
-						}}
-					>
-						＋
-					</button>
+					<div className="lp-bots-create-wrap">
+						<button
+							type="button"
+							ref={createMenuAnchor}
+							className="lp-bots-import"
+							title={t("agentBotsCreateTitle")}
+							aria-label={t("agentBotsCreateTitle")}
+							aria-expanded={createMenuOpen}
+							aria-haspopup="menu"
+							onClick={() => setCreateMenuOpen((value) => !value)}
+						>
+							＋
+						</button>
+						{createMenuOpen &&
+							createPortal(
+								<div ref={createMenu.panelRef} className="lp-bots-create-menu" style={createMenu.style} role="menu">
+									<button
+										type="button"
+										role="menuitem"
+										onClick={() => {
+											setCreateMenuOpen(false);
+											const useEphemeral = capabilities.ephemeralChat !== false && !isDsh;
+											appSend(useEphemeral ? { type: "new_chat", ephemeral: true } : { type: "new_chat" });
+											requestBotAiDraftMode();
+											focusComposer();
+										}}
+									>
+										{t("agentBotsCreateAi")}
+									</button>
+									<button
+										type="button"
+										role="menuitem"
+										onClick={() => {
+											setCreateMenuOpen(false);
+											requestBotCreate();
+										}}
+									>
+										{t("agentBotsCreateManual")}
+									</button>
+								</div>,
+								document.body,
+							)}
+					</div>
 				</div>
 			</div>
 			{/* 新建卡片与列表一起滚动：整个区块按内容高度排布，超过上限时只在内部滚。 */}
 			<div className="lp-bots-scroll">
-				{creating && (
-					<form
-						className="lp-bots-create"
-						onSubmit={(event) => {
-							event.preventDefault();
-							void draftWithAi();
-						}}
-					>
-						<label className="lp-bots-create-title" htmlFor="lp-bots-create-input">
-							{t("agentBotsCreateTitle")}
-						</label>
-						<textarea
-							id="lp-bots-create-input"
-							className="lp-bots-create-input"
-							value={createText}
-							rows={2}
-							placeholder={t("agentBotsCreatePlaceholder")}
-							disabled={createBusy}
-							onChange={(event) => setCreateText(event.target.value)}
-						/>
-						{createError && (
-							<p className="lp-bots-create-error" role="alert">
-								{createError}
-							</p>
-						)}
-						<div className="lp-bots-create-actions">
-							<button type="submit" className="lp-bots-create-primary" disabled={createBusy}>
-								{createBusy ? t("agentBotsCreating") : t("agentBotsCreateAi")}
-							</button>
-							<button
-								type="button"
-								className="lp-bots-create-secondary"
-								disabled={createBusy}
-								title={t("agentBotsCreateManual")}
-								onClick={() => {
-									// 手动兜底：就地弹「新建智能体」表单（不跳设备中心）。
-									setCreating(false);
-									setCreateText("");
-									requestBotCreate();
-								}}
-							>
-								{t("agentBotsCreateManual")}
-							</button>
-							<button
-								type="button"
-								className="lp-bots-create-cancel"
-								disabled={createBusy}
-								onClick={() => {
-									setCreating(false);
-									setCreateText("");
-									setCreateError("");
-								}}
-							>
-								{t("agentBotsCreateCancel")}
-							</button>
-						</div>
-					</form>
-				)}
 				{!collapsed && (
 					<div className="lp-bots-body">
 						{notice && <p className="lp-bots-notice">{notice}</p>}
@@ -450,115 +296,8 @@ export function AgentBotsSection({
 								</button>
 							</div>
 						)}
-						{(drafts.length > 0 || draftError) && (
-							<div className="lp-bot-drafts">
-								{drafts.length > 0 && (
-									<>
-										<p className="lp-bot-drafts-title">{t("agentBotsDrafts")}</p>
-										<p className="lp-bot-drafts-hint">{t("agentBotsDraftHint")}</p>
-									</>
-								)}
-								{draftError && (
-									<div className="lp-bot-drafts-error" role="alert">
-										<span>{draftError.text}</span>
-										<div className="lp-bot-drafts-error-actions">
-											{failedDraft && (
-												<button
-													type="button"
-													disabled={approving !== null}
-													onClick={() =>
-														void (draftError.action === "confirm"
-															? confirmDraft(failedDraft)
-															: discardDraft(failedDraft))
-													}
-												>
-													{t("agentBotsRetry")}
-												</button>
-											)}
-											<button type="button" onClick={() => setDraftError(null)}>
-												{t("agentBotsDraftErrorDismiss")}
-											</button>
-										</div>
-									</div>
-								)}
-								{drafts.map((draft) => {
-									const granted = grants[draft.id] ?? [];
-									const ready = draft.highPrivilegeTools.every((tool) => granted.includes(tool));
-									const busy = approving === draft.id;
-									return (
-										<div key={draft.id} className="lp-bot-draft">
-											<div className="lp-bot-draft-head">
-												<strong>{draft.name}</strong>
-												<span className="lp-bot-draft-badge">
-													{draft.trigger === "on_demand"
-														? t("agentBotsTriggerOnDemand")
-														: t("agentBotsTriggerReserved")}
-												</span>
-											</div>
-											<p className="lp-bot-draft-desc">{draft.description}</p>
-											{draft.trigger !== "on_demand" && (
-												<p className="lp-bot-draft-meta">
-													{t("agentBotsTriggerReservedHint", { trigger: draft.trigger })}
-												</p>
-											)}
-											<p className="lp-bot-draft-meta" title={draft.cwd}>
-												{t("agentBotsWorkspace")}: {shortPath(draft.cwd)}
-											</p>
-											{draft.rationale && (
-												<details className="lp-bot-draft-why">
-													<summary>{t("agentBotsDraftWhy")}</summary>
-													<p>{draft.rationale}</p>
-												</details>
-											)}
-											{draft.tools.length > 0 && (
-												<p className="lp-bot-draft-meta" title={draft.tools.join(", ")}>
-													{t("agentBotsTools")}: {draft.tools.length} · {draft.tools.slice(0, 4).join("、")}
-													{draft.tools.length > 4 ? "…" : ""}
-												</p>
-											)}
-											{draft.highPrivilegeTools.length > 0 && (
-												<div className="lp-bot-draft-grants">
-													{draft.highPrivilegeTools.map((tool) => (
-														<label key={tool} className="lp-bot-draft-grant">
-															<input
-																type="checkbox"
-																checked={granted.includes(tool)}
-																onChange={(event) =>
-																	setGrants((current) => ({
-																		...current,
-																		[draft.id]: event.target.checked
-																			? [...new Set([...(current[draft.id] ?? []), tool])]
-																			: (current[draft.id] ?? []).filter((item) => item !== tool),
-																	}))
-																}
-															/>
-															<span>{tool}</span>
-														</label>
-													))}
-												</div>
-											)}
-											<div className="lp-bot-draft-actions">
-												<button
-													type="button"
-													className="lp-bot-draft-primary"
-													disabled={!ready || busy}
-													onClick={() => void confirmDraft(draft)}
-												>
-													{busy ? t("agentBotsApproving") : t("agentBotsApprove")}
-												</button>
-												<button type="button" disabled={busy} onClick={() => void discardDraft(draft)}>
-													{t("agentBotsDiscard")}
-												</button>
-											</div>
-										</div>
-									);
-								})}
-							</div>
-						)}
 						{!error && !bots && <p className="lp-bots-empty">{t("agentBotsLoading")}</p>}
-						{!error && bots && bots.length === 0 && drafts.length === 0 && (
-							<p className="lp-bots-empty">{t("agentBotsEmpty")}</p>
-						)}
+						{!error && bots && bots.length === 0 && <p className="lp-bots-empty">{t("agentBotsEmpty")}</p>}
 						{(bots ?? []).map((bot) => {
 							// 高亮跟着"当前对话是不是这个 Bot 的私聊"走（普通会话 + Bot 绑定）。
 							const isActive = activeBotId === bot.id;

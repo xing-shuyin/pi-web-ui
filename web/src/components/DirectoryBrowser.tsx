@@ -28,7 +28,7 @@ import {
 	requestRemoteInstallTools,
 	requestRemoteListDir,
 	requestRemoteProbe,
-	requestRemoteProfiles,
+	requestRemoteProfilesWithKeys,
 } from "../remote-ssh-client";
 import type {
 	RemoteSshHostTrustOffer,
@@ -90,8 +90,8 @@ interface DirectoryBrowserProps {
 	localOnly?: boolean;
 	initialTab?: "local" | "remote";
 	currentCwd: string;
-	pathCompletions: { name: string; path: string; type: "dir" | "file" }[];
-	workspaceRoots: string[];
+	pathCompletions?: { name: string; path: string; type: "dir" | "file" }[];
+	workspaceRoots?: string[];
 	onClose: () => void;
 	onSelectDirectory: (path: string) => void;
 	mode?: "folder" | "project";
@@ -104,8 +104,8 @@ interface DirectoryBrowserProps {
 
 export function DirectoryBrowser({
 	currentCwd,
-	pathCompletions,
-	workspaceRoots,
+	pathCompletions: propPathCompletions,
+	workspaceRoots: propWorkspaceRoots,
 	onClose,
 	onSelectDirectory,
 	mode = "folder",
@@ -123,6 +123,12 @@ export function DirectoryBrowser({
 	const supportsRemoteSsh = capabilities.remoteSsh && !localOnly;
 	const homeDir = useAppField("homeDir");
 	const desktopDir = useAppField("desktopDir");
+	const storePathCompletions = useAppField("pathCompletions");
+	const storeWorkspaceRoots = useAppField("workspaceRoots");
+	const pathCompletions =
+		propPathCompletions && propPathCompletions.length > 0 ? propPathCompletions : (storePathCompletions ?? []);
+	const workspaceRoots =
+		propWorkspaceRoots && propWorkspaceRoots.length > 0 ? propWorkspaceRoots : (storeWorkspaceRoots ?? []);
 
 	const [activeTab, setActiveTabState] = useState<"local" | "remote">(() => {
 		if (!supportsRemoteSsh) return "local";
@@ -162,7 +168,9 @@ export function DirectoryBrowser({
 	const [sshUser, setSshUser] = useState("");
 	const [sshAuthType, setSshAuthType] = useState<"password" | "key" | "agent">("password");
 	const [sshPassword, setSshPassword] = useState("");
-	const [sshKeyPath, setSshKeyPath] = useState("~/.ssh/id_rsa");
+	const [sshKeyPath, setSshKeyPath] = useState("");
+	const [localKeys, setLocalKeys] = useState<string[]>([]);
+	const [customKeyPathMode, setCustomKeyPathMode] = useState(false);
 	const [sshSaveProfile, setSshSaveProfile] = useState(true);
 	const [sshProfileName, setSshProfileName] = useState("");
 
@@ -370,14 +378,19 @@ export function DirectoryBrowser({
 		setRemoteDraft(targetDir);
 		void loadRemoteDir(res.connectionId, targetDir);
 
-		void requestRemoteProfiles().then((p) => setProfiles(p));
+		void requestRemoteProfilesWithKeys().then(({ profiles: p, localKeys: keys }) => {
+			setProfiles(p);
+			setLocalKeys(keys);
+		});
 	};
 
 	const autoConnectedRef = useRef(false);
 	useEffect(() => {
 		if (activeTab === "remote") {
-			void requestRemoteProfiles().then((p) => {
+			void requestRemoteProfilesWithKeys().then(({ profiles: p, localKeys: keys }) => {
 				setProfiles(p);
+				setLocalKeys(keys);
+				setSshKeyPath((prev) => prev || keys[0] || "");
 				if (!autoConnectedRef.current && !connectionId && !connecting && isRemoteWorkspaceUri(currentCwd)) {
 					const parsed = parseRemoteWorkspaceUri(currentCwd);
 					if (parsed) {
@@ -893,15 +906,60 @@ export function DirectoryBrowser({
 								)}
 
 								{sshAuthType === "key" && (
-									<div className="cwd-ssh-row">
-										<label>{t("sshKeyPath")}:</label>
-										<input
-											className="cwd-ssh-input"
-											value={sshKeyPath}
-											placeholder="~/.ssh/id_rsa"
-											onChange={(e) => setSshKeyPath(e.target.value)}
-										/>
-									</div>
+									<>
+										{localKeys.length > 0 ? (
+											<>
+												<div className="cwd-ssh-row">
+													<label>{t("sshKeyPath")}:</label>
+													<select
+														className="cwd-ssh-select"
+														value={
+															customKeyPathMode || (sshKeyPath && !localKeys.includes(sshKeyPath))
+																? "__custom__"
+																: sshKeyPath
+														}
+														onChange={(e) => {
+															const val = e.target.value;
+															if (val === "__custom__") {
+																setCustomKeyPathMode(true);
+															} else {
+																setCustomKeyPathMode(false);
+																setSshKeyPath(val);
+															}
+														}}
+													>
+														{localKeys.map((k) => (
+															<option key={k} value={k}>
+																{k}
+															</option>
+														))}
+														<option value="__custom__">{t("sshKeyCustom")}</option>
+													</select>
+												</div>
+												{(customKeyPathMode || (sshKeyPath && !localKeys.includes(sshKeyPath))) && (
+													<div className="cwd-ssh-row">
+														<label />
+														<input
+															className="cwd-ssh-input"
+															value={sshKeyPath}
+															placeholder="~/.ssh/id_ed25519"
+															onChange={(e) => setSshKeyPath(e.target.value)}
+														/>
+													</div>
+												)}
+											</>
+										) : (
+											<div className="cwd-ssh-row">
+												<label>{t("sshKeyPath")}:</label>
+												<input
+													className="cwd-ssh-input"
+													value={sshKeyPath}
+													placeholder="~/.ssh/id_ed25519"
+													onChange={(e) => setSshKeyPath(e.target.value)}
+												/>
+											</div>
+										)}
+									</>
 								)}
 
 								<div className="cwd-ssh-row" style={{ fontSize: "11px", color: "var(--text-dim)" }}>

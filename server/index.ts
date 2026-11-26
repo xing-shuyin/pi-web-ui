@@ -147,7 +147,14 @@ import { deliverScheduledRun, type SchedulerWakeReceipt } from "./scheduler-deli
 import { BackgroundExecutorRegistry } from "./background-executors.js";
 import { initHttpProxy } from "./http-proxy.js";
 import { getLiveLspDiagnostics, globalLspPool, makeLspTool } from "./lsp-tool.js";
-import { buildPiWebTokenCookie, decodeCookieToken, isTlsRequest } from "./auth-cookie.js";
+import {
+	TOKEN_COOKIE_MAX_AGE_SECONDS,
+	buildPiWebTokenCookie,
+	clearPiWebTokenCookies,
+	decodeCookieToken,
+	isTlsRequest,
+} from "./auth-cookie.js";
+import { createAuthSessionStore } from "./auth-session.js";
 import { authBlocked, noteAuthFailure, resetAuth } from "./auth-throttle.js";
 import { AUTH_ERROR_PARAM, AUTH_LOGIN_PATH, loginFailureLocation, sanitizeNextPath } from "./auth-login.js";
 import {
@@ -435,11 +442,22 @@ app.post("/api/setup/save", setupGate, async (req, res) => {
 		res.status(result.status).json({ ok: false, error: result.error });
 		return;
 	}
+	const prevToken = AUTH_TOKEN;
 	AUTH_TOKEN = result.nextToken;
+	if (result.tokenApplied || prevToken !== AUTH_TOKEN) {
+		closeSocketsForSids(authSessions.revokeAll());
+	}
 	if (AUTH_TOKEN) {
-		res.setHeader("Set-Cookie", buildPiWebTokenCookie(encodeURIComponent(AUTH_TOKEN), 31536000, isTlsRequest(req)));
+		const { sid } = authSessions.create({
+			ip: req.socket?.remoteAddress,
+			userAgent: req.headers["user-agent"],
+		});
+		res.setHeader(
+			"Set-Cookie",
+			buildPiWebTokenCookie(encodeURIComponent(sid), TOKEN_COOKIE_MAX_AGE_SECONDS, isTlsRequest(req)),
+		);
 	} else if (result.tokenApplied) {
-		res.setHeader("Set-Cookie", [buildPiWebTokenCookie("", 0, false), buildPiWebTokenCookie("", 0, true)]);
+		res.setHeader("Set-Cookie", clearPiWebTokenCookies());
 	}
 	res.json({
 		ok: true,
@@ -449,28 +467,38 @@ app.post("/api/setup/save", setupGate, async (req, res) => {
 	});
 });
 
-function requestTokens(req: { headers: IncomingMessage["headers"]; url?: string }): string[] {
+const authSessions = createAuthSessionStore();
+
+function closeSocketsForSids(sids: Iterable<string>): void {
+	const revoked = new Set(sids);
+	if (revoked.size === 0) return;
+	for (const client of wss.clients) {
+		const tracked = client as TrackedWebSocket;
+		if (tracked.authSid && revoked.has(tracked.authSid)) {
+			try {
+				client.close(4001, "session_revoked");
+			} catch {}
+		}
+	}
+}
+
+function queryToken(req: { url?: string }): string {
+	try {
+		const q = new URL(req.url ?? "/", "http://localhost").searchParams.get("token");
+		return q ? q.trim() : "";
+	} catch {
+		return "";
+	}
+}
+
+function requestMasterTokens(req: { headers: IncomingMessage["headers"]; url?: string }): string[] {
 	const out: string[] = [];
 	const auth = req.headers.authorization;
 	if (typeof auth === "string" && auth.startsWith("Bearer ")) out.push(auth.slice(7).trim());
 	const header = req.headers["x-pi-token"];
 	if (typeof header === "string") out.push(header.trim());
-	try {
-		const q = new URL(req.url ?? "/", "http://localhost").searchParams.get("token");
-		if (q) out.push(q.trim());
-	} catch {}
-	const cookie = req.headers.cookie;
-	if (typeof cookie === "string") {
-		for (const part of cookie.split(";")) {
-			const [k, ...rest] = part.trim().split("=");
-			if (k !== "pi_web_token") continue;
-			const raw = rest.join("=").trim();
-			if (!raw) continue;
-			out.push(raw);
-			const decoded = decodeCookieToken(raw);
-			if (decoded !== raw) out.push(decoded);
-		}
-	}
+	const q = queryToken(req);
+	if (q) out.push(q);
 	return out.filter(Boolean);
 }
 
@@ -480,17 +508,30 @@ function sameSecret(candidate: string): boolean {
 	return timingSafeEqual(a, b);
 }
 
-function tokenOk(req: Parameters<typeof requestTokens>[0] & { socket?: { remoteAddress?: string } }): boolean {
-	// 口令失败计数的唯一接入点（issue #969）：cookie / `?token=` / header / Bearer / WS 升级
-	// 全部经过这里，所以限速必须在“比对口令”这个动作上，而不是挂在某条路由上。
+type RequestAuthResult = { ok: true; kind: "session"; sid: string } | { ok: true; kind: "token" } | { ok: false };
+
+function verifyRequestAuth(
+	req: Parameters<typeof requestMasterTokens>[0] & { socket?: { remoteAddress?: string } },
+): RequestAuthResult {
+	// 口令失败计数的唯一接入点（issue #969）：cookie(sid) / `?token=` / header / Bearer / WS 升级
+	// 全部经过这里，所以限速必须在“比对口令/会话”这个动作上，而不是挂在某条路由上。
 	const address = req.socket?.remoteAddress;
-	if (authBlocked(address)) return false;
-	if (requestTokens(req).some(sameSecret)) {
+	if (authBlocked(address)) return { ok: false };
+	const sid = cookieToken(req);
+	if (sid && authSessions.verify(sid)) {
 		resetAuth(address);
-		return true;
+		return { ok: true, kind: "session", sid };
+	}
+	if (requestMasterTokens(req).some(sameSecret)) {
+		resetAuth(address);
+		return { ok: true, kind: "token" };
 	}
 	noteAuthFailure(address);
-	return false;
+	return { ok: false };
+}
+
+function tokenOk(req: Parameters<typeof verifyRequestAuth>[0]): boolean {
+	return verifyRequestAuth(req).ok;
 }
 
 function cookieToken(req: { headers: IncomingMessage["headers"] }): string {
@@ -544,12 +585,51 @@ app.post(AUTH_LOGIN_PATH, express.urlencoded({ extended: false, limit: "8kb" }),
 	}
 	if (AUTH_TOKEN && submitted && sameSecret(submitted)) {
 		resetAuth(address);
-		res.setHeader("Set-Cookie", buildPiWebTokenCookie(encodeURIComponent(AUTH_TOKEN), 31536000, isTlsRequest(req)));
+		const { sid } = authSessions.create({ ip: address, userAgent: req.headers["user-agent"] });
+		res.setHeader(
+			"Set-Cookie",
+			buildPiWebTokenCookie(encodeURIComponent(sid), TOKEN_COOKIE_MAX_AGE_SECONDS, isTlsRequest(req)),
+		);
 		res.redirect(303, next);
 		return;
 	}
 	if (AUTH_TOKEN && submitted) noteAuthFailure(address);
 	res.redirect(303, loginFailureLocation(next));
+});
+
+// 移动端 / 原生客户端用主口令换取会话 sid（issue #969 第二层）：
+// 受同一份 `auth-throttle` 限速保护，换取成功后下发 sid 与 HttpOnly cookie。
+app.post("/__pi/session/exchange", (req, res) => {
+	if (!AUTH_TOKEN) {
+		res.json({ ok: true, authRequired: false });
+		return;
+	}
+	const address = req.socket?.remoteAddress;
+	if (authBlocked(address)) {
+		res.status(429).json({ ok: false, error: "too_many_attempts" });
+		return;
+	}
+	const body = (req.body ?? {}) as Record<string, unknown>;
+	const bodyToken = typeof body.token === "string" ? body.token.trim() : "";
+	const candidates = [...requestMasterTokens(req), ...(bodyToken ? [bodyToken] : [])];
+	if (candidates.some(sameSecret)) {
+		resetAuth(address);
+		const { sid, session } = authSessions.create({ ip: address, userAgent: req.headers["user-agent"] });
+		res.setHeader(
+			"Set-Cookie",
+			buildPiWebTokenCookie(encodeURIComponent(sid), TOKEN_COOKIE_MAX_AGE_SECONDS, isTlsRequest(req)),
+		);
+		res.json({
+			ok: true,
+			sid,
+			id: session.id,
+			expiresAt: session.expiresAt,
+			maxAge: TOKEN_COOKIE_MAX_AGE_SECONDS,
+		});
+		return;
+	}
+	noteAuthFailure(address);
+	res.status(401).json({ ok: false, error: "unauthorized" });
 });
 
 app.use((req, res, next) => {
@@ -562,15 +642,25 @@ app.use((req, res, next) => {
 		next();
 		return;
 	}
-	const ok = tokenOk(req);
+	const auth = verifyRequestAuth(req);
+	const ok = auth.ok;
 	const cookie = cookieToken(req);
 	const secure = isTlsRequest(req);
-	if (ok) {
-		if (!sameSecret(cookie)) {
-			res.setHeader("Set-Cookie", buildPiWebTokenCookie(encodeURIComponent(AUTH_TOKEN), 31536000, secure));
+	if (auth.ok) {
+		if (auth.kind === "session") {
+			res.setHeader(
+				"Set-Cookie",
+				buildPiWebTokenCookie(encodeURIComponent(auth.sid), TOKEN_COOKIE_MAX_AGE_SECONDS, secure),
+			);
+		} else if (queryToken(req) || Boolean(req.headers.accept?.includes("text/html"))) {
+			const { sid } = authSessions.create({
+				ip: req.socket?.remoteAddress,
+				userAgent: req.headers["user-agent"],
+			});
+			res.setHeader("Set-Cookie", buildPiWebTokenCookie(encodeURIComponent(sid), TOKEN_COOKIE_MAX_AGE_SECONDS, secure));
 		}
 	} else if (cookie) {
-		res.setHeader("Set-Cookie", [buildPiWebTokenCookie("", 0, false), buildPiWebTokenCookie("", 0, true)]);
+		res.setHeader("Set-Cookie", clearPiWebTokenCookies());
 	}
 	// 入站 webhook 自带 token（Hub 侧严格比对，见 hub-webhooks 的 incomingWebhookToken）：
 	// 外部平台不可能持有本机口令，只能靠 webhook token 证明身份。只放行这一条精确路径，
@@ -630,6 +720,55 @@ app.use((req, res, next) => {
 		);
 });
 
+app.get("/__pi/session", (req, res) => {
+	const sid = cookieToken(req);
+	const current = sid ? authSessions.peek(sid) : undefined;
+	res.json({
+		ok: true,
+		authEnabled: Boolean(AUTH_TOKEN),
+		currentId: current?.id ?? null,
+		sessions: AUTH_TOKEN ? authSessions.list(sid) : [],
+	});
+});
+
+app.post("/__pi/session/logout", (req, res) => {
+	const sid = cookieToken(req);
+	if (sid) {
+		authSessions.revoke(sid);
+		closeSocketsForSids([sid]);
+	}
+	res.setHeader("Set-Cookie", clearPiWebTokenCookies());
+	res.json({ ok: true });
+});
+
+app.post("/__pi/session/revoke", (req, res) => {
+	const body = (req.body ?? {}) as { all?: unknown; id?: unknown };
+	const currentSid = cookieToken(req);
+	if (body.all === true) {
+		const revoked = authSessions.revokeAll();
+		closeSocketsForSids(revoked);
+		res.setHeader("Set-Cookie", clearPiWebTokenCookies());
+		res.json({ ok: true, revoked: revoked.length });
+		return;
+	}
+	const targetId = typeof body.id === "string" ? body.id.trim() : "";
+	if (!targetId) {
+		if (currentSid) {
+			authSessions.revoke(currentSid);
+			closeSocketsForSids([currentSid]);
+		}
+		res.setHeader("Set-Cookie", clearPiWebTokenCookies());
+		res.json({ ok: true, revoked: Boolean(currentSid) });
+		return;
+	}
+	const result = authSessions.revokeById(targetId);
+	if (result.sid) {
+		closeSocketsForSids([result.sid]);
+		if (result.sid === currentSid) res.setHeader("Set-Cookie", clearPiWebTokenCookies());
+	}
+	res.json({ ok: true, revoked: result.revoked });
+});
+
 mobilePush.registerRoutes(app);
 registerTtsRoutes(app);
 
@@ -661,17 +800,19 @@ registerQuickAskRoutes(app, {
 
 const EXPLICIT_ENGINE_ARG = cliFlag("--engine") ?? process.env.PI_WEB_ENGINE;
 let currentDefaultEngine: EngineId =
-	EXPLICIT_ENGINE_ARG === "codex"
-		? "codex"
-		: EXPLICIT_ENGINE_ARG === "durable"
-			? "durable"
-			: EXPLICIT_ENGINE_ARG === "claude"
-				? "claude"
-				: EXPLICIT_ENGINE_ARG === "dsh"
-					? "dsh"
-					: EXPLICIT_ENGINE_ARG === "pi"
-						? "pi"
-						: (sharedStateStore.getDefaultEngine() ?? "pi");
+	EXPLICIT_ENGINE_ARG === "agy"
+		? "agy"
+		: EXPLICIT_ENGINE_ARG === "codex"
+			? "codex"
+			: EXPLICIT_ENGINE_ARG === "durable"
+				? "durable"
+				: EXPLICIT_ENGINE_ARG === "claude"
+					? "claude"
+					: EXPLICIT_ENGINE_ARG === "dsh"
+						? "dsh"
+						: EXPLICIT_ENGINE_ARG === "pi"
+							? "pi"
+							: (sharedStateStore.getDefaultEngine() ?? "pi");
 const clientEngines = new Map<string, EngineId>();
 
 function resolveClientEngine(clientId: string): EngineId {
@@ -1495,12 +1636,18 @@ httpServer.on("upgrade", (req, socket, head) => {
 		socket.destroy();
 		return;
 	}
-	if (AUTH_TOKEN && !tokenOk(req)) {
-		socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
-		socket.destroy();
-		return;
+	let authSid: string | undefined;
+	if (AUTH_TOKEN) {
+		const auth = verifyRequestAuth(req);
+		if (!auth.ok) {
+			socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+			socket.destroy();
+			return;
+		}
+		if (auth.kind === "session") authSid = auth.sid;
 	}
 	wss.handleUpgrade(req, socket, head, (ws) => {
+		if (authSid) (ws as TrackedWebSocket).authSid = authSid;
 		wss.emit("connection", ws, req);
 	});
 });
@@ -1513,6 +1660,7 @@ interface TrackedWebSocket extends WebSocket {
 	missedPings?: number;
 	pingSentAt?: number;
 	latencyMs?: number;
+	authSid?: string;
 }
 
 const sampleHostMetrics = createHostMetricsSampler();
@@ -1567,7 +1715,8 @@ const heartbeatTimer = setInterval(() => {
 heartbeatTimer.unref?.();
 
 import { DshAgentService } from "./dsh/dsh-agent-service.js";
-import { UniversalAgentService, ClaudeCodeDriver, probeClaudeCode, CodexDriver } from "./universal/index.js";
+import { UniversalAgentService, ClaudeCodeDriver, probeClaudeCode, CodexDriver, AgyDriver } from "./universal/index.js";
+import { MultiEngineBroker } from "./multi-engine.js";
 import { DurableAgentService } from "./durable/index.js";
 import {
 	probeAllEngines,
@@ -1594,6 +1743,7 @@ let piServiceInstance: EngineService | null = null;
 let dshServiceInstance: DshAgentService | null = null;
 let claudeServiceInstance: UniversalAgentService | null = null;
 let codexServiceInstance: UniversalAgentService | null = null;
+let agyServiceInstance: UniversalAgentService | null = null;
 let durableServiceInstance: DurableAgentService | null = null;
 let wireEngineHooks: ((svc: EngineService) => void) | null = null;
 let sharedSocketCount = 0;
@@ -1623,11 +1773,28 @@ function activeEngines(): EngineService[] {
 	if (dshServiceInstance) list.push(dshServiceInstance);
 	if (claudeServiceInstance) list.push(claudeServiceInstance);
 	if (codexServiceInstance) list.push(codexServiceInstance);
+	if (agyServiceInstance) list.push(agyServiceInstance);
 	if (durableServiceInstance) list.push(durableServiceInstance);
 	return list;
 }
 
 function ensureEngine(engine: EngineId): EngineService {
+	if (engine === "agy") {
+		if (!agyServiceInstance) {
+			agyServiceInstance = new UniversalAgentService({
+				cwd: CWD,
+				dataDir: DATA_DIR,
+				agentDir: getAgentDir(),
+				stateStore: sharedStateStore,
+				engine: "agy",
+				driverFactory: (cwd) => new AgyDriver(cwd, { agentDir: getAgentDir(), dataDir: DATA_DIR }),
+			});
+			for (let i = 0; i < sharedSocketCount; i++) agyServiceInstance.noteSocketOpen();
+			if (sharedQuiesced) agyServiceInstance.quiesce();
+			wireEngineHooks?.(agyServiceInstance);
+		}
+		return agyServiceInstance;
+	}
 	if (engine === "codex") {
 		if (!codexServiceInstance) {
 			codexServiceInstance = new UniversalAgentService({
@@ -2579,6 +2746,7 @@ wss.on("connection", (ws) => {
 	let lastSnapshotBytes = 0;
 	const pending = new PendingCommandQueue();
 	let attachDone = false;
+	let broker: MultiEngineBroker | null = null;
 	let attachGen = 0;
 	let snapshotRetryTimer: ReturnType<typeof setTimeout> | null = null;
 	/**
@@ -2688,30 +2856,57 @@ wss.on("connection", (ws) => {
 
 	const handleSwitchEngine = async (msg: Extract<ClientMessage, { type: "switch_engine" }>): Promise<void> => {
 		const targetEngine: EngineId | null =
-			msg.engine === "codex"
-				? "codex"
-				: msg.engine === "durable"
-					? "durable"
-					: msg.engine === "claude"
-						? "claude"
-						: msg.engine === "dsh"
-							? "dsh"
-							: msg.engine === "pi"
-								? "pi"
-								: null;
+			msg.engine === "agy"
+				? "agy"
+				: msg.engine === "codex"
+					? "codex"
+					: msg.engine === "durable"
+						? "durable"
+						: msg.engine === "claude"
+							? "claude"
+							: msg.engine === "dsh"
+								? "dsh"
+								: msg.engine === "pi"
+									? "pi"
+									: null;
 		if (!targetEngine) {
 			send({
 				type: "notice",
 				level: "error",
-				text: `无效的引擎类型：${String(msg.engine)}（仅支持 pi / dsh / codex / claude / durable）`,
-				textEn: `Invalid engine "${String(msg.engine)}" (supported: pi, dsh, codex, claude, durable)`,
+				text: `无效的引擎类型：${String(msg.engine)}（仅支持 pi / dsh / codex / claude / agy / durable）`,
+				textEn: `Invalid engine "${String(msg.engine)}" (supported: pi, dsh, codex, claude, agy, durable)`,
 			});
 			return;
 		}
 		if (!clientId) return;
 
+		if (broker) {
+			const prevEngine = broker.getActiveEngine();
+			if (prevEngine === targetEngine) {
+				setClientEngine(clientId, targetEngine);
+				return;
+			}
+			const nextCs = await broker.switchActiveEngine(targetEngine);
+			if (!nextCs || closed) return;
+			if (targetEngine === "claude") {
+				void probeClaudeCode().then((probe) => {
+					if (!probe.installed) {
+						nextCs.emitNotice(
+							"warning",
+							"已热切换至 Claude Code 引擎。检测到未安装 Claude Code CLI，请在终端执行 npm i -g @anthropic-ai/claude-code 安装并运行 claude 完成登录。",
+							"Switched to Claude Code engine. Claude Code CLI not found; run: npm i -g @anthropic-ai/claude-code and log in with claude.",
+						);
+					}
+				});
+			}
+			return;
+		}
+
 		if (targetEngine !== "pi") {
-			const probe = await probeEngine(targetEngine);
+			let probe = await probeEngine(targetEngine, false, { skipUpdateCheck: true });
+			if (!probe.installed) {
+				probe = await probeEngine(targetEngine, true, { skipUpdateCheck: true });
+			}
 			if (!probe.installed) {
 				send({
 					type: "notice",
@@ -2794,6 +2989,12 @@ wss.on("connection", (ws) => {
 						"info",
 						"已热切换至 Codex 引擎（其他引擎后台会话保持运行，可随时切回）",
 						"Switched to Codex engine in-place (other background conversations keep running)",
+					);
+				} else if (targetEngine === "agy") {
+					newCs.emitNotice(
+						"info",
+						"已热切换至 Antigravity 引擎（其他引擎后台会话保持运行，可随时切回）",
+						"Switched to Antigravity engine in-place (other background conversations keep running)",
 					);
 				} else if (targetEngine === "durable") {
 					newCs.emitNotice(
@@ -3047,22 +3248,24 @@ wss.on("connection", (ws) => {
 		if (msg.type === "check_engines") {
 			void probeAllEngines(msg.force).then((engines) => {
 				if (!closed) send({ type: "engines_status", engines });
+				if (!closed) void broker?.refreshInstalledEngines();
 			});
 			return;
 		}
 
-		const cs = service.get(clientId);
+		const cid = clientId;
+		const cs = broker?.getActiveSession() ?? service.get(cid);
 		if (!cs || !attachDone) {
 			if (!pending.push(msg, wireBytes)) ws.close(1009, "Pending command budget exceeded");
 			return;
 		}
 		if (msg.type === "load_earlier_messages") {
-			const sharedTarget = service.sharedConversationTarget?.(clientId);
+			const sharedTarget = service.sharedConversationTarget?.(cid);
 			if (sharedTarget && msg.conversationId && msg.conversationId !== sharedTarget.conversationId) return;
 			windowTap.setScope(
 				sharedTarget
 					? `shared:${JSON.stringify([sharedTarget.ownerClientId, sharedTarget.conversationId])}`
-					: `local:${clientId}`,
+					: `local:${cid}`,
 			);
 			let handled = windowTap.loadEarlier({
 				count: msg.count,
@@ -3073,7 +3276,7 @@ wss.on("connection", (ws) => {
 				historyGeneration: msg.historyGeneration,
 			});
 			if (!handled && cs) {
-				const shared = service.sharedConversationTarget?.(clientId);
+				const shared = service.sharedConversationTarget?.(cid);
 				const historyOwner = shared?.owner ?? cs;
 				const activeId =
 					shared?.conversationId ??
@@ -3093,7 +3296,7 @@ wss.on("connection", (ws) => {
 					});
 				}
 				if (!handled && (!msg.conversationId || msg.conversationId === activeId)) {
-					if (!service.dispatchSharedConversationMessage?.(clientId, { type: "get_state" })) respondState(cs, send);
+					if (!service.dispatchSharedConversationMessage?.(cid, { type: "get_state" })) respondState(cs, send);
 				}
 			}
 			return;
@@ -3104,9 +3307,36 @@ wss.on("connection", (ws) => {
 			refuse(msg, { text: refusal, textEn: refusal, error: refusal }, send);
 			return;
 		}
+		if (
+			broker &&
+			(msg.type === "new_chat" ||
+				msg.type === "new_cli_chat" ||
+				msg.type === "switch_conversation" ||
+				msg.type === "switch_session" ||
+				msg.type === "dismiss_conversation" ||
+				msg.type === "rename_conversation" ||
+				msg.type === "pin_conversation" ||
+				msg.type === "delete_session" ||
+				msg.type === "rename_session" ||
+				msg.type === "pin_session" ||
+				msg.type === "list_sessions" ||
+				msg.type === "set_cwd" ||
+				msg.type === "remove_project")
+		) {
+			void broker.routeMessage(msg).then(({ handled, targetCs, targetService }) => {
+				if (!handled && targetCs && !closed) dispatchToSession(msg, targetCs, targetService);
+			});
+			return;
+		}
+		dispatchToSession(msg, cs);
+	};
+
+	const dispatchToSession = (msg: ClientMessage, cs: DispatchSession, targetService?: EngineService): void => {
+		if (!clientId) return;
+		const effectiveService = targetService ?? service;
 		try {
-			if (service.dispatchSharedConversationMessage?.(clientId, msg)) return;
-			if (handleInteractiveResponseMessage(msg, cs, service, clientId, send)) return;
+			if (effectiveService.dispatchSharedConversationMessage?.(clientId, msg)) return;
+			if (handleInteractiveResponseMessage(msg, cs, effectiveService, clientId, send)) return;
 			if (handleFileMessage(msg, cs)) return;
 			if (handleScmMessage(msg, cs, send)) return;
 			if (handleBgServerMessage(msg, cs)) return;
@@ -3138,7 +3368,7 @@ wss.on("connection", (ws) => {
 				})
 			)
 				return;
-			if (handleSessionLifecycleMessage(msg, cs, send, service, clientId)) return;
+			if (handleSessionLifecycleMessage(msg, cs, send, effectiveService, clientId)) return;
 			if (handlePlanAndGoalMessage(msg, cs)) return;
 			if (handleScheduleMessage(msg, scheduler, send)) return;
 			if (handleRemoteSshMessage(msg, remoteSshService, send)) return;
@@ -3467,18 +3697,43 @@ wss.on("connection", (ws) => {
 					textEn: "Session init is taking a while (possibly scanning the workspace) — hang on…",
 				});
 			}, ATTACH_SLOW_NOTICE_MS);
+			if (!cid.startsWith("device-task-")) {
+				broker = new MultiEngineBroker({
+					clientId: cid,
+					initialEngine: resolveClientEngine(cid),
+					allEngines: ["pi", "dsh", "claude", "codex", "agy", "durable"],
+					ensureEngine,
+					probeEngine: (engine, force) => probeEngine(engine, force, { skipUpdateCheck: true }),
+					send,
+					sendShared,
+					buildReady: (engine) => {
+						setClientEngine(cid, engine);
+						return readyMsg(cid);
+					},
+					onEngineChanged: (engine) => {
+						setClientEngine(cid, engine);
+					},
+					onAfterActiveAttach: (_engine, nextCs) => {
+						nextCs.flushSnapshot(true);
+						nextCs.pushSettings();
+						void nextCs.listModels();
+						void nextCs.pushProjects();
+					},
+				});
+			}
 			const helloSvc = ensureEngine(resolveClientEngine(cid));
 			const helloGen = ++attachGen;
-			helloSvc
-				.attach(cid, send, sendShared)
+			(broker ? broker.attachInitial() : helloSvc.attach(cid, send, sendShared))
 				.then((cs) => {
 					clearTimeout(slowTimer);
 					if (closed) {
-						helloSvc.detach(cid, send);
+						if (broker) broker.dispose();
+						else helloSvc.detach(cid, send);
 						return;
 					}
 					if (helloGen !== attachGen) {
-						helloSvc.detach(cid, send);
+						if (broker) broker.dispose();
+						else helloSvc.detach(cid, send);
 						return;
 					}
 					pluginMgr
@@ -3565,7 +3820,12 @@ wss.on("connection", (ws) => {
 			clearTimeout(snapshotRetryTimer);
 			snapshotRetryTimer = null;
 		}
-		if (clientId) service.detach(clientId, send);
+		if (broker) {
+			broker.dispose();
+			broker = null;
+		} else if (clientId) {
+			service.detach(clientId, send);
+		}
 	});
 });
 

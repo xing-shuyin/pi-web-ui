@@ -138,10 +138,10 @@ describe("Codex engine wiring", () => {
 		const canvasEngine: CanvasEngineId = "codex";
 		expect(isBuiltinEngineId(engine)).toBe(true);
 		expect(canvasEngine).toBe(engine);
-		expect(protocol).toContain('export type EngineId = import("./engine-catalog.js").BuiltinEngineId;');
+		expect(protocol).toContain('export type EngineId = import("./engine-catalog.js").NativeCliEngineId;');
 		expect(protocol.match(/export type CanvasEngineId = [^;]+/)?.[0]).toContain('"codex"');
-		const cli = readFileSync(new URL("../../bin/pi-web-ui.mjs", import.meta.url), "utf8");
+		const cli = readFileSync(new URL("../../bin/keel.mjs", import.meta.url), "utf8");
 		expect(cli).toContain("env.PI_WEB_ENGINE = engine");
-		expect(cli.match(/\["pi", "dsh", "claude", "codex", "durable"\]\.includes/g)).toHaveLength(2);
+		expect(cli.match(/\["pi", "dsh", "claude", "codex", "agy", "durable"\]\.includes/g)).toHaveLength(2);
 	});
 });

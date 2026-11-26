@@ -47,6 +47,8 @@ export interface JobSpec {
 	timeoutSec?: number;
 	/** 0 / 缺省 = 关闭空闲看门狗。 */
 	idleTimeoutSec?: number;
+	/** 0 / 缺省 = 关闭进度提醒；到期仍在跑时触发一次 `onNotify`，不杀进程。 */
+	notificationTimeoutSec?: number;
 	/** 归属标记（对话 id），面板上用来区分是谁起的。 */
 	origin?: string;
 }
@@ -82,6 +84,8 @@ interface JobRecord {
 	stream: WriteStream;
 	timeoutSec: number;
 	idleTimeoutSec: number;
+	notificationTimeoutSec: number;
+	notified: boolean;
 	lastOutputAt: number;
 	timer: ReturnType<typeof setInterval> | null;
 	state: JobState;
@@ -89,6 +93,7 @@ interface JobRecord {
 	reason?: JobExitReason;
 	killing: boolean;
 	readCursor: number;
+	waiters: Array<(snap: JobSnapshot) => void>;
 }
 
 export interface JobRegistryOptions {
@@ -98,6 +103,8 @@ export interface JobRegistryOptions {
 	onChange?: () => void;
 	/** 任务结束（正常退出 / 超时 / 被杀 / 起不来）时触发。 */
 	onExit?: (job: JobSnapshot) => void;
+	/** 任务运行满 `notificationTimeoutSec` 仍未结束时触发一次（不杀进程）。 */
+	onNotify?: (job: JobSnapshot) => void;
 }
 
 /** Windows 下优先真 Git Bash：模型写的 `&&` / POSIX 路径 / 管道才不会被 cmd.exe 认错。 */
@@ -212,12 +219,15 @@ export class JobRegistry {
 			stream,
 			timeoutSec: Math.min(Math.max(0, Math.floor(spec.timeoutSec ?? 0)), MAX_BACKGROUND_TIMEOUT_SEC),
 			idleTimeoutSec: Math.max(0, Math.floor(spec.idleTimeoutSec ?? 0)),
+			notificationTimeoutSec: Math.max(0, Math.floor(spec.notificationTimeoutSec ?? 0)),
+			notified: false,
 			lastOutputAt: now,
 			timer: null,
 			state: "running",
 			exitCode: null,
 			killing: false,
 			readCursor: 0,
+			waiters: [],
 		};
 		this.jobs.set(id, record);
 		// WriteStream 的 error 事件（磁盘满/权限回收等）没有默认处理会变成 uncaughtException；
@@ -245,7 +255,7 @@ export class JobRegistry {
 			if (tailText) this.writeToLog(record, `${tailText.endsWith("\n") ? "" : "\n"}`);
 			this.finish(record, code, record.reason ?? "exit");
 		});
-		if (record.timeoutSec > 0 || record.idleTimeoutSec > 0) {
+		if (record.timeoutSec > 0 || record.idleTimeoutSec > 0 || record.notificationTimeoutSec > 0) {
 			record.timer = setInterval(() => this.check(record), 1000);
 			record.timer.unref?.();
 		}
@@ -264,6 +274,17 @@ export class JobRegistry {
 		if (record.idleTimeoutSec > 0 && now - record.lastOutputAt >= record.idleTimeoutSec * 1000) {
 			record.reason = "idle";
 			this.kill(record.id);
+			return;
+		}
+		if (
+			record.notificationTimeoutSec > 0 &&
+			!record.notified &&
+			now - record.since >= record.notificationTimeoutSec * 1000
+		) {
+			record.notified = true;
+			try {
+				this.opts.onNotify?.({ ...this.snapshot(record), tail: readTail(record.logPath, 20) });
+			} catch {}
 		}
 	}
 
@@ -303,13 +324,23 @@ export class JobRegistry {
 		record.exitCode = exitCode;
 		record.reason = reason;
 		record.stream.write(`\n[job] ${reason} exit=${exitCode === null ? "null" : exitCode}\n`);
-		record.stream.end();
-		const snap: JobSnapshot = { ...this.snapshot(record), tail: readTail(record.logPath, 20) };
-		this.jobs.delete(record.id);
-		this.opts.onChange?.();
-		try {
-			this.opts.onExit?.(snap);
-		} catch {}
+		record.stream.end(() => {
+			const snap: JobSnapshot = { ...this.snapshot(record), tail: readTail(record.logPath, 20) };
+			this.jobs.delete(record.id);
+			const waiters = record.waiters.splice(0);
+			const hadWaiters = waiters.length > 0;
+			for (const wake of waiters) {
+				try {
+					wake(snap);
+				} catch {}
+			}
+			this.opts.onChange?.();
+			if (!hadWaiters) {
+				try {
+					this.opts.onExit?.(snap);
+				} catch {}
+			}
+		});
 	}
 
 	list(): JobSnapshot[] {
@@ -335,6 +366,50 @@ export class JobRegistry {
 		const { text, next } = readFrom(record.logPath, record.readCursor);
 		if (opts.advance !== false) record.readCursor = next;
 		return text.trimEnd();
+	}
+
+	/**
+	 * 等待任务在 `waitMs` 内完成；若超时仍在运行，返回当前快照与尾部输出（任务继续留在后台跑）。
+	 */
+	async awaitCompletionOrTimeout(
+		id: string,
+		waitMs: number,
+		signal?: AbortSignal,
+	): Promise<{ completed: boolean; snapshot?: JobSnapshot; tail: string }> {
+		const record = this.jobs.get(id);
+		if (!record) return { completed: true, tail: "" };
+		if (record.state === "exited") {
+			return { completed: true, snapshot: this.snapshot(record), tail: readTail(record.logPath, 200) };
+		}
+		return await new Promise((resolvePromise) => {
+			let settled = false;
+			const finishWait = (completed: boolean, snap?: JobSnapshot) => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
+				signal?.removeEventListener("abort", onAbort);
+				const idx = record.waiters.indexOf(onExit);
+				if (idx >= 0) record.waiters.splice(idx, 1);
+				resolvePromise({
+					completed,
+					snapshot: snap ?? this.snapshot(record),
+					tail: readTail(record.logPath, completed ? 200 : TAIL_DEFAULT),
+				});
+			};
+			const onExit = (snap: JobSnapshot) => finishWait(true, snap);
+			const onAbort = () => {
+				this.kill(id);
+				finishWait(false);
+			};
+			record.waiters.push(onExit);
+			if (signal?.aborted) {
+				onAbort();
+				return;
+			}
+			signal?.addEventListener("abort", onAbort, { once: true });
+			const timer = setTimeout(() => finishWait(false), Math.max(0, waitMs));
+			timer.unref?.();
+		});
 	}
 
 	/** 起任务后等首屏输出：服务类命令通常几百毫秒内会打印 listening 行。 */

@@ -61,7 +61,7 @@ rootfs（Ubuntu 24.04 arm64，APK assets 内分卷）
 | 连接入口与三模式                              | `mobile/src/connections.ts` · `mobile/src/connection.ts` · `mobile/src/ConnectionScreen.tsx`                           |
 | 服务器连接方式 / env 全表                     | [`env-vars.md`](env-vars.md)（`PI_WEB_PORT`/`PI_WEB_HOST`/`PI_WEB_TOKEN`/`PI_WEB_DATA_DIR`/`PI_WEB_CWD`/`PI_WEB_SDK`） |
 | 移动端通知与构建                              | [`mobile.md`](mobile.md)                                                                                               |
-| 生产形态（dist/server、web/dist、bin 启动器） | `package.json` scripts · `bin/pi-web-ui.mjs`                                                                           |
+| 生产形态（dist/server、web/dist、bin 启动器） | `package.json` scripts · `bin/keel.mjs`                                                                           |
 
 ## Runtime 打包（`mobile/local-engine/runtime/`）
 
@@ -170,7 +170,7 @@ MethodChannel `pwu/localengine`，事件流推送状态：
 | node-pty 在 ARM rootfs 编译失败                           | 阶段 A 前置验证；备选：rootfs 内预装 `package.json` 锁定版本 + 离线 native 模块；终端不可用时可置灰终端面板运行主链路 |
 | 手机厂商杀后台                                            | 前台服务 + 白名单引导；文档教用户关闭 PiPilot 省电限制                                                                |
 | ROM 对 `exec` 私有目录的策略                              | 维持 targetSdk 28；禁止上架 Play 前贸然提升 targetSdk                                                                 |
-| `bin/pi-web-ui.mjs` 在 rootfs 内有桌面假设（frp/homedir） | 启动绕过 bin 包装，直接 `node dist/server/index.js`；bin 启动器作为 PC 形态继续单源                                   |
+| `bin/keel.mjs` 在 rootfs 内有桌面假设（frp/homedir） | 启动绕过 bin 包装，直接 `node dist/server/index.js`；bin 启动器作为 PC 形态继续单源                                   |
 | AGPL 边界                                                 | 不引 dsh-go 代码，只复述思路；proot GPL 源码引用随发布包                                                              |
 | 模拟器/小众 ABI                                           | MVP 只承诺 arm64-v8a；x86_64 flavor 属可选产物                                                                        |
 

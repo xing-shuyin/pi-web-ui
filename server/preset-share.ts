@@ -280,6 +280,7 @@ const PRESET_FIELD_KINDS = {
 	scmCommitMsgPrompt: "text",
 	planModePromptMode: "promptMode",
 	planModePrompt: "text",
+	botDraftPrompt: "text",
 	goalModeEnabled: "bool",
 	parallelReminderEnabled: "bool",
 	uiLayout: "uiLayout",

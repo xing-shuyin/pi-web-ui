@@ -257,6 +257,8 @@ export function assembleClient(ctx: ClientAssemblyContext): {
 		},
 		onConversationChanged: () => ctx.onConversationChanged?.(),
 		onSessionModelChanged: (conversationId) => {
+			const sess = sessions.get(conversationId)?.session;
+			if (sess) faces.settingsFrame?.applyCompactionOverrides?.(sess);
 			options.onSessionModelChanged?.(clientId, conversationId);
 			ctx.notifyPluginModelChange(clientId, conversationId);
 		},

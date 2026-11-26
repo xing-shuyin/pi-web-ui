@@ -19,6 +19,9 @@ export const PRESET_EXCLUDED_KEYS = [
 	// 「让 AI 起草」的一次性调用参数：跟随手问同类，是视图级偏好，不进预设分享。
 	"botDraftModel",
 	"botDraftThinking",
+	// 只读信任名单属于本地安全边界，不随社区预设导入导出。
+	"trustedReadOnlyTools",
+	"trustedReadOnlyPlugins",
 ] as const;
 export type PresetExcludedKey = (typeof PRESET_EXCLUDED_KEYS)[number];
 
@@ -81,6 +84,7 @@ export const PRESET_FIELD_GROUPS = {
 		"scmCommitMsgPrompt",
 		"planModePromptMode",
 		"planModePrompt",
+		"botDraftPrompt",
 		"goalModeEnabled",
 		"parallelReminderEnabled",
 	],
@@ -500,6 +504,12 @@ export const PRESET_FIELD_META = {
 		hintZh: "计划模式下限制模型只规划不施工的系统提示词",
 		hintEn: "System prompt restricting agent to planning only",
 	},
+	botDraftPrompt: {
+		labelZh: "智能体生成提示词",
+		labelEn: "Agent Drafting Prompt",
+		hintZh: "在正式对话中让 AI 起草智能体时发送的指令模板",
+		hintEn: "Prompt template sent in chat when asking AI to draft an Agent Bot",
+	},
 	goalModeEnabled: {
 		labelZh: "目标模式 2.0",
 		labelEn: "Goal Mode 2.0",
@@ -801,7 +811,8 @@ export function formatPresetFieldValue(
 		field === "reviewPrompt" ||
 		field === "visionBridgePrompt" ||
 		field === "scmCommitMsgPrompt" ||
-		field === "planModePrompt"
+		field === "planModePrompt" ||
+		field === "botDraftPrompt"
 	) {
 		const s = typeof value === "string" ? value : "";
 		if (!s.trim()) {

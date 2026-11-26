@@ -1008,6 +1008,7 @@ export function handleSettingsMessage(
 				quickAskThinking: msg.quickAskThinking,
 				botDraftModel: msg.botDraftModel,
 				botDraftThinking: msg.botDraftThinking,
+				botDraftPrompt: msg.botDraftPrompt,
 				quickAskSystemPrompt: msg.quickAskSystemPrompt,
 				quickAskExplainPrompt: msg.quickAskExplainPrompt,
 				quickAskTranslateModel: msg.quickAskTranslateModel,
@@ -1247,12 +1248,13 @@ export function handleRemoteSshMessage(
 			return true;
 		case "remote_ssh_list_profiles":
 			void (async () => {
-				const profiles = await remoteSshSvc.listProfiles();
+				const [profiles, localKeys] = await Promise.all([remoteSshSvc.listProfiles(), remoteSshSvc.listLocalKeys()]);
 				const error = remoteSshSvc.profilesStorageIssue();
 				send({
 					type: "remote_ssh_profiles_result",
 					reqId: msg.reqId,
 					profiles,
+					localKeys,
 					...(error ? { error } : {}),
 				});
 			})();

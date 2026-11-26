@@ -70,12 +70,33 @@ export class UniversalSessionStore {
 		}
 	}
 
+	/** 跨项目目录按会话 ID 兜底查找：当当前已切到新项目、用户点击旧项目会话时使用。 */
+	findConversationById(convId: string): { cwd?: string; conv: UniversalConversation } | null {
+		if (!existsSync(this.baseDir)) return null;
+		const safeId = convId.replace(/[^a-zA-Z0-9_-]/g, "_");
+		const fileName = `${safeId}.json`;
+		try {
+			for (const entry of readdirSync(this.baseDir, { withFileTypes: true })) {
+				if (!entry.isDirectory()) continue;
+				const p = join(this.baseDir, entry.name, fileName);
+				if (!existsSync(p)) continue;
+				try {
+					const data = JSON.parse(readFileSync(p, "utf-8")) as UniversalConversation;
+					if (data.engine === this.engine && data.id === convId && Array.isArray(data.messages)) {
+						return { cwd: data.cwd, conv: data };
+					}
+				} catch {}
+			}
+		} catch {}
+		return null;
+	}
+
 	/**
 	 * 保存一条会话（真值）：返回的 promise 在文件真正落盘后 resolve，失败会 reject。
 	 * 调用方必须 `await`，或在无法 await 的同步回调里用 `queueWrite`。
 	 */
 	saveConversation(cwd: string, conv: UniversalConversation): Promise<void> {
-		return this.enqueueWrite(this.convPath(cwd, conv.id), { ...conv, engine: this.engine });
+		return this.enqueueWrite(this.convPath(cwd, conv.id), { ...conv, cwd: conv.cwd ?? cwd, engine: this.engine });
 	}
 
 	/**

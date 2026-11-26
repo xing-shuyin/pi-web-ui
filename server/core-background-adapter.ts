@@ -23,6 +23,8 @@ export interface CoreBackgroundSinks {
 	stopBgTask?(taskId: string): boolean;
 	/** 任务结束通知（老实现 `notifyBackgroundJobDone`：notice + 移动端推送 + 唤醒归属对话）。 */
 	onJobExit?(job: JobSnapshot): void;
+	/** 任务运行满 `notificationTimeoutSec` 仍未结束时触发进度通知。 */
+	onJobNotify?(job: JobSnapshot): void;
 }
 
 /** job 行的面板形状：`taskId` 前缀与 `killBackgroundServer` 的解析必须同源（`JOB_TASK_PREFIX`）。 */
@@ -68,6 +70,7 @@ export function createCoreBackground(options: { dataDir: string } & CoreBackgrou
 		logDir: () => join(options.dataDir, "jobs"),
 		onChange: () => bg.push(),
 		...(options.onJobExit ? { onExit: (job: JobSnapshot) => options.onJobExit?.(job) } : {}),
+		...(options.onJobNotify ? { onNotify: (job: JobSnapshot) => options.onJobNotify?.(job) } : {}),
 	});
 	const bg = new BgServerTracker({
 		emit: (msg) => options.emit(msg),
@@ -195,6 +198,37 @@ export function createCoreBackground(options: { dataDir: string } & CoreBackgrou
 			const minutes = Number.isFinite(override) && override > 0 ? override : policy;
 			const thresholdMs = (minutes > 0 ? minutes : BG_CLEANUP_FALLBACK_MIN) * 60_000;
 			return bg.cleanStale(thresholdMs, { manual: true });
+		},
+
+		async startJob(spec) {
+			const job = jobs.start(spec);
+			const head = await jobs.awaitFirstOutput(job.id);
+			return { ...job, head };
+		},
+
+		async runJobWithWait({ waitMs, signal, ...spec }) {
+			const job = jobs.start(spec);
+			const res = await jobs.awaitCompletionOrTimeout(job.id, waitMs, signal);
+			const snap = res.snapshot ?? job;
+			return {
+				completed: res.completed,
+				job: snap,
+				output: res.tail,
+			};
+		},
+
+		listJobs: () => jobs.list(),
+
+		getJobStatus(id: string, tailLines = 40) {
+			const cleanId = id.startsWith(JOB_TASK_PREFIX) ? id.slice(JOB_TASK_PREFIX.length) : id;
+			const job = jobs.get(cleanId);
+			if (!job) return { ok: false, error: `Job "${id}" not found or already exited` };
+			return { ok: true, job, tail: jobs.tail(cleanId, tailLines) };
+		},
+
+		async killJob(id: string) {
+			const cleanId = id.startsWith(JOB_TASK_PREFIX) ? id.slice(JOB_TASK_PREFIX.length) : id;
+			return await jobs.killAndWait(cleanId);
 		},
 
 		dispose(): void {

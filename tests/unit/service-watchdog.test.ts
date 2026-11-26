@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * 系统服务看门狗的 Windows 实现（`bin/pi-web-ui.mjs` 的 `installWindows` / `buildWinStartPs1`）。
+ * 系统服务看门狗的 Windows 实现（`bin/keel.mjs` 的 `installWindows` / `buildWinStartPs1`）。
  *
  * 实机踩出来的两条（2026-11-21）：
  * 1. 重复 install 会留下**两个**看门狗抢同一份数据目录 —— 被拒的那个每 10s 重启一次，
@@ -12,7 +12,7 @@ import { join } from "node:path";
  *
  * 这里用文本断言守这两条：它们是生成出来的 ps1 内容，跑真服务不在单测范围内。
  */
-const cli = readFileSync(join(import.meta.dirname, "..", "..", "bin", "pi-web-ui.mjs"), "utf8");
+const cli = readFileSync(join(import.meta.dirname, "..", "..", "bin", "keel.mjs"), "utf8");
 
 function slice(start: string, end: string): string {
 	const from = cli.indexOf(start);

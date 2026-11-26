@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-16"?>
 <!--
-  pi-web-ui Task Scheduler task — Windows auto-start at logon.
+  keel Task Scheduler task — Windows auto-start at logon.
 
-  pi-web-ui server install 默认使用「登录 Run 键 + wscript 隐藏启动」（HKCU，无需管理员、
+  keel server install 默认使用「登录 Run 键 + wscript 隐藏启动」（HKCU，无需管理员、
   无黑窗），并自动迁移旧版计划任务安装。本 XML 仅保留给需要手动注册计划任务的场景
   （例如管理员环境），不是默认路径。
 -->
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>pi-web-ui — web chat for the pi coding agent (auto-start at logon)</Description>
+    <Description>keel — web chat for the pi coding agent (auto-start at logon)</Description>
   </RegistrationInfo>
   <Triggers>
     <LogonTrigger>

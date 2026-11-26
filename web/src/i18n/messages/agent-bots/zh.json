@@ -1,6 +1,6 @@
 {
 	"agentBotsTitle": "智能体",
-	"agentBotsEmpty": "还没有智能体。点右上角 ＋，用一句话就能创建。",
+	"agentBotsEmpty": "点 ＋ 创建智能体",
 	"agentBotsLoading": "加载中…",
 	"agentBotsFailed": "智能体列表加载失败",
 	"agentBotsRetry": "重试",
@@ -65,5 +65,17 @@
 	"agentBotsHistoryUntitled": "未命名对话",
 	"agentBotsHistoryUpdated": "更新于 {date}",
 	"agentBotsHistoryOpen": "打开",
-	"agentBotsHistoryClose": "关闭"
+	"agentBotsHistoryClose": "关闭",
+	"agentBotsInlineTitle": "智能体草案（可编辑确认）",
+	"agentBotsInlineCreated": "已创建",
+	"agentBotsInlineDiscarded": "已取消",
+	"agentBotsInlineRevised": "已按意见重新生成",
+	"agentBotsRevisePlaceholder": "对方案有修改意见？输入后让 AI 重新生成…",
+	"agentBotsReviseBtn": "让 AI 修改",
+	"agentBotsInlineHandled": "已处理或已过期",
+	"agentBotsFieldName": "名称",
+	"agentBotsFieldDesc": "简介",
+	"agentBotsFieldPrompt": "系统提示词",
+	"agentBotsAddTool": "添加工具",
+	"agentBotsComposerBadge": "创建智能体"
 }

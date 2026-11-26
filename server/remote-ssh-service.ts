@@ -443,6 +443,55 @@ export class RemoteSshService {
 		return undefined;
 	}
 
+	async listLocalKeys(): Promise<string[]> {
+		const sshDir = path.join(os.homedir(), ".ssh");
+		let entries: string[];
+		try {
+			entries = await fs.readdir(sshDir);
+		} catch {
+			return [];
+		}
+
+		const skipNames = new Set(["config", "environment", "authorized_keys", "authorized_keys2", "known_hosts"]);
+		const found: string[] = [];
+
+		for (const name of entries) {
+			if (!name || name.startsWith(".")) continue;
+			if (name.endsWith(".pub") || name.endsWith(".ppk") || name.endsWith(".bak") || name.endsWith(".tmp")) continue;
+			if (skipNames.has(name) || name.startsWith("known_hosts") || name.startsWith("authorized_keys")) continue;
+
+			const fullPath = path.join(sshDir, name);
+			try {
+				const st = await fs.stat(fullPath);
+				if (!st.isFile() || st.size === 0 || st.size > 64 * 1024) continue;
+				const fh = await fs.open(fullPath, "r");
+				try {
+					const buf = Buffer.alloc(128);
+					const { bytesRead } = await fh.read(buf, 0, 128, 0);
+					const head = buf.subarray(0, bytesRead).toString("utf8");
+					if (head.includes("BEGIN") && head.includes("PRIVATE KEY")) {
+						found.push(`~/.ssh/${name}`);
+					}
+				} finally {
+					await fh.close();
+				}
+			} catch {
+				// 忽略不可读或权限受限的文件
+			}
+		}
+
+		const priority = new Map<string, number>(DEFAULT_KEY_CANDIDATES.map((k, idx) => [k, idx]));
+		found.sort((a, b) => {
+			const pa = priority.get(a);
+			const pb = priority.get(b);
+			if (pa !== undefined && pb !== undefined) return pa - pb;
+			if (pa !== undefined) return -1;
+			if (pb !== undefined) return 1;
+			return a.localeCompare(b);
+		});
+		return found;
+	}
+
 	async listProfiles(): Promise<RemoteSshProfileSummary[]> {
 		const data = await this.loadProfilesData();
 		return Object.values(data.profiles)

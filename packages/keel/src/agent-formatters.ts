@@ -1,6 +1,7 @@
 import type { AgentSession, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentMessage } from "./serialize.js";
 import type { PluginAgentTool } from "./contracts/plugin.js";
+import { attachToolReadOnlyMeta } from "./plan-mode.js";
 
 export const RUN_TASK_CAP = 500;
 export const RUN_ARGS_CAP = 4000;
@@ -109,7 +110,7 @@ export function pluginToolToDefinition(tool: PluginAgentTool): ToolDefinition {
 		const text = typeof result === "string" ? result : JSON.stringify(result ?? null, null, 2);
 		return { content: [{ type: "text", text }] };
 	};
-	return {
+	const def = {
 		name: tool.name,
 		label: tool.label ?? tool.name,
 		description: tool.description,
@@ -137,6 +138,12 @@ export function pluginToolToDefinition(tool: PluginAgentTool): ToolDefinition {
 			return normalize(raw) as never;
 		},
 	} as unknown as ToolDefinition;
+	attachToolReadOnlyMeta(def, {
+		...(tool.readOnly !== undefined ? { readOnly: tool.readOnly } : {}),
+		...(tool.readOnlyHint !== undefined ? { readOnlyHint: tool.readOnlyHint } : {}),
+		...(tool.pluginId ? { pluginId: tool.pluginId } : {}),
+	});
+	return def;
 }
 
 export function contentFingerprint(m: AgentMessage): string {

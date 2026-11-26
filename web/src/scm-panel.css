@@ -521,3 +521,101 @@
 		padding-bottom: 7px;
 	}
 }
+
+/* ---------------- 方案 A：容器宽度自适应（单栏钻取 <-> 宽屏双栏） ---------------- */
+.scm-view {
+	container-type: inline-size;
+	container-name: scm-panel;
+}
+
+/* 非 Git 仓库时隐藏右侧空 Diff 与分隔条，避免窄/宽屏都留出无意义空白 */
+.scm-view .scm-body.not-repo .scm-divider,
+.scm-view .scm-body.not-repo .scm-diff {
+	display: none;
+}
+
+.scm-view .scm-body.not-repo .scm-files,
+.scm-view .scm-body.not-repo .scm-history {
+	width: 100%;
+	max-width: 100%;
+	border-right: 0;
+}
+
+/* 面板自身宽度 <= 500px：自动收为单栏钻取（不再依赖视口媒体查询） */
+@container scm-panel (max-width: 500px) {
+	.scm-view .scm-files,
+	.scm-view .scm-history {
+		width: 100%;
+		max-width: 100%;
+		border-right: 0;
+		height: 100%;
+	}
+
+	.scm-view .scm-diff,
+	.scm-view .scm-divider {
+		display: none;
+	}
+
+	.scm-view .scm-body.detail-mode .scm-files,
+	.scm-view .scm-body.detail-mode .scm-history {
+		display: none;
+	}
+
+	.scm-view .scm-body.detail-mode .scm-diff {
+		display: flex;
+		width: 100%;
+		height: 100%;
+	}
+
+	.scm-view .scm-back {
+		display: grid;
+	}
+
+	.scm-view .scm-header {
+		padding: 6px 8px;
+		gap: 6px;
+	}
+
+	.scm-view .scm-sync {
+		margin: 4px 0 0;
+		padding: 4px 6px;
+		gap: 4px;
+	}
+
+	.scm-view .gd-titlebar {
+		padding: 2px 0 0;
+		gap: 6px;
+	}
+
+	.scm-view .gd-branch {
+		max-width: none;
+		min-width: 0;
+	}
+
+	.scm-view .gd-seg {
+		margin: 0;
+	}
+}
+
+/* 极窄面板（<= 340px）：压缩按钮内边距与提交栏换行，防止内容被裁切 */
+@container scm-panel (max-width: 340px) {
+	.scm-view .scm-sync .btn {
+		padding: 0 6px;
+		font-size: 11px;
+	}
+
+	.scm-view .gd-seg button {
+		padding: 4px 6px;
+		font-size: 11px;
+	}
+
+	.scm-view .commit-row {
+		flex-wrap: wrap;
+		gap: 4px;
+	}
+
+	.scm-view .commit-meta {
+		flex-wrap: wrap;
+		gap: 4px;
+	}
+}

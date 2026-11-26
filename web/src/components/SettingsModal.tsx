@@ -61,6 +61,7 @@ import { ToolPromptEditor } from "./ToolPromptEditor";
 import { McpServersPanel } from "./McpServersPanel";
 import { DeviceExecutionSettings } from "./DeviceExecutionSettings";
 import { DesktopAppSettings } from "./DesktopAppSettings";
+import { AuthSessionSection } from "./AuthSessionSection";
 import { isDesktopShell } from "../desktop";
 import { excludeBuiltinModules, isBuiltinModule } from "../../../server/builtin-modules";
 import { SKILL_MARKETS, type SkillMarketCategory } from "../skill-catalog";
@@ -4075,6 +4076,8 @@ function LoadedSettingsModal({
 								</FieldRow>
 							</div>
 						)}
+
+						{tab === "display" && <AuthSessionSection />}
 
 						{tab === "display" && (
 							<div className="set-section">

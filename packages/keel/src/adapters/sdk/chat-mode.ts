@@ -1,5 +1,6 @@
 import type { AgentSession, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { ServerLang } from "../../i18n.js";
+import type { ReadOnlyCheckContext } from "../../plan-mode.js";
 import { withDelegationGate, withPlanModeGate } from "../../tool-guards.js";
 import type { OpenedSession } from "./session-opener.js";
 
@@ -49,6 +50,8 @@ export interface ChatModeGateOptions {
 	/** 本条对话现在是不是审查者模式（执行期求值）。 */
 	delegateMode(): boolean;
 	getLang(): ServerLang;
+	/** 计划模式只读校验的信任上下文（如 `trustedReadOnlyTools` / `trustedReadOnlyPlugins`）。 */
+	readOnlyContext?: () => Omit<ReadOnlyCheckContext, "toolDef"> | undefined;
 }
 
 /**
@@ -58,7 +61,7 @@ export interface ChatModeGateOptions {
 export function withChatModeGates(tools: readonly unknown[], options: ChatModeGateOptions): unknown[] {
 	return tools.map((tool) =>
 		withDelegationGate(
-			withPlanModeGate(tool as ToolDefinition, options.planMode, options.getLang),
+			withPlanModeGate(tool as ToolDefinition, options.planMode, options.getLang, options.readOnlyContext),
 			options.delegateMode,
 			options.getLang,
 		),

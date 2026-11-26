@@ -5,7 +5,7 @@ import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const BIN = resolve(__dirname, "../bin/pi-web-ui.mjs");
+const BIN = resolve(__dirname, "../bin/keel.mjs");
 const GIT = "git";
 
 function git(...args) {

@@ -249,6 +249,11 @@ describe("过滤框", () => {
 			],
 			sessions,
 		});
+		const searchToggle = container.querySelector<HTMLButtonElement>(
+			'.lp-c-top-header button[aria-label="过滤项目和对话"]',
+		)!;
+		expect(searchToggle).not.toBeNull();
+		act(() => searchToggle.click());
 		const input = container.querySelector<HTMLInputElement>(".lp-filter input")!;
 		expect(input).not.toBeNull();
 		const titles = () => [...container.querySelectorAll(".conv-title-text")].map((e) => e.textContent);

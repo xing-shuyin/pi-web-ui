@@ -161,9 +161,15 @@ export function recordUserPrompt(
 		ancestry.push(parent);
 		root = parent;
 	}
-	const scope = conversationOrderScope(state.engine, root?.cwd ?? state.cwd);
-	conversationOrder.observe(scope, ancestry, false);
-	conversationOrder.promote(scope, target, eventId);
+	const targetCwd = root?.cwd ?? state.cwd;
+	const allScope = conversationOrderScope("all", targetCwd);
+	conversationOrder.observe(allScope, ancestry, false);
+	conversationOrder.promote(allScope, target, eventId);
+	if (state.engine && state.engine !== "all") {
+		const engineScope = conversationOrderScope(state.engine, targetCwd);
+		conversationOrder.observe(engineScope, ancestry, false);
+		conversationOrder.promote(engineScope, target, eventId);
+	}
 }
 
 export function useConversationOrderVersion(): number {

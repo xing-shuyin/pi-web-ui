@@ -7,7 +7,7 @@ import * as sdk from "../../plugin-sdk/index.mjs";
 import { createMockHost } from "../../plugin-sdk/testing.mjs";
 
 const SDK_DIR = "plugin-sdk";
-const CLI = "bin/pi-web-ui.mjs";
+const CLI = "bin/keel.mjs";
 const NODE_MODULES = new Set(builtinModules.map((name) => name.replace(/^node:/, "")));
 
 function sdkFiles(constant: string): string[] {

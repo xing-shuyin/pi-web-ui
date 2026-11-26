@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState } from "react";
-import { FiCopy, FiDownload, FiExternalLink, FiEye, FiFolder } from "react-icons/fi";
+import { FiCopy, FiDownload, FiExternalLink, FiEye, FiFolder, FiMaximize2 } from "react-icons/fi";
 import { useT } from "../i18n";
 import { appSend } from "../app-globals";
 import { appResourceCrossOrigin } from "../base-url";
@@ -58,22 +58,73 @@ export const PresentedFiles = memo(function PresentedFiles({
 		openFilePreviewList(previewList, focusIndex);
 	}, [autoOpen, focus, previewList, focusIndex, toolCallId, resultTimestamp]);
 
+	const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+	const activeIdx = selectedIdx !== null && selectedIdx < items.length ? selectedIdx : -1;
+	const shownItems = activeIdx >= 0 ? [items[activeIdx]] : items;
+
 	if (items.length === 0) {
 		return <div className="present-empty">{t("presentEmpty")}</div>;
 	}
 
 	return (
 		<div className="present-card">
-			{title && <div className="present-title">{title}</div>}
+			{(title || previewList.length > 0 || items.length > 1) && (
+				<div className="present-head-bar">
+					<div className="present-head-left">
+						{title ? <div className="present-title">{title}</div> : null}
+						{items.length > 1 && <span className="present-count-badge">{items.length}</span>}
+					</div>
+					{previewList.length > 0 && (
+						<button
+							type="button"
+							className="present-expand-btn"
+							title={t("fullscreen")}
+							aria-label={t("fullscreen")}
+							onClick={() => {
+								const curItem = activeIdx >= 0 ? items[activeIdx] : null;
+								const idx = curItem ? previewList.findIndex((f) => f.path === curItem.target) : focusIndex;
+								openFilePreviewList(previewList, idx >= 0 ? idx : focusIndex);
+							}}
+						>
+							<FiMaximize2 size={13} aria-hidden="true" />
+						</button>
+					)}
+				</div>
+			)}
+			{items.length > 1 && (
+				<div className="present-tabs" role="tablist">
+					<button
+						type="button"
+						role="tab"
+						aria-selected={activeIdx === -1}
+						className={`present-tab${activeIdx === -1 ? " active" : ""}`}
+						onClick={() => setSelectedIdx(null)}
+					>
+						{t("allProviders")} ({items.length})
+					</button>
+					{items.map((item, idx) => (
+						<button
+							key={`${item.target}\u0000${idx}`}
+							type="button"
+							role="tab"
+							aria-selected={activeIdx === idx}
+							className={`present-tab${activeIdx === idx ? " active" : ""}`}
+							onClick={() => setSelectedIdx(idx)}
+						>
+							{item.name}
+						</button>
+					))}
+				</div>
+			)}
 			{note && (
 				<div className="present-note">
 					<Markdown text={note} rawHtml />
 				</div>
 			)}
 			<div className="present-items">
-				{items.map((item, index) => (
+				{shownItems.map((item, index) => (
 					<PresentRow
-						key={`${item.target}\u0000${item.path}`}
+						key={`${item.target}\u0000${item.path}\u0000${index}`}
 						item={item}
 						previewList={previewList}
 						previewIndex={(() => {

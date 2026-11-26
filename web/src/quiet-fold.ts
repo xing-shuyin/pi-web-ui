@@ -1,5 +1,8 @@
 import type { UiMessage } from "./types";
 import { asBash, asText, asThinking, asToolCall, parseCollabMessage } from "./components/Message";
+import { parseAgentBotDraftArgs, parseAgentBotDraftDetail } from "./components/BotDraftInlineCard";
+import { parsePresentArgs } from "./present-items";
+import { PRESENT_FILES_TOOL_NAME } from "../../server/tool-manager.js";
 import type { MessageClusterItem } from "./components/MessageList";
 
 // 安静模式（issue #956）的判定单源：纯函数，不碰 React / DOM / 协议 / 存储。
@@ -19,6 +22,8 @@ export interface QuietFoldOptions {
 	streamingId?: string | null;
 	/** 额外强制保留的消息 id（例如组件侧已知的最后一条、置顶项）。 */
 	keepIds?: ReadonlySet<string>;
+	/** 工具结果映射：用于识别带交互卡片的结果（如 agent_bot 草案），安静模式下永不折叠。 */
+	toolResults?: ReadonlyMap<string, UiMessage>;
 }
 
 export interface QuietFoldSummary {
@@ -77,6 +82,25 @@ function isTurnBoundary(m: UiMessage): boolean {
 	return !collabOf(m);
 }
 
+function hasInlineToolCard(m: UiMessage, toolResults?: ReadonlyMap<string, UiMessage>): boolean {
+	if (!Array.isArray(m.content)) return false;
+	for (const b of m.content) {
+		const tc = asToolCall(b);
+		if (!tc) continue;
+		if (tc.name === PRESENT_FILES_TOOL_NAME && parsePresentArgs(tc.argumentsText)) {
+			return true;
+		}
+		if (tc.name === "agent_bot") {
+			if (parseAgentBotDraftArgs(tc.argumentsText)) return true;
+			if (toolResults) {
+				const res = toolResults.get(tc.id);
+				if (res && parseAgentBotDraftDetail(res.details)) return true;
+			}
+		}
+	}
+	return false;
+}
+
 function turnKeepSet(messages: readonly UiMessage[], opts: QuietFoldOptions): Set<UiMessage> {
 	const keep = new Set<UiMessage>();
 	let finalIdx = -1;
@@ -99,6 +123,7 @@ function turnKeepSet(messages: readonly UiMessage[], opts: QuietFoldOptions): Se
 		if (m.errorMessage) keep.add(m);
 		if (opts.streamingId && m.id === opts.streamingId) keep.add(m);
 		if (opts.keepIds?.has(m.id)) keep.add(m);
+		if (hasInlineToolCard(m, opts.toolResults)) keep.add(m);
 	}
 	return keep;
 }
@@ -111,7 +136,8 @@ function appendTurnQuiet(out: QuietItem[], items: readonly MessageClusterItem[],
 	}
 	if (all.length === 0) return;
 	const keep = turnKeepSet(all, opts);
-	const turnStart = out.length;
+	let insertAt = out.length;
+	let sawBoundary = false;
 
 	let pending: UiMessage[] = [];
 	/** 本轮已产出的折叠行下标：尾部活动并进这一行，而不是自成一行落在最终回复之后。 */
@@ -128,6 +154,10 @@ function appendTurnQuiet(out: QuietItem[], items: readonly MessageClusterItem[],
 			if (keep.has(it.message)) {
 				flushPending();
 				out.push(it);
+				if (!sawBoundary && isTurnBoundary(it.message)) {
+					insertAt = out.length;
+					sawBoundary = true;
+				}
 			} else {
 				pending.push(it.message);
 			}
@@ -146,13 +176,13 @@ function appendTurnQuiet(out: QuietItem[], items: readonly MessageClusterItem[],
 
 	// 收尾：本轮在「最终回复」之后还可能有无文本活动（裸工具簇等）。它不能单独占一行排在回复
 	// 后面（与「折叠行永远排在保留内容之前」冲突，读起来像回复之后又冒出活动），所以
-	// ① 本轮已有折叠行 → 并进去；② 整轮只有「回复 + 尾部活动」→ 插到本轮开头。
+	// ① 本轮已有折叠行 → 并进去；② 整轮只有「回复 + 尾部活动」→ 插到本轮用户消息之后。
 	if (pending.length > 0) {
 		const existing = foldIdx >= 0 ? out[foldIdx] : null;
 		if (existing && existing.type === "quiet_fold") {
 			existing.messages.push(...pending);
 		} else {
-			out.splice(turnStart, 0, { type: "quiet_fold", id: `quiet-${pending[0].id}`, messages: pending });
+			out.splice(insertAt, 0, { type: "quiet_fold", id: `quiet-${pending[0].id}`, messages: pending });
 		}
 		pending = [];
 	}
@@ -200,4 +230,25 @@ export function summarizeQuietFold(messages: readonly UiMessage[]): QuietFoldSum
 		if (!counted) summary.other++;
 	}
 	return summary;
+}
+
+/** 提取折叠活动里按出现顺序去重的工具/动作名（如 ["read", "grep", "bash"]），供折叠行简短展示做了什么。 */
+export function summarizeQuietActions(messages: readonly UiMessage[]): string[] {
+	const seen = new Set<string>();
+	const actions: string[] = [];
+	for (const m of messages) {
+		for (const b of m.content ?? []) {
+			const tc = asToolCall(b);
+			if (tc?.name && !seen.has(tc.name)) {
+				seen.add(tc.name);
+				actions.push(tc.name);
+				continue;
+			}
+			if (asBash(b) && !seen.has("bash")) {
+				seen.add("bash");
+				actions.push("bash");
+			}
+		}
+	}
+	return actions;
 }

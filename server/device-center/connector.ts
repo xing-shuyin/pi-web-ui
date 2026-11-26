@@ -154,7 +154,6 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 		result.origin = local.origin;
 		if (options.localAuthToken) {
 			result.authorization = `Bearer ${options.localAuthToken}`;
-			result.cookie = `pi_web_token=${encodeURIComponent(options.localAuthToken)}`;
 		}
 		return result;
 	}

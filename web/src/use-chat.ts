@@ -875,13 +875,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
 				...(action.engines ? { engines: action.engines } : {}),
 				...(engineChanged
 					? ({
-							state: null,
 							models: [],
-							sessions: readCachedSessions(state.state?.cwd, action.engine),
-							projectSessions: {},
-							projectSessionsHasMore: {},
-							conversations: [],
-							terminals: [],
 							dsh: null,
 							dshPatches: null,
 							dshMarket: null,
@@ -900,7 +894,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
 			const nextCwd = action.state.cwd;
 			let nextSessions = state.sessions;
 			if (nextCwd && nextCwd !== prevCwd) {
-				nextSessions = readCachedSessions(nextCwd, state.engine);
+				nextSessions = readCachedSessions(nextCwd, "all");
 			}
 			const normPath = (s?: string) => (s ?? "").trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 			let nextTransition = state.transition;
@@ -1106,7 +1100,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
 				return next;
 			};
 			if (isCurrent) {
-				writeCachedSessions(state.state?.cwd, action.sessions, state.engine);
+				writeCachedSessions(state.state?.cwd, action.sessions, "all");
 				const normCurrent = normalizeSessionPathKey(state.state?.cwd);
 				return {
 					...state,
@@ -1120,7 +1114,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
 					projectSessionsHasMore: normCurrent ? withHasMore(normCurrent) : state.projectSessionsHasMore,
 				};
 			}
-			writeCachedSessions(targetCwd, action.sessions, state.engine);
+			writeCachedSessions(targetCwd, action.sessions, "all");
 			const normTarget = normalizeSessionPathKey(targetCwd);
 			return {
 				...state,
@@ -1139,16 +1133,8 @@ export function reducer(state: ChatState, action: Action): ChatState {
 				activeConversationId: action.activeId,
 			};
 		case "projects": {
-			let nextProjects = action.projects;
-			const curCwd = state.state?.cwd;
-			if (curCwd && curCwd !== "@root" && curCwd !== "machine-root") {
-				const curNorm = normalizeSessionPathKey(curCwd);
-				if (!nextProjects.some((p) => normalizeSessionPathKey(p.path) === curNorm)) {
-					nextProjects = [{ path: curCwd, lastUsed: 0 }, ...nextProjects];
-				}
-			}
-			writeCachedProjects(nextProjects);
-			return { ...state, projects: nextProjects };
+			writeCachedProjects(action.projects);
+			return { ...state, projects: action.projects };
 		}
 		case "sandbox_diff":
 			return { ...state, sandboxDiff: action.diff };
@@ -1658,6 +1644,61 @@ export function clearLastCwdIfMatches(path: string): void {
 }
 
 const RECENT_PROJECTS_KEY = "pi-web-recent-projects";
+const REMOVED_PROJECTS_KEY = "pi-web-removed-projects";
+const pendingRemovalProjectKeys = new Set<string>();
+
+export function readRemovedProjectKeys(): Set<string> {
+	try {
+		const raw = localStorage.getItem(REMOVED_PROJECTS_KEY);
+		if (!raw) return new Set();
+		const parsed = JSON.parse(raw);
+		return Array.isArray(parsed) ? new Set(parsed.filter((x): x is string => typeof x === "string")) : new Set();
+	} catch {
+		return new Set();
+	}
+}
+
+function writeRemovedProjectKeys(keys: Set<string>): void {
+	try {
+		if (keys.size === 0) localStorage.removeItem(REMOVED_PROJECTS_KEY);
+		else localStorage.setItem(REMOVED_PROJECTS_KEY, JSON.stringify([...keys].slice(-50)));
+	} catch {}
+}
+
+export function markProjectRemoved(path: string): void {
+	const key = normalizeSessionPathKey(path);
+	if (!key) return;
+	pendingRemovalProjectKeys.add(key);
+	const keys = readRemovedProjectKeys();
+	keys.add(key);
+	writeRemovedProjectKeys(keys);
+}
+
+export function unmarkProjectRemoved(path: string): void {
+	const key = normalizeSessionPathKey(path);
+	if (!key) return;
+	pendingRemovalProjectKeys.delete(key);
+	const keys = readRemovedProjectKeys();
+	if (keys.delete(key)) writeRemovedProjectKeys(keys);
+}
+
+export function isProjectPendingRemoval(path: string): boolean {
+	const key = normalizeSessionPathKey(path);
+	return Boolean(key && pendingRemovalProjectKeys.has(key));
+}
+
+export function reconcileRemovedProjects(projects: readonly ProjectSummary[]): void {
+	const present = new Set(projects.map((p) => normalizeSessionPathKey(p.path)).filter(Boolean));
+	for (const key of [...pendingRemovalProjectKeys]) {
+		if (!present.has(key)) pendingRemovalProjectKeys.delete(key);
+	}
+	const keys = readRemovedProjectKeys();
+	let changed = false;
+	for (const key of present) {
+		if (!pendingRemovalProjectKeys.has(key) && keys.delete(key)) changed = true;
+	}
+	if (changed) writeRemovedProjectKeys(keys);
+}
 
 function readCachedProjects(): ProjectSummary[] {
 	try {
@@ -2020,6 +2061,7 @@ export function useChat() {
 
 	// 「已声明、还没确认」的目标工作目录：让「先切项目再新建对话」的意图跟着消息走（见 pending-workspace）。
 	const pendingCwdRef = useRef<PendingCwd>(null);
+	const pendingNewChatPromoteRef = useRef<{ prevConvId?: string } | null>(null);
 
 	const send = useCallback((msg: ClientMessage, context?: AppSendContext) => {
 		const ws = wsRef.current;
@@ -2068,7 +2110,13 @@ export function useChat() {
 		) {
 			notifySessionSwitch();
 		}
-		if (msg.type === "set_cwd" && msg.path) {
+		if (msg.type === "remove_project" || msg.type === "destroy_sandbox") {
+			if ("path" in msg && typeof msg.path === "string" && msg.path) {
+				markProjectRemoved(msg.path);
+				clearCachedProject(msg.path);
+			}
+		} else if (msg.type === "set_cwd" && msg.path) {
+			unmarkProjectRemoved(msg.path);
 			const cur = (curState?.cwd ?? "")
 				.trim()
 				.replace(/[\\/]+$/, "")
@@ -2109,6 +2157,8 @@ export function useChat() {
 				});
 			}
 		} else if (msg.type === "new_chat" || msg.type === "new_cli_chat") {
+			if (msg.cwd) unmarkProjectRemoved(msg.cwd);
+			pendingNewChatPromoteRef.current = { prevConvId: curState?.conversationId };
 			if (
 				curState &&
 				(msg.type === "new_cli_chat" || curState.nativeCli || curState.messages.length > 0 || curState.isStreaming)
@@ -2131,6 +2181,8 @@ export function useChat() {
 					textKey: "transitionSwitchConversation",
 				});
 			}
+		} else if (msg.type === "make_dir" && msg.setAsCwd && msg.path) {
+			unmarkProjectRemoved(msg.path);
 		}
 		if (isWsOpen(ws)) {
 			if (msg.type === "check_updates_all" && msg.force === true) {
@@ -2350,6 +2402,21 @@ export function useChat() {
 						cwd: msg.state.cwd,
 					});
 					dispatch({ type: "snapshot", state: msg.state });
+					const pendingNew = pendingNewChatPromoteRef.current;
+					if (
+						pendingNew &&
+						(!pendingNew.prevConvId ||
+							msg.state.conversationId !== pendingNew.prevConvId ||
+							msg.state.messages.length === 0)
+					) {
+						pendingNewChatPromoteRef.current = null;
+						const current = chatApi.current.chat;
+						recordUserPrompt(
+							{ ...msg.state, engine: current.engine },
+							current.conversations,
+							`new-chat:${msg.state.conversationId}`,
+						);
+					}
 					syncPendingQuestion(msg.state.pendingQuestion, msg.state.conversationId);
 					break;
 				case "snapshot_delta": {
@@ -2457,6 +2524,7 @@ export function useChat() {
 					});
 					break;
 				case "projects":
+					reconcileRemovedProjects(msg.projects);
 					dispatch({ type: "projects", projects: msg.projects });
 					break;
 				case "sandbox_diff":
@@ -3260,6 +3328,7 @@ export function useChat() {
 			status: chat.status,
 			cwd: chat.state?.cwd ?? "",
 			workspaceRoots: chat.state?.workspaceRoots ?? [],
+			pathCompletions: chat.pathCompletions,
 			homeDir: chat.state?.homeDir ?? "",
 			desktopDir: chat.state?.desktopDir ?? "",
 			chatUploadMaxMb: chat.settings?.chatUploadMaxMb ?? 20,
@@ -3272,6 +3341,7 @@ export function useChat() {
 		chat.status,
 		chat.state?.cwd,
 		chat.state?.workspaceRoots,
+		chat.pathCompletions,
 		chat.state?.homeDir,
 		chat.state?.desktopDir,
 		chat.settings?.chatUploadMaxMb,

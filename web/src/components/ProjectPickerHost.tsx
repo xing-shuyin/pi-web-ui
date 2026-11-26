@@ -3,8 +3,8 @@ import { appSend, useAppField } from "../app-globals";
 
 interface ProjectPickerHostProps {
 	open: boolean;
-	/** 来自 `chat.pathCompletions`（App 的实时补全列表）。 */
-	pathCompletions: { name: string; path: string; type: "dir" | "file" }[];
+	/** 可选覆写：不传时由 `DirectoryBrowser` 内部从 `app-globals` 读取 `pathCompletions`。 */
+	pathCompletions?: { name: string; path: string; type: "dir" | "file" }[];
 	onClose: () => void;
 }
 

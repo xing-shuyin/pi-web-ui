@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import type { EngineService, DispatchSession } from "../engine-service.js";
-import type { ServerMessage, UiServiceInfo, AgentEngineCapabilities } from "../protocol.js";
+import type { ServerMessage, UiMessage, UiServiceInfo, AgentEngineCapabilities } from "../protocol.js";
 import type { ClientStateStore } from "../client-state.js";
 import type { PluginCommandDef } from "../plugins.js";
 import { UniversalSessionStore } from "./session-store.js";
@@ -194,5 +194,15 @@ export class UniversalAgentService implements EngineService {
 	getCapabilities(): AgentEngineCapabilities {
 		const first = this.sessions.values().next().value;
 		return first ? first.getCapabilities() : DEFAULT_UNIVERSAL_CAPABILITIES;
+	}
+
+	getMessagesOfConversation(convId: string): UiMessage[] | undefined {
+		if (!convId) return undefined;
+		for (const session of this.sessions.values()) {
+			const messages = session.getMessagesOfConversation(convId);
+			if (messages !== undefined) return messages;
+		}
+		const conv = this.store.loadConversation(this.cwd, convId);
+		return conv ? [...conv.messages] : undefined;
 	}
 }

@@ -103,7 +103,7 @@ server 选项:
   --host <addr>     监听地址（默认 $PI_WEB_HOST 或 127.0.0.1；0.0.0.0 供局域网/容器）
   --agent-dir <dir> pi 配置目录（默认 $PI_CODING_AGENT_DIR 或 ~/.pi/agent）
   --name <name>     服务名（默认 pi-web-ui；仅限字母/数字/-/_，字母或数字开头，
-                    最长 64 字符。macOS 的 launchd label 为 com.xingshuyin.pi-web-ui，
+                    最长 64 字符。macOS 的 launchd label 为 com.xingshuyin.keel，
                     自定义名时为 com.<name>.server）
   --print           只打印将生成的配置文件，不实际安装
 
@@ -171,7 +171,7 @@ Server options:
   --agent-dir <dir> pi config directory (default $PI_CODING_AGENT_DIR or ~/.pi/agent)
   --name <name>     Service name (default pi-web-ui; alphanumeric, "-" and "_" only,
                     starting with a letter or digit, max 64 chars. macOS launchd label is
-                    com.xingshuyin.pi-web-ui, or com.<name>.server for custom names)
+                    com.xingshuyin.keel, or com.<name>.server for custom names)
   --print           Only print generated config files (no actual install)
 
 Platforms: macOS → launchd user agent · Linux → systemd · Windows → Logon Run key
@@ -442,7 +442,7 @@ async function startForeground(opts) {
 	if (opts.cwd) process.env.PI_WEB_CWD = resolve(opts.cwd);
 	if (opts.dataDir) process.env.PI_WEB_DATA_DIR = resolve(opts.dataDir);
 	if (opts.engine) {
-		if (!["pi", "dsh", "claude", "codex", "durable"].includes(opts.engine))
+		if (!["pi", "dsh", "claude", "codex", "agy", "durable"].includes(opts.engine))
 			fail(
 				ZH
 					? `无效引擎: ${opts.engine}（仅支持 pi / dsh / claude / codex / durable）`
@@ -498,15 +498,85 @@ function uid() {
 	}
 }
 
+const LEGACY_LAUNCHD_LABEL = "com.xingshuyin.pi-web-ui";
+const DEFAULT_LAUNCHD_LABEL = "com.xingshuyin.keel";
+
+function isDefaultServiceName(name) {
+	return name === "pi-web-ui" || name === "keel";
+}
+
 function serviceLabel(name) {
 	if (isMac) {
-		return name === "pi-web-ui" ? "com.xingshuyin.pi-web-ui" : `com.${name}.server`;
+		return isDefaultServiceName(name) ? DEFAULT_LAUNCHD_LABEL : `com.${name}.server`;
 	}
 	return name;
 }
 
 function launchAgentPlist(name) {
 	return join(homedir(), "Library", "LaunchAgents", `${serviceLabel(name)}.plist`);
+}
+
+function legacyLaunchAgentPlist() {
+	return join(homedir(), "Library", "LaunchAgents", `${LEGACY_LAUNCHD_LABEL}.plist`);
+}
+
+function legacyLaunchdLoaded() {
+	return (
+		spawnSync("launchctl", ["print", `gui/${uid()}/${LEGACY_LAUNCHD_LABEL}`], {
+			windowsHide: true,
+			stdio: "ignore",
+		}).status === 0
+	);
+}
+
+function legacyLaunchdExists() {
+	return existsSync(legacyLaunchAgentPlist()) || legacyLaunchdLoaded();
+}
+
+function unescXml(text) {
+	return text
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/&quot;/g, '"')
+		.replace(/&apos;/g, "'")
+		.replace(/&amp;/g, "&");
+}
+
+function readLegacyLaunchdOpts(baseOpts) {
+	const plist = legacyLaunchAgentPlist();
+	const next = { ...baseOpts };
+	try {
+		const xml = readFileSync(plist, "utf8");
+		const wd = /<key>WorkingDirectory<\/key>\s*<string>([^<]*)<\/string>/.exec(xml);
+		if (wd?.[1] && !next.cwd) next.cwd = unescXml(wd[1]);
+		const envBlock = /<key>EnvironmentVariables<\/key>\s*<dict>([\s\S]*?)<\/dict>/.exec(xml)?.[1] ?? "";
+		const envPairs = new Map();
+		for (const m of envBlock.matchAll(/<key>([^<]+)<\/key>\s*<string>([^<]*)<\/string>/g)) {
+			envPairs.set(unescXml(m[1]), unescXml(m[2]));
+		}
+		if (envPairs.get("PI_WEB_PORT") && !next.port) next.port = Number(envPairs.get("PI_WEB_PORT")) || undefined;
+		if (envPairs.get("PI_WEB_DATA_DIR") && !next.dataDir) next.dataDir = envPairs.get("PI_WEB_DATA_DIR");
+		if (envPairs.get("PI_WEB_ENGINE") && !next.engine) next.engine = envPairs.get("PI_WEB_ENGINE");
+		if (envPairs.get("PI_WEB_HOST") && !next.host) next.host = envPairs.get("PI_WEB_HOST");
+		if (envPairs.get("PI_CODING_AGENT_DIR") && !next.agentDir) next.agentDir = envPairs.get("PI_CODING_AGENT_DIR");
+	} catch {}
+	return next;
+}
+
+function uninstallLegacyLaunchd() {
+	if (!isMac || !legacyLaunchdExists()) return false;
+	const plist = legacyLaunchAgentPlist();
+	run("launchctl", ["bootout", `gui/${uid()}/${LEGACY_LAUNCHD_LABEL}`], {
+		ignoreError: true,
+		silent: true,
+	});
+	if (existsSync(plist)) rmSync(plist);
+	console.log(
+		ZH
+			? `🗑  已自动卸载旧版服务 ${LEGACY_LAUNCHD_LABEL}`
+			: `🗑  Automatically uninstalled legacy service ${LEGACY_LAUNCHD_LABEL}`,
+	);
+	return true;
 }
 
 function systemdUnitPath(name) {
@@ -1130,9 +1200,9 @@ ${entries}
   </dict>
 
   <key>StandardOutPath</key>
-  <string>/tmp/pi-web-ui.log</string>
+  <string>/tmp/keel.log</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/pi-web-ui.err</string>
+  <string>/tmp/keel.err</string>
 </dict>
 </plist>
 `;
@@ -1217,7 +1287,7 @@ function serviceOptions(opts) {
 		dataDir = resolve(process.env.PI_WEB_DATA_DIR);
 	}
 	const engine = opts.engine ?? process.env.PI_WEB_ENGINE ?? "pi";
-	if (!["pi", "dsh", "claude", "codex", "durable"].includes(engine))
+	if (!["pi", "dsh", "claude", "codex", "agy", "durable"].includes(engine))
 		fail(
 			ZH
 				? `无效引擎: ${engine}（仅支持 pi / dsh / claude / codex / durable）`
@@ -1267,6 +1337,7 @@ function installLaunchd(opts) {
 		console.log(`# ${plist}\n${content}`);
 		return;
 	}
+	if (isDefaultServiceName(name)) uninstallLegacyLaunchd();
 	run("launchctl", ["bootout", `gui/${uid()}/${label}`], {
 		ignoreError: true,
 		silent: true,
@@ -1278,9 +1349,7 @@ function installLaunchd(opts) {
 	console.log(ZH ? `✅ 已安装并启动 launchd 服务 ${label}` : `✅ launchd service installed and started ${label}`);
 	console.log(ZH ? `   端口 : ${port}` : `   Port      : ${port}`);
 	console.log(ZH ? `   目录 : ${cwd}` : `   Directory : ${cwd}`);
-	console.log(
-		ZH ? `   日志 : /tmp/pi-web-ui.log  /tmp/pi-web-ui.err` : `   Log       : /tmp/pi-web-ui.log  /tmp/pi-web-ui.err`,
-	);
+	console.log(ZH ? `   日志 : /tmp/keel.log  /tmp/keel.err` : `   Log       : /tmp/keel.log  /tmp/keel.err`);
 	console.log(
 		ZH
 			? `   管理 : pi-web-ui server status|restart|stop|uninstall`
@@ -1347,11 +1416,13 @@ function uninstallLaunchd(opts) {
 	const name = serviceName(opts);
 	const label = serviceLabel(name);
 	const plist = launchAgentPlist(name);
+	if (isDefaultServiceName(name)) uninstallLegacyLaunchd();
 	run("launchctl", ["bootout", `gui/${uid()}/${label}`], {
 		ignoreError: true,
 		silent: true,
 	});
 	if (existsSync(plist)) rmSync(plist);
+	if (isDefaultServiceName(name)) uninstallLegacyLaunchd();
 	removeShortcut(name);
 	console.log(
 		ZH
@@ -1669,15 +1740,28 @@ function controlService(action, opts) {
 						? `${label}: 未安装（运行 pi-web-ui server install 安装）`
 						: `${label}: not installed (run pi-web-ui server install)`,
 				);
+				if (isDefaultServiceName(name) && legacyLaunchdExists()) {
+					console.log(
+						ZH
+							? `   检测到旧版服务 ${LEGACY_LAUNCHD_LABEL}，运行 restart 或 install 将自动迁移并卸载旧服务`
+							: `   Legacy service ${LEGACY_LAUNCHD_LABEL} detected; restart or install will migrate and remove it`,
+					);
+				}
 			}
 			return;
 		}
 
 		if (action === "start") {
+			const plist = launchAgentPlist(name);
+			if (isDefaultServiceName(name) && !loaded() && !existsSync(plist) && legacyLaunchdExists()) {
+				const migratedOpts = readLegacyLaunchdOpts(opts);
+				installLaunchd(migratedOpts);
+				return;
+			}
+			if (isDefaultServiceName(name)) uninstallLegacyLaunchd();
 			if (loaded()) {
 				run("launchctl", ["kickstart", target]);
 			} else {
-				const plist = launchAgentPlist(name);
 				if (!existsSync(plist)) {
 					fail(
 						ZH
@@ -1692,6 +1776,13 @@ function controlService(action, opts) {
 		}
 
 		if (action === "restart") {
+			const plist = launchAgentPlist(name);
+			if (isDefaultServiceName(name) && !loaded() && legacyLaunchdExists()) {
+				const migratedOpts = readLegacyLaunchdOpts(opts);
+				installLaunchd(migratedOpts);
+				return;
+			}
+			if (isDefaultServiceName(name)) uninstallLegacyLaunchd();
 			if (!loaded())
 				fail(
 					ZH ? `${label} 未加载，请先 pi-web-ui server start` : `${label} not loaded, run pi-web-ui server start first`,
@@ -1706,6 +1797,7 @@ function controlService(action, opts) {
 				ignoreError: true,
 				silent: true,
 			});
+			if (isDefaultServiceName(name)) uninstallLegacyLaunchd();
 			console.log(
 				ZH
 					? `⏹  已停止 ${label}（已卸载，不再开机自启；start 恢复）`

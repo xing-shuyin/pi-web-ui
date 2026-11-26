@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import type { ProjectSummary } from "../types";
+import { useAppField } from "../app-globals";
 import { useT } from "../i18n";
 import { FiFolder, FiFolderPlus, FiChevronDown, FiClock } from "react-icons/fi";
 import { ProjectPicker } from "./ProjectPicker";
@@ -29,8 +30,8 @@ export function UniversalPathPicker({
 	onSelectCwd,
 	onOpenProjectPicker,
 	projects = [],
-	workspaceRoots = [],
-	pathCompletions = [],
+	workspaceRoots,
+	pathCompletions,
 	mode = "project",
 	baseCwd,
 	onCreateProject,
@@ -42,6 +43,12 @@ export function UniversalPathPicker({
 	localOnly = false,
 	onPickerOpenChange,
 }: UniversalPathPickerProps) {
+	const storeCompletions = useAppField("pathCompletions");
+	const storeWorkspaceRoots = useAppField("workspaceRoots");
+	const effectivePathCompletions =
+		pathCompletions && pathCompletions.length > 0 ? pathCompletions : (storeCompletions ?? []);
+	const effectiveWorkspaceRoots =
+		workspaceRoots && workspaceRoots.length > 0 ? workspaceRoots : (storeWorkspaceRoots ?? []);
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [typedCwd, setTypedCwd] = useState(cwd);
 	useEffect(() => setTypedCwd(cwd), [cwd]);
@@ -137,10 +144,10 @@ export function UniversalPathPicker({
 					onMouseDown={(e) => e.stopPropagation()}
 					onWheel={(e) => e.stopPropagation()}
 				>
-					{workspaceRoots.length > 0 && (
+					{effectiveWorkspaceRoots.length > 0 && (
 						<>
 							<div className="universal-path-menu-header">工作区根目录</div>
-							{workspaceRoots.map((root) => (
+							{effectiveWorkspaceRoots.map((root) => (
 								<button
 									key={root}
 									type="button"
@@ -205,8 +212,8 @@ export function UniversalPathPicker({
 					localOnly={localOnly}
 					open
 					currentCwd={pickerCwd}
-					pathCompletions={pathCompletions}
-					workspaceRoots={workspaceRoots}
+					pathCompletions={effectivePathCompletions}
+					workspaceRoots={effectiveWorkspaceRoots}
 					onClose={closePicker}
 					onSelectDirectory={(p) => {
 						onSelectCwd(p);

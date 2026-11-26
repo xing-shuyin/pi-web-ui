@@ -13,12 +13,12 @@
 		"registry": "https://registry.npmjs.org/"
 	},
 	"bin": {
-		"keel": "bin/pi-web-ui.mjs",
-		"pi-web-ui": "bin/pi-web-ui.mjs",
-		"piwebui": "bin/pi-web-ui.mjs",
-		"pwu": "bin/pi-web-ui.mjs"
+		"keel": "bin/keel.mjs",
+		"pi-web-ui": "bin/keel.mjs",
+		"piwebui": "bin/keel.mjs",
+		"pwu": "bin/keel.mjs"
 	},
-	"main": "bin/pi-web-ui.mjs",
+	"main": "bin/keel.mjs",
 	"files": [
 		"bin/",
 		"native/desktop-codec/",
@@ -77,6 +77,7 @@
 		"build:release": "npm run build:device-p2p && npm run build:ffmpeg -- --platform=win32-x64 && npm run verify:desktop-codec && npm run build",
 		"verify:device-p2p": "node scripts/verify-device-p2p.mjs",
 		"pack:npm": "node scripts/pack-npm.mjs",
+		"install:global": "node scripts/install-global-local.mjs",
 		"pack:p2p": "npm run build:release && npm run verify:device-p2p && node scripts/pack-npm.mjs",
 		"build:device-p2p": "node scripts/build-device-p2p.mjs",
 		"build:ffmpeg": "node scripts/fetch-ffmpeg.mjs",

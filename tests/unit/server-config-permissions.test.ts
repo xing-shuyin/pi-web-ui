@@ -169,7 +169,7 @@ describe("server-config 落盘单源守卫", () => {
 				if (!/\.(ts|tsx|mjs|js)$/.test(entry.name)) continue;
 				if (path === "server/server-config.ts") continue;
 				const code = blankNonCode(readFileSync(join(ROOT, path), "utf8"));
-				// 另起一条写路径 = 不会再经过 0600/原子写；只允许读（bin/pi-web-ui.mjs 复用读取）。
+				// 另起一条写路径 = 不会再经过 0600/原子写；只允许读（bin/keel.mjs 复用读取）。
 				if (/server-config\.json/.test(code) && /writeAtomicSync|writeFileSync|writeFile\(|renameSync/.test(code))
 					offenders.push(path);
 			}

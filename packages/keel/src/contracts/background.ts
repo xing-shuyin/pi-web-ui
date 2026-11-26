@@ -20,6 +20,36 @@
  * 而新树的 bash 走 SDK `createBashToolDefinition`（`adapters/tools/guarded.ts`）——句柄就在内核手里，
  * 所以那张表（`BashAbortRegistry`）与「中止 + 出回执」的编排也归内核，宿主没有任何可做的事。
  */
+export interface BackgroundJobInfo {
+	id: string;
+	pid: number;
+	command: string;
+	label: string;
+	cwd: string;
+	origin?: string;
+	since: number;
+	logPath: string;
+	state: "running" | "exited";
+	exitCode: number | null;
+	reason?: string;
+	head?: string;
+}
+
+export interface BackgroundJobStartSpec {
+	command: string;
+	cwd: string;
+	label?: string;
+	timeoutSec?: number;
+	notificationTimeoutSec?: number;
+	origin?: string;
+}
+
+export interface BackgroundJobWaitResult {
+	completed: boolean;
+	job: BackgroundJobInfo;
+	output: string;
+}
+
 export interface BackgroundPort {
 	/**
 	 * 插件常驻任务变了：只重投影一帧 `bg_servers`（**不**重扫端口）。老实现 `refreshBgTasks()` = `bg.push()`。
@@ -78,6 +108,26 @@ export interface BackgroundPort {
 	 * 出帧：宿主（notice / `bg_servers` / 快照）。失败：单个实例停不掉走 notice，不 reject。
 	 */
 	cleanBackgroundLeftovers(minutesOverride?: number): Promise<number[]>;
+
+	/** 启动一个后台任务并等待首屏输出。 */
+	startJob?(spec: BackgroundJobStartSpec): Promise<BackgroundJobInfo>;
+
+	/** 先前台等待 `waitMs`，若未结束则无缝转为后台任务返回。 */
+	runJobWithWait?(
+		spec: BackgroundJobStartSpec & { waitMs: number; signal?: AbortSignal },
+	): Promise<BackgroundJobWaitResult>;
+
+	/** 列出运行中的后台任务。 */
+	listJobs?(): BackgroundJobInfo[];
+
+	/** 查询单个后台任务状态与日志尾部。 */
+	getJobStatus?(
+		id: string,
+		tailLines?: number,
+	): { ok: boolean; job?: BackgroundJobInfo; tail?: string; error?: string };
+
+	/** 终止后台任务并等待退出。 */
+	killJob?(id: string): Promise<{ ok: boolean; timedOut?: boolean }>;
 }
 
 /**

@@ -46,13 +46,17 @@ import { LuFlaskConical } from "react-icons/lu";
 import type {
 	ConversationSummary,
 	ElsewhereRunning,
+	EngineId,
+	NativeCliConfig,
 	PluginPanelGroup,
 	PluginPanelItem,
 	ProjectSummary,
 	SessionSummary,
 } from "../types";
 import { useT, type Translate } from "../i18n";
-import { useAppField, useEngineCapabilities } from "../app-globals";
+import { appSend, useAppField, useEngineCapabilities, useEngineStatuses } from "../app-globals";
+import { ENGINE_CATALOG } from "../../../server/engine-catalog";
+import { SUPPORTED_ENGINES } from "./EnginePicker";
 import { useUnreadConversationKeys, clearConversationUnread } from "../unread-conversations";
 import { applySashDrag } from "../panel-sash";
 import {
@@ -77,9 +81,12 @@ import {
 	clearCachedProject,
 	clearCachedSession,
 	clearLastCwdIfMatches,
+	isProjectPendingRemoval,
 	isSessionMatchingProject,
+	markProjectRemoved,
 	normalizeSessionPathKey,
 	readCachedSessions,
+	readRemovedProjectKeys,
 	type WorkspaceTransitionState,
 } from "../use-chat";
 
@@ -100,11 +107,12 @@ interface LeftPanelProps {
 	unreadConvKeys?: ReadonlySet<string>;
 	panelSend: (
 		msg:
-			| { type: "new_chat"; cwd?: string }
+			| { type: "new_chat"; cwd?: string; engine?: EngineId }
+			| { type: "new_cli_chat"; config: NativeCliConfig; cwd?: string }
 			| { type: "list_sessions"; path?: string; limit?: number }
 			| { type: "list_projects" }
-			| { type: "switch_session"; path: string }
-			| { type: "switch_conversation"; id: string }
+			| { type: "switch_session"; path: string; engine?: EngineId }
+			| { type: "switch_conversation"; id: string; engine?: EngineId }
 			| { type: "set_cwd"; path: string }
 			| { type: "remove_project"; path: string }
 			| { type: "destroy_sandbox"; path: string }
@@ -127,6 +135,8 @@ interface LeftPanelProps {
 
 	uiContextSession?: UiSlotEntry[];
 	quickAskReferenceMenus?: boolean;
+	botDraftPrompt?: string;
+	botDraftDefaultPrompt?: string;
 	uiLeftSessions?: UiSlotEntry[];
 	uiContextProject?: UiSlotEntry[];
 	uiProjectsActions?: UiSlotEntry[];
@@ -168,6 +178,102 @@ function RowMain({
 }
 
 type CategoryTag = { key: string; label: string };
+
+function EngineGlyph({
+	engine,
+	className,
+	title,
+	ariaLabel,
+}: {
+	engine?: string;
+	className?: string;
+	title?: string;
+	ariaLabel?: string;
+}) {
+	const key = (engine ?? "pi").toLowerCase();
+	const label = title ?? key.toUpperCase();
+	const cls = className ? `lp-engine-glyph ${className}` : "lp-engine-glyph";
+	const ariaHidden = ariaLabel ? undefined : true;
+	if (key === "claude") {
+		// Claude 官方 Logo
+		return (
+			<span className={cls} data-engine="claude" title={label} aria-label={ariaLabel} aria-hidden={ariaHidden}>
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd">
+					<path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z" />
+				</svg>
+			</span>
+		);
+	}
+	if (key === "codex") {
+		// OpenAI / Codex 官方 Logo
+		return (
+			<span className={cls} data-engine="codex" title={label} aria-label={ariaLabel} aria-hidden={ariaHidden}>
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd">
+					<path d="M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z" />
+				</svg>
+			</span>
+		);
+	}
+	if (key === "agy") {
+		// Antigravity 官方 Logo
+		return (
+			<span className={cls} data-engine="agy" title={label} aria-label={ariaLabel} aria-hidden={ariaHidden}>
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd">
+					<path d="M21.751 22.607c1.34 1.005 3.35.335 1.508-1.508C17.73 15.74 18.904 1 12.037 1 5.17 1 6.342 15.74.815 21.1c-2.01 2.009.167 2.511 1.507 1.506 5.192-3.517 4.857-9.714 9.715-9.714 4.857 0 4.522 6.197 9.714 9.715z" />
+				</svg>
+			</span>
+		);
+	}
+	if (key === "dsh") {
+		// DSH / DeepSeek 官方鲸鱼 Logo
+		return (
+			<span className={cls} data-engine="dsh" title={label} aria-label={ariaLabel} aria-hidden={ariaHidden}>
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd">
+					<path d="M23.748 4.482c-.254-.124-.364.113-.512.234-.051.039-.094.09-.137.136-.372.397-.806.657-1.373.626-.829-.046-1.537.214-2.163.848-.133-.782-.575-1.248-1.247-1.548-.352-.156-.708-.311-.955-.65-.172-.241-.219-.51-.305-.774-.055-.16-.11-.323-.293-.35-.2-.031-.278.136-.356.276-.313.572-.434 1.202-.422 1.84.027 1.436.633 2.58 1.838 3.393.137.093.172.187.129.323-.082.28-.18.552-.266.833-.055.179-.137.217-.329.14a5.526 5.526 0 01-1.736-1.18c-.857-.828-1.631-1.742-2.597-2.458a11.365 11.365 0 00-.689-.471c-.985-.957.13-1.743.388-1.836.27-.098.093-.432-.779-.428-.872.004-1.67.295-2.687.684a3.055 3.055 0 01-.465.137 9.597 9.597 0 00-2.883-.102c-1.885.21-3.39 1.102-4.497 2.623C.082 8.606-.231 10.684.152 12.85c.403 2.284 1.569 4.175 3.36 5.653 1.858 1.533 3.997 2.284 6.438 2.14 1.482-.085 3.133-.284 4.994-1.86.47.234.962.327 1.78.397.63.059 1.236-.03 1.705-.128.735-.156.684-.837.419-.961-2.155-1.004-1.682-.595-2.113-.926 1.096-1.296 2.746-2.642 3.392-7.003.05-.347.007-.565 0-.845-.004-.17.035-.237.23-.256a4.173 4.173 0 001.545-.475c1.396-.763 1.96-2.015 2.093-3.517.02-.23-.004-.467-.247-.588zM11.581 18c-2.089-1.642-3.102-2.183-3.52-2.16-.392.024-.321.471-.235.763.09.288.207.486.371.739.114.167.192.416-.113.603-.673.416-1.842-.14-1.897-.167-1.361-.802-2.5-1.86-3.301-3.307-.774-1.393-1.224-2.887-1.298-4.482-.02-.386.093-.522.477-.592a4.696 4.696 0 011.529-.039c2.132.312 3.946 1.265 5.468 2.774.868.86 1.525 1.887 2.202 2.891.72 1.066 1.494 2.082 2.48 2.914.348.292.625.514.891.677-.802.09-2.14.11-3.054-.614zm1-6.44a.306.306 0 01.415-.287.302.302 0 01.2.288.306.306 0 01-.31.307.303.303 0 01-.304-.308zm3.11 1.596c-.2.081-.399.151-.59.16a1.245 1.245 0 01-.798-.254c-.274-.23-.47-.358-.552-.758a1.73 1.73 0 01.016-.588c.07-.327-.008-.537-.239-.727-.187-.156-.426-.199-.688-.199a.559.559 0 01-.254-.078c-.11-.054-.2-.19-.114-.358.028-.054.16-.186.192-.21.356-.202.767-.136 1.146.016.352.144.618.408 1.001.782.391.451.462.576.685.914.176.265.336.537.445.848.067.195-.019.354-.25.452z" />
+				</svg>
+			</span>
+		);
+	}
+	if (key === "durable") {
+		// Durable 持久化/工作流盾牌图标
+		return (
+			<span className={cls} data-engine="durable" title={label} aria-label={ariaLabel} aria-hidden={ariaHidden}>
+				<svg
+					width="14"
+					height="14"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					strokeWidth="1.8"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+				>
+					<path d="M12 3 5 6v6c0 4.5 3 7.8 7 9 4-1.2 7-4.5 7-9V6l-7-3Z" />
+					<path d="m9.5 12 1.8 1.8 3.4-3.6" />
+				</svg>
+			</span>
+		);
+	}
+	// Pi 希腊字母 π 图标
+	return (
+		<span className={cls} data-engine={key} title={label} aria-label={ariaLabel} aria-hidden={ariaHidden}>
+			<svg
+				width="14"
+				height="14"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="2"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+			>
+				<path d="M4.5 7.5c2.2-1 4.5-1 7.5-1h7.5" />
+				<path d="M9.5 6.8v10.7c0 .8-.4 1.5-1 1.8" />
+				<path d="M15.5 6.8v8.4c0 1.9.9 3.3 2.5 3.3.7 0 1.3-.3 1.7-.8" />
+			</svg>
+		</span>
+	);
+}
 const CHANNEL_PREFIX_RE = /^\[(微信|feishu|飞书|dingtalk|钉钉|wechat|qq|telegram)[^\]]*\]\s*(.*)$/i;
 
 function categorizeTitle(
@@ -450,6 +556,8 @@ export const LeftPanel = memo(function LeftPanel({
 	pathCompletions,
 	uiContextSession,
 	quickAskReferenceMenus = true,
+	botDraftPrompt,
+	botDraftDefaultPrompt,
 	uiLeftSessions,
 	uiContextProject,
 	uiProjectsActions,
@@ -506,11 +614,15 @@ export const LeftPanel = memo(function LeftPanel({
 	const [projectPickerOpen, setProjectPickerOpen] = useState(false);
 	const [projectPickerInitialTab, setProjectPickerInitialTab] = useState<"local" | "remote" | undefined>(undefined);
 	const [confirmDel, setConfirmDel] = useState<string | null>(null);
+	const [removedProjectsVersion, setRemovedProjectsVersion] = useState(0);
 	const [confirmTakeover, setConfirmTakeover] = useState<string | null>(null);
 	const [renaming, setRenaming] = useState<string | null>(null);
 	const [renameDraft, setRenameDraft] = useState("");
 	const [renameOverrides, setRenameOverrides] = useState<Record<string, string>>({});
 	const [filterText, setFilterText] = useState("");
+	const [searchOpen, setSearchOpen] = useState(false);
+	const [envFilter, setEnvFilter] = useState<"all" | "local" | "remote">("all");
+	const filterInputRef = useRef<HTMLInputElement | null>(null);
 	const renameActiveRef = useRef<string | null>(null);
 	renameActiveRef.current = renaming;
 	const cancelRename = () => {
@@ -706,17 +818,18 @@ export const LeftPanel = memo(function LeftPanel({
 	});
 
 	const deduplicatedProjects = useMemo(() => {
+		const removedKeys = readRemovedProjectKeys();
 		const seen = new Set<string>();
 		const list: ProjectSummary[] = [];
 		for (const p of projects) {
 			const normP = normalizeSessionPathKey(p.path);
-			if (seen.has(normP)) continue;
+			if (seen.has(normP) || isProjectPendingRemoval(p.path) || removedKeys.has(normP)) continue;
 			seen.add(normP);
 			list.push(p);
 		}
 		if (currentCwd && currentCwd !== "@root" && currentCwd !== "machine-root") {
 			const normCur = normalizeSessionPathKey(currentCwd);
-			if (!seen.has(normCur)) {
+			if (!seen.has(normCur) && !removedKeys.has(normCur)) {
 				seen.add(normCur);
 				list.push({ path: currentCwd, lastUsed: 0 });
 			}
@@ -724,7 +837,7 @@ export const LeftPanel = memo(function LeftPanel({
 		for (const group of groupConversations(conversations, currentCwd, activeConversationId)) {
 			if (!group.cwd) continue;
 			const normC = normalizeSessionPathKey(group.cwd);
-			if (!seen.has(normC)) {
+			if (!seen.has(normC) && !removedKeys.has(normC)) {
 				seen.add(normC);
 				list.push({ path: group.cwd, lastUsed: 0 });
 			}
@@ -732,13 +845,14 @@ export const LeftPanel = memo(function LeftPanel({
 		for (const e of elsewhere) {
 			if (!e.cwd) continue;
 			const normC = normalizeSessionPathKey(e.cwd);
-			if (!seen.has(normC)) {
+			if (!seen.has(normC) && !removedKeys.has(normC)) {
 				seen.add(normC);
 				list.push({ path: e.cwd, lastUsed: 0 });
 			}
 		}
 		return list;
-	}, [projects, currentCwd, conversations, elsewhere, activeConversationId]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [projects, currentCwd, conversations, elsewhere, activeConversationId, removedProjectsVersion]);
 
 	const projectOrderManual = useProjectOrderManual();
 	const [projectOrderVersion, setProjectOrderVersion] = useState(0);
@@ -1491,7 +1605,7 @@ export const LeftPanel = memo(function LeftPanel({
 			const propSessionsMatch = Boolean(
 				sessions && sessions.length > 0 && isSessionMatchingProject(sessions[0], p.path),
 			);
-			const pCached = readCachedSessions(p.path, engine);
+			const pCached = readCachedSessions(p.path, "all");
 			const pRawSessions = propSessionsMatch
 				? sessions
 				: (pStateSessions ?? (pCached && pCached.length > 0 ? pCached : undefined) ?? (active ? sessions : []));
@@ -1519,7 +1633,7 @@ export const LeftPanel = memo(function LeftPanel({
 				return false;
 			};
 
-			const orderScope = conversationOrderScope(engine, p.path);
+			const orderScope = conversationOrderScope("all", p.path);
 			conversationOrder.observe(
 				orderScope,
 				[...pConvsAll, ...pRawSessions],
@@ -1760,6 +1874,20 @@ export const LeftPanel = memo(function LeftPanel({
 	};
 
 	const projectName = (path: string): string => path.split(/[\\/]/).pop() || path;
+
+	/** 提炼远程 SSH 工作区名称（如 root_192.168.1.101_22_ → 192.168.1.101 + SSH 徽标），完整路径保留在 title 中。 */
+	const parseProjectEnv = (path: string, rawName: string): { label: string; isRemote: boolean; envTag?: string } => {
+		const sshMatch = rawName.match(/^[^_]+_((?:\d{1,3}\.){3}\d{1,3}|[a-zA-Z0-9.-]+)_\d+_(.*)$/);
+		if (sshMatch) {
+			const host = sshMatch[1];
+			const rest = sshMatch[2]?.replace(/^_+/, "");
+			return { label: rest ? `${host}/${rest}` : host, isRemote: true, envTag: "SSH" };
+		}
+		if (/^(?:ssh|remote):\/\//i.test(path) || /[\\/]\.pi-web[\\/]ssh[\\/]/i.test(path)) {
+			return { label: rawName, isRemote: true, envTag: "SSH" };
+		}
+		return { label: rawName, isRemote: false };
+	};
 
 	const treeNavItems = (from: HTMLElement): HTMLElement[] => {
 		const tree = from.closest<HTMLElement>('[role="tree"]');
@@ -2008,95 +2136,113 @@ export const LeftPanel = memo(function LeftPanel({
 						if (s.sessionId) clearConversationUnread(s.sessionId);
 						if (runInfo?.conv?.id) clearConversationUnread(runInfo.conv.id);
 						if (runInfo?.conv?.id && !runInfo.conv.elsewhere) {
-							if (!active) panelSend({ type: "switch_conversation", id: runInfo.conv.id });
+							if (!active)
+								panelSend({
+									type: "switch_conversation",
+									id: runInfo.conv.id,
+									...(runInfo.conv.engine ? { engine: runInfo.conv.engine } : {}),
+								});
 							return;
 						}
-						if (!active) panelSend({ type: "switch_session", path: s.path });
+						if (!active)
+							panelSend({
+								type: "switch_session",
+								path: s.path,
+								...(s.engine ? { engine: s.engine } : {}),
+							});
 					}}
 				>
-					{active && <span className="conv-current-badge">{t("current")}</span>}
-					{isCli && (
-						<FiTerminal
-							size={13}
-							className={`native-cli-conversation-icon${isCliRunning ? " is-running" : isCliWaiting ? " is-waiting" : isCliExited ? " is-exited" : ""}`}
-							title={
-								cliPhase
-									? `${t("nativeCli")} (${t(`nativeCliSession.${cliPhase === "waiting_input" ? "waitingInput" : cliPhase === "waiting_approval" ? "waitingApproval" : cliPhase}`) || cliPhase})`
-									: t("nativeCli")
-							}
-							aria-label={t("nativeCli")}
-						/>
-					)}
-					{renaming === s.path ? (
-						<input
-							autoFocus
-							className="session-rename-input"
-							value={renameDraft}
-							placeholder={t("renameSessionPlaceholder")}
-							onClick={(e) => e.stopPropagation()}
-							onChange={(e) => setRenameDraft(e.target.value)}
-							onKeyDown={(e) => {
-								e.stopPropagation();
-								if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-									commitRename(s.path, { type: "rename_session", path: s.path }, s.path, rawTitle);
-								} else if (e.key === "Escape") {
-									cancelRename();
-								}
-							}}
-							onBlur={() => commitRename(s.path, { type: "rename_session", path: s.path }, s.path, rawTitle)}
-						/>
-					) : (
-						<span className="conv-title-text" title={rawTitle}>
-							{cleanTitle}
-						</span>
-					)}
-
-					{}
-					<span className="conv-meta-zone">
-						{s.pinned && (
-							<span className="pin-badge" title={t("pinnedConversation")}>
-								📌
-							</span>
-						)}
-						{runInfo?.conv?.isEphemeral && (
-							<span className="ephemeral-badge" title={t("newChatEphemeralTip")}>
-								{t("newChatEphemeral")}
-							</span>
-						)}
-						{categoryTag && <span className={`category-badge-pill ${categoryTag.key}`}>{categoryTag.label}</span>}
-
-						<ConversationRowIndicator time={formatModified(s.modified)}>
-							{switching ? (
-								<HalfRingSpinner className="status-spinner-right" />
-							) : hasQuestion || isCliWaiting ? (
-								<span
-									className="status-question-right"
+					<div className="conv-main-col">
+						<div className="conv-title-row">
+							{active && <span className="conv-current-badge">{t("current")}</span>}
+							{isCli ? (
+								<EngineGlyph
+									engine={s.nativeCli?.preset ?? runInfo?.conv?.nativeCli?.config?.preset ?? s.engine}
+									className={`native-cli-conversation-icon${isCliRunning ? " is-running" : isCliWaiting ? " is-waiting" : isCliExited ? " is-exited" : ""}`}
 									title={
-										cliPhase === "waiting_approval"
-											? t("nativeCliSession.waitingApproval")
-											: t("nativeCliSession.waitingInput") || t("waitingQuestionBadge")
+										cliPhase
+											? `${t("nativeCli")} (${t(`nativeCliSession.${cliPhase === "waiting_input" ? "waitingInput" : cliPhase === "waiting_approval" ? "waitingApproval" : cliPhase}`) || cliPhase})`
+											: t("nativeCli")
 									}
-								>
-									?
+									ariaLabel={t("nativeCli")}
+								/>
+							) : (
+								<EngineGlyph engine={s.engine} />
+							)}
+							{renaming === s.path ? (
+								<input
+									autoFocus
+									className="session-rename-input"
+									value={renameDraft}
+									placeholder={t("renameSessionPlaceholder")}
+									onClick={(e) => e.stopPropagation()}
+									onChange={(e) => setRenameDraft(e.target.value)}
+									onKeyDown={(e) => {
+										e.stopPropagation();
+										if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+											commitRename(s.path, { type: "rename_session", path: s.path }, s.path, rawTitle);
+										} else if (e.key === "Escape") {
+											cancelRename();
+										}
+									}}
+									onBlur={() => commitRename(s.path, { type: "rename_session", path: s.path }, s.path, rawTitle)}
+								/>
+							) : (
+								<span className="conv-title-text" title={rawTitle}>
+									{cleanTitle}
 								</span>
-							) : isStreaming || isCliRunning ? (
-								<div className="status-spinner-right" title={t("streaming")} />
-							) : hasError || cliPhase === "error" ? (
-								<span
-									className="status-error-right"
-									title={runInfo?.error || runInfo?.conv?.nativeCli?.status?.error || t("nativeCliSession.error")}
-								>
-									!
-								</span>
-							) : isActuallyRunning ? (
-								<span className="status-pulse-right" title={t("tabRunning")} />
-							) : isUnread ? (
-								<span className="status-unread-right" title={t("completedUnreadTooltip")}>
-									<FiCheck size={13} strokeWidth={3} aria-hidden="true" />
-								</span>
-							) : null}
-						</ConversationRowIndicator>
-					</span>
+							)}
+							{isCli && <span className="lp-cli-badge">CLI</span>}
+							<span className="conv-meta-zone">
+								<ConversationRowIndicator time={formatModified(s.modified)}>
+									{switching ? (
+										<HalfRingSpinner className="status-spinner-right" />
+									) : hasQuestion || isCliWaiting ? (
+										<span
+											className="status-question-right"
+											title={
+												cliPhase === "waiting_approval"
+													? t("nativeCliSession.waitingApproval")
+													: t("nativeCliSession.waitingInput") || t("waitingQuestionBadge")
+											}
+										>
+											?
+										</span>
+									) : isStreaming || isCliRunning ? (
+										<div className="status-spinner-right" title={t("streaming")} />
+									) : hasError || cliPhase === "error" ? (
+										<span
+											className="status-error-right"
+											title={runInfo?.error || runInfo?.conv?.nativeCli?.status?.error || t("nativeCliSession.error")}
+										>
+											!
+										</span>
+									) : isActuallyRunning ? (
+										<span className="status-pulse-right" title={t("tabRunning")} />
+									) : isUnread ? (
+										<span className="status-unread-right" title={t("completedUnreadTooltip")}>
+											<FiCheck size={13} strokeWidth={3} aria-hidden="true" />
+										</span>
+									) : null}
+								</ConversationRowIndicator>
+							</span>
+						</div>
+						{(s.pinned || runInfo?.conv?.isEphemeral || categoryTag) && (
+							<div className="conv-tags-row">
+								{s.pinned && (
+									<span className="pin-badge" title={t("pinnedConversation")}>
+										📌
+									</span>
+								)}
+								{runInfo?.conv?.isEphemeral && (
+									<span className="ephemeral-badge" title={t("newChatEphemeralTip")}>
+										{t("newChatEphemeral")}
+									</span>
+								)}
+								{categoryTag && <span className={`category-badge-pill ${categoryTag.key}`}>{categoryTag.label}</span>}
+							</div>
+						)}
+					</div>
 				</RowMain>
 				{confirmDel !== `sess:${s.path}` && (
 					<button
@@ -2311,6 +2457,9 @@ export const LeftPanel = memo(function LeftPanel({
 								</span>
 							)}
 							{categoryTag && <span className={`category-badge-pill ${categoryTag.key}`}>{categoryTag.label}</span>}
+							{c.engine && c.engine !== "pi" && (
+								<span className="category-badge-pill engine">{c.engine.toUpperCase()}</span>
+							)}
 
 							{isScheduler ? (
 								<span className="category-badge-pill scheduler">{t("scheduledTaskBadge")}</span>
@@ -2475,97 +2624,118 @@ export const LeftPanel = memo(function LeftPanel({
 						clearConversationUnread(c.id);
 						if (c.sessionId) clearConversationUnread(c.sessionId);
 						if (c.sessionFile) clearConversationUnread(c.sessionFile);
-						if (!active) panelSend({ type: "switch_conversation", id: c.id });
+						if (!active)
+							panelSend({
+								type: "switch_conversation",
+								id: c.id,
+								...(c.engine ? { engine: c.engine } : {}),
+							});
 					}}
 				>
-					{}
-					{c.nativeCli && (
-						<FiTerminal
-							size={13}
-							className={`native-cli-conversation-icon${isCliRunning ? " is-running" : isCliWaiting ? " is-waiting" : isCliExited ? " is-exited" : ""}`}
-							title={
-								cliPhase
-									? `${t("nativeCli")} (${t(`nativeCliSession.${cliPhase === "waiting_input" ? "waitingInput" : cliPhase === "waiting_approval" ? "waitingApproval" : cliPhase}`) || cliPhase})`
-									: t("nativeCli")
-							}
-							aria-label={t("nativeCli")}
-						/>
-					)}
-					{active && <span className="conv-current-badge">{t("current")}</span>}
-					{renaming === `conv:${c.id}` ? (
-						<input
-							autoFocus
-							className="session-rename-input"
-							value={renameDraft}
-							placeholder={t("renameSessionPlaceholder")}
-							onClick={(e) => e.stopPropagation()}
-							onChange={(e) => setRenameDraft(e.target.value)}
-							onKeyDown={(e) => {
-								e.stopPropagation();
-								if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-									commitRename(`conv:${c.id}`, { type: "rename_conversation", id: c.id }, c.id, c.title);
-								} else if (e.key === "Escape") {
-									cancelRename();
-								}
-							}}
-							onBlur={() => commitRename(`conv:${c.id}`, { type: "rename_conversation", id: c.id }, c.id, c.title)}
-						/>
-					) : (
-						<span className="conv-title-text" title={c.title}>
-							{cleanTitle}
-						</span>
-					)}
-
-					{}
-					<span className="conv-meta-zone">
-						{c.pinned && (
-							<span className="pin-badge" title={t("pinnedConversation")}>
-								📌
-							</span>
-						)}
-						{c.isEphemeral && (
-							<span className="ephemeral-badge" title={t("newChatEphemeralTip")}>
-								{t("newChatEphemeral")}
-							</span>
-						)}
-						{categoryTag && <span className={`category-badge-pill ${categoryTag.key}`}>{categoryTag.label}</span>}
-
-						{c.agentPreset && c.agentPreset !== "standard" && (
-							<span className="category-badge-pill subagent" title={c.agentPreset}>
-								{presetNames?.[c.agentPreset] ?? c.agentPreset}
-							</span>
-						)}
-
-						{subagentVerdictBadge(c, t)}
-
-						<ConversationRowIndicator time={convTime ? formatModified(convTime) : undefined}>
-							{hasQuestion || c.hasQuestion || isCliWaiting ? (
-								<span
-									className="status-question-right"
+					<div className="conv-main-col">
+						<div className="conv-title-row">
+							{c.nativeCli ? (
+								<EngineGlyph
+									engine={c.nativeCli.config?.preset ?? c.engine}
+									className={`native-cli-conversation-icon${isCliRunning ? " is-running" : isCliWaiting ? " is-waiting" : isCliExited ? " is-exited" : ""}`}
 									title={
-										cliPhase === "waiting_approval"
-											? t("nativeCliSession.waitingApproval")
-											: t("nativeCliSession.waitingInput") || t("waitingQuestionBadge")
+										cliPhase
+											? `${t("nativeCli")} (${t(`nativeCliSession.${cliPhase === "waiting_input" ? "waitingInput" : cliPhase === "waiting_approval" ? "waitingApproval" : cliPhase}`) || cliPhase})`
+											: t("nativeCli")
 									}
-								>
-									?
+									ariaLabel={t("nativeCli")}
+								/>
+							) : (
+								<EngineGlyph engine={c.engine} />
+							)}
+							{active && <span className="conv-current-badge">{t("current")}</span>}
+							{renaming === `conv:${c.id}` ? (
+								<input
+									autoFocus
+									className="session-rename-input"
+									value={renameDraft}
+									placeholder={t("renameSessionPlaceholder")}
+									onClick={(e) => e.stopPropagation()}
+									onChange={(e) => setRenameDraft(e.target.value)}
+									onKeyDown={(e) => {
+										e.stopPropagation();
+										if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+											commitRename(`conv:${c.id}`, { type: "rename_conversation", id: c.id }, c.id, c.title);
+										} else if (e.key === "Escape") {
+											cancelRename();
+										}
+									}}
+									onBlur={() => commitRename(`conv:${c.id}`, { type: "rename_conversation", id: c.id }, c.id, c.title)}
+								/>
+							) : (
+								<span className="conv-title-text" title={c.title}>
+									{cleanTitle}
 								</span>
-							) : isActuallyRunning ? (
-								<div className="status-spinner-right" title={t("streaming")} />
-							) : c.error || cliPhase === "error" ? (
-								<span
-									className="status-error-right"
-									title={c.error || c.nativeCli?.status?.error || t("nativeCliSession.error")}
-								>
-									!
-								</span>
-							) : isUnread ? (
-								<span className="status-unread-right" title={t("completedUnreadTooltip")}>
-									<FiCheck size={13} strokeWidth={3} aria-hidden="true" />
-								</span>
-							) : null}
-						</ConversationRowIndicator>
-					</span>
+							)}
+							{c.nativeCli && <span className="lp-cli-badge">CLI</span>}
+
+							<span className="conv-meta-zone">
+								<ConversationRowIndicator time={convTime ? formatModified(convTime) : undefined}>
+									{hasQuestion || c.hasQuestion || isCliWaiting ? (
+										<span
+											className="status-question-right"
+											title={
+												cliPhase === "waiting_approval"
+													? t("nativeCliSession.waitingApproval")
+													: t("nativeCliSession.waitingInput") || t("waitingQuestionBadge")
+											}
+										>
+											?
+										</span>
+									) : isActuallyRunning ? (
+										<div className="status-spinner-right" title={t("streaming")} />
+									) : c.error || cliPhase === "error" ? (
+										<span
+											className="status-error-right"
+											title={c.error || c.nativeCli?.status?.error || t("nativeCliSession.error")}
+										>
+											!
+										</span>
+									) : isUnread ? (
+										<span className="status-unread-right" title={t("completedUnreadTooltip")}>
+											<FiCheck size={13} strokeWidth={3} aria-hidden="true" />
+										</span>
+									) : null}
+								</ConversationRowIndicator>
+							</span>
+						</div>
+						{(() => {
+							const verdict = subagentVerdictBadge(c, t);
+							const hasTags =
+								c.pinned ||
+								c.isEphemeral ||
+								categoryTag ||
+								(c.agentPreset && c.agentPreset !== "standard") ||
+								Boolean(verdict);
+							if (!hasTags) return null;
+							return (
+								<div className="conv-tags-row">
+									{c.pinned && (
+										<span className="pin-badge" title={t("pinnedConversation")}>
+											📌
+										</span>
+									)}
+									{c.isEphemeral && (
+										<span className="ephemeral-badge" title={t("newChatEphemeralTip")}>
+											{t("newChatEphemeral")}
+										</span>
+									)}
+									{categoryTag && <span className={`category-badge-pill ${categoryTag.key}`}>{categoryTag.label}</span>}
+									{c.agentPreset && c.agentPreset !== "standard" && (
+										<span className="category-badge-pill subagent" title={c.agentPreset}>
+											{presetNames?.[c.agentPreset] ?? c.agentPreset}
+										</span>
+									)}
+									{verdict}
+								</div>
+							);
+						})()}
+					</div>
 				</RowMain>
 				{!isArmed && (
 					<button
@@ -2690,7 +2860,7 @@ export const LeftPanel = memo(function LeftPanel({
 						</div>
 					)}
 					{buildConversationRows(
-						conversationOrder.sort(conversationOrderScope(engine, g.cwd), g.convs, (c) => c, false),
+						conversationOrder.sort(conversationOrderScope("all", g.cwd), g.convs, (c) => c, false),
 						collapsedSubagents,
 					).map((row) => renderSingleConvRow(row, g.cwd))}
 				</div>
@@ -2699,11 +2869,49 @@ export const LeftPanel = memo(function LeftPanel({
 		</>
 	);
 
+	const engineStatuses = useEngineStatuses();
+	const [newChatEngineOpen, setNewChatEngineOpen] = useState(false);
+	const newChatSplitRef = useRef<HTMLDivElement>(null);
+	const newChatEngineMenu = useFloatingPanel({
+		open: newChatEngineOpen,
+		anchor: newChatSplitRef,
+		align: "left",
+		onClose: () => setNewChatEngineOpen(false),
+	});
+	const isEngineInstalled = useCallback(
+		(id: string) => {
+			if (id === "pi") return true;
+			const status = engineStatuses.find((s) => s.id === id);
+			return status ? status.installed : false;
+		},
+		[engineStatuses],
+	);
+	const cliEnginesForNewChat = useMemo(
+		() => Object.values(ENGINE_CATALOG).filter((item) => Boolean(item.cliCommand)),
+		[],
+	);
+	const triggerInstallEngine = useCallback(
+		(name: string, command?: string | null) => {
+			if (!command) return;
+			if (/^https?:\/\//i.test(command)) {
+				window.open(command, "_blank", "noopener,noreferrer");
+				return;
+			}
+			window.dispatchEvent(
+				new CustomEvent("pi-web-ui:plugin-run-command", {
+					detail: {
+						title: t("installEngineTabTitle", { name }),
+						command,
+					},
+				}),
+			);
+		},
+		[t],
+	);
+
 	const sectionNodes: Record<"projects" | "convs" | "sessions", React.ReactNode> = {
 		projects: (
 			<>
-				{/* 左栏不再分 tab：智能体、群组、项目树同层排开，各自折叠。 */}
-				<AgentBotsSection active={active} activeBotId={activeBotId} cwd={cwd} />
 				{hasGroupsSection && (
 					<DeviceGroupSection
 						entry={uiSections?.find((entry) => entry.id === "host:lp-groups")}
@@ -2717,25 +2925,151 @@ export const LeftPanel = memo(function LeftPanel({
 					className={`lp-section panel-projects ${collapseProjects ? "collapsed" : ""}`}
 					style={!collapseProjects ? { flex: `${effFlex("projects")} 1 0px` } : undefined}
 				>
-					<div className="lp-section-header">
+					<div className="lp-c-top-header">
+						<div className="lp-new-chat-split" ref={newChatSplitRef}>
+							<button
+								type="button"
+								className="lp-new-chat-primary"
+								title={t("newChatInCurrentProjectTip")}
+								onClick={() => {
+									panelSend({ type: "new_chat" });
+									focusComposer();
+								}}
+							>
+								<FiPlus aria-hidden="true" />
+								<span>{t("newChatAction")}</span>
+							</button>
+							<button
+								type="button"
+								className="lp-new-chat-engine-btn"
+								aria-haspopup="menu"
+								aria-expanded={newChatEngineOpen}
+								title={t("settingsEngineSection")}
+								onClick={() =>
+									setNewChatEngineOpen((v) => {
+										const next = !v;
+										if (next && SUPPORTED_ENGINES.some((item) => !isEngineInstalled(item.id))) {
+											appSend({ type: "check_engines", force: true });
+										}
+										return next;
+									})
+								}
+							>
+								<FiChevronDown aria-hidden="true" />
+							</button>
+							{newChatEngineOpen &&
+								createPortal(
+									<div
+										ref={newChatEngineMenu.panelRef}
+										className="lp-new-chat-engine-menu"
+										style={newChatEngineMenu.style}
+										role="menu"
+									>
+										<div className="lp-new-chat-engine-head">{t("settingsEngineSection")}</div>
+										{SUPPORTED_ENGINES.map((item) => {
+											const installed = isEngineInstalled(item.id);
+											const catalogEntry = ENGINE_CATALOG[item.id as keyof typeof ENGINE_CATALOG];
+											const hasCli = Boolean(onCreateCli && catalogEntry?.cliCommand);
+											const installCmd = item.installCommand ?? catalogEntry?.installCommand;
+											const isCurrent = engine === item.id;
+											const openChat = () => {
+												setNewChatEngineOpen(false);
+												if (!installed) {
+													triggerInstallEngine(item.badge, installCmd);
+													return;
+												}
+												panelSend({ type: "new_chat", engine: item.id as EngineId, cwd: currentCwd });
+												focusComposer();
+											};
+											return (
+												<div
+													key={item.id}
+													role="menuitem"
+													tabIndex={0}
+													className={`lp-new-chat-engine-row${isCurrent ? " active" : ""}${!installed ? " uninstalled" : ""}`}
+													title={!installed ? t("engineInstallTip") : t(item.descKey)}
+													onClick={openChat}
+													onKeyDown={(e) => {
+														if (e.key === "Enter" || e.key === " ") {
+															e.preventDefault();
+															openChat();
+														}
+													}}
+												>
+													<EngineGlyph engine={item.id} />
+													<span className="lp-new-chat-engine-name">{t(item.titleKey)}</span>
+													{!installed ? (
+														<span className="lp-new-chat-engine-install-pill">{t("engineInstall")}</span>
+													) : (
+														<span className="lp-new-chat-engine-actions">
+															{isCurrent && (
+																<FiCheck size={12} className="lp-new-chat-engine-check" aria-hidden="true" />
+															)}
+															{hasCli && (
+																<button
+																	type="button"
+																	className="lp-new-chat-cli-pill"
+																	title={`${catalogEntry.name} CLI`}
+																	onClick={(e) => {
+																		e.stopPropagation();
+																		setNewChatEngineOpen(false);
+																		panelSend({
+																			type: "new_cli_chat",
+																			config: { preset: item.id as NativeCliConfig["preset"] },
+																			cwd,
+																		});
+																	}}
+																>
+																	CLI
+																</button>
+															)}
+														</span>
+													)}
+												</div>
+											);
+										})}
+										{onCreateCli && (
+											<>
+												<div className="lp-new-chat-engine-divider" role="separator" />
+												<button
+													type="button"
+													role="menuitem"
+													className="lp-new-chat-engine-row lp-new-chat-engine-custom"
+													onClick={() => {
+														setNewChatEngineOpen(false);
+														onCreateCli(cwd);
+													}}
+												>
+													<FiTerminal size={12} className="lp-new-chat-custom-icon" aria-hidden="true" />
+													<span className="lp-new-chat-engine-name">{t("nativeCliCreate")}…</span>
+												</button>
+											</>
+										)}
+									</div>,
+									document.body,
+								)}
+						</div>
 						<button
 							type="button"
-							className="lp-section-title panel-section-title"
-							onClick={toggleProjects}
-							title={collapseProjects ? t("expandSection") : t("collapseSection")}
+							className={`lp-section-action lp-c-icon-btn${searchOpen || filterText ? " active" : ""}`}
+							title={t("lpFilterPlaceholder")}
+							aria-label={t("lpFilterPlaceholder")}
+							onClick={() => {
+								setSearchOpen((prev) => {
+									const next = !prev;
+									if (next) setTimeout(() => filterInputRef.current?.focus(), 0);
+									else setFilterText("");
+									return next;
+								});
+							}}
 						>
-							<span className="lp-section-title-text lp-section-title-chip">
-								<FiFolder aria-hidden="true" style={{ fontSize: "12.5px" }} />
-								<span>{t("tabProjects")}</span>
-								<span className="lp-section-count">({projects.length})</span>
-							</span>
-							<span className="lp-section-chevron">{collapseProjects ? <FiChevronDown /> : <FiChevronUp />}</span>
+							<FiSearch />
 						</button>
 						<div className="lp-section-actions">
 							<button
 								type="button"
 								ref={workspaceMenuAnchor}
-								className={`lp-section-action lp-project-action ${workspaceMenuOpen ? "active" : ""}`}
+								className={`lp-section-action lp-project-action lp-c-icon-btn ${workspaceMenuOpen ? "active" : ""}`}
 								title={workspaceMenuOpen ? undefined : t("openProject")}
 								aria-label={t("openProject")}
 								aria-expanded={workspaceMenuOpen}
@@ -2744,85 +3078,96 @@ export const LeftPanel = memo(function LeftPanel({
 									setWorkspaceMenuOpen((prev) => !prev);
 								}}
 							>
-								<FiPlus />
+								<FiFolder />
 							</button>
 							{renderInlineEntries(uiProjectsActions, "lp-slot-section")}
-							{workspaceMenuOpen &&
-								createPortal(
-									<div
-										ref={workspaceMenu.panelRef}
-										className="lp-workspace-menu"
-										style={workspaceMenu.style}
-										role="menu"
-										onClick={(e) => e.stopPropagation()}
-									>
-										<button
-											type="button"
-											className="lp-workspace-menu-item lp-new-chat-btn"
-											title={t("newChatInCurrentProjectTip")}
-											onClick={() => {
-												setWorkspaceMenuOpen(false);
-												panelSend({ type: "new_chat" });
-												focusComposer();
-											}}
-										>
-											<FiMessageSquare style={{ fontSize: "13px" }} />
-											<span>{t("newChatAction")}</span>
-										</button>
-										{onCreateCli && (!tabs || tabs.includes("terminal")) && (
-											<button
-												type="button"
-												className="lp-workspace-menu-item lp-new-cli-btn"
-												onClick={() => {
-													setWorkspaceMenuOpen(false);
-													onCreateCli(cwd);
-												}}
-											>
-												<FiTerminal style={{ fontSize: "13px" }} />
-												<span>{t("nativeCliCreate")}</span>
-											</button>
-										)}
-										<button
-											type="button"
-											className="lp-workspace-menu-item lp-manage-projects-btn"
-											onClick={() => {
-												setWorkspaceMenuOpen(false);
-												setProjectPickerInitialTab("local");
-												setProjectPickerOpen(true);
-											}}
-										>
-											<FiHardDrive style={{ fontSize: "13px" }} />
-											<span>{t("openLocalProject")}</span>
-										</button>
-										<button
-											type="button"
-											className="lp-workspace-menu-item lp-manage-projects-btn"
-											onClick={() => {
-												setWorkspaceMenuOpen(false);
-												setProjectPickerInitialTab("remote");
-												setProjectPickerOpen(true);
-											}}
-										>
-											<FiServer style={{ fontSize: "13px" }} />
-											<span>{t("openRemoteProject")}</span>
-										</button>
-										{onOpenSandboxModal && (
-											<button
-												type="button"
-												className="lp-workspace-menu-item"
-												onClick={() => {
-													setWorkspaceMenuOpen(false);
-													onOpenSandboxModal();
-												}}
-											>
-												<LuFlaskConical style={{ fontSize: "13px" }} />
-												<span>{t("sandboxNewShort")}</span>
-											</button>
-										)}
-									</div>,
-									document.body,
-								)}
 						</div>
+						{collapsible && onToggleCollapse && (
+							<button
+								type="button"
+								className="lp-section-action lp-c-icon-btn"
+								title={t("collapsePanel")}
+								aria-label={t("collapsePanel")}
+								onClick={onToggleCollapse}
+							>
+								<FiChevronLeft />
+							</button>
+						)}
+						{workspaceMenuOpen &&
+							createPortal(
+								<div
+									ref={workspaceMenu.panelRef}
+									className="lp-workspace-menu"
+									style={workspaceMenu.style}
+									role="menu"
+									onClick={(e) => e.stopPropagation()}
+								>
+									<button
+										type="button"
+										className="lp-workspace-menu-item lp-new-chat-btn"
+										title={t("newChatInCurrentProjectTip")}
+										onClick={() => {
+											setWorkspaceMenuOpen(false);
+											panelSend({ type: "new_chat" });
+											focusComposer();
+										}}
+									>
+										<FiMessageSquare style={{ fontSize: "13px" }} />
+										<span>{t("newChatAction")}</span>
+									</button>
+									{onCreateCli && (!tabs || tabs.includes("terminal")) && (
+										<button
+											type="button"
+											className="lp-workspace-menu-item lp-new-cli-btn"
+											onClick={() => {
+												setWorkspaceMenuOpen(false);
+												onCreateCli(cwd);
+											}}
+										>
+											<FiTerminal style={{ fontSize: "13px" }} />
+											<span>{t("nativeCliCreate")}</span>
+										</button>
+									)}
+									<button
+										type="button"
+										className="lp-workspace-menu-item lp-manage-projects-btn"
+										onClick={() => {
+											setWorkspaceMenuOpen(false);
+											setProjectPickerInitialTab("local");
+											setProjectPickerOpen(true);
+										}}
+									>
+										<FiHardDrive style={{ fontSize: "13px" }} />
+										<span>{t("openLocalProject")}</span>
+									</button>
+									<button
+										type="button"
+										className="lp-workspace-menu-item lp-manage-projects-btn"
+										onClick={() => {
+											setWorkspaceMenuOpen(false);
+											setProjectPickerInitialTab("remote");
+											setProjectPickerOpen(true);
+										}}
+									>
+										<FiServer style={{ fontSize: "13px" }} />
+										<span>{t("openRemoteProject")}</span>
+									</button>
+									{onOpenSandboxModal && (
+										<button
+											type="button"
+											className="lp-workspace-menu-item"
+											onClick={() => {
+												setWorkspaceMenuOpen(false);
+												onOpenSandboxModal();
+											}}
+										>
+											<LuFlaskConical style={{ fontSize: "13px" }} />
+											<span>{t("sandboxNewShort")}</span>
+										</button>
+									)}
+								</div>,
+								document.body,
+							)}
 					</div>
 					{!collapseProjects && effectiveProjects.length > 0 && (
 						<div
@@ -2833,41 +3178,67 @@ export const LeftPanel = memo(function LeftPanel({
 							aria-label={t("lpProjectsTree")}
 							onKeyDown={handleTreeKeyDown}
 						>
-							<div className="lp-filter">
-								<FiSearch aria-hidden="true" />
-								<input
-									type="search"
-									value={filterText}
-									placeholder={t("lpFilterPlaceholder")}
-									aria-label={t("lpFilterPlaceholder")}
-									onChange={(e) => setFilterText(e.target.value)}
-									onKeyDown={(e) => {
-										if (e.key === "Escape" && filterText) {
-											e.stopPropagation();
-											setFilterText("");
-										} else if (e.key === "ArrowDown") {
-											e.preventDefault();
-											focusTreeItem(e.currentTarget, 1);
-										}
-									}}
-								/>
-								{filterText && (
-									<button
-										type="button"
-										className="lp-filter-clear"
-										title={t("lpFilterClear")}
-										aria-label={t("lpFilterClear")}
-										onClick={() => setFilterText("")}
-									>
-										<FiX />
-									</button>
-								)}
-							</div>
+							{(searchOpen || filterText) && (
+								<div className="lp-filter">
+									<FiSearch aria-hidden="true" />
+									<input
+										ref={filterInputRef}
+										type="search"
+										value={filterText}
+										placeholder={t("lpFilterPlaceholder")}
+										aria-label={t("lpFilterPlaceholder")}
+										onChange={(e) => setFilterText(e.target.value)}
+										onKeyDown={(e) => {
+											if (e.key === "Escape") {
+												e.stopPropagation();
+												if (filterText) setFilterText("");
+												else setSearchOpen(false);
+											} else if (e.key === "ArrowDown") {
+												e.preventDefault();
+												focusTreeItem(e.currentTarget, 1);
+											}
+										}}
+									/>
+									{filterText && (
+										<button
+											type="button"
+											className="lp-filter-clear"
+											title={t("lpFilterClear")}
+											aria-label={t("lpFilterClear")}
+											onClick={() => setFilterText("")}
+										>
+											<FiX />
+										</button>
+									)}
+								</div>
+							)}
+							{effectiveProjects.some(
+								(p) => parseProjectEnv(p.path, p.sandbox?.name ?? projectName(p.path)).isRemote,
+							) && (
+								<div className="lp-env-pills" role="tablist" aria-label={t("lpProjectsTree")}>
+									{(["all", "local", "remote"] as const).map((mode) => (
+										<button
+											key={mode}
+											type="button"
+											role="tab"
+											aria-selected={envFilter === mode}
+											className={`lp-env-pill${envFilter === mode ? " active" : ""}`}
+											onClick={() => setEnvFilter(mode)}
+										>
+											{mode === "all" ? t("lpEnvAll") : mode === "local" ? t("lpEnvLocal") : t("lpEnvRemote")}
+										</button>
+									))}
+								</div>
+							)}
 							{(() => {
 								const transitionCwdNorm =
 									transition?.kind === "cwd" ? normalizeSessionPathKey(transition.target) : null;
 								const q = filterText.trim().toLowerCase();
 								const views = projectTreeModel.map((m) => {
+									const rawName = m.p.sandbox?.name ?? projectName(m.p.path);
+									const envInfo = parseProjectEnv(m.p.path, rawName);
+									if (envFilter === "local" && envInfo.isRemote) return null;
+									if (envFilter === "remote" && !envInfo.isRemote) return null;
 									// 钉住的行不受 maxVisible 截断：它常驻，翻页也不能把它藏起来。
 									const visibleIdle = new Set([
 										...m.idleSessions.slice(0, m.maxVisible),
@@ -2880,9 +3251,9 @@ export const LeftPanel = memo(function LeftPanel({
 										),
 									};
 									if (!q) return visibleModel;
-									const sbxName = m.p.sandbox?.name;
-									const name = (sbxName ?? projectName(m.p.path)).toLowerCase();
-									if (name.includes(q) || m.p.path.toLowerCase().includes(q)) return visibleModel;
+									const name = rawName.toLowerCase();
+									if (name.includes(q) || envInfo.label.toLowerCase().includes(q) || m.p.path.toLowerCase().includes(q))
+										return visibleModel;
 									const runRows = m.pRunningRows.filter((r) => (r.c.title ?? "").toLowerCase().includes(q));
 									const idle = m.idleSessions.filter((s) =>
 										(renameOverrides[s.path] ?? displayName(s)).toLowerCase().includes(q),
@@ -2930,6 +3301,9 @@ export const LeftPanel = memo(function LeftPanel({
 									const switching = transitionCwdNorm !== null && transitionCwdNorm === pNorm;
 									const sbx = p.sandbox;
 									const dispName = sbx ? sbx.name : projectName(p.path);
+									const projectEnv = sbx
+										? { label: dispName, isRemote: false, envTag: undefined }
+										: parseProjectEnv(p.path, dispName);
 									const hasRunning = actuallyRunningCount > 0;
 									const hasHistory = idleSessions.length > 0;
 									const hasUnread = unreadCount > 0;
@@ -3052,8 +3426,9 @@ export const LeftPanel = memo(function LeftPanel({
 													</span>
 													{sbx && <LuFlaskConical className="project-icon sandbox-icon" />}
 													<span className="lp-project-name" title={dispName}>
-														{dispName}
+														{projectEnv.label}
 													</span>
+													<span className="lp-env-tag">{projectEnv.envTag ?? "LOCAL"}</span>
 													{sbx && (
 														<span className={`lp-sandbox-badge ${sbx.ephemeral ? "ephemeral" : "permanent"}`}>
 															{sbx.ephemeral ? t("sandboxBadgeEphemeral") : t("sandboxBadgePermanent")}
@@ -3116,6 +3491,8 @@ export const LeftPanel = memo(function LeftPanel({
 																setConfirmDel(null);
 																clearLastCwdIfMatches(p.path);
 																clearCachedProject(p.path);
+																markProjectRemoved(p.path);
+																setRemovedProjectsVersion((v) => v + 1);
 																panelSend(
 																	sbx
 																		? { type: "destroy_sandbox", path: p.path }
@@ -3181,7 +3558,7 @@ export const LeftPanel = memo(function LeftPanel({
 															{failedProjects.has(pNorm) && (
 																<button
 																	type="button"
-																	className="lp-show-more-row"
+																	className="lp-show-more-row lp-retry-chip"
 																	disabled={!ready || status !== "open"}
 																	onClick={() =>
 																		requestSessions({
@@ -3255,6 +3632,13 @@ export const LeftPanel = memo(function LeftPanel({
 						</div>
 					)}
 				</div>
+				<AgentBotsSection
+					active={active}
+					activeBotId={activeBotId}
+					cwd={cwd}
+					botDraftPrompt={botDraftPrompt}
+					botDraftDefaultPrompt={botDraftDefaultPrompt}
+				/>
 			</>
 		),
 		convs: null,
@@ -3295,11 +3679,6 @@ export const LeftPanel = memo(function LeftPanel({
 
 	return (
 		<aside ref={panelRef as React.RefObject<HTMLDivElement>} className="panel panel-left lp-panel">
-			{collapsible && onToggleCollapse && (
-				<button type="button" className="panel-collapse-btn" title={t("collapsePanel")} onClick={onToggleCollapse}>
-					<FiChevronLeft />
-				</button>
-			)}
 			{effectivePlan.map(({ key }) => (
 				<Fragment key={key}>
 					{renderSection(key)}

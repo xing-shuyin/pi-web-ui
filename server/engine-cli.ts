@@ -115,9 +115,10 @@ export function resolveEngineCliLaunch(id: NativeCliEngineId, options: EngineCli
 export async function probeEngineCliVersion(
 	id: NativeCliEngineId,
 	executablePath?: string,
+	refresh = false,
 ): Promise<{ available: boolean; version?: string; error?: string }> {
 	try {
-		const launch = resolveEngineCliLaunch(id, { executablePath, args: ["--version"] });
+		const launch = resolveEngineCliLaunch(id, { executablePath, args: ["--version"], refresh });
 		const result = await runProcess({ cmd: launch.file, args: launch.args, timeoutMs: 4000, maxBytes: 8192 });
 		if (result.spawnError) return { available: false, error: result.spawnError };
 		if (result.timedOut) return { available: false, error: "engine CLI --version timed out" };

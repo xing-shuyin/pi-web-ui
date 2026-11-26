@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const BIN = resolve(__dirname, "../bin/pi-web-ui.mjs");
+const BIN = resolve(__dirname, "../bin/keel.mjs");
 
 function cli(args, env) {
 	const r = spawnSync(process.execPath, [BIN, ...args], { encoding: "utf8", env });

@@ -615,6 +615,7 @@ export class UniversalSession implements DispatchSession {
 		const now = Date.now();
 		return {
 			id: `uconv-${now}-${randomUUID().slice(0, 8)}`,
+			cwd: this.cwd,
 			title,
 			createdAt: now,
 			updatedAt: now,
@@ -794,6 +795,15 @@ export class UniversalSession implements DispatchSession {
 
 	activeConversationId(): string {
 		return this.activeConvId;
+	}
+
+	getMessagesOfConversation(convId: string): UiMessage[] | undefined {
+		if (!convId) return undefined;
+		const conv = this.resolveConversationAcrossProjects(convId).conv;
+		if (!conv) return undefined;
+		return this.turnConvId === conv.id && this.pendingToolResults.length > 0
+			? [...conv.messages, ...this.pendingToolResults]
+			: [...conv.messages];
 	}
 
 	async prompt(
@@ -1385,6 +1395,7 @@ export class UniversalSession implements DispatchSession {
 		if (!newConv.isEphemeral) {
 			await this.store.saveConversation(this.cwd, newConv);
 		}
+		this.emitConversations();
 		this.flushSnapshot(true);
 		void this.refreshSessions();
 		onReady?.(newConv.id);
@@ -1403,18 +1414,36 @@ export class UniversalSession implements DispatchSession {
 			(source.conversationId && source.sessionFile && source.conversationId !== source.sessionFile)
 		)
 			return undefined;
-		const conv = this.conversations.get(id) ?? this.store.loadConversation(this.cwd, id);
-		return conv ? captureQuickAskConversation(conv.title, conv.id, conv.messages, this.cwd) : undefined;
+		const { conv, cwd: resolvedCwd } = this.resolveConversationAcrossProjects(id);
+		return conv
+			? captureQuickAskConversation(conv.title, conv.id, conv.messages, conv.cwd ?? resolvedCwd ?? this.cwd)
+			: undefined;
+	}
+
+	private resolveConversationAcrossProjects(id: string): { conv?: UniversalConversation; cwd?: string } {
+		const inMem = this.conversations.get(id);
+		if (inMem) return { conv: inMem, cwd: inMem.cwd ?? this.cwd };
+		const inCurrent = this.store.loadConversation(this.cwd, id);
+		if (inCurrent) return { conv: inCurrent, cwd: this.cwd };
+		const knownCwd = this.sessionCwdById.get(id);
+		if (knownCwd && normalizePathKey(knownCwd) !== normalizePathKey(this.cwd)) {
+			const inKnown = this.store.loadConversation(knownCwd, id);
+			if (inKnown) return { conv: inKnown, cwd: knownCwd };
+		}
+		const found = this.store.findConversationById(id);
+		if (found) return { conv: found.conv, cwd: found.cwd ?? knownCwd };
+		return {};
 	}
 
 	async switchConversation(id: string): Promise<void> {
 		assertEngineWorkspaceSupported(this.sandboxes, this.cwd, this.engine);
-		let conv = this.conversations.get(id);
-		if (!conv) {
-			conv = this.store.loadConversation(this.cwd, id) ?? undefined;
-			if (conv) this.conversations.set(conv.id, conv);
+		let { conv, cwd: targetCwd } = this.resolveConversationAcrossProjects(id);
+		if (conv && targetCwd && normalizePathKey(targetCwd) !== normalizePathKey(this.cwd)) {
+			await this.setCwd(targetCwd);
+			conv = this.conversations.get(id) ?? conv;
 		}
 		if (conv) {
+			this.conversations.set(conv.id, conv);
 			this.activeConvId = conv.id;
 			if (conv.driverSessionId) {
 				await this.driver.resumeSession(conv.driverSessionId).catch(() => {});
@@ -1426,6 +1455,7 @@ export class UniversalSession implements DispatchSession {
 				"Target conversation not found, staying on current conversation",
 			);
 		}
+		this.emitConversations();
 		this.flushSnapshot(true);
 		void this.refreshSessions();
 	}
@@ -1451,18 +1481,25 @@ export class UniversalSession implements DispatchSession {
 	async renameConversation(id: string, name: string): Promise<void> {
 		const trimmed = (name ?? "").trim();
 		if (!trimmed) return;
-		const conv = this.conversations.get(id);
+		const { conv, cwd: targetCwd } = this.resolveConversationAcrossProjects(id);
 		if (conv) {
+			const convCwd = conv.cwd ?? targetCwd ?? this.cwd;
+			conv.cwd = convCwd;
 			conv.title = trimmed;
 			conv.updatedAt = Date.now();
 			if (!conv.isEphemeral) {
-				await this.store.saveConversation(this.cwd, conv);
+				await this.store.saveConversation(convCwd, conv);
 			}
 			if (this.stateStore) {
-				this.stateStore.saveSessionTitle(this.cwd, id, trimmed);
+				this.stateStore.saveSessionTitle(convCwd, id, trimmed);
 			}
+			this.emitConversations();
 			this.flushSnapshot();
-			void this.refreshSessions();
+			if (normalizePathKey(convCwd) !== normalizePathKey(this.cwd)) {
+				void this.pushSessionsForCwd(convCwd);
+			} else {
+				void this.refreshSessions();
+			}
 		}
 	}
 
@@ -1470,26 +1507,46 @@ export class UniversalSession implements DispatchSession {
 		const trimmed = (name ?? "").trim();
 		if (!trimmed) return;
 		const id = path.trim() || this.activeConvId;
-		const conv = this.conversations.get(id) ?? (this.activeConvId === id ? this.activeConv : null);
+		const resolved = this.resolveConversationAcrossProjects(id);
+		const conv = resolved.conv ?? (this.activeConvId === id ? this.activeConv : null);
 		if (conv) {
+			const convCwd = conv.cwd ?? resolved.cwd ?? this.cwd;
+			conv.cwd = convCwd;
 			conv.title = trimmed;
 			conv.updatedAt = Date.now();
 			if (!conv.isEphemeral) {
-				await this.store.saveConversation(this.cwd, conv);
+				await this.store.saveConversation(convCwd, conv);
 			}
+			if (this.stateStore) {
+				this.stateStore.saveSessionTitle(convCwd, conv.id, trimmed);
+			}
+			this.emitConversations();
 			this.flushSnapshot();
-			void this.refreshSessions();
+			if (normalizePathKey(convCwd) !== normalizePathKey(this.cwd)) {
+				void this.pushSessionsForCwd(convCwd);
+			} else {
+				void this.refreshSessions();
+			}
 		}
 	}
 
 	async deleteSession(path: string): Promise<void> {
 		const targetId = path.trim() || this.activeConvId;
-		await this.store.deleteConversation(this.cwd, targetId);
+		const knownCwd =
+			this.sessionCwdById.get(targetId) ??
+			this.conversations.get(targetId)?.cwd ??
+			(this.conversations.has(targetId) ? this.cwd : this.store.findConversationById(targetId)?.cwd) ??
+			this.cwd;
+		await this.store.deleteConversation(knownCwd, targetId);
 		if (this.conversations.has(targetId)) {
 			await this.dismissConversation(targetId, true, true);
 		} else {
-			void this.refreshSessions();
 			this.flushSnapshot();
+		}
+		if (normalizePathKey(knownCwd) !== normalizePathKey(this.cwd)) {
+			void this.pushSessionsForCwd(knownCwd);
+		} else {
+			void this.refreshSessions();
 		}
 	}
 
@@ -1514,17 +1571,18 @@ export class UniversalSession implements DispatchSession {
 		this.sessionDrafts.delete(id);
 
 		if (this.activeConvId === id) {
-			const nonSubagents = Array.from(this.conversations.values()).filter((c) => !c.isSubagent);
+			const curKey = normalizePathKey(this.cwd);
+			const curConvs = Array.from(this.conversations.values()).filter(
+				(c) => normalizePathKey(c.cwd ?? this.cwd) === curKey,
+			);
+			const nonSubagents = curConvs.filter((c) => !c.isSubagent);
 			if (nonSubagents.length > 0) {
 				this.activeConvId = nonSubagents[0].id;
+			} else if (curConvs.length > 0) {
+				this.activeConvId = curConvs[0].id;
 			} else {
-				const anyRemaining = Array.from(this.conversations.values());
-				if (anyRemaining.length > 0) {
-					this.activeConvId = anyRemaining[0].id;
-				} else {
-					await this.newChat();
-					return;
-				}
+				await this.newChat();
+				return;
 			}
 		}
 		this.flushSnapshot();
@@ -1546,17 +1604,24 @@ export class UniversalSession implements DispatchSession {
 	}
 
 	async setConversationPinned(id: string, pinned: boolean): Promise<void> {
-		const conv = this.conversations.get(id);
+		const { conv, cwd: targetCwd } = this.resolveConversationAcrossProjects(id);
 		if (conv) {
+			const convCwd = conv.cwd ?? targetCwd ?? this.cwd;
+			conv.cwd = convCwd;
 			conv.pinned = pinned;
 			if (!conv.isEphemeral) {
-				await this.store.pinConversation(this.cwd, id, pinned);
+				await this.store.pinConversation(convCwd, id, pinned);
 			}
 			if (this.stateStore) {
-				this.stateStore.setSessionPinned(this.cwd, id, pinned);
+				this.stateStore.setSessionPinned(convCwd, id, pinned);
 			}
+			this.emitConversations();
 			this.flushSnapshot();
-			void this.refreshSessions();
+			if (normalizePathKey(convCwd) !== normalizePathKey(this.cwd)) {
+				void this.pushSessionsForCwd(convCwd);
+			} else {
+				void this.refreshSessions();
+			}
 		}
 	}
 
@@ -1569,9 +1634,7 @@ export class UniversalSession implements DispatchSession {
 	}
 
 	async rollbackSession(messageId: string, conversationId?: string, _restoreWorkspace?: boolean): Promise<void> {
-		let targetConv = conversationId
-			? (this.conversations.get(conversationId) ?? this.store.loadConversation(this.cwd, conversationId) ?? undefined)
-			: undefined;
+		let targetConv = conversationId ? this.resolveConversationAcrossProjects(conversationId).conv : undefined;
 		if (!targetConv) {
 			targetConv = this.activeConv;
 		}
@@ -1591,8 +1654,9 @@ export class UniversalSession implements DispatchSession {
 		targetConv.messages = targetConv.messages.slice(0, idx);
 		targetConv.updatedAt = Date.now();
 		if (!targetConv.isEphemeral) {
-			await this.store.saveConversation(this.cwd, targetConv);
+			await this.store.saveConversation(targetConv.cwd ?? this.cwd, targetConv);
 		}
+		this.emitConversations();
 		this.flushSnapshot(true);
 		void this.refreshSessions();
 		this.emitNotice("info", "已回滚到指定历史位置", "Rolled back to message");
@@ -1614,7 +1678,8 @@ export class UniversalSession implements DispatchSession {
 		}
 		conv.isEphemeral = false;
 		conv.updatedAt = Date.now();
-		await this.store.saveConversation(this.cwd, conv);
+		await this.store.saveConversation(conv.cwd ?? this.cwd, conv);
+		this.emitConversations();
 		this.flushSnapshot(true);
 		void this.refreshSessions();
 		this.emitNotice(
@@ -1625,9 +1690,7 @@ export class UniversalSession implements DispatchSession {
 	}
 
 	async forkSession(messageId: string, position: "before" | "at" = "before", targetConvId?: string): Promise<void> {
-		let targetConv = targetConvId
-			? (this.conversations.get(targetConvId) ?? this.store.loadConversation(this.cwd, targetConvId) ?? undefined)
-			: undefined;
+		let targetConv = targetConvId ? this.resolveConversationAcrossProjects(targetConvId).conv : undefined;
 		if (!targetConv) {
 			targetConv = this.activeConv;
 		}
@@ -1642,6 +1705,7 @@ export class UniversalSession implements DispatchSession {
 		const count = position === "at" ? idx + 1 : idx;
 		const forkedMessages = structuredClone(targetConv.messages.slice(0, count));
 		const forkedConv = this.createEmptyConversation(`${targetConv.title} (分支)`, Boolean(targetConv.isEphemeral));
+		forkedConv.cwd = targetConv.cwd ?? this.cwd;
 		forkedConv.messages = forkedMessages;
 		if (forkedMessages.length > 0) {
 			forkedConv.updatedAt = Date.now();
@@ -1658,9 +1722,10 @@ export class UniversalSession implements DispatchSession {
 
 		this.conversations.set(forkedConv.id, forkedConv);
 		if (!forkedConv.isEphemeral) {
-			await this.store.saveConversation(this.cwd, forkedConv);
+			await this.store.saveConversation(forkedConv.cwd ?? this.cwd, forkedConv);
 		}
 		this.activeConvId = forkedConv.id;
+		this.emitConversations();
 		this.flushSnapshot(true);
 		void this.refreshSessions();
 		this.emitNotice("info", "已从指定消息分叉新会话", "Forked new session from message");
@@ -1706,8 +1771,9 @@ export class UniversalSession implements DispatchSession {
 		conv.updatedAt = Date.now();
 		this.followUpQueue.length = 0;
 		if (!conv.isEphemeral) {
-			await this.store.saveConversation(this.cwd, conv);
+			await this.store.saveConversation(conv.cwd ?? this.cwd, conv);
 		}
+		this.emitConversations();
 		this.flushSnapshot(true);
 		void this.refreshSessions();
 
@@ -1715,8 +1781,10 @@ export class UniversalSession implements DispatchSession {
 	}
 
 	private sessionConversations(targetCwd: string): UniversalConversation[] {
-		const memoryConvs =
-			normalizePathKey(targetCwd) === normalizePathKey(this.cwd) ? Array.from(this.conversations.values()) : [];
+		const targetKey = normalizePathKey(targetCwd);
+		const memoryConvs = Array.from(this.conversations.values()).filter(
+			(c) => normalizePathKey(c.cwd ?? this.cwd) === targetKey,
+		);
 		const diskConvs = this.store.listConversations(targetCwd);
 		const convMap = new Map<string, UniversalConversation>();
 		for (const c of diskConvs) {
@@ -1734,7 +1802,7 @@ export class UniversalSession implements DispatchSession {
 		return Array.from(convMap.values()).sort((a, b) => b.updatedAt - a.updatedAt);
 	}
 
-	async refreshSessions(): Promise<void> {
+	private emitConversations(): UniversalConversation[] {
 		const allList = this.sessionConversations(this.cwd);
 		// ConversationSummary 是单源协议；会话身份（sessionId=会话 id）必须带上，
 		// 否则客户端无法把「运行中对话」和「历史会话」认成同一条，左栏会重复一遍。
@@ -1766,10 +1834,15 @@ export class UniversalSession implements DispatchSession {
 			...(c.subagentError ? { error: c.subagentError } : {}),
 		}));
 		this.send({ type: "conversations", conversations: convs, activeId: this.activeConvId });
+		return allList;
+	}
 
+	async refreshSessions(): Promise<void> {
+		const allList = this.emitConversations();
 		this.sendSessionList(this.cwd, allList);
 	}
 
+	private readonly sessionCwdById = new Map<string, string>();
 	private readonly sessionListLimits = new Map<string, number>();
 	setSessionListLimit(cwd: string, limit?: number): number {
 		const key = normalizePathKey(cwd);
@@ -1791,6 +1864,9 @@ export class UniversalSession implements DispatchSession {
 	}
 
 	private sendSessionList(targetCwd: string, allList: UniversalConversation[]) {
+		for (const c of allList) {
+			this.sessionCwdById.set(c.id, targetCwd);
+		}
 		const sessionSummaries: SessionSummary[] = allList
 			.filter((c) => !c.isSubagent || !c.isEphemeral)
 			.map((c) => {
@@ -2123,23 +2199,35 @@ export class UniversalSession implements DispatchSession {
 			this.followUpQueue = [];
 			await this.abort();
 			for (const id of this.subagentDrivers.keys()) await this.stopSubagent(id);
+			const prevCwd = this.cwd;
+			for (const conv of this.conversations.values()) {
+				if (!conv.cwd) conv.cwd = prevCwd;
+			}
 			this.projectGeneration++;
 			this.cwd = path;
 			this.driver.setCwd(path);
 
-			this.conversations.clear();
-			this.sessionDrafts.clear();
 			const existing = this.store.listConversations(this.cwd);
 			if (existing.length > 0) {
 				for (const conv of existing) {
-					this.conversations.set(conv.id, conv);
+					if (!conv.cwd) conv.cwd = this.cwd;
+					if (!this.conversations.has(conv.id)) {
+						this.conversations.set(conv.id, conv);
+					}
 				}
 				this.activeConvId = existing[0].id;
 			} else {
-				const initialConv = this.createEmptyConversation("新对话");
-				this.activeConvId = initialConv.id;
-				this.conversations.set(initialConv.id, initialConv);
-				await this.store.saveConversation(this.cwd, initialConv);
+				const inMemForCwd = Array.from(this.conversations.values()).filter(
+					(c) => normalizePathKey(c.cwd ?? this.cwd) === normalizePathKey(this.cwd),
+				);
+				if (inMemForCwd.length > 0) {
+					this.activeConvId = inMemForCwd[0].id;
+				} else {
+					const initialConv = this.createEmptyConversation("新对话");
+					this.activeConvId = initialConv.id;
+					this.conversations.set(initialConv.id, initialConv);
+					await this.store.saveConversation(this.cwd, initialConv);
+				}
 			}
 
 			await this.refreshSessions();
@@ -2622,6 +2710,7 @@ export class UniversalSession implements DispatchSession {
 			planModePromptMode: "append",
 			planModePrompt: "",
 			planModeDefaultPrompt: "",
+			botDraftDefaultPrompt: "",
 			reviewPrompt: "",
 			reviewDisabledSkills: [],
 			disabledPlugins: s?.disabledPlugins ?? [],

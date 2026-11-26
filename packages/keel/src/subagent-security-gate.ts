@@ -1,6 +1,12 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { pick, type ServerLang } from "./i18n.js";
-import { bashCommandHasSupportedSyntax, bashCommandIsReadOnly, readOnlyToolCallAllowed } from "./plan-mode.js";
+import {
+	bashCommandHasSupportedSyntax,
+	bashCommandIsReadOnly,
+	propagateToolReadOnlyMeta,
+	readOnlyToolCallAllowed,
+	type ReadOnlyCheckContext,
+} from "./plan-mode.js";
 import { goalReviewBashAllowed } from "./goal-review-gate.js";
 import {
 	isReadOnlyConversationAction,
@@ -207,6 +213,7 @@ export function subagentSecurityDenial(
 	toolName: string,
 	params: unknown,
 	allowedTools?: Set<string>,
+	context?: ReadOnlyCheckContext,
 ): SubagentSecurityDenial | undefined {
 	const name = (toolName ?? "").trim();
 
@@ -300,7 +307,7 @@ export function subagentSecurityDenial(
 		return undefined;
 	}
 
-	if (!readOnlyToolCallAllowed(name, params)) {
+	if (!readOnlyToolCallAllowed(name, params, context)) {
 		return {
 			kind: "not-allowed-tool",
 			reason: `受限子代理（${mode}）：工具 "${name}" 的本次调用未声明为只读，已拒绝。请使用 read/grep 或结构化查询。`,
@@ -312,10 +319,14 @@ export function subagentSecurityDenial(
 
 export function withSubagentSecurityGate(
 	def: ToolDefinition,
-	getSecurityInfo: () => { mode?: SubagentSecurityMode; allowedTools?: Set<string> },
+	getSecurityInfo: () => {
+		mode?: SubagentSecurityMode;
+		allowedTools?: Set<string>;
+		readOnlyContext?: Omit<ReadOnlyCheckContext, "toolDef">;
+	},
 	getLang: () => ServerLang,
 ): ToolDefinition {
-	return {
+	return propagateToolReadOnlyMeta(def, {
 		...def,
 		execute: (async (...args: unknown[]) => {
 			const info = getSecurityInfo();
@@ -324,7 +335,10 @@ export function withSubagentSecurityGate(
 
 			if (mode !== "normal" || (allowedTools && allowedTools.size > 0)) {
 				const params = args[1];
-				const denied = subagentSecurityDenial(mode, def.name, params, allowedTools);
+				const denied = subagentSecurityDenial(mode, def.name, params, allowedTools, {
+					...info.readOnlyContext,
+					toolDef: def,
+				});
 				if (denied) {
 					return {
 						content: [{ type: "text", text: pick(getLang(), denied.reason, denied.reasonEn) }],
@@ -336,5 +350,5 @@ export function withSubagentSecurityGate(
 
 			return (def.execute as (...a: unknown[]) => unknown)(...args);
 		}) as ToolDefinition["execute"],
-	};
+	});
 }

@@ -1,25 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  pi-web-ui launchd agent — macOS auto-start at login.
+  keel launchd agent — macOS auto-start at login.
 
   Install:
-    npm i -g pi-web-ui
-    cp deploy/com.xingshuyin.pi-web-ui.plist ~/Library/LaunchAgents/
+    npm i -g keel-agent
+    cp deploy/com.xingshuyin.keel.plist ~/Library/LaunchAgents/
     # edit ProgramArguments / WorkingDirectory / PI_WEB_CWD for your setup
-    launchctl load ~/Library/LaunchAgents/com.xingshuyin.pi-web-ui.plist
-    # (or: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.xingshuyin.pi-web-ui.plist)
+    launchctl load ~/Library/LaunchAgents/com.xingshuyin.keel.plist
+    # (or: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.xingshuyin.keel.plist)
 
-  Find the pi-web-ui binary path with: which pi-web-ui
+  Find the keel binary path with: which keel
 -->
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.xingshuyin.pi-web-ui</string>
+  <string>com.xingshuyin.keel</string>
 
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/local/bin/pi-web-ui</string>
+    <string>/usr/local/bin/keel</string>
   </array>
 
   <key>RunAtLoad</key>
@@ -41,8 +41,8 @@
   </dict>
 
   <key>StandardOutPath</key>
-  <string>/tmp/pi-web-ui.log</string>
+  <string>/tmp/keel.log</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/pi-web-ui.err</string>
+  <string>/tmp/keel.err</string>
 </dict>
 </plist>

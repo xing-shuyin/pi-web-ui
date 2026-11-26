@@ -297,6 +297,7 @@ export interface DispatchSession {
 		quickAskThinking?: ThinkingLevel;
 		botDraftModel?: string | null;
 		botDraftThinking?: ThinkingLevel;
+		botDraftPrompt?: string;
 		quickAskSystemPrompt?: string;
 		quickAskExplainPrompt?: string;
 		quickAskTranslateModel?: import("./quick-ask-settings.js").QuickAskSettings["quickAskTranslateModel"];

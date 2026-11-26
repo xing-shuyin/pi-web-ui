@@ -6,6 +6,7 @@ import { runProcess } from "./run-process.js";
 import type { EngineStatus } from "./protocol.js";
 import { probeClaudeCode } from "./universal/drivers/claude-code.js";
 import { probeCodex } from "./universal/drivers/codex.js";
+import { probeAgy } from "./universal/drivers/agy.js";
 import {
 	compareVersions,
 	defaultFetcher,
@@ -42,6 +43,7 @@ const registryCache = new Map<string, RegistryCacheEntry>();
 interface EngineEntry {
 	status: EngineStatus;
 	probedAt: number;
+	installedAt?: number;
 	updating: boolean;
 	uninstalling: boolean;
 }
@@ -214,10 +216,22 @@ export async function probeDurable(force = false): Promise<EngineStatus> {
 	return { id: "durable", installed: false, packageName: pkgName };
 }
 
-export async function probeEngine(id: string, force = false): Promise<EngineStatus> {
+export async function probeEngine(
+	id: string,
+	force = false,
+	options?: { skipUpdateCheck?: boolean },
+): Promise<EngineStatus> {
 	const entry = engineRegistry.get(id);
-	if (!force && entry && entry.probedAt > 0 && Date.now() - entry.probedAt < CACHE_TTL_MS) {
-		return toPublicStatus(entry);
+	const now = Date.now();
+	if (!force && entry) {
+		if (options?.skipUpdateCheck) {
+			const freshAt = Math.max(entry.probedAt, entry.installedAt ?? 0);
+			if (freshAt > 0 && now - freshAt < CACHE_TTL_MS) {
+				return toPublicStatus(entry);
+			}
+		} else if (entry.probedAt > 0 && now - entry.probedAt < CACHE_TTL_MS) {
+			return toPublicStatus(entry);
+		}
 	}
 	let result: EngineStatus;
 	if (id === "pi") {
@@ -227,22 +241,45 @@ export async function probeEngine(id: string, force = false): Promise<EngineStat
 	} else if (id === "claude") {
 		result = await probeClaude(force);
 	} else if (id === "codex") {
-		const probe = await probeCodex();
+		const probe = await probeCodex(undefined, force);
 		result = {
 			id: "codex",
 			installed: probe.available,
 			version: probe.version,
 			packageName: ENGINE_PACKAGES.codex.packageName,
 		};
+	} else if (id === "agy") {
+		const probe = await probeAgy(undefined, force);
+		result = {
+			id: "agy",
+			installed: probe.available,
+			version: probe.version,
+		};
 	} else if (id === "durable") {
 		result = await probeDurable(force);
 	} else {
 		result = { id: id as any, installed: false };
 	}
+	if (options?.skipUpdateCheck) {
+		if (result.installed && entry?.status.latestVersion && result.version === entry.status.version) {
+			result.latestVersion = entry.status.latestVersion;
+			result.hasUpdate = entry.status.hasUpdate;
+		}
+		const updatedEntry: EngineEntry = {
+			status: result,
+			probedAt: entry?.probedAt ?? 0,
+			installedAt: Date.now(),
+			updating: entry?.updating ?? false,
+			uninstalling: entry?.uninstalling ?? false,
+		};
+		engineRegistry.set(id, updatedEntry);
+		return toPublicStatus(updatedEntry);
+	}
 	await enrichWithUpdateInfo(result, force);
 	const updatedEntry: EngineEntry = {
 		status: result,
 		probedAt: Date.now(),
+		installedAt: Date.now(),
 		updating: entry?.updating ?? false,
 		uninstalling: entry?.uninstalling ?? false,
 	};
@@ -257,7 +294,7 @@ export async function probeAllEngines(force = false): Promise<EngineStatus[]> {
 	if (!force && allFresh && entries.length > 0) {
 		return entries.map(toPublicStatus);
 	}
-	await Promise.all(Object.keys(ENGINE_PACKAGES).map((id) => probeEngine(id, force)));
+	await Promise.all([...Object.keys(ENGINE_PACKAGES), "agy"].map((id) => probeEngine(id, force)));
 	return Array.from(engineRegistry.values()).map(toPublicStatus);
 }
 

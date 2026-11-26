@@ -47,6 +47,14 @@ export function getEngineMetas(t: Translate): Record<CanvasEngineId, EngineMeta>
 			bgColor: "color-mix(in srgb, var(--amber, #f97316) 15%, transparent)",
 			desc: t("canvas.metadata.engine.claude.desc"),
 		},
+		agy: {
+			id: "agy",
+			name: "Antigravity",
+			badge: "AGY",
+			color: "var(--info-blue, #38bdf8)",
+			bgColor: "color-mix(in srgb, var(--info-blue, #38bdf8) 15%, transparent)",
+			desc: t("settingsEngineAgyDesc"),
+		},
 		durable: {
 			id: "durable",
 			name: t("canvas.metadata.engine.durable.name"),

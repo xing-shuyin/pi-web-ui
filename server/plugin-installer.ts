@@ -234,7 +234,7 @@ export class PluginInstaller {
 					"plugininstaller.busy",
 				),
 			};
-		const binPath = join(this.deps.pkgRoot, "bin", "pi-web-ui.mjs");
+		const binPath = join(this.deps.pkgRoot, "bin", "keel.mjs");
 		if (!existsSync(binPath))
 			return {
 				ok: false,

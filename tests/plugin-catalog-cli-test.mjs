@@ -5,7 +5,7 @@ import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const BIN = resolve(__dirname, "../bin/pi-web-ui.mjs");
+const BIN = resolve(__dirname, "../bin/keel.mjs");
 
 const { LC_ALL: _lcAll, LC_MESSAGES: _lcMessages, ...baseEnv } = process.env;
 const ZH_ENV = { ...baseEnv, LANG: "zh_CN.UTF-8" };

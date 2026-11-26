@@ -1,6 +1,6 @@
 
 [Unit]
-Description=pi-web-ui — web chat for the pi coding agent
+Description=keel — web chat for the pi coding agent
 After=network.target
 
 [Service]
@@ -8,7 +8,7 @@ Type=simple
 User=YOUR_USER
 WorkingDirectory=/home/YOUR_USER
 Environment=PI_WEB_PORT=8787
-ExecStart=/usr/bin/pi-web-ui
+ExecStart=/usr/bin/keel
 Restart=on-failure
 RestartSec=5
 

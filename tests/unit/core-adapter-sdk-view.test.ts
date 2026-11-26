@@ -47,9 +47,40 @@ describe("adapters/sdk · 会话 → 对话可见面", () => {
 		expect(projectSessionMessages(makeSession({ messages: [] }))).toEqual([]);
 	});
 
-	it("流式消息只在 isStreaming 时给", () => {
+	it("流式消息只在 isStreaming 且 agent.state.streamingMessage 存在时给，不回落重复投影已落盘的末尾 assistant", () => {
 		expect(projectStreamingMessage(makeSession({ isStreaming: false }))).toBeNull();
 		expect(projectStreamingMessage(undefined)).toBeNull();
+		// 工具执行期：isStreaming=true，assistant 带 toolCall 已进 session.messages，agent.state.streamingMessage 已清空
+		const toolCallTurn = makeSession({
+			isStreaming: true,
+			messages: [
+				{ role: "user", content: "跑个命令", timestamp: 1_000 },
+				{
+					role: "assistant",
+					content: [{ type: "toolCall", id: "tc-1", name: "bash", arguments: { command: "ls" } }],
+					timestamp: 2_000,
+				},
+			],
+		});
+		expect(projectStreamingMessage(toolCallTurn)).toBeNull();
+
+		const activeStreaming = makeSession({
+			isStreaming: true,
+			agent: {
+				state: {
+					streamingMessage: {
+						role: "assistant",
+						content: [{ type: "text", text: "输出中" }],
+						timestamp: 3_000,
+					},
+				},
+			},
+		} as Partial<TurnCapableSession>);
+		expect(projectStreamingMessage(activeStreaming)).toMatchObject({
+			id: "stream-3000",
+			role: "assistant",
+			content: [{ type: "text", text: "输出中" }],
+		});
 	});
 
 	it("模型字段按 SDK 实际字段映射，缺 id 返回 null", () => {

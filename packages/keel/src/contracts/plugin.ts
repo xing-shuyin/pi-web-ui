@@ -89,6 +89,18 @@ export interface PluginAgentTool {
 	parameters?: Record<string, unknown>;
 	namespace?: { name: string; description?: string; instructions?: string };
 	exposure?: "direct" | "model-only" | "codemode" | "deferred" | "hidden";
+	/**
+	 * 声明工具是否为只读：
+	 * - `boolean`：静态只读 / 非只读；
+	 * - 函数：按本次调用参数动态判定（如按 `action` / `op` 区分读写）；
+	 * - 缺省：未声明（在只读模式 / 只读子代理下默认拒绝）。
+	 */
+	readOnly?: boolean | ((params: Record<string, unknown>) => boolean);
+	/**
+	 * 外部工具（如 MCP `annotations.readOnlyHint`）提供的非受信任只读提示：
+	 * 仅当服务器/工具被信任时才生效，不直接等同于受信任的 `readOnly`。
+	 */
+	readOnlyHint?: boolean;
 	execute(
 		toolCallId: string,
 		params: Record<string, unknown>,

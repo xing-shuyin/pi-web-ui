@@ -33,6 +33,7 @@ export interface AppGlobals {
 	ready: boolean;
 	cwd: string;
 	workspaceRoots: string[];
+	pathCompletions: { name: string; path: string; type: "dir" | "file" }[];
 	homeDir: string;
 	desktopDir: string;
 	chatUploadMaxMb: number;
@@ -49,6 +50,7 @@ export const DEFAULT_APP_GLOBALS: AppGlobals = {
 	ready: false,
 	cwd: "",
 	workspaceRoots: [],
+	pathCompletions: [],
 	homeDir: "",
 	desktopDir: "",
 	chatUploadMaxMb: 20,
@@ -92,6 +94,7 @@ function same(a: AppGlobals, b: AppGlobals): boolean {
 		a.ready === b.ready &&
 		a.cwd === b.cwd &&
 		sameArray(a.workspaceRoots, b.workspaceRoots) &&
+		a.pathCompletions === b.pathCompletions &&
 		a.homeDir === b.homeDir &&
 		a.desktopDir === b.desktopDir &&
 		a.chatUploadMaxMb === b.chatUploadMaxMb &&

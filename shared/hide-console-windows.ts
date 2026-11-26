@@ -4,7 +4,7 @@
  * 装插件时 git 黑窗闪一下。Node 的 `windowsHide: true` 关掉的就是这扇窗，但它是个「每个调用点都得写」
  * 的逐点开关，漏一处就回归（POSIX 上又是纯 no-op）。
  *
- * 这里把它收敛成一个进程级开关：**在三个进程根各 import 一次**（`server/index.ts`、`bin/pi-web-ui.mjs`、
+ * 这里把它收敛成一个进程级开关：**在三个进程根各 import 一次**（`server/index.ts`、`bin/keel.mjs`、
  * `desktop/main.ts`），之后所有 `spawn` / `spawnSync` / `exec` / `execSync` / `execFile` / `execFileSync` /
  * `fork` 调用（含宿主内经 `import()` 加载的插件代码）自动带 `windowsHide: true`，调用点不必再逐个写。
  *

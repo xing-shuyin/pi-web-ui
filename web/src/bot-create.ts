@@ -1,4 +1,7 @@
+import { appSend } from "./app-globals";
 import { DEVICE_GROUPS_CHANGED, DeviceGroupRequestError, deviceGroupRequest } from "./components/DeviceGroupSection";
+import { requestNewChat } from "./new-chat-request";
+import type { ClientMessage } from "./types";
 
 /**
  * 「新建智能体」的两个入口（单源）。
@@ -15,6 +18,61 @@ export interface BotDraftResult {
 	name: string;
 	description?: string;
 	rationale?: string;
+}
+
+export const BOT_DRAFT_REQUEST_MAX = 2000;
+
+const FALLBACK_BOT_DRAFT_PROMPT = [
+	"请根据以下需求为我设计并起草一个智能体（Bot）：",
+	"{{request}}",
+	"",
+	'调用 agent_bot 工具（op="draft"）生成智能体草案',
+].join("\n");
+
+/**
+ * 组装发送给正式对话的「起草智能体」指令：
+ * 优先使用用户在设置中自定义的提示词模板，空则回退到默认模板；
+ * 支持 `{{request}}` / `{{input}}` 占位符，若模板中未写占位符则自动附加在末尾。
+ */
+export function buildBotDraftPrompt(template: string, defaultTemplate: string, request: string): string {
+	const cleanRequest = request.trim();
+	const base = template.trim() || defaultTemplate.trim() || FALLBACK_BOT_DRAFT_PROMPT;
+	if (base.includes("{{request}}") || base.includes("{{input}}")) {
+		return base.replaceAll("{{request}}", cleanRequest).replaceAll("{{input}}", cleanRequest);
+	}
+	return cleanRequest ? `${base}\n\n${cleanRequest}` : base;
+}
+
+/**
+ * 在正式普通对话中发起智能体起草：
+ * 新建一个普通对话（复用当前工作区与默认模型/全部工具），并发送起草指令。
+ */
+export async function startBotDraftChat(
+	request: string,
+	opts?: {
+		promptTemplate?: string;
+		defaultTemplate?: string;
+		cwd?: string | null;
+		send?: (message: ClientMessage) => boolean;
+	},
+): Promise<string> {
+	const sentence = request.trim();
+	if (!sentence) {
+		throw new DeviceGroupRequestError(400, "DRAFT_REQUEST_EMPTY", "Describe the Bot in one sentence first");
+	}
+	if (sentence.length > BOT_DRAFT_REQUEST_MAX) {
+		throw new DeviceGroupRequestError(400, "DRAFT_REQUEST_TOO_LONG", "Describe the Bot in 2000 characters or less");
+	}
+	const send = opts?.send ?? appSend;
+	const conversationId = await requestNewChat(send, 8000, opts?.cwd ?? undefined);
+	if (!conversationId) {
+		throw new DeviceGroupRequestError(502, "DRAFT_FAILED", "Failed to start a new conversation");
+	}
+	const text = buildBotDraftPrompt(opts?.promptTemplate ?? "", opts?.defaultTemplate ?? "", sentence);
+	if (!send({ type: "prompt", text, targetConversationId: conversationId })) {
+		throw new DeviceGroupRequestError(502, "DRAFT_FAILED", "Failed to send prompt");
+	}
+	return conversationId;
 }
 
 /** 一句话 → 草案。只产草案，不创建。 */
@@ -90,4 +148,17 @@ export function requestBotCreate(): void {
 export function subscribeBotCreateRequest(handler: () => void): () => void {
 	window.addEventListener(EVENT, handler);
 	return () => window.removeEventListener(EVENT, handler);
+}
+
+const AI_DRAFT_EVENT = "pi-web-ui:bot-ai-draft";
+
+/** 触发「在主对话输入框中用 AI 创建智能体」模式（在输入框上方挂载引用标识并聚焦）。 */
+export function requestBotAiDraftMode(): void {
+	window.dispatchEvent(new CustomEvent(AI_DRAFT_EVENT));
+}
+
+export function subscribeBotAiDraftMode(handler: () => void): () => void {
+	const listener = () => handler();
+	window.addEventListener(AI_DRAFT_EVENT, listener);
+	return () => window.removeEventListener(AI_DRAFT_EVENT, listener);
 }

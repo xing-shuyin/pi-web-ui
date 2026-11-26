@@ -374,7 +374,7 @@ if (args.includes("--background")) {
 		await checkpoint("Published baseline is running as a real service; account, device, Bot and group exist", {
 			version: baselineManifest.version,
 		});
-		await run([join(root, "bin/pi-web-ui.mjs"), "hub", "update"]);
+		await run([join(root, "bin/keel.mjs"), "hub", "update"]);
 		const firstHealth = (await request("/health")).result;
 		assert.equal(firstHealth.version, candidateManifest.version);
 		assert.equal(typeof firstHealth.bootId, "string");

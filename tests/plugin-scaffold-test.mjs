@@ -11,7 +11,7 @@ const PORT = 8960;
 const BASE = `http://127.0.0.1:${PORT}`;
 const NODE = realpathSync(process.execPath);
 const REPO = fileURLToPath(new URL("..", import.meta.url));
-const CLI = join(REPO, "bin", "pi-web-ui.mjs");
+const CLI = join(REPO, "bin", "keel.mjs");
 const TEMPLATES = ["minimal", "ui-slot", "agent-tool", "renderer"];
 const SDK_TEMPLATES = TEMPLATES.filter((t) => t !== "renderer");
 

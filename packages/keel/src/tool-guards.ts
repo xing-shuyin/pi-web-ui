@@ -4,7 +4,7 @@ import {
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { pick, type ServerLang } from "./i18n.js";
-import { planModeDenial } from "./plan-mode.js";
+import { planModeDenial, propagateToolReadOnlyMeta, type ReadOnlyCheckContext } from "./plan-mode.js";
 import { goalReviewDenial } from "./goal-review-gate.js";
 import { delegationDenial } from "./delegate-mode.js";
 import { extractTargetPath, type ApprovalRule } from "./approval-rules.js";
@@ -65,14 +65,18 @@ export function withPlanModeGate(
 	def: ToolDefinition,
 	planMode: () => boolean,
 	getLang: () => ServerLang,
+	getReadOnlyContext?: () => Omit<ReadOnlyCheckContext, "toolDef"> | undefined,
 ): ToolDefinition {
-	return {
+	return propagateToolReadOnlyMeta(def, {
 		...def,
 		execute: (async (...args: unknown[]) => {
 			checkCancellation(args[2]);
 			if (planMode()) {
 				const params = args[1];
-				const denied = planModeDenial(def.name, params);
+				const denied = planModeDenial(def.name, params, {
+					...getReadOnlyContext?.(),
+					toolDef: def,
+				});
 				if (denied) {
 					const reason = pick(getLang(), denied.reason, denied.reasonEn);
 					const err = new Error(reason);
@@ -87,7 +91,7 @@ export function withPlanModeGate(
 			checkCancellation(args[2]);
 			return (def.execute as (...a: unknown[]) => unknown)(...args);
 		}) as ToolDefinition["execute"],
-	};
+	});
 }
 
 export function withGoalReviewGate(
@@ -215,7 +219,7 @@ export function withDelegationGate(
 	delegateMode: () => boolean,
 	getLang: () => ServerLang,
 ): ToolDefinition {
-	return {
+	return propagateToolReadOnlyMeta(def, {
 		...def,
 		execute: (async (...args: unknown[]) => {
 			checkCancellation(args[2]);
@@ -233,7 +237,7 @@ export function withDelegationGate(
 			checkCancellation(args[2]);
 			return (def.execute as (...a: unknown[]) => unknown)(...args);
 		}) as ToolDefinition["execute"],
-	};
+	});
 }
 
 export function makeLateToolGuard(get: () => ToolGuardHook | undefined): ToolGuardHook {
@@ -253,7 +257,8 @@ export function withToolGuard(
 		cwd?: string;
 		getRoots?: () => string[];
 		askApproval?: AskApprovalFn;
-		getRules?: () => ApprovalRule[];
+		getRules?: () => ApprovalRule[] | undefined;
+		isApprovalEnabled?: () => boolean;
 		onAudit?: ToolAuditRecordFn;
 	},
 ): ToolDefinition {
@@ -282,8 +287,9 @@ export function withToolGuard(
 			let approvalReasonEn: string | undefined;
 			let approvalCategory: UiApprovalCategory | undefined;
 
+			const approvalEnabled = opts.isApprovalEnabled ? opts.isApprovalEnabled() : true;
 			let danger: ReturnType<typeof checkDangerousToolCall> | undefined;
-			if (opts.cwd && opts.askApproval) {
+			if (approvalEnabled && opts.cwd && opts.askApproval) {
 				danger = checkDangerousToolCall(toolName, params, opts.cwd, opts.getRoots?.() ?? [], opts.getRules?.());
 				if (danger.denied) {
 					opts.onAudit?.({
@@ -326,7 +332,7 @@ export function withToolGuard(
 				approvalReasonEn = danger.reasonEn;
 				approvalCategory = danger.category;
 				approvalHits = danger.hits;
-			} else if (pre?.verdict.decision === "ask") {
+			} else if (approvalEnabled && pre?.verdict.decision === "ask") {
 				needApproval = true;
 				approvalReason = pre.verdict.reason ?? "插件要求确认本次操作";
 				approvalReasonEn = pre.verdict.reasonEn ?? "Plugin requested confirmation for this operation";
@@ -365,7 +371,7 @@ export function withToolGuard(
 					effectiveParams = res.editedParams ?? params;
 					userEdited = true;
 				}
-			} else if (pre?.verdict.decision === "ask") {
+			} else if (approvalEnabled && pre?.verdict.decision === "ask") {
 				const text = denialText(pre.verdict, pre.pluginId ?? "plugin", lang);
 				return {
 					content: [{ type: "text", text }],
@@ -721,7 +727,8 @@ export function wrapPatchToolWithPermission(
 	getLang: () => ServerLang,
 	askApproval?: AskApprovalFn,
 	getConversationId?: () => string | undefined,
-	getRules?: () => ApprovalRule[],
+	getRules?: () => ApprovalRule[] | undefined,
+	isApprovalEnabled?: () => boolean,
 ): ToolDefinition {
 	return {
 		...tool,
@@ -784,7 +791,8 @@ export function wrapPatchToolWithPermission(
 
 			let effectiveParams = params;
 			let userEdited = false;
-			if (askApproval) {
+			const approvalEnabled = isApprovalEnabled ? isApprovalEnabled() : true;
+			if (approvalEnabled && askApproval) {
 				let denied: ReturnType<typeof checkDangerousToolCall> | undefined;
 				let asked: ReturnType<typeof checkDangerousToolCall> | undefined;
 				let askedPath = "";

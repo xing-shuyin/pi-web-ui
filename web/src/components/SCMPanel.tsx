@@ -805,38 +805,19 @@ export function ScmPanel({
 			startMarker: string,
 			endMarker: string,
 			onCaptured: (text: string) => void,
+			onFallback?: () => void,
 		) => {
-			if (!chat.ready) return;
+			if (!chat.ready) {
+				onFallback?.();
+				return;
+			}
 			const convId = chat.activeConversationId || chat.state?.conversationId || "";
 			const command = `echo ${startMarker}; ${innerCommand}; echo ${endMarker}`;
 			const def: CommandDef = { name: title, command, cwd: "${pwd}" };
-			let targetId: string;
 			const existing = chat.terminals.find((tm) => tm.title === title);
-			if (existing) {
-				terminal.restart(existing.id);
-				appSend({
-					type: "run_command",
-					terminalId: existing.id,
-					conversationId: existing.conversationId,
-					command: def,
-					cols: 120,
-					rows: 24,
-				});
-				targetId = existing.id;
-			} else {
-				targetId = randomUuid();
-				terminal.create({
-					id: targetId,
-					conversationId: convId,
-					title,
-					cwd: chat.state?.cwd ?? "",
-					cols: 120,
-					rows: 24,
-					running: true,
-					exitCode: null,
-					command: def,
-				});
-			}
+			const targetId = existing ? existing.id : randomUuid();
+			const registerConvId = existing ? existing.conversationId : convId;
+
 			let buf = "";
 			let done = false;
 			let unsub: (() => void) | null = null;
@@ -849,18 +830,17 @@ export function ScmPanel({
 				onCaptured(text);
 			};
 			try {
-				unsub = terminal.register(convId, targetId, {
+				unsub = terminal.register(registerConvId, targetId, {
 					write(data: string) {
 						if (done) return;
 						buf += data;
 						if (buf.length > 2_000_000) buf = buf.slice(-2_000_000);
-						// marker 必须是“独占一行”：终端会把整条命令回显一遍，两个 marker 就躺在同一行里，
-						// 用 indexOf/includes 会在回显那一刻就收工，把命令行本身当成输出
-						// （追溯 / 储藏列表因此长期解析不出任何行）。真正的 echo 输出是单独一行。
-						const lines = stripAnsiForScm(buf).split("\n");
+						// 终端会把整条命令回显一遍（两个 marker 在同一行），因此排除同时包含两个 marker 的行。
+						const lines = stripAnsiForScm(buf).split(/\r?\n/);
 						let start = -1;
 						for (let i = lines.length - 1; i >= 0; i--) {
-							if (lines[i].trim() === startMarker) {
+							const ln = lines[i];
+							if (ln.includes(startMarker) && !ln.includes(endMarker)) {
 								start = i;
 								break;
 							}
@@ -868,7 +848,8 @@ export function ScmPanel({
 						if (start < 0) return;
 						let end = -1;
 						for (let i = start + 1; i < lines.length; i++) {
-							if (lines[i].trim() === endMarker) {
+							const ln = lines[i];
+							if (ln.includes(endMarker) && !ln.includes(startMarker)) {
 								end = i;
 								break;
 							}
@@ -879,12 +860,38 @@ export function ScmPanel({
 					dispose() {},
 				});
 			} catch {}
+
+			if (existing) {
+				terminal.restart(existing.id);
+				appSend({
+					type: "run_command",
+					terminalId: existing.id,
+					conversationId: existing.conversationId,
+					command: def,
+					cols: 120,
+					rows: 24,
+				});
+			} else {
+				terminal.create({
+					id: targetId,
+					conversationId: convId,
+					title,
+					cwd: chat.state?.cwd ?? "",
+					cols: 120,
+					rows: 24,
+					running: true,
+					exitCode: null,
+					command: def,
+				});
+			}
+
 			window.setTimeout(() => {
 				if (!done) {
 					done = true;
 					try {
 						unsub?.();
 					} catch {}
+					onFallback?.();
 				}
 			}, 15000);
 		},
@@ -903,8 +910,8 @@ export function ScmPanel({
 				setStashList(parseStashListText(text));
 				setStashLoading(false);
 			},
+			() => setStashLoading(false),
 		);
-		window.setTimeout(() => setStashLoading(false), 16000);
 	}, [notRepo, runGitCapture]);
 
 	const handleStashSave = useCallback(
@@ -1513,39 +1520,46 @@ export function ScmPanel({
 				{status && status.behind > 0 && <span className="scm-sync-count">↓{status.behind}</span>}
 			</button>
 		),
-		"host:scm-input": (
-			<input
-				className="scm-commit-input"
-				value={commitMsg}
-				placeholder={t("scmCommitPlaceholder")}
-				disabled={notRepo}
-				title={commitHistory.length > 0 ? t("scmCommitHistoryTip") : undefined}
-				onChange={(e) => {
-					setCommitMsg(e.target.value);
-					recallRef.current = COMMIT_RECALL_INITIAL;
-				}}
-				onKeyDown={(e) => {
-					if (e.nativeEvent.isComposing) return;
-					if (e.key === "Enter") {
-						handleCommit();
-						return;
-					}
-					if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-						const hit = cycleCommitRecall(
-							commitHistory,
-							recallRef.current,
-							commitMsg,
-							e.key === "ArrowUp" ? "up" : "down",
-						);
-						if (hit) {
-							e.preventDefault();
-							recallRef.current = hit.state;
-							setCommitMsg(hit.text);
+		"host:scm-input": (() => {
+			const parts: string[] = [];
+			if (stagedSummary.count > 0) parts.push(t("scmCommitMetaCount", { count: stagedSummary.count }));
+			if (commitTarget) parts.push(commitTarget);
+			const commitPlaceholder =
+				parts.length > 0 ? `${t("scmCommitPlaceholder")} (${parts.join(" · ")})` : t("scmCommitPlaceholder");
+			return (
+				<input
+					className="scm-commit-input"
+					value={commitMsg}
+					placeholder={commitPlaceholder}
+					disabled={notRepo}
+					title={commitHistory.length > 0 ? t("scmCommitHistoryTip") : undefined}
+					onChange={(e) => {
+						setCommitMsg(e.target.value);
+						recallRef.current = COMMIT_RECALL_INITIAL;
+					}}
+					onKeyDown={(e) => {
+						if (e.nativeEvent.isComposing) return;
+						if (e.key === "Enter") {
+							handleCommit();
+							return;
 						}
-					}
-				}}
-			/>
-		),
+						if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+							const hit = cycleCommitRecall(
+								commitHistory,
+								recallRef.current,
+								commitMsg,
+								e.key === "ArrowUp" ? "up" : "down",
+							);
+							if (hit) {
+								e.preventDefault();
+								recallRef.current = hit.state;
+								setCommitMsg(hit.text);
+							}
+						}
+					}}
+				/>
+			);
+		})(),
 		"host:scm-genmsg": (
 			<button
 				type="button"
@@ -1644,7 +1658,7 @@ export function ScmPanel({
 			</div>
 
 			<div
-				className={`scm-body${viewMode === "stash" ? " stash-mode" : ""}${selected || selectedCommit ? " detail-mode" : ""}`}
+				className={`scm-body${viewMode === "stash" ? " stash-mode" : ""}${selected || selectedCommit ? " detail-mode" : ""}${notRepo ? " not-repo" : ""}`}
 				ref={bodyRef}
 				style={{ "--scm-sidebar-w": `${sidebarWidth}px` } as CSSProperties}
 			>
@@ -2033,18 +2047,6 @@ export function ScmPanel({
 			<div className="gd-commit-bar">
 				<div className="commit-box">
 					{renderMergedToolbar(scmZone(["host:scm-input"], false), scmHostNodes, onUiAction)}
-					<div className="scm-commit-meta">
-						<span>
-							{stagedSummary.count === 0
-								? t("scmCommitNothingStaged")
-								: t("scmCommitMetaCount", { count: stagedSummary.count })}
-							{stagedSummary.add > 0 && <span className="add"> · +{stagedSummary.add}</span>}
-							{stagedSummary.del > 0 && <span className="del"> · −{stagedSummary.del}</span>}
-						</span>
-						{commitTarget && (
-							<span className="scm-commit-target">{t("scmCommitTarget", { branch: commitTarget })}</span>
-						)}
-					</div>
 					<div className="commit-row">
 						{renderMergedToolbar(scmZone(["host:scm-genmsg"], false), scmHostNodes, onUiAction)}
 						<span style={{ marginLeft: "auto", display: "inline-flex", gap: 4 }}>

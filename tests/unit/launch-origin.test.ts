@@ -45,7 +45,11 @@ describe("detectLaunchOrigin", () => {
 		});
 	});
 
-	it("macOS：launchd 设的 XPC_SERVICE_NAME 认出我们生成的 label", () => {
+	it("macOS：launchd 设的 XPC_SERVICE_NAME 认出我们生成的 label（含旧版兼容）", () => {
+		expect(detectLaunchOrigin({ env: { XPC_SERVICE_NAME: "com.xingshuyin.keel" }, platform: "darwin" })).toEqual({
+			supervisor: "launchd",
+			name: "pi-web-ui",
+		});
 		expect(detectLaunchOrigin({ env: { XPC_SERVICE_NAME: "com.xingshuyin.pi-web-ui" }, platform: "darwin" })).toEqual({
 			supervisor: "launchd",
 			name: "pi-web-ui",

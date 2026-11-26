@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
+import { createCoreSettingsAdapter } from "../../server/core-settings-adapter.js";
 import {
 	DEFAULT_COMPACTION_RESERVE_TOKENS,
 	effectiveSoftCap,
@@ -99,5 +103,53 @@ describe("softCapReserveFor（注入 SDK 的 reserveTokens，issue #773）", () 
 		expect(softCapReserveFor(1_000_000, 22_049, 20_000)).toBe(1_000_000 - 22_049);
 		expect(softCapReserveFor(1_000_000, 20_000)).toBe(980_000);
 		expect(softCapReserveFor(1_000_000, 20_000, Number.NaN)).toBe(980_000);
+	});
+});
+
+describe("createCoreSettingsAdapter.applyCompactionOverrides", () => {
+	it("applies calculated reserveTokens to an explicitly passed session (e.g. on open or model switch)", () => {
+		const dataDir = mkdtempSync(join(tmpdir(), "soft-cap-adapter-"));
+		try {
+			const applyOverrides = vi.fn();
+			const targetSession = {
+				model: { provider: "openai", id: "gpt-4o", contextWindow: 128_000 },
+				settingsManager: {
+					getCompactionKeepRecentTokens: () => 20_000,
+					applyOverrides,
+				},
+			};
+			const adapter = createCoreSettingsAdapter({
+				clientId: "c1",
+				cwd: dataDir,
+				agentDir: dataDir,
+				stateStore: {
+					dataDir,
+					get: () => ({ locale: "zh" }),
+					getPresets: () => ({}),
+					getSettings: () => ({
+						softCapTokens: 64_000,
+						softCapByModel: {},
+						retryMaxAttempts: 2,
+						steeringMode: "one-at-a-time",
+						followUpMode: "one-at-a-time",
+					}),
+				} as any,
+				emit: () => {},
+				flushSnapshot: () => {},
+				isDisposed: () => false,
+				isClosed: () => false,
+				getSession: () => {
+					throw new Error("no active session");
+				},
+				getApprovalPolicy: () => ({ allowAll: false, categories: [] }),
+				isStreaming: () => false,
+				lang: { get: () => "zh", set: () => {} } as any,
+			});
+
+			adapter.applyCompactionOverrides?.(targetSession);
+			expect(applyOverrides).toHaveBeenCalledWith({ compaction: { reserveTokens: 64_000 } });
+		} finally {
+			rmSync(dataDir, { recursive: true, force: true });
+		}
 	});
 });

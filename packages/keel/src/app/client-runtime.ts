@@ -32,7 +32,7 @@ import { piSessionsRoot } from "../session-search.js";
 import { resolveWorkspaceSessionDir } from "../remote-workspace.js";
 import { TurnRunner, type TurnRunnerDeps } from "../domains/turns/index.js";
 import type { SessionListScanState } from "../session-list-scan.js";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve as resolveFsPath } from "node:path";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
 import type { SessionRegistry } from "./session-registry.js";
 import type { BashKills } from "../domains/background/index.js";
@@ -403,6 +403,19 @@ export class ClientRuntime {
 		} catch {
 			// 算不出来（宿主没给 dataDir / SDK 目录推不出来）就用学到的那个。
 			return this.historyRootPath;
+		}
+	}
+	/**
+	 * 任意目标项目的会话目录（侧栏展开非当前项目时也要能扫历史列表）。
+	 * 目标是当前工作区时复用 `historyRoot()`；其它项目按同一公式推导。
+	 */
+	historyRootFor(targetCwd: string): string | undefined {
+		if (resolveFsPath(targetCwd) === resolveFsPath(this.workspaceCwd)) return this.historyRoot();
+		try {
+			const base = resolveWorkspaceSessionDir(this.options.stateStore?.()?.dataDir, targetCwd);
+			return sessionDirOfBase(base) ?? undefined;
+		} catch {
+			return undefined;
 		}
 	}
 	historyState(): Map<string, SessionListScanState> {

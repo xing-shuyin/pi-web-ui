@@ -1,6 +1,6 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { appResourceCrossOrigin } from "../base-url";
-import { FiList, FiSquare, FiPaperclip, FiArrowUp, FiBookOpen, FiMic, FiCamera, FiTarget } from "react-icons/fi";
+import { FiList, FiSquare, FiPaperclip, FiArrowUp, FiBookOpen, FiMic, FiCamera, FiTarget, FiCpu } from "react-icons/fi";
 import type {
 	FileSearchResult,
 	GoalStatus,
@@ -31,7 +31,14 @@ import {
 } from "../composer-bridge";
 import { shouldSkipInsertion } from "../composer-insert";
 import { attachmentKey, goalMaterialsOf, hasSendableContent, sendBlockedReason } from "../composer-gate";
-import { setGoalCompose, setGoalPlan, useGoalCompose, useGoalPlan, useGoalRefine } from "../goal-compose";
+import {
+	setGoalCompose,
+	setGoalPanelOpen,
+	setGoalPlan,
+	useGoalCompose,
+	useGoalPlan,
+	useGoalRefine,
+} from "../goal-compose";
 import { caretVisualLineFlags } from "../caret-visual-line";
 import { isRasterImage } from "../image-paste";
 import { collectClipboardFiles } from "../clipboard-files";
@@ -62,6 +69,7 @@ import { ModelThinking } from "./ModelThinking";
 import { SystemScreenshotButton } from "./SystemScreenshotButton";
 import { groupConversationHits, groupMessageTargets } from "../device-group-messages";
 import { subscribeBotReference } from "../bot-reference";
+import { buildBotDraftPrompt, startBotDraftChat, subscribeBotAiDraftMode } from "../bot-create";
 import {
 	insertGroupMember,
 	registerGroupMemberSink,
@@ -174,6 +182,10 @@ interface ChatInputProps {
 	sessionId?: string;
 	preserveDraftAcrossConversations?: boolean;
 	goal?: GoalStatus | null;
+	goalModeEnabled?: boolean;
+	botDraftPrompt?: string;
+	botDraftDefaultPrompt?: string;
+	activeBotId?: string | null;
 }
 
 export const ChatInput = memo(function ChatInput({
@@ -225,6 +237,10 @@ export const ChatInput = memo(function ChatInput({
 	sessionId,
 	preserveDraftAcrossConversations = false,
 	goal,
+	goalModeEnabled = true,
+	botDraftPrompt,
+	botDraftDefaultPrompt,
+	activeBotId,
 }: ChatInputProps) {
 	const t = useT();
 	const localReady = useAppField("ready");
@@ -232,17 +248,22 @@ export const ChatInput = memo(function ChatInput({
 	const isDsh = useIsDsh();
 	const capabilities = useEngineCapabilities();
 	const effectivePlanMode = Boolean(planMode && capabilities.planMode);
+	const [botDraftMode, setBotDraftMode] = useState(false);
 	const goalCompose = useGoalCompose();
 	const goalRefine = useGoalRefine();
 	const goalPlan = useGoalPlan();
 	const goalActive = Boolean(goal?.goal) || Boolean(goal?.wizard?.active);
-	const goalMode = !groupDevices && goalCompose && !goalActive;
-	// 目标已在跑 / 换对话时退出撰写态，否则占位符会一直挂着「输入要达成的目标…」
+	const goalMode = goalModeEnabled && !groupDevices && goalCompose && !goalActive;
+	// 目标已在跑 / 关闭目标模式 / 换对话时退出撰写态与面板，否则占位符会一直挂着「输入要达成的目标…」
 	useEffect(() => {
-		if (goalActive) setGoalCompose(false);
-	}, [goalActive]);
+		if (goalActive || !goalModeEnabled) {
+			setGoalCompose(false);
+			setGoalPanelOpen(false);
+		}
+	}, [goalActive, goalModeEnabled]);
 	useEffect(() => {
 		setGoalCompose(false);
+		setGoalPanelOpen(false);
 	}, [conversationId]);
 	const { locale } = useI18n();
 	const effectiveSendKey = useEffectiveSendKey(IS_TOUCH);
@@ -489,6 +510,15 @@ export const ChatInput = memo(function ChatInput({
 			});
 		});
 	}, [sessionId, Boolean(groupDevices)]);
+	useEffect(
+		() =>
+			subscribeBotAiDraftMode(() => {
+				setBotDraftMode(true);
+				window.setTimeout(() => taRef.current?.focus(), 0);
+			}),
+		[],
+	);
+
 	// 「引用到对话」：左栏智能体右键 → 把这个 Bot 作为 @ 目标塞进输入框。
 	// 群组房间里必须落成成员 chip（`@名字(id)`），否则 @ 不是发送目标；主对话里就是一句普通文本。
 	useEffect(
@@ -1078,13 +1108,10 @@ export const ChatInput = memo(function ChatInput({
 
 	const attachRowRef = useRef<HTMLDivElement>(null);
 	const quickRowRef = useRef<HTMLDivElement>(null);
-	const goalHintRef = useRef<HTMLDivElement>(null);
 	useEffect(() => {
-		// 输入框上方的带子只有一个单源：附件行 / 快捷短语行 / 目标用法提示行，谁在就量谁，
+		// 输入框上方的带子只有一个单源：附件行 / 快捷短语行，谁在就量谁，
 		// 相邻间距 6px 与 CSS 的 margin-bottom 对齐（`--composer-strip` 由它算出来）。
-		const rows = [attachRowRef.current, quickRowRef.current, goalHintRef.current].filter(
-			(el): el is HTMLDivElement => el !== null,
-		);
+		const rows = [attachRowRef.current, quickRowRef.current].filter((el): el is HTMLDivElement => el !== null);
 		const root = document.documentElement;
 		if (rows.length === 0) {
 			root.style.removeProperty("--quick-row-h");
@@ -1101,7 +1128,7 @@ export const ChatInput = memo(function ChatInput({
 			ro.disconnect();
 			root.style.removeProperty("--quick-row-h");
 		};
-	}, [attachments.length, quickPhrasesEnabled, quickPhrases.length, goalMode]);
+	}, [attachments.length, quickPhrasesEnabled, quickPhrases.length]);
 
 	const buildPromptAttachments = () =>
 		attachments.map((a) => {
@@ -1290,6 +1317,50 @@ export const ChatInput = memo(function ChatInput({
 			clearDraftAfterConsume();
 			taRef.current?.focus();
 			void copyLastAssistant();
+			return;
+		}
+		if (botDraftMode) {
+			if (!trimmed) return;
+			if (activeBotId) {
+				void startBotDraftChat(trimmed, {
+					promptTemplate: botDraftPrompt,
+					defaultTemplate: botDraftDefaultPrompt,
+					cwd,
+				}).catch((err: unknown) => {
+					onNotice("error", err instanceof Error ? err.message : String(err));
+				});
+				pushPromptHistory(trimmed);
+				historyIndexRef.current = -1;
+				draftRef.current = "";
+				setText("");
+				clearDraftAfterConsume();
+				setBotDraftMode(false);
+				onSent();
+				taRef.current?.focus();
+				return;
+			}
+			const promptText = buildBotDraftPrompt(botDraftPrompt ?? "", botDraftDefaultPrompt ?? "", trimmed);
+			if (
+				appSend({
+					type: "prompt",
+					text: promptText,
+					queue,
+					attachments: buildPromptAttachments(),
+				})
+			) {
+				pushPromptHistory(trimmed);
+				historyIndexRef.current = -1;
+				draftRef.current = "";
+				setText("");
+				clearDraftAfterConsume();
+				setBotDraftMode(false);
+				onSent();
+				const m = modelState?.model;
+				if (m) recordModelUsage(`${m.provider}/${m.id}`);
+				taRef.current?.focus();
+			} else {
+				onNotice("error", t("netDisconnected"));
+			}
 			return;
 		}
 		if (
@@ -1567,7 +1638,7 @@ export const ChatInput = memo(function ChatInput({
 	};
 
 	const canSteer = Boolean(capabilities.steer !== false && !isDsh);
-	const showGoalToggle = !groupDevices && !goalActive;
+	const showGoalToggle = goalModeEnabled && !groupDevices && !goalActive;
 	const goalToggle = showGoalToggle ? (
 		<button
 			type="button"
@@ -1577,7 +1648,9 @@ export const ChatInput = memo(function ChatInput({
 			aria-pressed={goalMode}
 			disabled={!connected}
 			onClick={() => {
-				setGoalCompose(!goalCompose);
+				const next = !goalCompose;
+				setGoalCompose(next);
+				setGoalPanelOpen(next);
 				requestAnimationFrame(() => taRef.current?.focus());
 			}}
 		>
@@ -1732,8 +1805,23 @@ export const ChatInput = memo(function ChatInput({
 				handleFiles(e.dataTransfer?.files ?? null);
 			}}
 		>
-			{attachments.length > 0 && (
+			{(attachments.length > 0 || botDraftMode) && (
 				<div className="attach-row" ref={attachRowRef}>
+					{botDraftMode && (
+						<span className="attach-chip is-bot-draft">
+							<FiCpu size={12} className="attach-bot-icon" aria-hidden="true" />
+							<span className="attach-label">{t("agentBotsComposerBadge")}</span>
+							<button
+								type="button"
+								className="attach-remove"
+								title={t("agentBotsCreateCancel")}
+								aria-label={t("agentBotsCreateCancel")}
+								onClick={() => setBotDraftMode(false)}
+							>
+								×
+							</button>
+						</span>
+					)}
 					{attachments.map((a) => {
 						if (a.mode === "quote" && a.quote) {
 							return (
@@ -1856,7 +1944,6 @@ export const ChatInput = memo(function ChatInput({
 							</span>
 						);
 					})}
-					<span className="attach-hint">{t("attachHint")}</span>
 				</div>
 			)}
 			{menu && menu.items.length > 0 && (
@@ -1964,24 +2051,6 @@ export const ChatInput = memo(function ChatInput({
 					))}
 				</div>
 			)}
-			{goalMode && (
-				<div className="goal-composer-hint" ref={goalHintRef} aria-label={t("goalBarHelp")}>
-					<FiTarget />
-					<span className="gch-lead">{t("goalComposerLead")}</span>
-					<span className="gch-sep" aria-hidden="true">
-						·
-					</span>
-					<span className="gch-tip">{t("goalComposerMaterials")}</span>
-					<span className="gch-sep" aria-hidden="true">
-						·
-					</span>
-					<span className="gch-tip">{t("goalComposerRefine")}</span>
-					<span className="gch-sep" aria-hidden="true">
-						·
-					</span>
-					<span className="gch-tip">{t("goalComposerHelp")}</span>
-				</div>
-			)}
 			<div className="inputbox" data-pi-anchor="composer">
 				<div
 					className={`composer-resize${composerH != null && composerH > COMPOSER_MIN_H + 4 ? " is-manual" : ""}`}
@@ -2067,13 +2136,15 @@ export const ChatInput = memo(function ChatInput({
 									? isDsh
 										? t("placeholderStreamingQueued")
 										: t("placeholderStreaming")
-									: goalMode
-										? t("goalBarPlaceholder")
-										: effectivePlanMode
-											? t("placeholderPlanMode")
-											: isModEnter
-												? t("placeholderIdleMod", { name: idleProjectName })
-												: t("placeholderIdle", { name: idleProjectName })
+									: botDraftMode
+										? t("agentBotsCreatePlaceholder")
+										: goalMode
+											? t("goalBarPlaceholder")
+											: effectivePlanMode
+												? t("placeholderPlanMode")
+												: isModEnter
+													? t("placeholderIdleMod", { name: idleProjectName })
+													: t("placeholderIdle", { name: idleProjectName })
 								: t("placeholderConnecting")
 					}
 					disabled={!connected}

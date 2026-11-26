@@ -37,6 +37,10 @@ export interface ClientSettings {
 	/** 按需列表：列内工具直接关闭（`effectiveDisabledAgentTools` 取并集）。 */
 	toolOnDemandTools: string[];
 	disabledPluginTools?: string[];
+	/** 用户显式允许只读放行的工具名（计划模式 / 只读子代理）。 */
+	trustedReadOnlyTools?: string[];
+	/** 用户显式信任其 `readOnlyHint` 的插件/MCP ID。 */
+	trustedReadOnlyPlugins?: string[];
 	questionnaireEnabled: boolean;
 	questionPresentation?: "queue" | "all" | "manual";
 	toolApprovalPresentation?: "queue" | "all" | "manual";
@@ -58,6 +62,7 @@ export interface ClientSettings {
 	quickAskThinking: ThinkingLevel;
 	botDraftModel: string | null;
 	botDraftThinking: ThinkingLevel;
+	botDraftPrompt: string;
 	quickAskSystemPrompt: string;
 	quickAskExplainPrompt: string;
 	quickAskTranslateModel: QuickAskSettings["quickAskTranslateModel"];
@@ -319,6 +324,7 @@ export const DEFAULT_DARK_MINIMAL_SETTINGS: ClientSettings = Object.freeze({
 	quickAskThinking: "off",
 	botDraftModel: null,
 	botDraftThinking: "off",
+	botDraftPrompt: "",
 	quickAskSystemPrompt: "",
 	quickAskExplainPrompt: "解释下: {{input}}",
 	quickAskTranslateModel: null,

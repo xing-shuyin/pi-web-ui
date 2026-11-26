@@ -12,7 +12,7 @@ pi-web-ui/
 ├── server/                     # 后端（Node ESM，编译到 dist/server/）
 ├── shared/                     # 服务端与桌面壳共用的纯工具（锁协议 / 隐藏控制台开关；两边各编译一份到 dist/shared/）
 ├── web/                        # 前端（React + Vite，编译到 web/dist/）
-├── bin/pi-web-ui.mjs           # CLI：前台启动 / server install|uninstall|start|stop|restart|status
+├── bin/keel.mjs           # CLI：前台启动 / server install|uninstall|start|stop|restart|status
 ├── desktop/                    # Electron 桌面壳（sidecar：随机空闲口起 dist/server + BrowserWindow）
 │   ├── main.ts                 # 主进程：ready → 选空闲口 → spawn server(ELECTRON_RUN_AS_NODE) → loadURL
 │   ├── runtime-store.ts        # 双层模型 P0：只读决定跑 userData 运行时还是包内自带（协议闸门/隔离/回落）

@@ -9,6 +9,7 @@ import { LanguageProvider } from "../../web/src/i18n.js";
 import { conversationOrder } from "../../web/src/conversation-order.js";
 import { resetAppGlobals, setAppGlobals } from "../../web/src/app-globals.js";
 import { getContextMenu, closeContextMenu } from "../../web/src/context-menu-state.js";
+import { reconcileRemovedProjects, unmarkProjectRemoved } from "../../web/src/use-chat.js";
 
 // 群组/智能体块只是项目的同层邻居：这两个组件的真实实现会去拉设备中心与 Bot 面板，
 // 在左栏布局用例里与断言无关，固化成空实现（其余导出照旧用真模块，避免漏掉常量与错误类）。
@@ -96,13 +97,13 @@ afterEach(() => {
 });
 
 describe("LeftPanel 标题栏操作与项目管理", () => {
-	it("projects=[] 时仍渲染「项目」标题栏和项目管理按钮，且不渲染项目滚动区", () => {
+	it("projects=[] 时仍渲染顶部操作栏和项目管理按钮，且不渲染项目滚动区", () => {
 		setAppGlobals({ cwd: "", ready: true, status: "open", workspaceRoots: [] });
 		const { container } = mountLeftPanel({ projects: [], sessions: [] });
 
 		const projectsSection = container.querySelector(".panel-projects");
 		expect(projectsSection).toBeTruthy();
-		expect(projectsSection?.querySelector(".lp-section-title-text")?.textContent).toContain("项目");
+		expect(projectsSection?.querySelector(".lp-new-chat-primary")).toBeTruthy();
 
 		const projectActionBtn = container.querySelector(".lp-project-action");
 		expect(projectActionBtn).toBeTruthy();
@@ -257,6 +258,86 @@ describe("LeftPanel 标题栏操作与项目管理", () => {
 		expect(parentOf("C:/")).toBe(MACHINE_ROOT);
 		expect(parentOf("C:/Users")).toBe("C:/");
 		expect(parentOf("C:/Users/test")).toBe("C:/Users");
+	});
+
+	it("删除当前项目（含活动对话）后立即从左栏消失，刷新/重收 projects 帧也不会复活，重新打开才恢复", () => {
+		setAppGlobals({ cwd: "/work/alpha", ready: true, status: "open", workspaceRoots: [] });
+		const { container, sent } = mountLeftPanel({
+			projects: [
+				{ path: "/work/alpha", lastUsed: 200 },
+				{ path: "/work/beta", lastUsed: 100 },
+			],
+			conversations: [
+				{
+					id: "conv-alpha",
+					title: "Alpha chat",
+					cwd: "/work/alpha",
+					isStreaming: false,
+					messageCount: 1,
+					lastActiveAt: 200,
+				} as any,
+			],
+		});
+
+		const delBtn = container.querySelector<HTMLButtonElement>(
+			".lp-project-node .lp-project-head-row .lp-project-del-btn",
+		);
+		expect(delBtn).toBeTruthy();
+		// 第一次点击进入确认态，第二次点击确认删除
+		act(() => delBtn!.click());
+		act(() => delBtn!.click());
+
+		expect(sent.some((m: any) => m.type === "remove_project" && m.path === "/work/alpha")).toBe(true);
+		const remaining1 = [...container.querySelectorAll(".lp-project-name")].map((el) => el.textContent);
+		expect(remaining1).not.toContain("alpha");
+		expect(remaining1).toContain("beta");
+
+		// 模拟服务端回推不含 alpha 的 projects 帧，且客户端重新挂载（刷新页面，保留 localStorage）
+		reconcileRemovedProjects([{ path: "/work/beta", lastUsed: 100 }]);
+		const savedRemoved = localStorage.getItem("pi-web-removed-projects");
+		act(() => {
+			root?.unmount();
+			root = null;
+		});
+		const remounted = mountLeftPanel(
+			{
+				projects: [{ path: "/work/beta", lastUsed: 100 }],
+				conversations: [
+					{
+						id: "conv-alpha",
+						title: "Alpha chat",
+						cwd: "/work/alpha",
+						isStreaming: false,
+						messageCount: 1,
+						lastActiveAt: 200,
+					} as any,
+				],
+			},
+			savedRemoved ? { "pi-web-removed-projects": savedRemoved } : undefined,
+		);
+		const remaining2 = [...remounted.container.querySelectorAll(".lp-project-name")].map((el) => el.textContent);
+		expect(remaining2).not.toContain("alpha");
+		expect(remaining2).toContain("beta");
+
+		// 重新打开 alpha 后恢复显示
+		unmarkProjectRemoved("/work/alpha");
+		reconcileRemovedProjects([
+			{ path: "/work/alpha", lastUsed: 300 },
+			{ path: "/work/beta", lastUsed: 100 },
+		]);
+		act(() => {
+			root?.unmount();
+			root = null;
+		});
+		const reopened = mountLeftPanel({
+			projects: [
+				{ path: "/work/alpha", lastUsed: 300 },
+				{ path: "/work/beta", lastUsed: 100 },
+			],
+		});
+		const remaining3 = [...reopened.container.querySelectorAll(".lp-project-name")].map((el) => el.textContent);
+		expect(remaining3).toContain("alpha");
+		expect(remaining3).toContain("beta");
 	});
 });
 

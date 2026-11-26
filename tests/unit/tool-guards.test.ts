@@ -192,4 +192,63 @@ describe("tool guard cancellation", () => {
 		}
 		expect(execute).not.toHaveBeenCalled();
 	});
+
+	it("withToolGuard respects disabled rules from getRules without falling back to defaults", async () => {
+		const { tool, execute } = base("bash");
+		const ask = vi.fn<AskApprovalFn>(async () => ({ decision: "approve" }));
+		const wrapped = withToolGuard(tool, {
+			toolName: "bash",
+			cwd,
+			askApproval: ask,
+			getLang: () => "en",
+			getRules: () => [
+				{
+					id: "builtin.bash.rm-rf",
+					enabled: false,
+					tools: ["bash"],
+					field: "command",
+					match: "regex",
+					value: "\\brm\\s+-[a-zA-Z]*r",
+					action: "ask",
+					label: "rm -rf",
+					builtin: true,
+				},
+			],
+		});
+		await wrapped.execute("call", { command: "rm -rf ./tmp" }, new AbortController().signal, undefined, {} as any);
+		expect(ask).not.toHaveBeenCalled();
+		expect(execute).toHaveBeenCalledTimes(1);
+	});
+
+	it("withToolGuard bypasses built-in rules and plugin ask when isApprovalEnabled returns false", async () => {
+		const { tool, execute } = base("bash");
+		const ask = vi.fn<AskApprovalFn>(async () => ({ decision: "approve" }));
+		const guard: ToolGuardHook = {
+			pre: async () => ({ verdict: { decision: "ask", reason: "confirm" }, pluginId: "test-plugin" }),
+			post: async () => undefined,
+		};
+		const wrapped = withToolGuard(tool, {
+			toolName: "bash",
+			cwd,
+			guard,
+			askApproval: ask,
+			getLang: () => "en",
+			isApprovalEnabled: () => false,
+			getRules: () => [
+				{
+					id: "custom.deny-rm",
+					enabled: true,
+					tools: ["bash"],
+					field: "command",
+					match: "contains",
+					value: "rm -rf",
+					action: "deny",
+					label: "deny rm",
+				},
+			],
+		});
+		await wrapped.execute("call", { command: "rm -rf ./tmp" }, new AbortController().signal, undefined, {} as any);
+		expect(ask).not.toHaveBeenCalled();
+		expect(execute).toHaveBeenCalledTimes(1);
+	});
 });

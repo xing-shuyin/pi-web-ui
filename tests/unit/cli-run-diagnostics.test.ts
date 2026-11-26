@@ -11,11 +11,11 @@ import { join } from "node:path";
  * 2. `spawn` 自身报错（res.error，如 EPERM/ENOENT）也要算失败
  * 3. 文案里给出可操作出路（重跑 / --print）
  */
-const source = readFileSync(join(import.meta.dirname, "..", "..", "bin", "pi-web-ui.mjs"), "utf8");
+const source = readFileSync(join(import.meta.dirname, "..", "..", "bin", "keel.mjs"), "utf8");
 
 function runBody(): string {
 	const start = source.indexOf("function run(cmd, args, { ignoreError = false, silent = false } = {}) {");
-	expect(start, "bin/pi-web-ui.mjs 里找不到 run()").toBeGreaterThan(-1);
+	expect(start, "bin/keel.mjs 里找不到 run()").toBeGreaterThan(-1);
 	const end = source.indexOf("\n}\n", start);
 	// 去掉注释行：注释里会提到 `process.exit()`，不能拿它当代码位置
 	return source
@@ -25,7 +25,7 @@ function runBody(): string {
 		.join("\n");
 }
 
-describe("bin/pi-web-ui.mjs 的 run()", () => {
+describe("bin/keel.mjs 的 run()", () => {
 	it("失败分支先打印再退出", () => {
 		const body = runBody();
 		const printAt = body.indexOf("console.error");

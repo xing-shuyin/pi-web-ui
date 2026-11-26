@@ -6,9 +6,11 @@ import { appSend, useIsDsh, useEngineCapabilities } from "../app-globals";
 import { composeToComposer, focusComposer } from "../composer-bridge";
 import {
 	setGoalCompose,
+	setGoalPanelOpen,
 	setGoalPlan,
 	setGoalRefine,
 	useGoalCompose,
+	useGoalPanelOpen,
 	useGoalPlan,
 	useGoalRefine,
 } from "../goal-compose";
@@ -73,7 +75,8 @@ export const GoalBar = memo(function GoalBar({
 	const goalRefine = useGoalRefine();
 	const goalPlan = useGoalPlan();
 	const [reqLoading, setReqLoading] = useState(false);
-	const [collapsed, setCollapsed] = useState(true);
+	const panelOpen = useGoalPanelOpen();
+	const collapsed = !panelOpen;
 
 	useEffect(() => {
 		setReviewModel(goal.reviewModel ?? "");
@@ -98,7 +101,7 @@ export const GoalBar = memo(function GoalBar({
 	};
 	const enterCompose = () => {
 		setGoalCompose(true);
-		setCollapsed(false);
+		setGoalPanelOpen(true);
 		focusComposer();
 	};
 
@@ -185,7 +188,7 @@ export const GoalBar = memo(function GoalBar({
 				tip={t("goalBarCollapse")}
 				className="goalbar-icon-btn"
 				onClick={() => {
-					setCollapsed(true);
+					setGoalPanelOpen(false);
 					// 收起面板 = 不再写目标，否则输入框会一直挂着「输入要达成的目标…」
 					setGoalCompose(false);
 				}}
@@ -296,7 +299,7 @@ export const GoalBar = memo(function GoalBar({
 									title={t("goalBarClear")}
 									onClick={() => {
 										appSend({ type: "clear_goal" });
-										setCollapsed(true);
+										setGoalPanelOpen(false);
 									}}
 								>
 									<FiX />
@@ -373,7 +376,7 @@ export const GoalBar = memo(function GoalBar({
 										if (goal.goal) composeToComposer({ text: goal.goal });
 										appSend({ type: "clear_goal" });
 										setGoalCompose(true);
-										setCollapsed(false);
+										setGoalPanelOpen(true);
 										focusComposer();
 									}}
 								>
@@ -389,9 +392,7 @@ export const GoalBar = memo(function GoalBar({
 	}
 
 	if (collapsed) {
-		const pillBar = renderMergedToolbar(goalZone(["host:goal-pill"]), goalHostNodes, onUiAction);
-		if (!pillBar) return null;
-		return <div className="goalbar-collapsed">{pillBar}</div>;
+		return null;
 	}
 
 	return (

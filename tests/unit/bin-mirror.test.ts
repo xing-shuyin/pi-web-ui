@@ -38,7 +38,7 @@ describe("bin/lib 镜像件与 server 单源同源", () => {
 	});
 
 	it("CLI 用的是镜像件，而不是自己另写一套", () => {
-		const cli = read("bin/pi-web-ui.mjs");
+		const cli = read("bin/keel.mjs");
 		expect(cli).toContain('import "./lib/hide-console-windows.mjs";');
 		expect(cli).toContain('from "./lib/shell-quote.mjs"');
 		expect(cli).not.toContain("function shQuote(");

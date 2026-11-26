@@ -43,6 +43,15 @@ import { appResourceCrossOrigin, appResourceUrl } from "../base-url";
 import type { EditPromptAttachment } from "../question-attachments";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallBlock, type ToolView } from "./ToolCallBlock";
+import {
+	BotDraftInlineCard,
+	parseAgentBotDraftArgs,
+	parseAgentBotDraftDetail,
+	parseAgentBotDraftDetailText,
+} from "./BotDraftInlineCard";
+import { PresentedFiles } from "./PresentedFiles";
+import { parsePresentArgs } from "../present-items";
+import { PRESENT_FILES_TOOL_NAME } from "../../../server/tool-manager.js";
 import { useI18n, useT, type Translate } from "../i18n";
 import { buildSessionDeepLink, parseSessionHash } from "../session-url";
 import { fetchCompactedHistory, useCompactedHistory } from "../compacted-history-state";
@@ -304,6 +313,7 @@ interface MessageProps {
 	toolImages?: boolean;
 	searchActive?: boolean;
 	autoExpand?: boolean;
+	hideProcessBlocks?: boolean;
 
 	uiMessageActions?: UiSlotEntry[];
 	uiContextMessage?: UiSlotEntry[];
@@ -338,6 +348,7 @@ export const Message = memo(function Message({
 	toolImages,
 	searchActive,
 	autoExpand,
+	hideProcessBlocks = false,
 	uiMessageActions,
 	uiContextMessage,
 	uiContextToolCall,
@@ -1485,6 +1496,7 @@ export const Message = memo(function Message({
 										toolImages={toolImages}
 										thinkingWrap={thinkingWrap}
 										searchActive={searchActive}
+										hideProcessBlocks={hideProcessBlocks}
 										forceThinking={exportForceThinking}
 										forceTools={exportForceTools}
 										role={message.role}
@@ -1515,6 +1527,7 @@ export const Message = memo(function Message({
 										toolImages={toolImages}
 										thinkingWrap={thinkingWrap}
 										searchActive={searchActive}
+										hideProcessBlocks={hideProcessBlocks}
 										forceThinking={exportForceThinking}
 										forceTools={exportForceTools}
 										role={message.role}
@@ -1998,6 +2011,7 @@ function Block({
 	toolsWrap,
 	toolImages,
 	searchActive,
+	hideProcessBlocks,
 	forceThinking,
 	forceTools,
 	role,
@@ -2022,6 +2036,7 @@ function Block({
 	toolsWrap?: boolean;
 	toolImages?: boolean;
 	searchActive?: boolean;
+	hideProcessBlocks?: boolean;
 	forceThinking?: boolean;
 	forceTools?: boolean;
 	role?: UiMessage["role"];
@@ -2138,6 +2153,7 @@ function Block({
 
 	const thinking = asThinking(block);
 	if (thinking) {
+		if (hideProcessBlocks) return null;
 		return (
 			<ThinkingBlock
 				thinking={thinking.thinking}
@@ -2160,6 +2176,25 @@ function Block({
 	if (toolCall) {
 		const result = toolResults.get(toolCall.id);
 		const live = liveOutputs.get(toolCall.id);
+		const botDraftDetail =
+			toolCall.name === "agent_bot"
+				? (parseAgentBotDraftDetail(result?.details) ??
+					parseAgentBotDraftDetailText(live?.text) ??
+					parseAgentBotDraftArgs(toolCall.argumentsText))
+				: null;
+		const presentArgs = toolCall.name === PRESENT_FILES_TOOL_NAME ? parsePresentArgs(toolCall.argumentsText) : null;
+		const presentNode = presentArgs ? (
+			<PresentedFiles
+				args={presentArgs}
+				details={result?.details}
+				toolCallId={result?.toolCallId ?? toolCall.id}
+				resultTimestamp={result?.timestamp}
+			/>
+		) : null;
+		if (hideProcessBlocks) {
+			if (botDraftDetail) return <BotDraftInlineCard key={toolCall.id} draft={botDraftDetail} />;
+			return presentNode;
+		}
 		const view: ToolView = {
 			result,
 			liveOutput: live?.text,
@@ -2167,17 +2202,21 @@ function Block({
 			status: toolStatuses.get(toolCall.id),
 		};
 		return (
-			<ToolCallBlock
-				block={toolCall}
-				view={view}
-				onKillBash={onKillBash}
-				wrap={toolsWrap}
-				showImages={toolImages ?? true}
-				forceOpen={searchActive || forceTools}
-				uiContextToolCall={uiContextToolCall}
-				uiToolCardFooter={uiToolCardFooter}
-				onUiAction={onUiAction}
-			/>
+			<>
+				<ToolCallBlock
+					block={toolCall}
+					view={view}
+					onKillBash={onKillBash}
+					wrap={toolsWrap}
+					showImages={toolImages ?? true}
+					forceOpen={searchActive || forceTools}
+					uiContextToolCall={uiContextToolCall}
+					uiToolCardFooter={uiToolCardFooter}
+					onUiAction={onUiAction}
+				/>
+				{botDraftDetail && <BotDraftInlineCard key={toolCall.id} draft={botDraftDetail} />}
+				{presentNode}
+			</>
 		);
 	}
 
@@ -2202,6 +2241,7 @@ function Block({
 
 	const bash = asBash(block);
 	if (bash) {
+		if (hideProcessBlocks) return null;
 		return (
 			<div className="bashblock">
 				<div className="bashblock-command">

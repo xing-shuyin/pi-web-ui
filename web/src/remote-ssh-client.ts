@@ -198,13 +198,16 @@ export function requestRemoteInstallTools(
 	});
 }
 
-export function requestRemoteProfiles(): Promise<RemoteSshProfileSummary[]> {
+export function requestRemoteProfilesWithKeys(): Promise<{
+	profiles: RemoteSshProfileSummary[];
+	localKeys: string[];
+}> {
 	const reqId = `profiles_${Date.now()}_${nextReqId++}`;
 	return new Promise((resolve) => {
 		const cleanup = subscribeRemoteSsh((msg) => {
 			if (msg.type === "remote_ssh_profiles_result" && msg.reqId === reqId) {
 				cleanup();
-				resolve(msg.profiles);
+				resolve({ profiles: msg.profiles, localKeys: msg.localKeys ?? [] });
 			}
 		});
 
@@ -215,9 +218,14 @@ export function requestRemoteProfiles(): Promise<RemoteSshProfileSummary[]> {
 
 		if (!sent) {
 			cleanup();
-			resolve([]);
+			resolve({ profiles: [], localKeys: [] });
 		}
 	});
+}
+
+export async function requestRemoteProfiles(): Promise<RemoteSshProfileSummary[]> {
+	const { profiles } = await requestRemoteProfilesWithKeys();
+	return profiles;
 }
 
 export function deleteRemoteProfile(name: string): void {

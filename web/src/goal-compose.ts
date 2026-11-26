@@ -35,11 +35,16 @@ const REFINE_KEY = "pi-web-ui:goal-refine";
 const PLAN_KEY = "pi-web-ui:goal-plan";
 
 let compose = false;
+let panelOpen = false;
 let refine = readToggle(REFINE_KEY, false);
 let plan = readToggle(PLAN_KEY, false);
 
 function getCompose(): boolean {
 	return compose;
+}
+
+function getPanelOpen(): boolean {
+	return panelOpen;
 }
 
 function getRefine(): boolean {
@@ -54,6 +59,13 @@ function getPlan(): boolean {
 export function setGoalCompose(next: boolean): void {
 	if (compose === next) return;
 	compose = next;
+	emit();
+}
+
+/** 展开 / 收起目标功能条面板。 */
+export function setGoalPanelOpen(next: boolean): void {
+	if (panelOpen === next) return;
+	panelOpen = next;
 	emit();
 }
 
@@ -77,8 +89,16 @@ export function isGoalCompose(): boolean {
 	return compose;
 }
 
+export function isGoalPanelOpen(): boolean {
+	return panelOpen;
+}
+
 export function useGoalCompose(): boolean {
 	return useSyncExternalStore(subscribe, getCompose, getCompose);
+}
+
+export function useGoalPanelOpen(): boolean {
+	return useSyncExternalStore(subscribe, getPanelOpen, getPanelOpen);
 }
 
 export function useGoalRefine(): boolean {

@@ -11,9 +11,11 @@ import { createProjectMemory } from "../domains/models/index.js";
 import { withChatModeGates } from "../adapters/sdk/chat-mode.js";
 import { createAskQuestionTool } from "../adapters/tools/ask-question.js";
 import { createGuardedBuiltinTools } from "../adapters/tools/guarded.js";
+import { makeBgTaskTool } from "../adapters/tools/bg-task.js";
 import { makePatchTool } from "../adapters/tools/patch.js";
 import { makeBrowserPageTool } from "../browser-page-tool.js";
-import { wrapPatchToolWithPermission } from "../tool-guards.js";
+import { wrapPatchToolWithPermission, type AskApprovalFn, type ToolGuardHook } from "../tool-guards.js";
+import { approvalSuppressionReason } from "../tool-approval.js";
 import { LOAD_TOOLS_TOOL_NAME } from "../tool-names.js";
 import type { BashKills } from "../domains/background/index.js";
 import { gateConversationPreset } from "./preset-handlers.js";
@@ -27,7 +29,6 @@ import type { TransportPort } from "../contracts/ports.js";
 import type { SettingsStorePort } from "../contracts/settings-store.js";
 import type { ClientSettings } from "../settings-schema.js";
 import type { RemoteSdkOperationsFactory } from "../contracts/remote-ops.js";
-import type { ToolGuardHook } from "../tool-guards.js";
 import type { SubagentRuntime } from "./subagent-runtime.js";
 import type { HostFaces } from "./host-faces.js";
 import type { ClientRuntime } from "./client-runtime.js";
@@ -87,6 +88,30 @@ export function createEngineSessionRegistry(deps: EngineSessionDeps): SessionReg
 				"questionnaireEnabled",
 			] as const
 		).some((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
+
+	const compactionKeysChanged = (before: Partial<ClientSettings>, after: Partial<ClientSettings>): boolean =>
+		before.softCapTokens !== after.softCapTokens ||
+		JSON.stringify(before.softCapByModel) !== JSON.stringify(after.softCapByModel);
+
+	const askApprovalFor = (conv: Conversation): AskApprovalFn => {
+		return async (_toolCallId, toolName, params, reason, reasonEn, _conversationId, category) => {
+			if (approvalSuppressionReason(conv.approvalPolicy, true, category?.id, toolName, params) !== null) {
+				return { decision: "approve" };
+			}
+			return deps.approvalWaiter.request({
+				conversationId: conv.id,
+				toolName,
+				params,
+				reason: reason ?? reasonEn,
+				...(category?.id ? { category: category.id } : {}),
+			});
+		};
+	};
+
+	const isApprovalEnabled = (): boolean =>
+		deps.stateStore.getSettingsSnapshot(deps.clientId).toolApprovalEnabled !== false;
+
+	const getApprovalRules = () => deps.getFaces().settingsFrame?.approvalRules?.();
 
 	const resumeAgentPreset = (conv: Conversation, opened: OpenedSession): void => {
 		const preset = deps.presets.agentPresetOf(conv.id);
@@ -171,6 +196,16 @@ export function createEngineSessionRegistry(deps: EngineSessionDeps): SessionReg
 		return [makeTool({ cwd: conv.meta.cwd, lang: () => deps.langOf(deps.clientId) })];
 	};
 
+	/**
+	 * `agent_bot` 工具定义归宿主（依赖设备中心草案仓库）：只对普通主对话注册，
+	 * Bot 执行 / Bot 私聊 / 子代理均不注册。
+	 */
+	const agentBotToolsOf = (conv: Conversation): unknown[] => {
+		if (conv.meta.kind !== "user" || botFaceOf(conv)) return [];
+		const tool = deps.bots?.()?.creationTool?.();
+		return tool ? [tool] : [];
+	};
+
 	return createRegistry();
 
 	function createRegistry(): SessionRegistry {
@@ -191,9 +226,16 @@ export function createEngineSessionRegistry(deps: EngineSessionDeps): SessionReg
 		 * 不订就会变成「设置里已经打开的工具，已开的会话永远等不到它」。
 		 */
 		const unsubscribeSettings = deps.stateStore.subscribeSettings((change) => {
-			if (!gatingKeysChanged(change.before, change.settings)) return;
 			const opened = registry;
 			if (!opened) return;
+			if (compactionKeysChanged(change.before, change.settings)) {
+				const settingsFrame = deps.getFaces().settingsFrame;
+				for (const conv of deps.getRuntime().registry.list()) {
+					const session = opened.get(conv.id)?.session;
+					if (session) settingsFrame?.applyCompactionOverrides?.(session);
+				}
+			}
+			if (!gatingKeysChanged(change.before, change.settings)) return;
 			for (const conv of deps.getRuntime().registry.list()) {
 				const session = opened.get(conv.id)?.session;
 				if (!session || botFaceOf(conv)) continue;
@@ -263,17 +305,15 @@ export function createEngineSessionRegistry(deps: EngineSessionDeps): SessionReg
 							cwd: deps.cwd,
 							...(deps.remoteOpsOf ? { remoteOpsOf: deps.remoteOpsOf } : {}),
 							getLang: () => deps.langOf(deps.clientId),
+							getRules: getApprovalRules,
+							isApprovalEnabled,
 							conversationId: () => conv.id,
 							bashKills: deps.bashKills,
+							background: () => deps.getFaces().background,
 							guard: deps.toolGuard,
-							askApproval: (_toolCallId, toolName, params, reason, reasonEn) =>
-								deps.approvalWaiter.request({
-									conversationId: conv.id,
-									toolName,
-									params,
-									reason: reason ?? reasonEn,
-								}),
+							askApproval: askApprovalFor(conv),
 						}),
+						makeBgTaskTool({ background: () => deps.getFaces().background }),
 						/**
 						 * `patch` 是宿主工具（SDK 没内置它）：不注册就永远不能在活跃集里出现，
 						 * 而它又是按需加载的典型样例（名单里最常被加载的一个）。
@@ -292,28 +332,35 @@ export function createEngineSessionRegistry(deps: EngineSessionDeps): SessionReg
 								DEFAULT_PERMISSION_PRESET,
 							() => [...deps.getRuntime().roots],
 							() => deps.langOf(deps.clientId),
-							(_toolCallId, toolName, params, reason, reasonEn) =>
-								deps.approvalWaiter.request({
-									conversationId: conv.id,
-									toolName,
-									params,
-									reason: reason ?? reasonEn,
-								}),
+							askApprovalFor(conv),
 							() => conv.id,
+							getApprovalRules,
+							isApprovalEnabled,
 						),
 						// `lsp` 工具本体（定义归宿主）：与 `patch` 同一批门控，缺省（宿主没接）= 不注册。
 						...lspToolsOf(conv),
+						// `agent_bot`（一句话创建 Bot 草案，定义归宿主）：仅普通主对话注册。
+						...agentBotToolsOf(conv),
+						...deps.pluginTools.defsFor(deps.clientId, conv.id, deps.pluginToolFilter(deps.clientId, conv)),
 					],
 					{
 						planMode: () => deps.chatModes.planModeOf(conv.id),
 						delegateMode: () => deps.chatModes.delegateModeOf(conv.id),
 						getLang: () => deps.langOf(deps.clientId),
+						readOnlyContext: () => {
+							const s = deps.stateStore.getSettingsSnapshot(deps.clientId);
+							return {
+								trustedReadOnlyTools: s.trustedReadOnlyTools?.length ? new Set(s.trustedReadOnlyTools) : undefined,
+								trustedReadOnlyPlugins: s.trustedReadOnlyPlugins?.length
+									? new Set(s.trustedReadOnlyPlugins)
+									: undefined,
+							};
+						},
 					},
 				),
 				// `load_tools` 只在按需加载真的生效时注册（开关开 + 名单非空）：关着时它连库存都不在，
 				// 活跃集与模型请求的 tools 数组里也永远不会出现。
 				...(gating.lazyOn() ? [gating.loadToolsToolFor(conv)] : []),
-				...deps.pluginTools.defsFor(deps.clientId, conv.id, deps.pluginToolFilter(deps.clientId, conv)),
 				// Bot 执行专属工具（`device_collab`）：老实现 `...(botExecution ? [makeDeviceCollabTool()] : [])`。
 				...(botFaceOf(conv)?.tools() ?? []),
 			],
@@ -386,6 +433,7 @@ export function createEngineSessionRegistry(deps: EngineSessionDeps): SessionReg
 				const runtime = deps.getRuntime();
 				const faces = deps.getFaces();
 				runtime.noteSessionFile(opened.sessionFile);
+				faces.settingsFrame?.applySessionOverrides?.(opened.session);
 				faces.chatMode?.restore?.(conv.id);
 				deps.presets.setPermission(conv.id, faces.presetTranscript?.readPermission?.(conv.id));
 				resumeAgentPreset(conv, opened);

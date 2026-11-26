@@ -144,7 +144,16 @@ export function createConversationDispatchHandlers(options: ConversationDispatch
 		},
 
 		async renameConversation(id: string, name: string): Promise<void> {
-			renameConversation({ registry: options.registry, conversationId: id, title: name, now: options.now() });
+			const res = renameConversation({
+				registry: options.registry,
+				conversationId: id,
+				title: name,
+				now: options.now(),
+			});
+			if (res.renamed) {
+				options.pushConversations?.();
+				options.requestSnapshot();
+			}
 		},
 
 		async dismissConversation(id: string, withFinishedSubagents?: boolean): Promise<void> {

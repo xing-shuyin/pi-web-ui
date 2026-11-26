@@ -6,6 +6,7 @@ import {
 	type ActiveToolSet,
 } from "../../tool-catalog.js";
 import { isNeverLazyTool, LOAD_TOOLS_TOOL_NAME } from "../../tool-names.js";
+import { isToolDefinitelyNonReadOnly } from "../../plan-mode.js";
 import { lazyEffectiveOf, lazyOnDemandOf, loadedLazyToolsOf, markLazyToolsLoaded } from "./lazy-state.js";
 import { DEFAULT_AGENT_PRESET, presetGateDisabledTools } from "./presets.js";
 
@@ -65,6 +66,29 @@ export function replayToolGate(input: ToolGateReplayInput): ToolGateReplayResult
 		for (const name of lazyLoadingDisabledTools(all, loaded, undefined, onDemand)) disabled.push(name);
 	} else {
 		disabled.push(LOAD_TOOLS_TOOL_NAME);
+	}
+	if (input.planMode) {
+		const getToolDefinition = (session as { getToolDefinition?: (name: string) => unknown }).getToolDefinition;
+		if (typeof getToolDefinition === "function") {
+			const trustedReadOnlyTools = input.settings?.trustedReadOnlyTools?.length
+				? new Set(input.settings.trustedReadOnlyTools)
+				: undefined;
+			const trustedReadOnlyPlugins = input.settings?.trustedReadOnlyPlugins?.length
+				? new Set(input.settings.trustedReadOnlyPlugins)
+				: undefined;
+			for (const tool of session.getAllTools()) {
+				const def = getToolDefinition.call(session, tool.name);
+				if (
+					isToolDefinitelyNonReadOnly(tool.name, {
+						toolDef: def,
+						trustedReadOnlyTools,
+						trustedReadOnlyPlugins,
+					})
+				) {
+					disabled.push(tool.name);
+				}
+			}
+		}
 	}
 	applyAgentToolsGating(session, disabled, preset, {
 		forceActive: lazy && preset !== "ask" ? [LOAD_TOOLS_TOOL_NAME, ...loaded] : [],

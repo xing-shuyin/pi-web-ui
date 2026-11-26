@@ -2,9 +2,24 @@
    独立文件而非并进 styles.css：与主题基线解耦，避免与并行改动打架；令牌仍取全局主题变量。 */
 
 .lp-bots-section {
-	border-bottom: 1px solid var(--border-soft, var(--border));
+	border-top: 1px solid color-mix(in srgb, var(--text) 7%, transparent);
+	border-bottom: none;
+	padding-top: 4px;
 	padding-bottom: 6px;
-	margin-bottom: 4px;
+	margin-top: auto;
+	margin-bottom: 0;
+}
+
+.lp-bots-empty {
+	display: none;
+}
+
+.lp-bots-actions button {
+	border-color: transparent !important;
+	background: transparent !important;
+}
+.lp-bots-actions button:hover {
+	background: color-mix(in srgb, var(--text) 7%, transparent) !important;
 }
 
 /* 与项目树同层：高度跟着内容走，超过上限时自身滚动。 */
@@ -863,4 +878,351 @@
 	-webkit-line-clamp: 3;
 	-webkit-box-orient: vertical;
 	overflow: hidden;
+}
+
+/* 对话内可编辑的智能体草案卡片（现代极简风格，复用共用编辑器） */
+.bot-draft-inline {
+	margin-top: 10px;
+	padding: 14px 16px;
+	border-radius: 12px;
+	border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+	background: color-mix(in srgb, var(--bg-elev2, var(--bg)) 72%, transparent);
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.bot-draft-inline.is-settled {
+	padding: 12px 14px;
+	gap: 8px;
+}
+
+.bot-draft-inline-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+}
+
+.bot-draft-inline-title {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	font-size: 13.5px;
+	color: var(--text);
+}
+
+.bot-draft-inline-icon {
+	width: 24px;
+	height: 24px;
+	border-radius: 7px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	background: color-mix(in srgb, var(--accent) 14%, transparent);
+	color: var(--accent);
+}
+
+.bot-draft-inline-icon.is-ok {
+	background: rgba(34, 197, 94, 0.16);
+	color: #16a34a;
+}
+
+.bot-draft-inline-status {
+	font-size: 11px;
+	font-weight: 500;
+	padding: 2px 9px;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--text) 8%, transparent);
+	color: var(--text-dim, var(--muted));
+}
+
+.bot-draft-inline-status.is-ok {
+	background: rgba(34, 197, 94, 0.14);
+	color: #16a34a;
+}
+
+.bot-draft-inline-sub {
+	margin: 0;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--text-dim, var(--muted));
+}
+
+/* 共用表单：内联现代分段选项卡与无框输入框 */
+.bot-form.is-inline {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.bot-form-tabs {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 3px;
+	border-radius: 9px;
+	background: color-mix(in srgb, var(--text) 5%, transparent);
+	width: fit-content;
+}
+
+.bot-form-tabs button {
+	appearance: none;
+	border: none;
+	background: transparent;
+	color: var(--text-dim, var(--muted));
+	font-family: inherit;
+	font-size: 12px;
+	font-weight: 500;
+	padding: 5px 12px;
+	border-radius: 6px;
+	cursor: pointer;
+	transition:
+		background 0.15s ease,
+		color 0.15s ease;
+}
+
+.bot-form-tabs button:hover {
+	color: var(--text);
+}
+
+.bot-form-tabs button[aria-selected="true"] {
+	background: var(--bg-elev, var(--bg));
+	color: var(--text);
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+.bot-form-stack {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.bot-form-field {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	font-size: 12px;
+}
+
+.bot-form-field > span,
+.bot-form-field > label {
+	font-size: 11.5px;
+	font-weight: 500;
+	color: var(--text-dim, var(--muted));
+}
+
+.bot-form-field input,
+.bot-form-field textarea {
+	width: 100%;
+	box-sizing: border-box;
+	padding: 7px 10px;
+	border-radius: 8px;
+	border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+	background: color-mix(in srgb, var(--bg) 80%, transparent);
+	color: var(--text);
+	font: inherit;
+	font-size: 12.5px;
+	line-height: 1.45;
+	transition:
+		border-color 0.15s ease,
+		background 0.15s ease;
+}
+
+.bot-form-field input:focus,
+.bot-form-field textarea:focus {
+	outline: none;
+	border-color: var(--accent);
+	background: var(--bg);
+}
+
+.bot-form-field textarea {
+	resize: vertical;
+}
+
+.bot-form-prompt {
+	font-family: var(--mono);
+	font-size: 12px;
+	line-height: 1.5;
+}
+
+.bot-draft-inline-grants {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 9px 11px;
+	border-radius: 8px;
+	background: color-mix(in srgb, var(--amber, #f59e0b) 8%, transparent);
+	border: 1px solid color-mix(in srgb, var(--amber, #f59e0b) 28%, transparent);
+}
+
+.bot-draft-inline-grant-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.bot-draft-inline-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 3px 9px;
+	border-radius: 999px;
+	border: 1px solid color-mix(in srgb, var(--amber, #f59e0b) 40%, transparent);
+	background: color-mix(in srgb, var(--bg) 75%, transparent);
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.bot-draft-inline-hint {
+	font-size: 11.5px;
+	color: var(--amber-text, var(--amber, #d97706));
+}
+
+.bot-draft-inline .lp-bot-drafts-error {
+	padding: 8px 10px;
+	border-radius: 8px;
+	font-size: 12px;
+	color: var(--red-text, var(--red, #ef4444));
+	background: color-mix(in srgb, var(--red, #ef4444) 10%, transparent);
+	border: 1px solid color-mix(in srgb, var(--red, #ef4444) 30%, transparent);
+}
+
+.bot-draft-inline-revise {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.bot-draft-inline-revise input {
+	flex: 1;
+	min-width: 0;
+	padding: 7px 10px;
+	border-radius: 8px;
+	border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+	background: color-mix(in srgb, var(--bg) 80%, transparent);
+	color: var(--text);
+	font: inherit;
+	font-size: 12.5px;
+}
+
+.bot-draft-inline-revise input:focus {
+	outline: none;
+	border-color: var(--accent);
+	background: var(--bg);
+}
+
+.bot-draft-inline-revise button {
+	flex-shrink: 0;
+	padding: 7px 12px;
+	border-radius: 8px;
+	border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+	background: transparent;
+	color: var(--text-dim, var(--text));
+	font-family: inherit;
+	font-size: 12px;
+	font-weight: 500;
+	cursor: pointer;
+}
+
+.bot-draft-inline-revise button:hover:not(:disabled) {
+	background: color-mix(in srgb, var(--text) 6%, transparent);
+	color: var(--text);
+}
+
+.bot-draft-inline-revise button:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.bot-draft-inline-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding-top: 2px;
+}
+
+.bot-draft-inline-actions button {
+	padding: 7px 14px;
+	border-radius: 8px;
+	border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+	background: transparent;
+	color: var(--text-dim, var(--text));
+	font-family: inherit;
+	font-size: 12.5px;
+	font-weight: 500;
+	cursor: pointer;
+	transition:
+		background 0.15s ease,
+		color 0.15s ease,
+		opacity 0.15s ease;
+}
+
+.bot-draft-inline-actions button:hover:not(:disabled) {
+	background: color-mix(in srgb, var(--text) 6%, transparent);
+	color: var(--text);
+}
+
+.bot-draft-inline-actions .lp-bot-draft-primary {
+	background: var(--accent);
+	color: var(--accent-contrast, #ffffff);
+	border-color: transparent;
+}
+
+.bot-draft-inline-actions .lp-bot-draft-primary:hover:not(:disabled) {
+	opacity: 0.9;
+	background: var(--accent);
+	color: var(--accent-contrast, #ffffff);
+}
+
+.bot-draft-inline-actions button:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+/* 智能体区「＋」下拉菜单 & 主输入框引用标识 */
+.lp-bots-create-wrap {
+	position: relative;
+	display: inline-flex;
+}
+
+.lp-bots-create-menu {
+	z-index: 100;
+	min-width: 120px;
+	padding: 4px;
+	border-radius: 8px;
+	border: 1px solid var(--border, rgba(128, 138, 160, 0.28));
+	background: var(--bg-elev2, var(--bg, #ffffff));
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.lp-bots-create-menu button {
+	text-align: left;
+	padding: 6px 10px;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--text, inherit);
+	font-size: 12px;
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.lp-bots-create-menu button:hover {
+	background: var(--surface-2, rgba(128, 138, 160, 0.12));
+}
+
+.attach-chip.is-bot-draft {
+	border-color: color-mix(in srgb, var(--accent, #2563eb) 45%, transparent);
+	background: color-mix(in srgb, var(--accent, #2563eb) 14%, var(--bg-elev, transparent));
+}
+
+.attach-chip.is-bot-draft .attach-bot-icon {
+	color: var(--accent, #2563eb);
+	flex-shrink: 0;
 }

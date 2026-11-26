@@ -20,7 +20,7 @@ import type { KernelInstallKind, KernelPublicInfo, ServiceSupervisor } from "./p
 export function classifyKernelInstall(packageRoot: string): KernelInstallKind {
 	const normalized = packageRoot.replace(/\\/g, "/").replace(/\/+$/, "");
 	if (/app\.asar(\.unpacked)?(\/|$)/.test(normalized)) return "packaged";
-	if (/(^|\/)node_modules\/(?:keel|pi-web-ui)$/.test(normalized)) return "global-npm";
+	if (/(^|\/)node_modules\/(?:keel|keel-agent|pi-web-ui)$/.test(normalized)) return "global-npm";
 	return "source";
 }
 

@@ -25,7 +25,7 @@ const SPAWN_APIS = /(?<![\w.$])(spawn|spawnSync|execFile|execFileSync|exec|fork)
 /** 必须装上进程级开关的三个进程根：CLI（插件作业/服务安装）、server（服务本体 + 宿主内插件）、
  *  桌面壳（Electron 主进程：taskkill / 更新器 / 浏览器宿主）。 */
 const ENTRY_INSTALLS: Array<{ file: string; specifier: string }> = [
-	{ file: "bin/pi-web-ui.mjs", specifier: "./lib/hide-console-windows.mjs" },
+	{ file: "bin/keel.mjs", specifier: "./lib/hide-console-windows.mjs" },
 	{ file: "server/index.ts", specifier: "../shared/hide-console-windows.js" },
 	{ file: "desktop/main.ts", specifier: "../shared/hide-console-windows.js" },
 ];
@@ -129,7 +129,7 @@ describe("Windows 下子进程不弹控制台", () => {
 	});
 
 	it("CLI 用的是生成件，而不是自己另写一套包装", () => {
-		const source = read("bin/pi-web-ui.mjs");
+		const source = read("bin/keel.mjs");
 		expect(source).toContain('import "./lib/hide-console-windows.mjs";');
 		expect(source).not.toContain('Symbol.for("pi-web-ui.hide-console-windows")');
 	});

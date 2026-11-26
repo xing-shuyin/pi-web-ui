@@ -128,6 +128,10 @@ describe("page conversation order", () => {
 		conversationOrder.sort(scope, [recent, parent, child], identity);
 		recordUserPrompt({ engine: "pi", cwd: "/worktree", conversationId: "child" }, [child, parent, recent]);
 		expect(ids(conversationOrder.sort(scope, [recent, parent], identity))).toEqual(["parent", "recent"]);
+		expect(ids(conversationOrder.sort(conversationOrderScope("all", "/project"), [recent, parent], identity))).toEqual([
+			"parent",
+			"recent",
+		]);
 	});
 
 	it("appends a newly discovered conversation until the user sends its first message", () => {

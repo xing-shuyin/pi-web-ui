@@ -20,6 +20,7 @@ export interface UniversalConversationStats {
 
 export interface UniversalConversation {
 	engine?: string;
+	cwd?: string;
 	id: string;
 	title: string;
 	driverSessionId?: string;

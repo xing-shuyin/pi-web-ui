@@ -1,5 +1,5 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
@@ -9,6 +9,13 @@ import { probeEngineCliVersion, resolveEngineCliLaunch } from "../../engine-cli.
 import { spawnChildPiped, type SpawnedChild } from "../../spawn-child.js";
 import { decodeInlineImage, describeCliAttachment } from "../universal-attachments.js";
 import { collectEnabledMcpServers, toCodexMcpOverrides } from "../engine-mcp.js";
+import {
+	isModelProtocolSupportedByEngine,
+	listCustomModelsFromConfig,
+	readModelsJson,
+	resolveModelProtocol,
+	resolveProviderCredential,
+} from "../../model-resolver.js";
 
 export interface CodexDriverOptions {
 	executablePath?: string;
@@ -18,8 +25,9 @@ export interface CodexDriverOptions {
 
 export async function probeCodex(
 	executablePath?: string,
+	refresh = false,
 ): Promise<{ available: boolean; version?: string; error?: string }> {
-	const result = await probeEngineCliVersion("codex", executablePath);
+	const result = await probeEngineCliVersion("codex", executablePath, refresh);
 	return result.available && result.version
 		? { ...result, version: result.version.replace(/^codex(?:-cli)?\s+/i, "") }
 		: result;
@@ -41,6 +49,54 @@ interface ActiveRun {
 	done: Promise<void>;
 	cancelled: boolean;
 	stopped?: Promise<void>;
+}
+
+interface CodexModelsCacheEntry {
+	mtimeMs: number;
+	size: number;
+	models: Array<{ id: string; name: string }>;
+}
+
+const codexModelsCache = new Map<string, CodexModelsCacheEntry>();
+
+function readCodexModelsCache(cachePath: string): Array<{ id: string; name: string }> {
+	let mtimeMs: number;
+	let size: number;
+	try {
+		const st = statSync(cachePath);
+		mtimeMs = st.mtimeMs;
+		size = st.size;
+	} catch {
+		codexModelsCache.delete(cachePath);
+		return [];
+	}
+
+	const cached = codexModelsCache.get(cachePath);
+	if (cached && cached.mtimeMs === mtimeMs && cached.size === size) {
+		return cached.models;
+	}
+
+	try {
+		const cache = JSON.parse(readFileSync(cachePath, "utf8")) as {
+			models?: Array<{ slug?: unknown; display_name?: unknown }>;
+		};
+		const models: Array<{ id: string; name: string }> = [];
+		const seen = new Set<string>(["default"]);
+		for (const model of cache.models ?? []) {
+			if (typeof model.slug === "string" && !seen.has(model.slug)) {
+				seen.add(model.slug);
+				models.push({
+					id: model.slug,
+					name: typeof model.display_name === "string" && model.display_name ? model.display_name : model.slug,
+				});
+			}
+		}
+		codexModelsCache.set(cachePath, { mtimeMs, size, models });
+		return models;
+	} catch {
+		codexModelsCache.delete(cachePath);
+		return [];
+	}
 }
 
 export class CodexDriver extends BaseAgentDriver {
@@ -78,7 +134,7 @@ export class CodexDriver extends BaseAgentDriver {
 		return this.sessionId;
 	}
 	async setModel(modelId: string): Promise<void> {
-		this.model = modelId.replace(/^codex\//, "");
+		this.model = modelId.startsWith("codex/") ? modelId.slice("codex/".length) : modelId;
 	}
 	setThinkingLevel(level: string): void {
 		this.effort = this.getSupportedThinkingLevels().includes(level) ? level : "medium";
@@ -88,15 +144,21 @@ export class CodexDriver extends BaseAgentDriver {
 	}
 	async listModels(): Promise<Array<{ id: string; name: string }>> {
 		const rows = [{ id: "default", name: "Codex config default" }];
-		try {
-			const cache = JSON.parse(
-				readFileSync(join(process.env.CODEX_HOME || join(homedir(), ".codex"), "models_cache.json"), "utf8"),
+		const cachePath = join(process.env.CODEX_HOME || join(homedir(), ".codex"), "models_cache.json");
+		for (const model of readCodexModelsCache(cachePath)) {
+			rows.push({ id: model.id, name: model.name });
+		}
+		if (this.options.agentDir) {
+			const custom = listCustomModelsFromConfig(this.options.agentDir, (entry) =>
+				isModelProtocolSupportedByEngine("codex", entry, entry.baseUrl),
 			);
-			for (const model of cache.models ?? []) {
-				if (typeof model.slug === "string" && !rows.some((row) => row.id === model.slug))
-					rows.push({ id: model.slug, name: model.display_name || model.slug });
+			for (const c of custom) {
+				const id = `${c.providerId}/${c.modelId}`;
+				if (!rows.some((row) => row.id === id)) {
+					rows.push({ id, name: c.name });
+				}
 			}
-		} catch {}
+		}
 		return rows;
 	}
 
@@ -126,6 +188,39 @@ export class CodexDriver extends BaseAgentDriver {
 				collectEnabledMcpServers({ cwd, agentDir: this.options.agentDir, dataDir: this.options.dataDir }),
 			);
 			const launch = resolveEngineCliLaunch("codex", { executablePath: this.options.executablePath, cwd });
+			const customEnv: Record<string, string> = { ...mcp.env };
+			const customConfigArgs: string[] = [];
+			let targetModel = this.model;
+			if (this.model !== "default" && this.model.includes("/")) {
+				const slash = this.model.indexOf("/");
+				const targetProvider = this.model.slice(0, slash);
+				targetModel = this.model.slice(slash + 1);
+				const safeKey = targetProvider.replace(/[^a-zA-Z0-9_-]/g, "_") || "custom";
+				const cred = this.options.agentDir
+					? resolveProviderCredential(this.options.agentDir, targetProvider)
+					: { providerId: targetProvider };
+				const providerRow = this.options.agentDir
+					? readModelsJson(this.options.agentDir).providers[targetProvider]
+					: undefined;
+				const api = typeof providerRow?.api === "string" ? providerRow.api : undefined;
+				const protocol = resolveModelProtocol(api, targetProvider, targetModel);
+				const wireApi = protocol === "openai-responses" ? "responses" : "chat";
+				customConfigArgs.push(
+					"-c",
+					`model_provider=${JSON.stringify(safeKey)}`,
+					"-c",
+					`model_providers.${safeKey}.name=${JSON.stringify(targetProvider)}`,
+					"-c",
+					`model_providers.${safeKey}.wire_api=${JSON.stringify(wireApi)}`,
+				);
+				if (cred.baseUrl) {
+					customConfigArgs.push("-c", `model_providers.${safeKey}.base_url=${JSON.stringify(cred.baseUrl)}`);
+				}
+				if (cred.apiKey) {
+					customConfigArgs.push("-c", `model_providers.${safeKey}.env_key="PI_CODEX_API_KEY"`);
+					customEnv.PI_CODEX_API_KEY = cred.apiKey;
+				}
+			}
 			const args = [
 				...launch.args,
 				"--ask-for-approval",
@@ -139,16 +234,17 @@ export class CodexDriver extends BaseAgentDriver {
 				"never",
 				"-c",
 				`model_reasoning_effort=${JSON.stringify(this.effort)}`,
+				...customConfigArgs,
 				...mcp.args,
 			];
-			if (this.model !== "default") args.push("--model", this.model);
+			if (targetModel !== "default") args.push("--model", targetModel);
 			if (this.sessionId) args.push("resume", this.sessionId);
 			args.push(...imageArgs, "-");
 			const spawned = spawnChildPiped({
 				cmd: launch.file,
 				args,
 				cwd,
-				env: mcp.env,
+				env: customEnv,
 			});
 			const child = spawned.child;
 			let finish!: () => void;

@@ -16,6 +16,39 @@ export interface AgentBotHost {
 	cancel(id: string): Promise<void>;
 }
 
+export type DraftReviewOutcome =
+	| { action: "approved"; botId: string; name: string }
+	| { action: "revise"; feedback: string }
+	| { action: "discarded" };
+
+const pendingDraftReviews = new Map<string, (outcome: DraftReviewOutcome) => void>();
+
+/** 唤醒正在阻塞等待用户确认/修改的 agent_bot(op="draft") 工具调用。 */
+export function resolveDraftReview(id: string, outcome: DraftReviewOutcome): boolean {
+	const resolve = pendingDraftReviews.get(id);
+	if (!resolve) return false;
+	pendingDraftReviews.delete(id);
+	resolve(outcome);
+	return true;
+}
+
+function waitForDraftReview(id: string, signal?: AbortSignal): Promise<DraftReviewOutcome> {
+	if (signal?.aborted) {
+		return Promise.resolve({ action: "discarded" });
+	}
+	return new Promise<DraftReviewOutcome>((resolve) => {
+		const onAbort = () => {
+			pendingDraftReviews.delete(id);
+			resolve({ action: "discarded" });
+		};
+		pendingDraftReviews.set(id, (outcome) => {
+			signal?.removeEventListener("abort", onAbort);
+			resolve(outcome);
+		});
+		signal?.addEventListener("abort", onAbort, { once: true });
+	});
+}
+
 let host: AgentBotHost | undefined;
 
 export function setAgentBotHost(next: AgentBotHost | undefined): void {
@@ -35,8 +68,8 @@ export const AGENT_BOT_PROMPT_GUIDELINES = [
 	"Use op=draft only when the user asks for a new Bot or assistant; derive name, role and prompt from their sentence instead of asking them to fill a form.",
 	"Never promise permissions: pick the narrowest tools that fit, and leave high-privilege tools (bash, terminal, browser, mcp, delegate) out unless the user explicitly asked for them.",
 	'Include the "memory" tool when the Bot should remember facts across sessions (most assistants should); it only reads and writes the Bot\'s own memory directory.',
-	"cwd must be an absolute path that already exists; reuse the current project when the user did not name one, and say so in rationale.",
-	"After drafting, tell the user it is waiting for confirmation and what needs approval; do not create more drafts for the same request.",
+	"cwd must be an absolute path to a concrete project directory that already exists (NEVER a user home directory like /Users/name or /home/name, and NEVER a drive/volume root); if the user did not specify one, ask or pick a concrete project subdirectory.",
+	'After drafting, this tool blocks until the user approves, edits & approves, requests revisions with feedback, or cancels. ONLY call op=draft again if status is "revised" (user sent revision feedback). If status is "created" or "discarded", NEVER call agent_bot again — just reply briefly to the user.',
 	"Do not choose a trigger: always-on / scheduled execution belongs to the host's alwaysOn plugins and schedule tool, not to a Bot draft.",
 	"Use op=list to show pending drafts and op=cancel when the user rejects one.",
 ];
@@ -65,12 +98,13 @@ export function makeAgentBotTool() {
 		promptSnippet: AGENT_BOT_PROMPT_SNIPPET,
 		promptGuidelines: AGENT_BOT_PROMPT_GUIDELINES,
 		parameters,
-		execute: async (_toolCallId, rawInput) => {
+		execute: async (_toolCallId, rawInput, signal, onUpdate) => {
 			const bound = host;
 			if (!bound) throw new Error("Bot drafting is unavailable on this device");
 			const input = rawInput as Record<string, unknown>;
 			const op = input.op;
 			let payload: unknown;
+			let modelText: string | undefined;
 			if (op === "draft") {
 				const draft = await bound.draft({
 					name: input.name,
@@ -83,19 +117,54 @@ export function makeAgentBotTool() {
 					...(input.mcpServers ? { mcpServers: input.mcpServers } : {}),
 					...(input.rationale ? { rationale: input.rationale } : {}),
 				});
-				payload = {
+				const draftPayload = {
 					op,
 					draft: {
 						id: draft.id,
 						name: draft.name,
 						description: draft.description,
+						systemPrompt: draft.systemPrompt,
 						trigger: draft.trigger,
 						cwd: draft.cwd,
+						...(draft.model ? { model: draft.model } : {}),
 						tools: draft.tools,
+						skills: draft.skills,
+						mcpServers: draft.mcpServers,
+						...(draft.rationale ? { rationale: draft.rationale } : {}),
 						needsApproval: draft.highPrivilegeTools,
 					},
-					next: "Waiting for the user to confirm in the Agents panel; nothing is created yet.",
+					next: "Waiting for the user to confirm, edit, or request revisions in the draft card.",
 				};
+				// 实时推送草案到对话流卡片，并像问卷一样阻塞等待用户选择
+				onUpdate?.({
+					content: [{ type: "text" as const, text: JSON.stringify(draftPayload) }],
+					details: draftPayload,
+				});
+				const outcome = await waitForDraftReview(draft.id, signal);
+				if (outcome.action === "approved") {
+					payload = {
+						...draftPayload,
+						status: "created",
+						botId: outcome.botId,
+						next: `User confirmed and created Bot "${outcome.name}" (id: ${outcome.botId}). Creation is complete — do NOT call agent_bot again. Briefly let the user know it is ready.`,
+					};
+					modelText = `Bot "${outcome.name}" (id: ${outcome.botId}) has been created and confirmed by the user. Creation is complete. Do NOT call agent_bot(op="draft") again unless the user explicitly asks to create a different Bot. Briefly let the user know the Bot is ready.`;
+				} else if (outcome.action === "revise") {
+					payload = {
+						...draftPayload,
+						status: "revised",
+						feedback: outcome.feedback,
+						next: `User requested revisions to the draft. Feedback: "${outcome.feedback}". Call agent_bot(op="draft") again with updated parameters addressing this feedback.`,
+					};
+				} else {
+					payload = {
+						...draftPayload,
+						status: "discarded",
+						next: "User cancelled/discarded the draft. Do not create another draft unless asked.",
+					};
+					modelText =
+						'User cancelled/discarded the Bot draft. Do NOT call agent_bot(op="draft") again unless asked. Briefly acknowledge.';
+				}
 			} else if (op === "list") {
 				payload = {
 					op,
@@ -114,7 +183,7 @@ export function makeAgentBotTool() {
 				payload = { op, cancelled: input.id };
 			}
 			const details = payload as Record<string, unknown>;
-			return { content: [{ type: "text" as const, text: JSON.stringify(details) }], details };
+			return { content: [{ type: "text" as const, text: modelText ?? JSON.stringify(details) }], details };
 		},
 	});
 }

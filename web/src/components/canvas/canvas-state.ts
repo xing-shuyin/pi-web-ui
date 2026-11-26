@@ -243,7 +243,7 @@ export function parseGraphImport(raw: string, reset = true, t: Translate = (key)
 			!Number.isFinite(n.y) ||
 			(n.width !== undefined && (!Number.isFinite(n.width) || n.width <= 0)) ||
 			(n.height !== undefined && (!Number.isFinite(n.height) || n.height <= 0)) ||
-			!["pi", "dsh", "codex", "claude", "durable"].includes(n.engine) ||
+			!["pi", "dsh", "codex", "claude", "agy", "durable"].includes(n.engine) ||
 			typeof n.model !== "string" ||
 			typeof n.cwd !== "string" ||
 			typeof n.useWorktree !== "boolean"

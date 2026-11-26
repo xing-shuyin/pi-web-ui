@@ -7,6 +7,7 @@ import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { GoalBar } from "../../web/src/components/GoalBar.js";
+import { setGoalCompose, setGoalPanelOpen } from "../../web/src/goal-compose.js";
 import { LanguageProvider } from "../../web/src/i18n.js";
 import type { GoalStatus } from "../../web/src/types.js";
 
@@ -43,6 +44,8 @@ function mount() {
 }
 
 afterEach(() => {
+	setGoalCompose(false);
+	setGoalPanelOpen(false);
 	if (root) act(() => root!.unmount());
 	root = null;
 	document.body.innerHTML = "";
@@ -55,13 +58,14 @@ function bodyOf(selector: string) {
 }
 
 describe("目标条折叠态", () => {
-	it("渲染 .goalbar-collapsed，且不带 .goalbar 面板类", () => {
+	it("未展开时不渲染顶部 .goalbar-collapsed / .goalbar-hint 药丸，展开后渲染 .goalbar 面板", () => {
 		const container = mount();
-		const bar = container.querySelector(".goalbar-collapsed");
-		expect(bar).not.toBeNull();
-		expect(bar!.classList.contains("goalbar")).toBe(false);
-		expect(container.querySelector(".goalbar-hint")).not.toBeNull();
-		expect(container.querySelector(".goalbar-row")).toBeNull();
+		expect(container.querySelector(".goalbar-collapsed")).toBeNull();
+		expect(container.querySelector(".goalbar-hint")).toBeNull();
+		expect(container.querySelector(".goalbar")).toBeNull();
+		act(() => setGoalPanelOpen(true));
+		expect(container.querySelector(".goalbar")).not.toBeNull();
+		expect(container.querySelector(".goalbar-row")).not.toBeNull();
 	});
 
 	it("CSS：.goalbar-collapsed 自己是悬浮一行（无边框/底色/内边距，且不外溢）", () => {

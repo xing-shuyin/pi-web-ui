@@ -17,7 +17,7 @@ let root: string;
 function makeFakeCli(body: string): string {
 	const bin = join(root, "bin");
 	mkdirSync(bin, { recursive: true });
-	writeFileSync(join(bin, "pi-web-ui.mjs"), body);
+	writeFileSync(join(bin, "keel.mjs"), body);
 	return root;
 }
 
@@ -280,7 +280,7 @@ describe("环境隔离", () => {
 		);
 		const probe = join(root, "probe.txt");
 		writeFileSync(
-			join(pkgRoot, "bin", "pi-web-ui.mjs"),
+			join(pkgRoot, "bin", "keel.mjs"),
 			`import { writeFileSync } from "node:fs";writeFileSync(${JSON.stringify(probe)}, String(process.env.PI_WEB_DATA_DIR ?? ""));process.exit(0);`,
 		);
 		const installer = new PluginInstaller({ dataDir, pkgRoot, managed: false });

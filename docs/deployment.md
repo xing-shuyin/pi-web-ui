@@ -133,14 +133,14 @@ Environment=PI_WEB_TOKEN=s3cret
 ```
 
 ```xml
-<!-- launchd: ~/Library/LaunchAgents/com.xingshuyin.pi-web-ui.plist 的 dict 内 -->
+<!-- launchd: ~/Library/LaunchAgents/com.xingshuyin.keel.plist 的 dict 内 -->
 <key>EnvironmentVariables</key>
 <dict>
     <key>PI_WEB_DSH_RUNTIME</key><string>/usr/local/lib/node_modules</string>
     <key>PI_WEB_TOKEN</key><string>s3cret</string>
 </dict>
-<!-- reload: launchctl bootout gui/$(id -u)/com.xingshuyin.pi-web-ui && \
-            launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.xingshuyin.pi-web-ui.plist -->
+<!-- reload: launchctl bootout gui/$(id -u)/com.xingshuyin.keel && \
+            launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.xingshuyin.keel.plist -->
 ```
 
 注意：launchd/systemd 运行环境极简（无 PATH/无 locale），全局 `dsh` 若装在用户目录

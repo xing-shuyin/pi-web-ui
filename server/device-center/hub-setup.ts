@@ -78,7 +78,7 @@ function parseInstallation(output: string): HubInstallation {
 	};
 }
 export function installHubSetupRoutes(app: Express, dataDir: string, runner?: Runner) {
-	const cliPath = join(getPkgRoot(), "bin", "pi-web-ui.mjs");
+	const cliPath = join(getPkgRoot(), "bin", "keel.mjs");
 	const hubDataDir = join(dataDir, "device-hub");
 	let active: AbortController | undefined;
 	let pending: Promise<void> | undefined;

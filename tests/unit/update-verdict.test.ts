@@ -174,6 +174,38 @@ describe("resolveUpdateCenter", () => {
 		expect(center.primary).toMatchObject({ action: "npm", key: "updatesActionUpdateComponents" });
 	});
 
+	it("npm-global 模式下 runtime.enabled=false 时，运行时轴直接显示全局包更新状态", () => {
+		const center = resolveUpdateCenter({
+			inDesktopShell: true,
+			desktop: desktopState({
+				runtime: {
+					enabled: false,
+					phase: "disabled",
+					currentVersion: null,
+					targetVersion: null,
+					percent: 0,
+					transferred: 0,
+					total: 0,
+					errorCode: null,
+					error: null,
+					checkedAt: null,
+				},
+			}),
+			update: { current: "0.122.0", latest: "0.123.0", upToDate: false },
+			updatesAll: [comp("keel-agent", "webui", { current: "0.122.0", latest: "0.123.0", upToDate: false })],
+			updatesSdk: null,
+		});
+
+		const runtime = center.axes.find((a) => a.id === "runtime");
+		expect(runtime).toMatchObject({
+			id: "runtime",
+			state: "available",
+			current: "0.122.0",
+			target: "0.123.0",
+			action: "npm",
+		});
+	});
+
 	it("主表面检查失败 → 整体报错；组件失败只影响自己那一行", () => {
 		const center = resolveUpdateCenter({
 			inDesktopShell: false,

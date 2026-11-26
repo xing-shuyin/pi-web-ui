@@ -5,7 +5,7 @@ import { posix } from "node:path";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
-const source = readFileSync(new URL("../../bin/pi-web-ui.mjs", import.meta.url), "utf8");
+const source = readFileSync(new URL("../../bin/keel.mjs", import.meta.url), "utf8");
 
 function functionSource(name: string): string {
 	const start = source.indexOf(`function ${name}(`);
@@ -115,7 +115,7 @@ function environment(unit: string): Record<string, string> {
 
 describe("Linux systemd installation", () => {
 	it("prints the actual Linux CLI configuration without running privileged commands", () => {
-		const cliUrl = new URL("../../bin/pi-web-ui.mjs", import.meta.url).href;
+		const cliUrl = new URL("../../bin/keel.mjs", import.meta.url).href;
 		const script = `
 			import cp from 'node:child_process';
 			import { syncBuiltinESMExports } from 'node:module';

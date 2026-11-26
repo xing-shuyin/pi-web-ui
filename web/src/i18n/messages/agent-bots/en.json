@@ -1,6 +1,6 @@
 {
 	"agentBotsTitle": "Agents",
-	"agentBotsEmpty": "No agents yet. Use ＋ to create one from a sentence.",
+	"agentBotsEmpty": "Click ＋ to create an agent",
 	"agentBotsLoading": "Loading…",
 	"agentBotsFailed": "Could not load agents",
 	"agentBotsRetry": "Retry",
@@ -65,5 +65,17 @@
 	"agentBotsHistoryUntitled": "Untitled chat",
 	"agentBotsHistoryUpdated": "Updated {date}",
 	"agentBotsHistoryOpen": "Open",
-	"agentBotsHistoryClose": "Close"
+	"agentBotsHistoryClose": "Close",
+	"agentBotsInlineTitle": "Agent draft (editable)",
+	"agentBotsInlineCreated": "Created",
+	"agentBotsInlineDiscarded": "Discarded",
+	"agentBotsInlineRevised": "Revision requested",
+	"agentBotsRevisePlaceholder": "Suggest changes for AI to regenerate…",
+	"agentBotsReviseBtn": "Ask AI to revise",
+	"agentBotsInlineHandled": "Already handled or expired",
+	"agentBotsFieldName": "Name",
+	"agentBotsFieldDesc": "Description",
+	"agentBotsFieldPrompt": "System prompt",
+	"agentBotsAddTool": "Add tool",
+	"agentBotsComposerBadge": "Create agent"
 }

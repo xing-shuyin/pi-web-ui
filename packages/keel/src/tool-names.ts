@@ -42,6 +42,7 @@ export const PHONE_TOOL_NAME = "phone";
 export const CONVERSATION_READ_TOOL_NAME = CONVERSATION_TOOL_NAME;
 export const SKILL_TOOL_NAME = "skill";
 export const SCHEDULE_TOOL_NAME = "schedule";
+export const BG_TASK_TOOL_NAME = "bg_task";
 export const LEGACY_SCHEDULE_TOOL_NAMES = ["schedule_task", "schedule_list", "schedule_cancel"] as const;
 export const EVAL_TOOL_NAME = "eval";
 export const PRESENT_FILES_TOOL_NAME = "present_files";

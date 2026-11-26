@@ -6,14 +6,19 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+	BOT_DRAFT_PROMPT_MAX,
 	BOT_DRAFT_THINKING_LEVELS,
 	mergeBotDraftSettings,
 	normalizeBotDraftSettings,
 } from "../../server/bot-draft-settings.js";
 
 describe("起草设置归一化", () => {
-	it("默认跟随默认模型、思考强度关闭", () => {
-		expect(normalizeBotDraftSettings({})).toEqual({ botDraftModel: null, botDraftThinking: "off" });
+	it("默认跟随默认模型、思考强度关闭、提示词为空串", () => {
+		expect(normalizeBotDraftSettings({})).toEqual({
+			botDraftModel: null,
+			botDraftThinking: "off",
+			botDraftPrompt: "",
+		});
 	});
 
 	it("合法 provider/id 保留，非法形状回落 null", () => {
@@ -37,15 +42,33 @@ describe("起草设置归一化", () => {
 	});
 
 	it("patch 只带一个字段时不动另一个", () => {
-		const current = { botDraftModel: "opencode-go/glm-5.3-flash", botDraftThinking: "medium" };
+		const current = {
+			botDraftModel: "opencode-go/glm-5.3-flash",
+			botDraftThinking: "medium",
+			botDraftPrompt: "custom {{request}}",
+		};
 		expect(mergeBotDraftSettings(current, { botDraftThinking: "off" })).toEqual({
 			botDraftModel: "opencode-go/glm-5.3-flash",
 			botDraftThinking: "off",
+			botDraftPrompt: "custom {{request}}",
 		});
 		expect(mergeBotDraftSettings(current, { botDraftModel: null })).toEqual({
 			botDraftModel: null,
 			botDraftThinking: "medium",
+			botDraftPrompt: "custom {{request}}",
+		});
+		expect(mergeBotDraftSettings(current, { botDraftPrompt: "" })).toEqual({
+			botDraftModel: "opencode-go/glm-5.3-flash",
+			botDraftThinking: "medium",
+			botDraftPrompt: "",
 		});
 		expect(mergeBotDraftSettings(current, {})).toEqual(current);
+	});
+
+	it("起草提示词会裁剪超长输入且非字符串回落空串", () => {
+		expect(normalizeBotDraftSettings({ botDraftPrompt: 123 }).botDraftPrompt).toBe("");
+		expect(
+			normalizeBotDraftSettings({ botDraftPrompt: "a".repeat(BOT_DRAFT_PROMPT_MAX + 50) }).botDraftPrompt.length,
+		).toBe(BOT_DRAFT_PROMPT_MAX);
 	});
 });

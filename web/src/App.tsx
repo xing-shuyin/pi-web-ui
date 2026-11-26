@@ -483,7 +483,7 @@ export function App() {
 		if (list.length === 0) return;
 		const clamped = Math.min(Math.max(0, initialIndex | 0), list.length - 1);
 		const first = list[clamped] ?? list[0];
-		const entry = first ? findFileHandler(first.name) : null;
+		const entry = list.length === 1 && first ? findFileHandler(first.name) : null;
 		if (entry && first) {
 			setPreviewFiles(null);
 			setPluginFile({
@@ -2712,11 +2712,7 @@ export function App() {
 					onCreate={createNativeCliConversation}
 				/>
 			)}
-			<ProjectPickerHost
-				open={projectPickerOpen}
-				pathCompletions={chat.pathCompletions ?? []}
-				onClose={() => setProjectPickerOpen(false)}
-			/>
+			<ProjectPickerHost open={projectPickerOpen} onClose={() => setProjectPickerOpen(false)} />
 			{iconEditOpen && (
 				<IconEditor
 					slots={uiSlots}
@@ -3383,7 +3379,11 @@ export function App() {
 													sessionDraft={chat.state?.draft ?? null}
 													sessionId={chat.state?.sessionId ?? ""}
 													preserveDraftAcrossConversations={chat.settings?.preserveDraftAcrossConversations ?? false}
+													botDraftPrompt={chat.settings?.botDraftPrompt}
+													botDraftDefaultPrompt={chat.settings?.botDraftDefaultPrompt}
+													activeBotId={chat.state?.bot?.id ?? null}
 													goal={chat.goal}
+													goalModeEnabled={chat.settings?.goalModeEnabled !== false}
 												/>
 											)}
 										</>
@@ -3708,8 +3708,6 @@ export function App() {
 			{pluginDirPicker && (
 				<DirectoryBrowser
 					currentCwd={pluginDirPicker.initialPath || chat.state?.cwd || ""}
-					pathCompletions={chat.pathCompletions}
-					workspaceRoots={chat.state?.workspaceRoots ?? []}
 					onClose={() => {
 						pluginDirPicker.resolve({ ok: false, canceled: true });
 						setPluginDirPicker(null);

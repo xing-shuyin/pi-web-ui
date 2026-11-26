@@ -6,7 +6,7 @@ import { act } from "react-dom/test-utils";
 import { GoalBar } from "../../web/src/components/GoalBar.js";
 import { LanguageProvider } from "../../web/src/i18n.js";
 import type { GoalStatus } from "../../web/src/types.js";
-import { isGoalCompose, setGoalCompose } from "../../web/src/goal-compose.js";
+import { isGoalCompose, setGoalCompose, setGoalPanelOpen } from "../../web/src/goal-compose.js";
 
 let root: Root | null = null;
 
@@ -47,6 +47,8 @@ function mount(goal: Partial<GoalStatus>) {
 }
 
 afterEach(() => {
+	setGoalCompose(false);
+	setGoalPanelOpen(false);
 	if (root) act(() => root!.unmount());
 	root = null;
 	document.body.innerHTML = "";
@@ -133,6 +135,7 @@ describe("目标条历史下拉", () => {
 			history,
 		} as unknown as GoalStatus;
 		act(() => {
+			setGoalPanelOpen(true);
 			root!.render(
 				createElement(
 					LanguageProvider,
@@ -146,8 +149,6 @@ describe("目标条历史下拉", () => {
 				),
 			);
 		});
-		const pill = container.querySelector(".goalbar-hint") as HTMLElement | null;
-		if (pill) act(() => pill.click());
 		return container;
 	}
 
@@ -201,9 +202,12 @@ describe("目标条收起 = 退出撰写态", () => {
 		return container;
 	}
 
-	it("点药丸进入撰写 → 点收起退出（占位符不能一直挂着）", () => {
+	it("展开后进入撰写 → 点收起退出并隐藏目标条（占位符不能一直挂着）", () => {
 		const container = mountEdit();
-		act(() => (container.querySelector(".goalbar-hint") as HTMLElement).click());
+		act(() => {
+			setGoalCompose(true);
+			setGoalPanelOpen(true);
+		});
 		expect(isGoalCompose()).toBe(true);
 		const collapse = [...container.querySelectorAll(".goalbar-icon-btn")].find((b) =>
 			(b.getAttribute("aria-label") ?? "").includes("收起"),
@@ -211,6 +215,7 @@ describe("目标条收起 = 退出撰写态", () => {
 		expect(collapse).toBeTruthy();
 		act(() => collapse.click());
 		expect(isGoalCompose()).toBe(false);
-		expect(container.querySelector(".goalbar-collapsed")).toBeTruthy();
+		expect(container.querySelector(".goalbar")).toBeNull();
+		expect(container.querySelector(".goalbar-collapsed")).toBeNull();
 	});
 });

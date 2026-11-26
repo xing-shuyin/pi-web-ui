@@ -77,7 +77,7 @@ const EMPTY_MCP: McpServerInventory = { servers: [], globalPath: "", projectPath
 export function createCoreSettingsAdapter(
 	options: CoreSettingsAdapterOptions,
 ): SettingsFramePort & PromptRenderCapable {
-	const { service, stateStore, clientId } = createCoreSettingsService(options);
+	const { service, host, approvalRules, stateStore, clientId } = createCoreSettingsService(options);
 	/**
 	 * 会话开好了吗？设置帧里的 `visionModels`（读 `host.getSession().modelRuntime`）、
 	 * `effectiveSystemPrompt` / `toolsSchema` 都从当前对话的会话现算：没有会话时它们只能是空值。
@@ -116,6 +116,10 @@ export function createCoreSettingsAdapter(
 		saveApprovalRules: (rules) => service.saveApprovalRules(rules),
 		deleteApprovalRule: (id) => service.deleteApprovalRule(id),
 		resetBuiltinApprovalRule: (id) => service.resetBuiltinApprovalRule(id),
+		approvalRules: () => approvalRules.list(),
+
+		applySessionOverrides: (session) => host.applySessionOverrides?.(session),
+		applyCompactionOverrides: (session) => host.applyCompactionOverrides(session),
 
 		saveTemplate: (template) => service.saveTemplate(template),
 		deleteTemplate: (name) => service.deleteTemplate(name),
@@ -148,6 +152,8 @@ export function createCoreSettingsAdapter(
 /** 构造宿主设置叶子：模板 / 审批规则库按老树同一路径落在 `stateStore.dataDir` 下。 */
 export function createCoreSettingsService(options: CoreSettingsAdapterOptions): {
 	service: SettingsService;
+	host: ReturnType<typeof createCoreSettingsHost>;
+	approvalRules: ApprovalRulesStore;
 	stateStore: ClientStateStore;
 	clientId: string;
 } {
@@ -155,8 +161,9 @@ export function createCoreSettingsService(options: CoreSettingsAdapterOptions): 
 		options.templates ?? new SubagentTemplatesStore(join(options.stateStore.dataDir, "subagent-templates.json"));
 	const approvalRules =
 		options.approvalRules ?? new ApprovalRulesStore(join(options.stateStore.dataDir, "approval-rules.json"));
-	const service = new SettingsService(createCoreSettingsHost(options), templates, approvalRules);
-	return { service, stateStore: options.stateStore, clientId: options.clientId };
+	const host = createCoreSettingsHost(options);
+	const service = new SettingsService(host, templates, approvalRules);
+	return { service, host, approvalRules, stateStore: options.stateStore, clientId: options.clientId };
 }
 
 function computePromptSnapshot(
@@ -328,19 +335,31 @@ function sessionOfConversation(options: CoreSettingsAdapterOptions, conversation
  * 把 `CoreSettingsSinks` 收窄成「只认注入值」的 `SettingsHost`：设置叶子（`SettingsService`）
  * 不认识新树的会话实体，只拿到这里如实投影出来的成员。
  */
-export function createCoreSettingsHost(options: CoreSettingsAdapterOptions): SettingsHost {
-	const applyRetry = (): void => {
+export function createCoreSettingsHost(options: CoreSettingsAdapterOptions): SettingsHost & {
+	applyCompactionOverrides: (targetSession?: unknown) => void;
+	applySessionOverrides: (targetSession?: unknown) => void;
+} {
+	const resolveTargetSession = (targetSession?: unknown): any => {
+		if (targetSession !== undefined) return targetSession;
 		try {
-			const sess = options.getSession() as any;
+			return options.getSession();
+		} catch {
+			return undefined;
+		}
+	};
+
+	const applyRetry = (targetSession?: unknown): void => {
+		try {
+			const sess = resolveTargetSession(targetSession);
 			const settings = options.stateStore.getSettings(options.clientId);
 			const n = normalizeRetryMaxAttempts(settings.retryMaxAttempts);
 			sess?.settingsManager?.applyOverrides?.({ retry: { maxRetries: n } });
 		} catch {}
 	};
 
-	const applyQueue = (): void => {
+	const applyQueue = (targetSession?: unknown): void => {
 		try {
-			const sess = options.getSession() as any;
+			const sess = resolveTargetSession(targetSession);
 			if (sess) {
 				const settings = options.stateStore.getSettings(options.clientId);
 				applyQueueModesToSession(sess, settings);
@@ -348,9 +367,9 @@ export function createCoreSettingsHost(options: CoreSettingsAdapterOptions): Set
 		} catch {}
 	};
 
-	const applyCompaction = (): void => {
+	const applyCompaction = (targetSession?: unknown): void => {
 		try {
-			const sess = options.getSession() as any;
+			const sess = resolveTargetSession(targetSession);
 			if (sess) {
 				const s = options.stateStore.getSettings(options.clientId);
 				let reserve = DEFAULT_COMPACTION_RESERVE_TOKENS;
@@ -372,9 +391,9 @@ export function createCoreSettingsHost(options: CoreSettingsAdapterOptions): Set
 		} catch {}
 	};
 
-	const applyCodemode = (): void => {
+	const applyCodemode = (targetSession?: unknown): void => {
 		try {
-			const sess = options.getSession() as any;
+			const sess = resolveTargetSession(targetSession);
 			if (sess) {
 				const s = options.stateStore.getSettings(options.clientId);
 				const mode = s.codemodeMode ?? "on";
@@ -430,12 +449,12 @@ export function createCoreSettingsHost(options: CoreSettingsAdapterOptions): Set
 		} catch {}
 	};
 
-	const applySessionOverrides = (): void => {
-		applyQueue();
-		applyRetry();
-		applyCompaction();
-		applyCodemode();
-		applyToolGating();
+	const applySessionOverrides = (targetSession?: unknown): void => {
+		applyQueue(targetSession);
+		applyRetry(targetSession);
+		applyCompaction(targetSession);
+		applyCodemode(targetSession);
+		if (targetSession === undefined) applyToolGating();
 	};
 
 	return {

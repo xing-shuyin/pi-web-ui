@@ -155,6 +155,21 @@ export interface CoreSandboxSinks {
  * 宿主实现 `BackgroundPort` 时要拼的几块：帧出口、本对话的 cwd / id、清理阀值。
  * 宿主的 `CoreBackgroundSinks` 可以比他宽（插件常驻任务行等），这边只保证不漏项。
  */
+export interface CoreBackgroundJobNotice {
+	id: string;
+	pid: number;
+	command: string;
+	label: string;
+	cwd: string;
+	origin?: string;
+	since: number;
+	logPath: string;
+	state: string;
+	exitCode: number | null;
+	reason?: string;
+	tail?: string;
+}
+
 export interface CoreBackgroundSinks {
 	emit(msg: ServerMessage): void;
 	flushSnapshot(): void;
@@ -169,6 +184,10 @@ export interface CoreBackgroundSinks {
 	pluginTasks?(): BgServer[];
 	/** 停一个插件常驻任务（引擎钩子 `svc.pluginStopBgTask`）；缺省 = 这类行停不掉。 */
 	stopBgTask?(taskId: string): boolean;
+	/** 后台任务结束时唤醒原对话。 */
+	onJobExit?(job: CoreBackgroundJobNotice): void;
+	/** 后台任务达到通知超时时发送进度提醒。 */
+	onJobNotify?(job: CoreBackgroundJobNotice): void;
 }
 
 /**
@@ -467,6 +486,27 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 		// 插件常驻任务行与「停掉它」的句柄都是引擎钩子（`pluginBgTasksProvider` / `pluginStopBgTask`）。
 		...(deps.pluginTasks ? { pluginTasks: () => deps.pluginTasks?.() ?? [] } : {}),
 		...(deps.stopBgTask ? { stopBgTask: (taskId: string) => deps.stopBgTask?.(taskId) ?? false } : {}),
+		onJobExit: (job) => {
+			if (!job.origin || deps.isDisposed()) return;
+			const status =
+				job.reason === "timeout"
+					? `timed out (exit=${job.exitCode ?? "null"})`
+					: job.reason === "idle"
+						? `idle timeout (exit=${job.exitCode ?? "null"})`
+						: job.reason === "killed"
+							? `killed (exit=${job.exitCode ?? "null"})`
+							: `exited with code ${job.exitCode ?? "null"}`;
+			const tail = job.tail?.trim() ? `\nLast output:\n${job.tail.trim()}` : "";
+			const note = `[Background job ${job.id} ${status}]\nCommand: ${job.command}\nLog: ${job.logPath}${tail}`;
+			void runtime.noteConversation(job.origin, note).catch(() => {});
+		},
+		onJobNotify: (job) => {
+			if (!job.origin || deps.isDisposed()) return;
+			const elapsed = Math.max(1, Math.round((Date.now() - job.since) / 1000));
+			const tail = job.tail?.trim() ? `\nRecent output:\n${job.tail.trim()}` : "";
+			const note = `[Background job ${job.id} still running after ${elapsed}s]\nCommand: ${job.command}\nLog: ${job.logPath}${tail}`;
+			void runtime.noteConversation(job.origin, note).catch(() => {});
+		},
 	});
 	// 沙盒 / 工作区宿主面都是「每客户端一份」（帧出口跟着连接走）。
 	const sandbox = deps.sandbox?.({
@@ -507,6 +547,16 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 		...(deps.getRuntimes ? { getRuntimes: deps.getRuntimes } : {}),
 		...(deps.findRuntime ? { findRuntime: deps.findRuntime } : {}),
 	});
+	const pushSessionsFor = async (targetCwd: string, root: string | undefined): Promise<void> => {
+		if (!root) {
+			if (!transport.isClosed()) transport.send({ type: "sessions", sessions: [], cwd: targetCwd });
+			return;
+		}
+		const pinned = { isPinned: (owner: string, file: string) => stateStore.isSessionPinned(owner, file) };
+		// 条数是前端 `list_sessions.limit` 按项目设的（`setSessionListLimit`）：帧出口只按它截断，`hasMore` 跟着算。
+		const limit = sessionListLimitOf(runtime.sessionLimits, targetCwd);
+		await refreshSessions({ root, cwd: targetCwd, transport, state: runtime.historyState(), limit, ...pinned });
+	};
 	const frames: ClientFrames = {
 		// 设置面没注入 = 能力未接（不再由内核自建 SettingsService）。
 		pushSettings: () => settingsFrame?.push(),
@@ -518,21 +568,15 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 			await pushProjects({ transport, clientId, cwd: runtime.cwd, source: deps.projectSource });
 		},
 		refreshSessions: async () => {
-			const root = runtime.historyRoot();
-			const cwd = runtime.cwd;
-			if (!root) {
-				transport.send({ type: "sessions", sessions: [], cwd });
+			await pushSessionsFor(runtime.cwd, runtime.historyRoot());
+		},
+		// 侧栏展开非当前项目或钉子落在目标项目时，按 targetCwd 扫对应的会话目录并推帧。
+		refreshSessionsFor: async (targetCwd: string) => {
+			if (resolveFsPath(targetCwd) === resolveFsPath(runtime.cwd)) {
+				await frames.refreshSessions();
 				return;
 			}
-			const pinned = { isPinned: (owner: string, file: string) => stateStore.isSessionPinned(owner, file) };
-			// 条数是前端 `list_sessions.limit` 按项目设的（`setSessionListLimit`）：帧出口只按它截断，`hasMore` 跟着算。
-			const limit = sessionListLimitOf(runtime.sessionLimits, cwd);
-			await refreshSessions({ root, cwd, transport, state: runtime.historyState(), limit, ...pinned });
-		},
-		// 钉子落在会话归属的项目上：只有目标就是当前项目时才重扫（别的项目的会话目录只有宿主认得）。
-		refreshSessionsFor: async (targetCwd: string) => {
-			if (resolveFsPath(targetCwd) !== resolveFsPath(runtime.cwd)) return;
-			await frames.refreshSessions();
+			await pushSessionsFor(targetCwd, runtime.historyRootFor(targetCwd));
 		},
 		listModels: () => {
 			void modelPusher.push();

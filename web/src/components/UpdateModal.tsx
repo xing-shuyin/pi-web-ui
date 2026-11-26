@@ -230,7 +230,7 @@ export function UpdateModal({
 	const run = (action: UpdateAxisAction, axis?: UpdateAxis) => {
 		switch (action) {
 			case "check":
-				if (inDesktopShell) updater.check({ manual: true });
+				if (inDesktopShell && axis?.id !== "runtime") updater.check({ manual: true });
 				else onCheckNpm();
 				return;
 			case "check-runtime":
@@ -266,9 +266,9 @@ export function UpdateModal({
 					});
 					return;
 				}
-				if (axis?.id === "webui") {
+				if (axis?.id === "webui" || axis?.id === "runtime") {
 					const item = updatesAll?.find((entry) => entry.kind === "webui") ?? {
-						name: "pi-web-ui",
+						name: "keel-agent",
 						kind: "webui" as const,
 						current: axis.current ?? "",
 						latest: axis.target,

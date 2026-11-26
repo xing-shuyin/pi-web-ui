@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	TOKEN_COOKIE_MAX_AGE_SECONDS,
 	buildPiWebTokenCookie,
+	clearPiWebTokenCookies,
 	decodeCookieToken,
 	isTlsRequest,
 } from "../../server/auth-cookie.js";
@@ -46,11 +47,17 @@ describe("buildPiWebTokenCookie", () => {
 		);
 	});
 
-	it("有效期常量是单源（三个签发点共用）", () => {
-		expect(TOKEN_COOKIE_MAX_AGE_SECONDS).toBe(365 * 24 * 60 * 60);
+	it("有效期常量是单源（所有签发点共用，7 天配合滑动续期）", () => {
+		expect(TOKEN_COOKIE_MAX_AGE_SECONDS).toBe(7 * 24 * 60 * 60);
 		expect(buildPiWebTokenCookie("abc", TOKEN_COOKIE_MAX_AGE_SECONDS, false)).toContain(
 			`Max-Age=${TOKEN_COOKIE_MAX_AGE_SECONDS}`,
 		);
+	});
+
+	it("clearPiWebTokenCookies 同时清除明文与 Secure 两路", () => {
+		const [plain, sec] = clearPiWebTokenCookies();
+		expect(plain).toBe("pi_web_token=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
+		expect(sec).toBe("pi_web_token=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0; Secure");
 	});
 
 	it("TLS 写入带 Secure", () => {

@@ -1,16 +1,18 @@
 // @vitest-environment jsdom
 /**
- * 设置 →「智能体」：起草模型 + 思考强度。
+ * 设置 →「智能体」：起草提示词自定义视图 + 提示词模板拼接。
  *
  * 守三件事：
- * 1. 默认「跟随默认模型」提交的是 `null`（服务端据此回落到默认模型，而不是存一个空串）；
- * 2. 已保存但当前模型列表里没有的值不能被悄悄改掉（`stale` 选项要留一个）；
- * 3. 思考强度只给协议里那 6 档，不含子代理的 `max`。
+ * 1. 输入修改后离开焦点才提交 `botDraftPrompt`；
+ * 2. 正在编辑（focused）时不因外部快照刷新丢失本地草稿；
+ * 3. 「恢复默认」提交空串 `""`，并重置本地草稿；
+ * 4. `buildBotDraftPrompt` 正确替换 `{{request}}`，未写占位符时自动附加在末尾。
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { BotDraftSettings, type BotDraftPatch } from "../../web/src/components/BotDraftSettings.js";
+import { buildBotDraftPrompt } from "../../web/src/bot-create.js";
 import type { UiSettingsState } from "../../web/src/types.js";
 
 vi.mock("../../web/src/i18n", () => ({ useT: () => (key: string) => key }));
@@ -22,16 +24,10 @@ afterEach(() => {
 	document.body.innerHTML = "";
 });
 
-const models = [
-	{ provider: "opencode-go", id: "glm-5.3-flash", label: "GLM 5.3 Flash" },
-	{ provider: "opencode-go", id: "deepseek-v4.1-flash", label: "DeepSeek" },
-];
-
 function settings(overrides: Record<string, unknown> = {}): UiSettingsState {
 	return {
-		botDraftModel: null,
-		botDraftThinking: "off",
-		subagentModels: models,
+		botDraftPrompt: "",
+		botDraftDefaultPrompt: "default: {{request}}",
 		...overrides,
 	} as unknown as UiSettingsState;
 }
@@ -43,41 +39,64 @@ async function mount(onChange: (patch: BotDraftPatch) => void, value = settings(
 	await act(async () => root!.render(createElement(BotDraftSettings, { settings: value, onChange })));
 }
 
-function select(idSuffix: string, value: string) {
-	const element = document.querySelector<HTMLSelectElement>(`select[id$="-${idSuffix}"]`)!;
-	expect(element).not.toBeNull();
-	act(() => {
-		Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(element, value);
-		element.dispatchEvent(new Event("change", { bubbles: true }));
-	});
-}
-
 describe("起草设置视图", () => {
-	it("选模型提交 provider/id，选「跟随默认」提交 null", async () => {
+	it("显示默认提示词占位符，修改后 blur 提交", async () => {
 		const changes: BotDraftPatch[] = [];
 		await mount((patch) => changes.push(patch));
-		select("model", "opencode-go/glm-5.3-flash");
-		select("model", "");
-		expect(changes).toEqual([{ botDraftModel: "opencode-go/glm-5.3-flash" }, { botDraftModel: null }]);
+		const textarea = document.querySelector<HTMLTextAreaElement>('textarea[id$="-prompt"]')!;
+		expect(textarea.placeholder).toBe("default: {{request}}");
+
+		act(() => {
+			textarea.focus();
+			Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+				textarea,
+				"custom {{request}}",
+			);
+			textarea.dispatchEvent(new Event("input", { bubbles: true }));
+		});
+		expect(changes).toEqual([]);
+
+		act(() => {
+			textarea.blur();
+		});
+		expect(changes).toEqual([{ botDraftPrompt: "custom {{request}}" }]);
 	});
 
-	it("思考强度只给 6 档协议值", async () => {
+	it("点击恢复默认按钮提交空串并禁用按钮", async () => {
+		const changes: BotDraftPatch[] = [];
+		await mount((patch) => changes.push(patch), settings({ botDraftPrompt: "custom {{request}}" }));
+		const resetBtn = document.querySelector<HTMLButtonElement>("button.quick-ask-settings-reset")!;
+		expect(resetBtn.disabled).toBe(false);
+
+		act(() => {
+			resetBtn.click();
+		});
+		expect(changes).toEqual([{ botDraftPrompt: "" }]);
+		const textarea = document.querySelector<HTMLTextAreaElement>('textarea[id$="-prompt"]')!;
+		expect(textarea.value).toBe("");
+	});
+
+	it("已为默认状态时恢复默认按钮禁用", async () => {
 		await mount(() => {});
-		const values = [...document.querySelectorAll<HTMLSelectElement>('select[id$="-thinking"] option')].map(
-			(option) => option.value,
+		const resetBtn = document.querySelector<HTMLButtonElement>("button.quick-ask-settings-reset")!;
+		expect(resetBtn.disabled).toBe(true);
+	});
+});
+
+describe("buildBotDraftPrompt", () => {
+	it("优先使用自定义模板并替换 {{request}}", () => {
+		expect(buildBotDraftPrompt("请帮我设计：{{request}}，谢谢", "default {{request}}", "pr处理")).toBe(
+			"请帮我设计：pr处理，谢谢",
 		);
-		expect(values).toEqual(["off", "minimal", "low", "medium", "high", "xhigh"]);
 	});
 
-	it("已保存但目录里没有的模型保留为可选项", async () => {
-		await mount(() => {}, settings({ botDraftModel: "opencode-go/ghost-model" }));
-		const selectElement = document.querySelector<HTMLSelectElement>('select[id$="-model"]')!;
-		expect(selectElement.value).toBe("opencode-go/ghost-model");
-		expect([...selectElement.options].some((option) => option.value === "opencode-go/ghost-model")).toBe(true);
+	it("模板未包含 {{request}} 时自动附加到末尾", () => {
+		expect(buildBotDraftPrompt("请先调研仓库再调用 agent_bot", "default {{request}}", "pr处理")).toBe(
+			"请先调研仓库再调用 agent_bot\n\npr处理",
+		);
 	});
 
-	it("没有可用模型时给出提示", async () => {
-		await mount(() => {}, settings({ subagentModels: [] }));
-		expect(document.body.textContent).toContain("botDraftNoModels");
+	it("自定义模板为空时回退默认模板", () => {
+		expect(buildBotDraftPrompt("   ", "默认：{{request}}", "pr处理")).toBe("默认：pr处理");
 	});
 });

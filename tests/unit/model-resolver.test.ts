@@ -1,7 +1,24 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+const fsTracker = vi.hoisted(() => ({
+	trackReadFileSync: false,
+	readFileSyncCalls: 0,
+}));
+
+vi.mock("node:fs", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:fs")>();
+	return {
+		...actual,
+		readFileSync: ((...args: Parameters<typeof actual.readFileSync>) => {
+			if (fsTracker.trackReadFileSync) fsTracker.readFileSyncCalls += 1;
+			return actual.readFileSync(...args);
+		}) as typeof actual.readFileSync,
+	};
+});
+
 import {
 	stripJsonComments,
 	readModelsJson,
@@ -11,6 +28,7 @@ import {
 	listCustomModelsFromConfig,
 } from "../../server/model-resolver.js";
 import { ClaudeCodeDriver } from "../../server/universal/drivers/claude-code.js";
+import { CodexDriver } from "../../server/universal/drivers/codex.js";
 import { ModelAdminService } from "../../server/model-admin.js";
 
 describe("model-resolver", () => {
@@ -80,6 +98,66 @@ describe("model-resolver", () => {
 			const res = readModelsJson(testAgentDir);
 			expect(res.providers["my-proxy"]).toBeDefined();
 			expect(res.providers["my-proxy"].baseUrl).toBe("https://proxy.example.com");
+		});
+
+		it("文件未变更时命中 mtimeMs+size 缓存，变更或删除后自动失效", () => {
+			const modelsPath = join(testAgentDir, "models.json");
+			const authPath = join(testAgentDir, "auth.json");
+			const keysPath = join(testAgentDir, "provider-keys.json");
+
+			writeFileSync(
+				modelsPath,
+				JSON.stringify({ providers: { p1: { baseUrl: "https://p1.example.com", apiKey: "k1" } } }),
+				"utf8",
+			);
+			writeFileSync(authPath, JSON.stringify({ p1: { type: "api_key", key: "auth-k1" } }), "utf8");
+			writeFileSync(
+				keysPath,
+				JSON.stringify({ p1: { activeKeyName: "default", keys: [{ name: "default", apiKey: "pk-1" }] } }),
+				"utf8",
+			);
+
+			fsTracker.trackReadFileSync = true;
+			fsTracker.readFileSyncCalls = 0;
+			try {
+				const m1 = readModelsJson(testAgentDir);
+				const a1 = readAuthJson(testAgentDir);
+				const k1 = readProviderKeysJson(testAgentDir);
+				expect(fsTracker.readFileSyncCalls).toBe(3);
+
+				// 返回副本应防外部篡改污染缓存
+				m1.providers.injected = { apiKey: "bad" };
+
+				// 未变更时再次读取：命中缓存，不再触发 readFileSync
+				const m2 = readModelsJson(testAgentDir);
+				const a2 = readAuthJson(testAgentDir);
+				const k2 = readProviderKeysJson(testAgentDir);
+				expect(fsTracker.readFileSyncCalls).toBe(3);
+				expect(m2.providers.injected).toBeUndefined();
+				expect(m2.providers.p1.apiKey).toBe("k1");
+				expect(a2).toEqual(a1);
+				expect(k2).toEqual(k1);
+
+				// 更新文件内容（即使长度相同也通过 utimesSync 推进 mtimeMs）→ 缓存失效并重新读取
+				writeFileSync(
+					modelsPath,
+					JSON.stringify({ providers: { p1: { baseUrl: "https://p1.example.com", apiKey: "k2" } } }),
+					"utf8",
+				);
+				const future = new Date(Date.now() + 5_000);
+				utimesSync(modelsPath, future, future);
+
+				const m3 = readModelsJson(testAgentDir);
+				expect(fsTracker.readFileSyncCalls).toBe(4);
+				expect(m3.providers.p1.apiKey).toBe("k2");
+
+				// 删除文件 → 失效并返回空回退值
+				rmSync(modelsPath);
+				expect(readModelsJson(testAgentDir)).toEqual({ providers: {} });
+				expect(fsTracker.readFileSyncCalls).toBe(4);
+			} finally {
+				fsTracker.trackReadFileSync = false;
+			}
 		});
 	});
 
@@ -266,6 +344,67 @@ describe("model-resolver", () => {
 			expect(ant?.source).toBe("stored");
 
 			admin.dispose();
+		});
+	});
+
+	describe("CodexDriver models_cache.json 缓存", () => {
+		it("models_cache.json 未变更时 listModels 命中缓存，更新后自动失效", async () => {
+			const codexHome = mkdtempSync(join(tmpdir(), "pi-codex-cache-test-"));
+			const prevCodexHome = process.env.CODEX_HOME;
+			const cachePath = join(codexHome, "models_cache.json");
+			process.env.CODEX_HOME = codexHome;
+
+			writeFileSync(
+				cachePath,
+				JSON.stringify({
+					models: [
+						{ slug: "gpt-5.4", display_name: "GPT-5.4" },
+						{ slug: "default", display_name: "Should be skipped" },
+					],
+				}),
+				"utf8",
+			);
+
+			const driver = new CodexDriver(testAgentDir);
+			fsTracker.trackReadFileSync = true;
+			fsTracker.readFileSyncCalls = 0;
+			try {
+				const first = await driver.listModels();
+				expect(first).toEqual([
+					{ id: "default", name: "Codex config default" },
+					{ id: "gpt-5.4", name: "GPT-5.4" },
+				]);
+				expect(fsTracker.readFileSyncCalls).toBe(1);
+
+				const second = await driver.listModels();
+				expect(second).toEqual(first);
+				expect(fsTracker.readFileSyncCalls).toBe(1);
+
+				writeFileSync(
+					cachePath,
+					JSON.stringify({
+						models: [{ slug: "gpt-5.4-mini", display_name: "GPT-5.4 Mini" }],
+					}),
+					"utf8",
+				);
+				const future = new Date(Date.now() + 5_000);
+				utimesSync(cachePath, future, future);
+
+				const third = await driver.listModels();
+				expect(third).toEqual([
+					{ id: "default", name: "Codex config default" },
+					{ id: "gpt-5.4-mini", name: "GPT-5.4 Mini" },
+				]);
+				expect(fsTracker.readFileSyncCalls).toBe(2);
+			} finally {
+				fsTracker.trackReadFileSync = false;
+				if (prevCodexHome === undefined) {
+					delete process.env.CODEX_HOME;
+				} else {
+					process.env.CODEX_HOME = prevCodexHome;
+				}
+				rmSync(codexHome, { recursive: true, force: true });
+			}
 		});
 	});
 });

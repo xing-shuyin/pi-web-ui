@@ -6,6 +6,7 @@ import {
 	hasQuietText,
 	isQuietCollabBody,
 	isQuietCollabNotice,
+	summarizeQuietActions,
 	summarizeQuietFold,
 	type QuietItem,
 } from "../../web/src/quiet-fold.js";
@@ -68,6 +69,11 @@ describe("安静模式折叠判定 (Quiet Mode fold)", () => {
 	it("整轮只有「最终回复 + 尾部活动」时，折叠行插到本轮开头", () => {
 		const items = fold([user("u1"), assistant("a1", [text("结论")]), assistant("a2", [tool("tc1")])]);
 		expect(ids(items)).toEqual(["u1", "fold(1)", "a1"]);
+	});
+
+	it("刚发送消息且助手仅在思考/调工具时，折叠行位于用户消息之后", () => {
+		const items = fold([user("u1"), assistant("a1", [thinking("想一下")])]);
+		expect(ids(items)).toEqual(["u1", "fold(1)"]);
 	});
 
 	it("纯对话轮不产生折叠", () => {
@@ -161,6 +167,16 @@ describe("安静模式计数与偏好归一化", () => {
 			msg({ id: "n1", role: "user", content: [text(COLLAB_NOTICE)] }),
 		]);
 		expect(summary).toEqual({ total: 3, thinking: 1, tools: 1, bash: 1, collab: 1, other: 1 });
+		expect(
+			summarizeQuietActions([
+				assistant("a1", [
+					tool("tc1", "read"),
+					{ type: "bash", command: "ls" },
+					tool("tc2", "read"),
+					tool("tc3", "grep"),
+				]),
+			]),
+		).toEqual(["read", "bash", "grep"]);
 	});
 
 	it("hasQuietText 只认非空文本块", () => {

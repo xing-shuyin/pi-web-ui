@@ -189,10 +189,81 @@ try {
 	);
 	const scLogin = jarHeader(loginOk);
 	check(
-		"POST /__pi/auth 下发 HttpOnly pi_web_token",
-		scLogin.includes(`pi_web_token=${encodeURIComponent(TOKEN)}`) && scLogin.toLowerCase().includes("httponly"),
+		"POST /__pi/auth 下发 HttpOnly pi_web_token（值为随机 sid，非主口令本体）",
+		scLogin.includes("pi_web_token=") &&
+			!scLogin.includes(encodeURIComponent(TOKEN)) &&
+			!scLogin.includes(TOKEN) &&
+			scLogin.toLowerCase().includes("httponly"),
 		scLogin || "<no set-cookie>",
 	);
+	applyJar(loginOk);
+
+	// 滑动续期 + 会话列表 + 单设备吊销 + 登出 + exchange
+	const renewRes = await httpGet("/api/themes");
+	check(
+		"带 sid cookie 访问受保护接口 → 200 且触发滑动续期 Set-Cookie",
+		renewRes.status === 200 && jarHeader(renewRes).includes("pi_web_token="),
+	);
+
+	const exchangeBad = await fetch(`http://127.0.0.1:${PORT}/__pi/session/exchange`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({ token: "wrong-token" }),
+	});
+	check("POST /__pi/session/exchange 错误口令 → 401", exchangeBad.status === 401);
+
+	const exchangeOk = await fetch(`http://127.0.0.1:${PORT}/__pi/session/exchange`, {
+		method: "POST",
+		headers: { authorization: `Bearer ${TOKEN}` },
+	});
+	const exchangeBody = await exchangeOk.json();
+	check(
+		"POST /__pi/session/exchange 正确口令 → 返回随机 sid 且不等于主口令",
+		exchangeOk.status === 200 &&
+			exchangeBody.ok === true &&
+			typeof exchangeBody.sid === "string" &&
+			exchangeBody.sid !== TOKEN,
+		JSON.stringify(exchangeBody),
+	);
+
+	const sessListRes = await httpGet("/__pi/session");
+	const sessList = await sessListRes.json();
+	check(
+		"GET /__pi/session 列出当前与其它设备会话且不泄露 sid",
+		sessListRes.status === 200 &&
+			sessList.authEnabled === true &&
+			Array.isArray(sessList.sessions) &&
+			sessList.sessions.length >= 2 &&
+			!JSON.stringify(sessList).includes(exchangeBody.sid),
+		JSON.stringify(sessList),
+	);
+
+	const otherSession = sessList.sessions.find((s) => !s.current);
+	const revokeOther = await fetch(`http://127.0.0.1:${PORT}/__pi/session/revoke`, {
+		method: "POST",
+		headers: { "content-type": "application/json", cookie: jar },
+		body: JSON.stringify({ id: otherSession.id }),
+	});
+	check("POST /__pi/session/revoke 可按 id 下线其他设备", revokeOther.status === 200);
+	const checkOtherDead = await fetch(`http://127.0.0.1:${PORT}/api/themes`, {
+		headers: { cookie: `pi_web_token=${encodeURIComponent(exchangeBody.sid)}` },
+	});
+	check("被吊销设备的 sid 立即失效 → 401", checkOtherDead.status === 401);
+
+	const logoutRes = await fetch(`http://127.0.0.1:${PORT}/__pi/session/logout`, {
+		method: "POST",
+		headers: { cookie: jar },
+	});
+	check(
+		"POST /__pi/session/logout 登出并清除 cookie",
+		logoutRes.status === 200 && jarHeader(logoutRes).includes("Max-Age=0"),
+	);
+	const afterLogout = await httpGet("/");
+	check("登出后旧 sid 访问 → 401", afterLogout.status === 401);
+
+	// 重新登录后再重启换口令，验证旧 sid 会话失效并触发 Max-Age=0 清理
+	const relogin = await postForm("/__pi/auth", { username: "pi-web-ui", token: TOKEN, next: "/" });
+	applyJar(relogin);
 
 	const loginBad = await postForm("/__pi/auth", { username: "pi-web-ui", token: "nope", next: "/chat" });
 	check(
@@ -249,8 +320,8 @@ try {
 	check("GET /?token=new after token change → 200", heal.status === 200);
 	const scHeal = jarHeader(heal);
 	check(
-		"healed cookie now carries the NEW token",
-		scHeal.includes(`pi_web_token=${encodeURIComponent(TOKEN2)}`),
+		"healed cookie now carries a new sid (not the master token)",
+		scHeal.includes("pi_web_token=") && !scHeal.includes(encodeURIComponent(TOKEN2)) && !scHeal.includes(TOKEN2),
 		scHeal,
 	);
 	applyJar(heal);
@@ -276,8 +347,8 @@ try {
 	check("特殊字符口令：?token= → 200", q3.status === 200);
 	const sc3 = jarHeader(q3);
 	check(
-		"特殊字符口令：cookie 存的是 URL 编码值（与浏览器一致）",
-		sc3.includes(`pi_web_token=${encodeURIComponent(TOKEN3)}`),
+		"特殊字符口令：cookie 存的是随机 sid（不含主口令）",
+		sc3.includes("pi_web_token=") && !sc3.includes(encodeURIComponent(TOKEN3)) && !sc3.includes(TOKEN3),
 		sc3 || "<no set-cookie>",
 	);
 	applyJar(q3);
@@ -288,7 +359,7 @@ try {
 	check("特殊字符口令：WS 凭 cookie 连接", ws3 === true, JSON.stringify(ws3));
 
 	const rawCookie3 = await httpGet("/", { cookie: `pi_web_token=${TOKEN3}` });
-	check("特殊字符口令：明文 cookie 也接受", rawCookie3.status === 200);
+	check("特殊字符口令：Cookie 直接塞主口令本体被拒绝 → 401", rawCookie3.status === 401);
 
 	console.log(`\n${passed} passed, ${failed} failed`);
 } catch (err) {

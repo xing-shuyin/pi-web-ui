@@ -229,6 +229,67 @@ export function createBotDraftStore(dataDir: string, now: () => number = () => D
 				await save(drafts);
 			});
 		},
+		/** 人工在确认前修改草案参数（名称、简介、系统提示词、工作目录、模型、工具集、技能、MCP 服务）。 */
+		async update(
+			id: string,
+			patch: {
+				name?: unknown;
+				description?: unknown;
+				systemPrompt?: unknown;
+				cwd?: unknown;
+				model?: unknown;
+				tools?: unknown;
+				skills?: unknown;
+				mcpServers?: unknown;
+			},
+			allowedTools?: ReadonlySet<string>,
+		): Promise<BotDraft> {
+			return enqueue(async () => {
+				const drafts = await load();
+				const draft = drafts.find((entry) => entry.id === id && live(entry));
+				if (!draft) throw new BotDraftError(404, "DRAFT_MISSING", "Bot draft not found or expired");
+				if (patch.name !== undefined) draft.name = text(patch.name, BOT_DRAFT_NAME_MAX, "name");
+				if (patch.description !== undefined)
+					draft.description = text(patch.description, BOT_DRAFT_DESCRIPTION_MAX, "description");
+				if (patch.systemPrompt !== undefined)
+					draft.systemPrompt = text(patch.systemPrompt, BOT_DRAFT_PROMPT_MAX, "systemPrompt");
+				if (patch.cwd !== undefined) {
+					const cwd = text(patch.cwd, 4096, "cwd");
+					if (cwd.includes("\0")) throw new BotDraftError(400, "DRAFT_INVALID", "Invalid cwd");
+					draft.cwd = cwd;
+				}
+				if (patch.model !== undefined) {
+					if (patch.model === null) {
+						delete draft.model;
+					} else if (
+						typeof patch.model === "object" &&
+						!Array.isArray(patch.model) &&
+						typeof (patch.model as { provider?: unknown }).provider === "string" &&
+						typeof (patch.model as { modelId?: unknown }).modelId === "string"
+					) {
+						const provider = (patch.model as { provider: string }).provider.trim();
+						const modelId = (patch.model as { modelId: string }).modelId.trim();
+						if (!provider || !modelId) throw new BotDraftError(400, "DRAFT_INVALID", "Invalid model");
+						draft.model = { provider, modelId };
+					} else {
+						throw new BotDraftError(400, "DRAFT_INVALID", "Invalid model");
+					}
+				}
+				if (patch.tools !== undefined) {
+					draft.tools = stringList(patch.tools, "tools", allowedTools);
+					draft.highPrivilegeTools = draft.tools.filter((tool) => isBotToolHighPrivilege(tool));
+				}
+				if (patch.skills !== undefined) {
+					draft.skills = stringList(patch.skills, "skills");
+				}
+				if (patch.mcpServers !== undefined) {
+					draft.mcpServers = stringList(patch.mcpServers, "mcpServers");
+				}
+				draft.updatedAt = now();
+				await save(drafts);
+				return { ...draft };
+			});
+		},
 		/**
 		 * 人的确认（第一阶段）：只校验、不落状态。
 		 *

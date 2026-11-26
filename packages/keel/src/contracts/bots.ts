@@ -102,4 +102,10 @@ export interface BotChatPort {
 	 * 缺省 = 不注入：内核不会因为宿主没接这个口就把工具集清空。
 	 */
 	toolFace?(input: { clientId: string }): BotToolFace | undefined;
+
+	/**
+	 * 一句话创建 Bot 的草案工具（`agent_bot`）：依赖设备中心草案仓库，
+	 * 仅在宿主接入且对话为普通主对话时挂载（Bot 执行 / Bot 私聊 / 子代理不注册）。
+	 */
+	creationTool?(): unknown | undefined;
 }

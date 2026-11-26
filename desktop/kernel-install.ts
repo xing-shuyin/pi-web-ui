@@ -17,7 +17,7 @@ export interface KernelServicePlanInput {
 	name?: string | null;
 }
 
-/** 服务名只允许 CLI 接受的那套字符（`bin/pi-web-ui.mjs` 的 serviceName 校验）。 */
+/** 服务名只允许 CLI 接受的那套字符（`bin/keel.mjs` 的 serviceName 校验）。 */
 export function normalizeServiceName(name: string | null | undefined): string | null {
 	const trimmed = (name ?? "").trim();
 	if (!trimmed) return null;
@@ -58,7 +58,7 @@ export function buildServiceLifecycleArgs(
 
 /** 本包 CLI 入口：与内核同一份代码，避免"壳版本里的 install 逻辑"和"内核版本"分叉。 */
 export function kernelCliPath(pkgRoot: string): string {
-	return join(pkgRoot, "bin", "pi-web-ui.mjs");
+	return join(pkgRoot, "bin", "keel.mjs");
 }
 
 export interface KernelCliResult {

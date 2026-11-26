@@ -194,7 +194,7 @@ function shellAxis(desktop: DesktopUpdaterState | null): UpdateAxis | null {
 	}
 }
 
-function runtimeAxis(runtime: DesktopRuntimeUpdaterState | undefined): UpdateAxis | null {
+function runtimeAxis(runtime: DesktopRuntimeUpdaterState | undefined, input: UpdateCenterInput): UpdateAxis | null {
 	if (!runtime) return null;
 	const base: Omit<UpdateAxis, "state" | "tone" | "action"> = {
 		id: "runtime",
@@ -211,6 +211,15 @@ function runtimeAxis(runtime: DesktopRuntimeUpdaterState | undefined): UpdateAxi
 		checkedAt: runtime.checkedAt,
 	};
 	if (!runtime.enabled) {
+		// npm-global 权威链下，桌面壳不再自更新 `<userData>/runtime`，运行时轴直接投影全局 npm 包的更新状态。
+		const globalPkg = webuiAxis(input);
+		if (globalPkg) {
+			return {
+				...globalPkg,
+				id: "runtime",
+				labelKey: "updateDesktopRuntimeTitle",
+			};
+		}
 		return { ...base, target: null, state: "bundled", tone: axisTone("bundled"), action: null };
 	}
 	switch (runtime.phase) {
@@ -315,7 +324,7 @@ export function resolveUpdateCenter(input: UpdateCenterInput): UpdateCenter {
 	const shell = input.inDesktopShell ? shellAxis(input.desktop) : null;
 	if (shell) axes.push(shell);
 	if (input.inDesktopShell) {
-		const runtime = runtimeAxis(input.desktop?.runtime);
+		const runtime = runtimeAxis(input.desktop?.runtime, input);
 		if (runtime) axes.push(runtime);
 	} else {
 		const webui = webuiAxis(input);

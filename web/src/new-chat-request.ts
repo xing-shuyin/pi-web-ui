@@ -29,8 +29,16 @@ function requestChat(
 	});
 }
 
-export function requestNewChat(send: (message: ClientMessage) => boolean, timeoutMs = 8000): Promise<string | null> {
-	return requestChat(send, (requestId) => ({ type: "new_chat", requestId }), timeoutMs);
+export function requestNewChat(
+	send: (message: ClientMessage) => boolean,
+	timeoutMs = 8000,
+	cwd?: string,
+): Promise<string | null> {
+	return requestChat(
+		send,
+		(requestId) => ({ type: "new_chat", requestId, ...(cwd?.trim() ? { cwd: cwd.trim() } : {}) }),
+		timeoutMs,
+	);
 }
 
 export function requestNativeCliChat(

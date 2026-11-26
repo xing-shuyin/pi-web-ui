@@ -78,7 +78,7 @@ describe("normalizeServiceName", () => {
 
 describe("kernelCliPath", () => {
 	it("指向本包 CLI（与内核同一份代码）", () => {
-		expect(kernelCliPath("C:/pkg").replace(/\\/g, "/")).toBe("C:/pkg/bin/pi-web-ui.mjs");
+		expect(kernelCliPath("C:/pkg").replace(/\\/g, "/")).toBe("C:/pkg/bin/keel.mjs");
 	});
 });
 
@@ -111,7 +111,7 @@ function fakeSpawn(script: {
 function tempPkg(): string {
 	const root = mkdtempSync(join(tmpdir(), "pi-kernel-cli-"));
 	mkdirSync(join(root, "bin"), { recursive: true });
-	writeFileSync(join(root, "bin", "pi-web-ui.mjs"), "// stub\n");
+	writeFileSync(join(root, "bin", "keel.mjs"), "// stub\n");
 	return root;
 }
 

@@ -9,6 +9,7 @@ import { applyLocalBotPreset } from "./bot-presets.js";
 import { listBotChatTranscripts } from "./bot-chat.js";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { BotDraft, BotDraftStore } from "./bot-drafts.js";
+import { resolveDraftReview } from "./bot-creation-tool.js";
 import { botMemoryRoot, createBotMemory, type BotMemory } from "./bot-memory.js";
 import { appendIdentityChange } from "./bot-identity.js";
 import { exportBotHome, importBotHome, parseBotHomeBundle } from "./bot-home.js";
@@ -1398,8 +1399,12 @@ export async function installLocalDeviceCenter(options: Options) {
 					);
 			});
 		options.app.post("/api/device-center/bot-drafts/:id/discard", (req: Request, res: Response) => {
-			void botDrafts.discard(String(req.params.id)).then(
-				() => res.json({ discarded: true }),
+			const id = String(req.params.id);
+			void botDrafts.discard(id).then(
+				() => {
+					resolveDraftReview(id, { action: "discarded" });
+					res.json({ discarded: true });
+				},
 				(error) => {
 					const failure = draftFailure(error);
 					res.status(failure.status).json({
@@ -1410,12 +1415,67 @@ export async function installLocalDeviceCenter(options: Options) {
 				},
 			);
 		});
+		options.app.post("/api/device-center/bot-drafts/:id/revise", (req: Request, res: Response) => {
+			const id = String(req.params.id);
+			const feedback =
+				typeof (req.body as { feedback?: unknown } | undefined)?.feedback === "string"
+					? (req.body as { feedback: string }).feedback.trim()
+					: "";
+			if (!feedback) {
+				res.status(400).json({ code: "DRAFT_INVALID", error: "Revision feedback is required" });
+				return;
+			}
+			void botDrafts
+				.discard(id)
+				.catch(() => {})
+				.then(() => {
+					resolveDraftReview(id, { action: "revise", feedback });
+					res.json({ revised: true });
+				});
+		});
 		options.app.post("/api/device-center/bot-drafts/:id/approve", (req: Request, res: Response) => {
 			void serialize(async () => {
 				if (closed) throw new DeviceWorkspaceError(409, "CLOSED", "Device center is shutting down");
-				const draft = await botDrafts.get(String(req.params.id));
+				let draft = await botDrafts.get(String(req.params.id));
 				if (!draft) throw new DeviceWorkspaceError(404, "DRAFT_MISSING", "Bot draft not found or expired");
-				const rawApproved = (req.body as { approvedTools?: unknown } | undefined)?.approvedTools;
+				const body = (req.body ?? {}) as {
+					approvedTools?: unknown;
+					name?: unknown;
+					description?: unknown;
+					systemPrompt?: unknown;
+					cwd?: unknown;
+					model?: unknown;
+					tools?: unknown;
+					skills?: unknown;
+					mcpServers?: unknown;
+				};
+				const hasEdits =
+					body.name !== undefined ||
+					body.description !== undefined ||
+					body.systemPrompt !== undefined ||
+					body.cwd !== undefined ||
+					body.model !== undefined ||
+					body.tools !== undefined ||
+					body.skills !== undefined ||
+					body.mcpServers !== undefined;
+				if (hasEdits) {
+					const allowed = new Set(ALL_AGENT_TOOL_ENTRIES.map((tool) => tool.name));
+					draft = await botDrafts.update(
+						draft.id,
+						{
+							name: body.name,
+							description: body.description,
+							systemPrompt: body.systemPrompt,
+							cwd: body.cwd,
+							model: body.model,
+							tools: body.tools,
+							skills: body.skills,
+							mcpServers: body.mcpServers,
+						},
+						allowed,
+					);
+				}
+				const rawApproved = body.approvedTools;
 				const approved = Array.isArray(rawApproved)
 					? rawApproved.filter((tool): tool is string => typeof tool === "string" && Boolean(tool))
 					: draft.tools.filter((tool) => !draft.highPrivilegeTools.includes(tool));
@@ -1442,6 +1502,7 @@ export async function installLocalDeviceCenter(options: Options) {
 				} as LocalBotInput);
 				await botDrafts.markCreated(draft.id, bot.id, approved);
 				await scaffoldBotHome(bot, confirmed);
+				resolveDraftReview(draft.id, { action: "approved", botId: bot.id, name: bot.name });
 				// 本机 Hub 可能还没被任何设备中心请求唤醒：先把协作通道拉起来，
 				// 否则 Bot 同步与直聊房间会被静默跳过（只有 synced:true 的假象）。
 				await ensureLocalHub();

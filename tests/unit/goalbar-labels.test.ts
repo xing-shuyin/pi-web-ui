@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { GoalBar } from "../../web/src/components/GoalBar.js";
+import { setGoalPanelOpen } from "../../web/src/goal-compose.js";
 import { LanguageProvider } from "../../web/src/i18n.js";
 import type { GoalStatus, ModelInfo } from "../../web/src/types.js";
 import type { UiSlotEntry } from "../../web/src/ui-slots.js";
@@ -36,12 +37,17 @@ const entries = (overrides: Record<string, Partial<UiSlotEntry>> = {}): UiSlotEn
 		...overrides[id],
 	}));
 
+afterEach(() => {
+	setGoalPanelOpen(false);
+});
+
 function render(uiGoalbarActions: UiSlotEntry[], expand = false) {
 	localStorage.setItem("pi-web-ui:lang", "zh");
 	const container = document.createElement("div");
 	document.body.appendChild(container);
 	const root = createRoot(container);
 	act(() => {
+		setGoalPanelOpen(expand);
 		root.render(
 			createElement(
 				LanguageProvider,
@@ -56,12 +62,6 @@ function render(uiGoalbarActions: UiSlotEntry[], expand = false) {
 			),
 		);
 	});
-	if (expand) {
-		const pill = container.querySelector("button.goalbar-hint");
-		act(() => {
-			pill?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-		});
-	}
 	return { container, root };
 }
 
@@ -88,8 +88,8 @@ describe("目标条内置条目改名落地", () => {
 		container.remove();
 	});
 
-	it("折叠态药丸（host:goal-pill）同样让位", () => {
-		const { container, root } = render(entries({ "host:goal-pill": { label: "MY-PILL", labelExplicit: true } }));
+	it("标题栏（host:goal-pill）同样让位", () => {
+		const { container, root } = render(entries({ "host:goal-pill": { label: "MY-PILL", labelExplicit: true } }), true);
 		expect(container.textContent).toContain("MY-PILL");
 		act(() => root.unmount());
 		container.remove();

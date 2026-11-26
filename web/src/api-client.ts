@@ -16,7 +16,7 @@
  * await requestJson(path, { body, errorFor: (f) => new GroupRequestError(f.status, f.error, f.code) });
  * ```
  */
-import { withToken } from "./auth-token";
+import { clearAuthToken, withToken } from "./auth-token";
 import { appUrl } from "./base-url";
 
 /** 服务端失败回执的统一形状（`/api/*` 出错时返回 `{ error, code?, detail?, message? }`）。 */
@@ -97,4 +97,21 @@ export async function requestJson<T = unknown>(path: string, init: ApiRequestIni
 		throw new ApiError(failure.status, failure.error, failure.code, failure.detail, failure.body);
 	}
 	return (await response.json().catch(() => ({}))) as T;
+}
+
+export async function logoutAuthSession(): Promise<void> {
+	try {
+		await requestJson("/__pi/session/logout", { method: "POST" });
+	} finally {
+		clearAuthToken();
+	}
+}
+
+export async function revokeAuthSessions(body: {
+	all?: boolean;
+	id?: string;
+}): Promise<{ revoked?: number | boolean }> {
+	const result = await requestJson<{ ok: boolean; revoked?: number | boolean }>("/__pi/session/revoke", { body });
+	if (body.all) clearAuthToken();
+	return result;
 }

@@ -1753,20 +1753,24 @@ export class DshClientSession {
 		if (this.quiesceBlocked()) return false;
 		const active = this.conv;
 		if (active.messages.length === 0 && active.terminals.list().length === 0) {
+			active.listed = true;
 			if (preset) await this.selectAgentPreset(preset);
 			else {
 				this.pushSettings();
 				this.flushSnapshot();
 			}
+			this.emitConversations();
 			onReady?.(active.id);
 			return true;
 		}
 		for (const conv of this.convs.values()) {
 			if (conv.id === this.activeId) continue;
 			if (conv.messages.length === 0) {
+				conv.listed = true;
 				this.switchConversation(conv.id);
 				if (preset) await this.selectAgentPreset(preset);
 				else this.flushSnapshot();
+				this.emitConversations();
 				onReady?.(conv.id);
 				return true;
 			}
@@ -1785,6 +1789,7 @@ export class DshClientSession {
 		const prevModel = this.model;
 		active.listed = this.shouldRetainDshConversation(active);
 		const conv = this.addConversation(`chat-${randomUUID().slice(0, 12)}`, this.cwd, false, preset);
+		conv.listed = true;
 		this.activeId = conv.id;
 		this.model = prevModel;
 		this.emitConversations();
@@ -1800,19 +1805,27 @@ export class DshClientSession {
 	async switchConversation(id: string): Promise<void> {
 		const targetCwd = this.convs.get(id)?.cwd ?? this.cwd;
 		assertEngineWorkspaceSupported(this.sandboxes, targetCwd, "dsh");
-		if (this.switchingWorkspace || !this.convs.has(id) || id === this.activeId) return;
-		const target = this.convs.get(id)!;
-		if (target.cwd !== this.cwd) {
-			await this.setCwd(target.cwd);
-			if (this.cwd !== target.cwd) return;
+		if (this.switchingWorkspace) return;
+		if (!this.convs.has(id)) {
+			this.flushSnapshot(true);
+			return;
 		}
-		const prev = this.conv;
-		prev.listed = this.shouldRetainDshConversation(prev);
-		this.activeId = id;
+		if (id !== this.activeId) {
+			const target = this.convs.get(id)!;
+			if (target.cwd !== this.cwd) {
+				await this.setCwd(target.cwd);
+				if (this.cwd !== target.cwd) return;
+			}
+			const prev = this.conv;
+			prev.listed = this.shouldRetainDshConversation(prev);
+			this.activeId = id;
+		}
 		this.emitConversations();
 		this.emitGoalStatus();
 		this.pushTerminals();
 		this.pushSettings();
+		this.pushAgentPresets();
+		this.pushPermission();
 		this.flushSnapshot(true);
 		void this.refreshActivePermission().catch(() => {});
 	}
@@ -2423,12 +2436,16 @@ export class DshClientSession {
 	}
 
 	async refreshSessions(): Promise<void> {
-		await this.pushSessions();
+		await this.pushSessions(this.cwd);
 	}
 
-	private async pushSessions(): Promise<void> {
+	async pushSessionsForCwd(targetCwd: string): Promise<void> {
+		await this.pushSessions(targetCwd);
+	}
+
+	private async pushSessions(targetCwd: string = this.cwd): Promise<void> {
 		try {
-			const files = findSessionFilesForCwd(this.sessionRoot, this.cwd);
+			const files = findSessionFilesForCwd(this.sessionRoot, targetCwd);
 			const summaries: SessionSummary[] = [];
 			for (const file of files) {
 				try {
@@ -2443,22 +2460,22 @@ export class DshClientSession {
 					).length;
 					if (count === 0) continue;
 					const isPinned = Boolean(
-						this.stateStore?.isSessionPinned(this.cwd, file) || this.stateStore?.isSessionPinned(this.cwd, sessionId),
+						this.stateStore?.isSessionPinned(targetCwd, file) || this.stateStore?.isSessionPinned(targetCwd, sessionId),
 					);
 					const storedTitle =
-						this.stateStore?.getSessionTitle(this.cwd, file) ?? this.stateStore?.getSessionTitle(this.cwd, sessionId);
+						this.stateStore?.getSessionTitle(targetCwd, file) ?? this.stateStore?.getSessionTitle(targetCwd, sessionId);
 					const explicitTitle =
 						storedTitle ??
 						sessionLogTitle(events) ??
 						[...this.convs.values()].find((c) => c.sessionId === sessionId && !DshClientSession.isDefaultTitle(c.title))
 							?.title;
 					const firstMsg = firstUserText(events, this.getLang());
-					const displayName = this.resolveSessionDisplayName(sessionId, explicitTitle, firstMsg);
+					const displayName = this.resolveSessionDisplayName(sessionId, explicitTitle, firstMsg, targetCwd);
 
 					summaries.push({
 						path: file,
 						sessionId,
-						cwd: this.cwd,
+						cwd: targetCwd,
 						name: explicitTitle,
 						displayName,
 						firstMessage: firstMsg,
@@ -2469,14 +2486,19 @@ export class DshClientSession {
 					});
 				} catch {}
 			}
-			this.emit({ type: "sessions", sessions: summaries, cwd: this.cwd });
+			this.emit({ type: "sessions", sessions: summaries, cwd: targetCwd });
 		} catch {
-			this.emit({ type: "sessions", sessions: [], cwd: this.cwd });
+			this.emit({ type: "sessions", sessions: [], cwd: targetCwd });
 		}
 	}
 
-	resolveSessionDisplayName(sessionId: string, explicitTitle?: string, firstMsg?: string): string {
-		const storedTitle = this.stateStore?.getSessionTitle(this.cwd, sessionId);
+	resolveSessionDisplayName(
+		sessionId: string,
+		explicitTitle?: string,
+		firstMsg?: string,
+		targetCwd: string = this.cwd,
+	): string {
+		const storedTitle = this.stateStore?.getSessionTitle(targetCwd, sessionId);
 		if (storedTitle && !DshClientSession.isDefaultTitle(storedTitle)) {
 			return storedTitle;
 		}
@@ -3794,6 +3816,7 @@ export class DshClientSession {
 			planModePromptMode: "append",
 			planModePrompt: "",
 			planModeDefaultPrompt: PLAN_MODE_SYSTEM_PROMPT,
+			botDraftDefaultPrompt: "",
 			reviewPrompt: this.settings.reviewPrompt,
 			reviewDisabledSkills: [],
 			disabledPlugins: this.settings.disabledPlugins,

@@ -581,6 +581,7 @@ export function CanvasNodeCard({
 								<option value="dsh">{t("canvas.engine.dsh")}</option>
 								<option value="claude">Claude Code</option>
 								<option value="codex">Codex</option>
+								<option value="agy">Antigravity</option>
 								<option value="durable">{t("canvas.engine.durable")}</option>
 							</select>
 						</div>

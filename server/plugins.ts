@@ -246,6 +246,10 @@ export interface PluginAgentTool {
 	namespace?: { name: string; description?: string; instructions?: string };
 	/** 模型怎么拿到这个工具：`direct`（默认）/ `codemode` / `deferred` / `model-only` / `hidden`。 */
 	exposure?: "direct" | "model-only" | "codemode" | "deferred" | "hidden";
+	/** 声明工具是否为只读（布尔或按参数动态判定）；缺省在只读模式下默认拒绝。 */
+	readOnly?: boolean | ((params: Record<string, unknown>) => boolean);
+	/** 外部工具（如 MCP `annotations.readOnlyHint`）提供的非受信任只读提示。 */
+	readOnlyHint?: boolean;
 	execute(
 		toolCallId: string,
 		params: Record<string, unknown>,
@@ -370,6 +374,7 @@ export interface PluginHost {
 		promptSnippet?: string;
 		promptGuidelines?: string[];
 		parameters?: Record<string, unknown>;
+		readOnly?: boolean | ((params: Record<string, unknown>) => boolean);
 		execute(args: Record<string, unknown>): Promise<unknown>;
 	}): () => void;
 	registerMarker<State = unknown>(marker: PluginMarkerDef<State>): () => void;
@@ -4059,6 +4064,7 @@ export class PluginManager {
 					promptSnippet: tool.promptSnippet,
 					promptGuidelines: tool.promptGuidelines,
 					parameters: tool.parameters,
+					...(tool.readOnly !== undefined ? { readOnly: tool.readOnly } : {}),
 					execute: async (
 						toolCallId: string,
 						params: Record<string, unknown>,

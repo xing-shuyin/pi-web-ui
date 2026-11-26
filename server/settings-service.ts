@@ -4,7 +4,12 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { mergeQuickAskSettings, normalizeQuickAskSettings, type QuickAskSettings } from "./quick-ask-settings.js";
-import { mergeBotDraftSettings, normalizeBotDraftSettings, type BotDraftSettings } from "./bot-draft-settings.js";
+import {
+	BOT_DRAFT_DEFAULT_PROMPT,
+	mergeBotDraftSettings,
+	normalizeBotDraftSettings,
+	type BotDraftSettings,
+} from "./bot-draft-settings.js";
 import type {
 	ClientMessage,
 	QueueMode,
@@ -595,6 +600,7 @@ export class SettingsService {
 				visionBridgeDefaultPrompt: SYSTEM_PROMPT,
 				scmCommitMsgDefaultPrompt: COMMITMSG_SYSTEM_PROMPT,
 				planModeDefaultPrompt: PLAN_MODE_SYSTEM_PROMPT,
+				botDraftDefaultPrompt: BOT_DRAFT_DEFAULT_PROMPT,
 				visionModels: this.collectVisionModels(),
 				disabledSkills: [...this.settings.disabledSkills],
 				disabledExtensions: [...this.settings.disabledExtensions],
@@ -728,6 +734,7 @@ export class SettingsService {
 		quickAskThinking?: QuickAskSettings["quickAskThinking"];
 		botDraftModel?: BotDraftSettings["botDraftModel"];
 		botDraftThinking?: BotDraftSettings["botDraftThinking"];
+		botDraftPrompt?: BotDraftSettings["botDraftPrompt"];
 		quickAskSystemPrompt?: QuickAskSettings["quickAskSystemPrompt"];
 		quickAskExplainPrompt?: QuickAskSettings["quickAskExplainPrompt"];
 		quickAskTranslateModel?: QuickAskSettings["quickAskTranslateModel"];

@@ -1,3 +1,4 @@
+import type { ApprovalRule } from "../approval-rules.js";
 import type { ClientMessage, ThinkingLevel, UiApprovalRule, UiLayoutPrefs, UiSubagentTemplate } from "../protocol.js";
 
 /** 提示词装配模式：协议里没有命名类型，只能就地取那两个字面量。 */
@@ -41,6 +42,7 @@ export interface SettingsPatchInput {
 	quickAskThinking?: ThinkingLevel;
 	botDraftModel?: string | null;
 	botDraftThinking?: ThinkingLevel;
+	botDraftPrompt?: string;
 	quickAskSystemPrompt?: string;
 	quickAskExplainPrompt?: string;
 	reviewPrompt?: string;
@@ -76,6 +78,13 @@ export interface SettingsFramePort {
 	saveApprovalRules(rules: UiApprovalRule[]): Promise<void>;
 	deleteApprovalRule(id: string): Promise<void>;
 	resetBuiltinApprovalRule(id: string): Promise<void>;
+	/** 当前生效的审批规则列表（由宿主规则库提供）；缺省 = 未接。 */
+	approvalRules?(): ApprovalRule[];
+
+	/** 将当前客户端设置覆写到指定（或当前活跃）会话。 */
+	applySessionOverrides?(session?: unknown): void;
+	/** 重算并应用压缩预留（软上限 / 压缩阈值）到指定（或当前活跃）会话。 */
+	applyCompactionOverrides?(session?: unknown): void;
 
 	saveTemplate(template: UiSubagentTemplate): Promise<void>;
 	deleteTemplate(name: string): Promise<void>;

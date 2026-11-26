@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -30,31 +30,65 @@ export interface CustomModelEntry {
 import { stripJsonComments, parseJsonWithComments } from "./json-utils.js";
 export { stripJsonComments, parseJsonWithComments };
 
+interface JsonStatCacheEntry {
+	mtimeMs: number;
+	size: number;
+	data: unknown;
+}
+
+const jsonFileCache = new Map<string, JsonStatCacheEntry>();
+
+function readCachedJson<T>(filePath: string, parse: (raw: string) => T, fallback: () => T): T {
+	let mtimeMs: number;
+	let size: number;
+	try {
+		const st = statSync(filePath);
+		mtimeMs = st.mtimeMs;
+		size = st.size;
+	} catch {
+		jsonFileCache.delete(filePath);
+		return fallback();
+	}
+
+	const cached = jsonFileCache.get(filePath);
+	if (cached && cached.mtimeMs === mtimeMs && cached.size === size) {
+		return structuredClone(cached.data as T);
+	}
+
+	try {
+		const raw = readFileSync(filePath, "utf8");
+		const data = parse(raw);
+		jsonFileCache.set(filePath, { mtimeMs, size, data });
+		return structuredClone(data);
+	} catch {
+		jsonFileCache.delete(filePath);
+		return fallback();
+	}
+}
+
 export function readModelsJson(agentDir?: string): { providers: Record<string, Record<string, unknown>> } {
 	const dir = defaultAgentDir(agentDir);
 	const filePath = join(dir, "models.json");
-	if (!existsSync(filePath)) return { providers: {} };
-	try {
-		const raw = readFileSync(filePath, "utf8");
-		const parsed = JSON.parse(stripJsonComments(raw)) as {
-			providers?: Record<string, Record<string, unknown>>;
-		};
-		return { providers: parsed?.providers ?? {} };
-	} catch {
-		return { providers: {} };
-	}
+	return readCachedJson(
+		filePath,
+		(raw) => {
+			const parsed = JSON.parse(stripJsonComments(raw)) as {
+				providers?: Record<string, Record<string, unknown>>;
+			};
+			return { providers: parsed?.providers ?? {} };
+		},
+		() => ({ providers: {} }),
+	);
 }
 
 export function readAuthJson(agentDir?: string): Record<string, unknown> {
 	const dir = defaultAgentDir(agentDir);
 	const filePath = join(dir, "auth.json");
-	if (!existsSync(filePath)) return {};
-	try {
-		const raw = readFileSync(filePath, "utf8");
-		return (JSON.parse(raw) as Record<string, unknown>) ?? {};
-	} catch {
-		return {};
-	}
+	return readCachedJson(
+		filePath,
+		(raw) => (JSON.parse(raw) as Record<string, unknown>) ?? {},
+		() => ({}),
+	);
 }
 
 export function readProviderKeysJson(agentDir?: string): Record<
@@ -66,19 +100,18 @@ export function readProviderKeysJson(agentDir?: string): Record<
 > {
 	const dir = defaultAgentDir(agentDir);
 	const filePath = join(dir, "provider-keys.json");
-	if (!existsSync(filePath)) return {};
-	try {
-		const raw = readFileSync(filePath, "utf8");
-		return JSON.parse(raw) as Record<
-			string,
-			{
-				activeKeyName: string | null;
-				keys: Array<{ name: string; apiKey: string }>;
-			}
-		>;
-	} catch {
-		return {};
-	}
+	return readCachedJson(
+		filePath,
+		(raw) =>
+			(JSON.parse(raw) as Record<
+				string,
+				{
+					activeKeyName: string | null;
+					keys: Array<{ name: string; apiKey: string }>;
+				}
+			>) ?? {},
+		() => ({}),
+	);
 }
 
 export function resolveProviderCredential(
@@ -285,7 +318,7 @@ export function isProtocolSupportedByEngine(
 		return true;
 	}
 
-	if (normEngine === "dsh") {
+	if (normEngine === "dsh" || normEngine === "codex") {
 		return protocol === "openai-completions" || protocol === "openai-responses";
 	}
 

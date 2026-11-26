@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 
-const source = readFileSync(new URL("../../bin/pi-web-ui.mjs", import.meta.url), "utf8");
+const source = readFileSync(new URL("../../bin/keel.mjs", import.meta.url), "utf8");
 const root = fileURLToPath(new URL("../../", import.meta.url));
 
 function functionSource(name: string): string {
@@ -41,7 +41,7 @@ describe("CLI entry", () => {
 		const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
 		const lock = JSON.parse(readFileSync(new URL("../../package-lock.json", import.meta.url), "utf8"));
 		for (const alias of ["pwu", "piwebui", "pi-web-ui"]) {
-			expect(pkg.bin[alias]).toBe("bin/pi-web-ui.mjs");
+			expect(pkg.bin[alias]).toBe("bin/keel.mjs");
 			expect(lock.packages[""].bin[alias]).toBe(pkg.bin[alias]);
 		}
 	});

@@ -13,7 +13,7 @@ import {
 import { flushSync } from "react-dom";
 
 import type { CSSProperties } from "react";
-import { FiArrowDown } from "react-icons/fi";
+import { FiArrowDown, FiChevronRight } from "react-icons/fi";
 import type { ClientMessage, PromptAttachment, ToolStatus, UiMessage, UiState } from "../types";
 import { Message, asText } from "./Message";
 import { Markdown } from "./Markdown";
@@ -30,7 +30,7 @@ import { computeEarlierCount } from "../history-window";
 import { CollapsedMessage } from "./CollapsedMessage";
 import { reviewFoldKind } from "../goal-review-fold";
 import { useFlowStreamMode } from "../flow-mode";
-import { foldQuietItems, summarizeQuietFold } from "../quiet-fold";
+import { foldQuietItems, summarizeQuietActions, summarizeQuietFold } from "../quiet-fold";
 import { useQuietMode } from "../quiet-mode";
 import { LazyMount } from "./LazyMount";
 import {
@@ -834,17 +834,12 @@ export function MessageList({
 		if (historyStartRef.current > 0) requestServerPage({ all: true });
 	}, [needsFullHistory, requestServerPage]);
 
-	const quietStreamingId = state.streamingMessage?.id ?? null;
-	const quietStreaming = state.isStreaming;
 	const clusteredItems = useMemo(() => {
 		const items = clusterMessages(visibleMessages, clusterOptions);
 		if (!quietActive) return items;
-		// 流式输出中的那条消息永不折叠：有的引擎只给 isStreaming 不给 streamingMessage。
-		return foldQuietItems(items, {
-			streamingId: quietStreamingId,
-			keepIds: quietStreaming && lastId ? new Set([lastId]) : undefined,
-		});
-	}, [visibleMessages, clusterOptions, quietActive, quietStreamingId, quietStreaming, lastId]);
+		// 安静模式下流式工具过程同样折叠进单行摘要，仅保留已有正文输出或带交互草案卡的消息（hideProcessBlocks 隐藏其中过程胶囊）。
+		return foldQuietItems(items, { toolResults });
+	}, [visibleMessages, clusterOptions, quietActive, toolResults]);
 
 	// 安静视图本身极小（用户消息 + 每轮一条最终回复 + 几条折叠行），关掉窗口化：
 	// 让 hidden / pinned / 测量 / 锚定那一整套机制整体绕过，而不是去和它协调。
@@ -1332,7 +1327,7 @@ export function MessageList({
 		many,
 	} = useMemo(() => questionNavLayout(questions.length, railH, activeIdx), [questions.length, railH, activeIdx]);
 
-	const renderMessageCard = (m: UiMessage, isDenseCluster = false) => {
+	const renderMessageCard = (m: UiMessage, isDenseCluster = false, allowProcess = false) => {
 		const isStreamingThis =
 			(state.streamingMessage ? m.id === state.streamingMessage.id : state.isStreaming && m.id === lastId) &&
 			(m.role === "assistant" || !m.role);
@@ -1367,6 +1362,7 @@ export function MessageList({
 					editRequest && editRequest.session === state.sessionFile && editRequest.id === m.id ? editRequest : undefined
 				}
 				searchActive={searchOpen}
+				hideProcessBlocks={quietActive && !allowProcess}
 			/>
 		);
 	};
@@ -1405,6 +1401,16 @@ export function MessageList({
 						const open = quietExpanded.has(item.id);
 						const summary = summarizeQuietFold(item.messages);
 						const label = t("quietHidden", { count: summary.total });
+						const actions = summarizeQuietActions(item.messages);
+						const actionSummary =
+							actions.length > 0
+								? actions.length <= 3
+									? actions.join(", ")
+									: `${actions.slice(0, 3).join(", ")} +${actions.length - 3}`
+								: summary.thinking > 0
+									? t("thinking")
+									: "";
+						const displayLabel = actionSummary ? `${label} · ${actionSummary}` : label;
 						const chips: string[] = [];
 						if (summary.thinking) chips.push(`${t("thinking")} ${summary.thinking}`);
 						if (summary.tools) chips.push(`${t("toolCalls")} ${summary.tools}`);
@@ -1424,38 +1430,26 @@ export function MessageList({
 										role="button"
 										tabIndex={0}
 										aria-expanded={open}
-										title={label}
-										aria-label={label}
+										title={displayLabel}
+										aria-label={displayLabel}
 										onClick={toggle}
 										onKeyDown={onKeyDown}
 									/>
 								) : (
-									<div
-										className="msg-collapsed"
-										role="button"
-										tabIndex={0}
+									<button
+										type="button"
+										className={`quiet-fold-toggle${open ? " is-open" : ""}`}
 										aria-expanded={open}
-										title={label}
+										title={chips.length > 0 ? `${displayLabel} (${chips.join(" · ")})` : displayLabel}
 										onClick={toggle}
-										onKeyDown={onKeyDown}
 									>
-										<span className="msg-collapsed-role">{t("quietActivity")}</span>
-										<span className="msg-collapsed-body">
-											<span className="msg-collapsed-preview">{label}</span>
-											{chips.length > 0 && (
-												<span className="msg-collapsed-chips">
-													{chips.map((c, i) => (
-														<span key={i} className="msg-collapsed-chip">
-															{c}
-														</span>
-													))}
-												</span>
-											)}
-										</span>
-										<span className="msg-collapsed-action">{open ? t("collapseMsg") : t("expandMsg")}</span>
-									</div>
+										<span>{displayLabel}</span>
+										<FiChevronRight className="quiet-fold-chevron" aria-hidden="true" />
+									</button>
 								)}
-								{open && <div className="turn-tools-trail">{item.messages.map((m) => renderMessageCard(m))}</div>}
+								{open && (
+									<div className="turn-tools-trail">{item.messages.map((m) => renderMessageCard(m, false, true))}</div>
+								)}
 							</Fragment>
 						);
 					}

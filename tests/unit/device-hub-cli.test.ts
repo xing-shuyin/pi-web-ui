@@ -500,7 +500,7 @@ try {
 				uid: 10,
 			});
 			expect(plan.content).toContain("--service-config");
-			expect(plan.content).not.toContain("pi-web-ui.mjs");
+			expect(plan.content).not.toContain("keel.mjs");
 			if (platform === "linux") expect(plan.content).toContain("$$%%");
 			if (platform === "win32") expect(plan.content).toContain("a&amp;b");
 		}

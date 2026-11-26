@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { FiAperture, FiCheck, FiDownload, FiRefreshCw, FiTrash2 } from "react-icons/fi";
-import { ENGINE_CATALOG, type BuiltinEngineId } from "../../../server/engine-catalog";
+import { ENGINE_CATALOG } from "../../../server/engine-catalog";
 import { appSend, useAppGlobals, useEngineStatuses } from "../app-globals";
 import { useI18n } from "../i18n";
 import type { EngineId } from "../types";
@@ -13,6 +13,7 @@ export interface EngineMeta {
 		| "settingsEngineDshTitle"
 		| "settingsEngineClaudeTitle"
 		| "settingsEngineCodexTitle"
+		| "settingsEngineAgyTitle"
 		| "settingsEngineDurableTitle";
 	badge: string;
 	tagKey: "engineTagFull" | "engineTagFast" | "engineTagUniversal" | "engineTagDurable";
@@ -21,6 +22,7 @@ export interface EngineMeta {
 		| "settingsEngineDshDesc"
 		| "settingsEngineClaudeDesc"
 		| "settingsEngineCodexDesc"
+		| "settingsEngineAgyDesc"
 		| "settingsEngineDurableDesc";
 	colorClass: string;
 	packageName?: string;
@@ -28,7 +30,7 @@ export interface EngineMeta {
 }
 
 /** Display-only metadata; install package and command come from the shared engine catalog. */
-const ENGINE_UI_META: Array<Omit<EngineMeta, "id" | "packageName" | "installCommand"> & { id: BuiltinEngineId }> = [
+const ENGINE_UI_META: Array<Omit<EngineMeta, "id" | "packageName" | "installCommand"> & { id: EngineId }> = [
 	{
 		id: "pi",
 		titleKey: "settingsEnginePiTitle",
@@ -62,6 +64,14 @@ const ENGINE_UI_META: Array<Omit<EngineMeta, "id" | "packageName" | "installComm
 		colorClass: "engine-codex",
 	},
 	{
+		id: "agy",
+		titleKey: "settingsEngineAgyTitle",
+		badge: "AGY",
+		tagKey: "engineTagUniversal",
+		descKey: "settingsEngineAgyDesc",
+		colorClass: "engine-agy",
+	},
+	{
 		id: "durable",
 		titleKey: "settingsEngineDurableTitle",
 		badge: "DURABLE",
@@ -76,7 +86,7 @@ export const SUPPORTED_ENGINES: EngineMeta[] = ENGINE_UI_META.map((item) => {
 	return {
 		...item,
 		...(engine.packageName ? { packageName: engine.packageName } : {}),
-		...(engine.installCommand ? { installCommand: engine.installCommand } : {}),
+		...(engine.packageName && engine.installCommand ? { installCommand: engine.installCommand } : {}),
 	};
 });
 

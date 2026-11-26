@@ -135,7 +135,7 @@ pi-web-ui"），公网绑定场景不该把本机路径吐给任何人。要路�
 
 ## 5. 一键装成系统服务
 
-按钮 / 启动流程 → 壳主进程 → 本包 CLI（`bin/pi-web-ui.mjs server install`，**不经 shell**）。顺序是有原因的：
+按钮 / 启动流程 → 壳主进程 → 本包 CLI（`bin/keel.mjs server install`，**不经 shell**）。顺序是有原因的：
 
 ```text
 1. 本地 sidecar 正持着数据目录锁 → 先停它（否则服务启动会被单实例锁拒绝）

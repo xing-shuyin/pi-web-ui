@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
-const source = readFileSync(new URL("../../bin/pi-web-ui.mjs", import.meta.url), "utf8");
+const source = readFileSync(new URL("../../bin/keel.mjs", import.meta.url), "utf8");
 
 function functionSource(name: string): string {
 	const start = source.indexOf(`function ${name}(`);

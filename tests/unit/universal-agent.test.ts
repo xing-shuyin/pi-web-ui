@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -322,6 +322,47 @@ describe("Universal Agent 底座体系单测", () => {
 			const activeId = (session as any).activeConvId;
 			const suggestions = (session as any).markerSvc.getActionSuggestions(activeId);
 			expect(suggestions?.some((s: any) => s.label === "QuickAction")).toBe(true);
+
+			session.dispose();
+		});
+
+		it("切换到新项目后仍能打开旧项目的历史会话并切回旧项目工作区", async () => {
+			const projA = join(tempDir, "proj-a");
+			const projB = join(tempDir, "proj-b");
+			mkdirSync(projA, { recursive: true });
+			mkdirSync(projB, { recursive: true });
+
+			const store = new UniversalSessionStore(tempDir);
+			const sentMessages: ServerMessage[] = [];
+			const driver = new MockAgentDriver(projA);
+
+			const session = new UniversalSession({
+				clientId: "test-client-cross-proj",
+				cwd: projA,
+				send: (msg) => sentMessages.push(msg),
+				store,
+				driver,
+			});
+
+			await session.prompt("hello in projA");
+			await new Promise((r) => setTimeout(r, 50));
+			const convIdA = (session as any).activeConvId as string;
+			await store.flush();
+
+			await session.setCwd(projB);
+			expect(session.cwd).toBe(projB);
+			// 切到新项目后，旧项目会话仍在内存中保留且能按所属项目隔离列出
+			expect((session as any).conversations.has(convIdA)).toBe(true);
+			expect((session as any).sessionConversations(projA).some((c: any) => c.id === convIdA)).toBe(true);
+			expect((session as any).sessionConversations(projB).some((c: any) => c.id === convIdA)).toBe(false);
+
+			sentMessages.length = 0;
+			await session.switchSession(convIdA);
+			expect(session.cwd).toBe(projA);
+			expect((session as any).activeConvId).toBe(convIdA);
+			expect(
+				sentMessages.some((m) => m.type === "notice" && m.level === "warning" && m.text.includes("未能找到目标会话")),
+			).toBe(false);
 
 			session.dispose();
 		});

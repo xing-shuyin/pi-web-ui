@@ -753,12 +753,7 @@ export function DeviceCenter({
 									currentDeviceId={status.deviceId}
 								/>
 							)}
-							{!localOnly && (
-								<LocalBots
-									key={`bots:${status?.hubUrl ?? ""}:${status?.deviceId ?? "unpaired"}`}
-									pathCompletions={pathCompletions}
-								/>
-							)}
+							{!localOnly && <LocalBots key={`bots:${status?.hubUrl ?? ""}:${status?.deviceId ?? "unpaired"}`} />}
 							<LocalDesktopSettings />
 							{bound && status && !localOnly && (
 								<>

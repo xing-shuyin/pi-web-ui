@@ -6,7 +6,14 @@ import { act } from "react-dom/test-utils";
 import { ChatInput } from "../../web/src/components/ChatInput.js";
 import { TemplateProvider } from "../../web/src/components/PromptTemplates.js";
 import { resetAppGlobals, setAppGlobals, setAppSend } from "../../web/src/app-globals.js";
-import { setGoalCompose, setGoalPlan, setGoalRefine } from "../../web/src/goal-compose.js";
+import {
+	isGoalCompose,
+	isGoalPanelOpen,
+	setGoalCompose,
+	setGoalPanelOpen,
+	setGoalPlan,
+	setGoalRefine,
+} from "../../web/src/goal-compose.js";
 import { LanguageProvider, zh } from "../../web/src/i18n.js";
 
 let root: Root | null = null;
@@ -30,6 +37,7 @@ function mount(opts: {
 	attachments?: { path: string; name: string; imageData?: string; key?: string }[];
 	onRemoveAttachment?: (key: string) => void;
 	sentMessages?: unknown[];
+	goalModeEnabled?: boolean;
 }) {
 	setAppGlobals({ ready: opts.ready });
 	setAppSend((m) => {
@@ -68,6 +76,7 @@ function mount(opts: {
 						providerKeys: {},
 						quickPhrases: [],
 						quickPhrasesEnabled: false,
+						goalModeEnabled: opts.goalModeEnabled,
 					}),
 				}),
 			),
@@ -317,35 +326,39 @@ describe("ChatInput 目标撰写态 × 附件（issue #962：不再拦截，改�
 	});
 });
 
-describe("目标撰写态的用法提示（issue #962 收尾）", () => {
-	it("没开目标模式就没有提示行；开了以后占位符保持简短，用法提示另起一行", () => {
+describe("目标撰写态的用法提示（放入输入框 placeholder）", () => {
+	it("没开目标模式时不显示目标提示；开了以后不再单独占一行，精简提示放进输入框 placeholder", () => {
 		const c = mount({ ready: true, sendResult: true, onNotice: vi.fn(), onSent: vi.fn() });
 		expect(c.querySelector(".goal-composer-hint")).toBeNull();
 		expect((c.querySelector("textarea") as HTMLTextAreaElement).placeholder).not.toBe(zh.goalBarPlaceholder);
 
 		act(() => setGoalCompose(true));
 
-		// 简短提示仍在占位符里（不把一整段帮助塞进输入框）
-		expect((c.querySelector("textarea") as HTMLTextAreaElement).placeholder).toBe(zh.goalBarPlaceholder);
+		expect(c.querySelector(".goal-composer-hint")).toBeNull();
+		const ph = (c.querySelector("textarea") as HTMLTextAreaElement).placeholder;
+		expect(ph).toBe(zh.goalBarPlaceholder);
+		expect(ph).not.toContain(zh.goalBarHelp);
 	});
 
-	it("提示行只说简短用法，完整说明挂在 aria-label（也就是「?」那份文案）", () => {
-		const c = mount({ ready: true, sendResult: true, onNotice: vi.fn(), onSent: vi.fn() });
-		act(() => setGoalCompose(true));
+	it("开启目标模式保留输入框靶心按钮、点击展开/收起目标功能；关闭目标模式时隐藏靶心按钮", () => {
+		setGoalCompose(false);
+		setGoalPanelOpen(false);
+		const c = mount({ ready: true, sendResult: true, onNotice: vi.fn(), onSent: vi.fn(), goalModeEnabled: true });
+		const btn = c.querySelector(".btn.goal-toggle") as HTMLButtonElement | null;
+		expect(btn).not.toBeNull();
+		expect(isGoalPanelOpen()).toBe(false);
 
-		const row = c.querySelector(".goal-composer-hint");
-		expect(row, "目标撰写态必须有用法提示行").not.toBeNull();
-		const text = row!.textContent ?? "";
-		for (const key of [
-			"goalComposerLead",
-			"goalComposerMaterials",
-			"goalComposerRefine",
-			"goalComposerHelp",
-		] as const) {
-			expect(text, `提示行缺 ${key}`).toContain(zh[key]);
-		}
-		// 提示行不复制帮助全文：一段话留在「?」的气泡里，读屏通过 aria-label 拿到同一份
-		expect(text).not.toContain(zh.goalBarHelp);
-		expect(row!.getAttribute("aria-label")).toBe(zh.goalBarHelp);
+		act(() => btn!.click());
+		expect(isGoalCompose()).toBe(true);
+		expect(isGoalPanelOpen()).toBe(true);
+
+		act(() => btn!.click());
+		expect(isGoalCompose()).toBe(false);
+		expect(isGoalPanelOpen()).toBe(false);
+
+		if (root) act(() => root!.unmount());
+		root = null;
+		const cOff = mount({ ready: true, sendResult: true, onNotice: vi.fn(), onSent: vi.fn(), goalModeEnabled: false });
+		expect(cOff.querySelector(".btn.goal-toggle")).toBeNull();
 	});
 });

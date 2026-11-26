@@ -1143,9 +1143,10 @@ export function BarItem({
 			data-bar-item={id}
 		>
 			{iconNode}
-			{!(id === "host:worktrees" && bar === "top" && !entry.labelExplicit) && (
-				<span className="bar-item-text">{labelText}</span>
-			)}
+			{!(
+				(id === "host:worktrees" && bar === "top" && !entry.labelExplicit) ||
+				(id === "host:github" && bar === "bottom" && !entry.labelExplicit)
+			) && <span className="bar-item-text">{labelText}</span>}
 			{badgeNode}
 		</button>
 	);

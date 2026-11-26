@@ -54,6 +54,8 @@ export interface McpServerSpec {
 	exposure?: McpExposure;
 	/** 单个工具的暴露方式，覆盖 `exposure`：exact 名优先，其次书写顺序第一个命中的 `*` 模式。 */
 	toolExposure?: Record<string, McpExposure>;
+	/** 是否信任该 MCP 服务器工具自报的 `annotations.readOnlyHint`（缺省 false）。 */
+	trustReadOnly?: boolean;
 }
 
 interface RpcIncoming {
@@ -879,6 +881,12 @@ export interface McpToolDefinition {
 	name: string;
 	description?: string;
 	inputSchema?: Record<string, unknown>;
+	annotations?: {
+		readOnlyHint?: boolean;
+		destructiveHint?: boolean;
+		idempotentHint?: boolean;
+		openWorldHint?: boolean;
+	};
 }
 
 /** pi 接受的 MCP 工具暴露方式（与 SDK 的 `McpExposure` 同口径）。 */
@@ -1039,6 +1047,7 @@ export function getMcpToolServer(tool: object): string | undefined {
 
 function adaptMcpTool(serverName: string, mcpTool: McpToolDefinition, client: McpClient): PluginAgentTool {
 	const registration = mcpToolRegistration(serverName, client.spec, mcpTool.name);
+	const hint = mcpTool.annotations?.readOnlyHint;
 	const adapted: PluginAgentTool = {
 		name: registration.name,
 		label: `${serverName} · ${mcpTool.name}`,
@@ -1047,6 +1056,8 @@ function adaptMcpTool(serverName: string, mcpTool: McpToolDefinition, client: Mc
 		namespace: registration.namespace,
 		exposure: registration.exposure,
 		parameters: mcpTool.inputSchema ?? {},
+		...(typeof hint === "boolean" ? { readOnlyHint: hint } : {}),
+		...(hint === true && client.spec.trustReadOnly === true ? { readOnly: true } : {}),
 		execute: async (_toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal) => {
 			return client.call(mcpTool.name, params ?? {}, undefined, signal);
 		},

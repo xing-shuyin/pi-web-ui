@@ -4,7 +4,8 @@ import { join } from "node:path";
 import type { ServiceSupervisor, UiServiceInfo } from "./protocol.js";
 
 export const DEFAULT_SERVICE_NAME = "pi-web-ui";
-const LAUNCHD_LABEL_DEFAULT = "com.xingshuyin.pi-web-ui";
+const LAUNCHD_LABEL_DEFAULT = "com.xingshuyin.keel";
+const LAUNCHD_LABEL_LEGACY = "com.xingshuyin.pi-web-ui";
 const WIN_SERVICE_DIR_NAME = "pi-web-ui";
 
 export interface LaunchOrigin {
@@ -44,7 +45,7 @@ export function winServiceDir(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 function nameFromLaunchdLabel(label: string): string | null {
-	if (label === LAUNCHD_LABEL_DEFAULT) return DEFAULT_SERVICE_NAME;
+	if (label === LAUNCHD_LABEL_DEFAULT || label === LAUNCHD_LABEL_LEGACY) return DEFAULT_SERVICE_NAME;
 	const m = /^com\.(.+)\.server$/.exec(label);
 	return m?.[1] ?? null;
 }

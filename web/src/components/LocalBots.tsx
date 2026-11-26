@@ -1,16 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
 import { useT } from "../i18n";
 import { openBotChat } from "../bot-chat";
 import { importBotBundle } from "../bot-import";
-import { useEscapeKey } from "../shortcut-stack";
 import type { ModelInfo } from "../types";
-import { resolveBotCwd } from "../local-bot-path";
-import { UniversalPathPicker } from "./UniversalPathPicker";
-import { UniversalModelPicker } from "./UniversalModelPicker";
-import { LocalBotCatalogPicker, type BotCatalogEntry } from "./LocalBotCatalogPicker";
+import { BotEditorForm, type BotOptions } from "./BotEditorForm";
+import { type BotCatalogEntry } from "./LocalBotCatalogPicker";
 import "./agent-bots.css";
 
 export type Bot = {
@@ -62,7 +58,6 @@ async function request(path: string, signal: AbortSignal, body?: object) {
 	return data;
 }
 export function LocalBots({
-	pathCompletions = [],
 	createOnly = false,
 	initialCwd,
 	editBot,
@@ -70,7 +65,6 @@ export function LocalBots({
 	onFinished,
 	onCancel,
 }: {
-	pathCompletions?: { name: string; path: string; type: "dir" | "file" }[];
 	createOnly?: boolean;
 	/** 新建时预填的工作目录（当前项目）：不填会退回服务端默认工作区。 */
 	initialCwd?: string;
@@ -94,15 +88,13 @@ export function LocalBots({
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState("");
 	const [notice, setNotice] = useState("");
-	const [options, setOptions] = useState<Options | null>(null);
+	const [options, setOptions] = useState<BotOptions | null>(null);
 	const [optionsError, setOptionsError] = useState("");
 	const [loading, setLoading] = useState(false);
 	const [reload, setReload] = useState(0);
 	const [modelOpen, setModelOpen] = useState(false);
 	const [importing, setImporting] = useState(false);
 	const importInput = useRef<HTMLInputElement | null>(null);
-	const [catalogTab, setCatalogTab] = useState<"tools" | "skills" | "mcpServers">("tools");
-	const [tab, setTab] = useState<"identity" | "runtime" | "permissions">("identity");
 	const controller = useRef<AbortController | null>(null);
 	// 就地弹窗形态（`BotCreateDialog` / `BotEditDialog` 复用本编辑器）：只渲染编辑器，不渲染列表。
 	const solo = createOnly;
@@ -117,7 +109,6 @@ export function LocalBots({
 		const previousFocus = document.activeElement as HTMLElement | null;
 		const previousOverflow = document.body.style.overflow;
 		document.body.style.overflow = "hidden";
-		setTab("identity");
 		panel?.showModal?.();
 		return () => {
 			panel?.close?.();
@@ -205,7 +196,6 @@ export function LocalBots({
 			});
 		return () => current.abort();
 	}, [cwd, reload]);
-	useEscapeKey(() => setModelOpen(false), modelOpen);
 	async function mutate(remove = false) {
 		if (!draft || busy) return;
 		const current = new AbortController();
@@ -249,9 +239,6 @@ export function LocalBots({
 			setChatPending(null);
 		}
 	}
-	const chosenModel = options?.models.find(
-		(model) => model.provider === draft?.model?.provider && modelId(model) === draft?.model?.modelId,
-	);
 	return (
 		<section className={`dc-card dc-bots${solo ? " is-solo" : ""}`} aria-label={t("localBotTitle")}>
 			<div className="dg-heading">
@@ -398,207 +385,26 @@ export function LocalBots({
 									×
 								</button>
 							</header>
-							<div className="dc-bot-tabs" role="tablist" aria-label={t("localBotTitle")}>
-								{(
-									[
-										["identity", t("localBotIdentity")],
-										["runtime", t("localBotRuntime")],
-										["permissions", t("localBotPermissions")],
-									] as const
-								).map(([key, label], index, tabs) => (
-									<button
-										key={key}
-										type="button"
-										role="tab"
-										id={`bot-tab-${key}`}
-										aria-controls={`bot-panel-${key}`}
-										aria-selected={tab === key}
-										tabIndex={tab === key ? 0 : -1}
-										onClick={() => setTab(key)}
-										onKeyDown={(event) => {
-											let next = index;
-											if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
-											else if (event.key === "ArrowLeft") next = (index + tabs.length - 1) % tabs.length;
-											else if (event.key === "Home") next = 0;
-											else if (event.key === "End") next = tabs.length - 1;
-											else return;
-											event.preventDefault();
-											setTab(tabs[next][0]);
-											document.getElementById(`bot-tab-${tabs[next][0]}`)?.focus();
-										}}
-									>
-										{label}
-									</button>
-								))}
-							</div>
 							<div className="dc-bot-editor-body">
 								{error && (
 									<p className="dc-bot-error" role="alert">
 										{error}
 									</p>
 								)}
-								<div
-									role="tabpanel"
-									id="bot-panel-identity"
-									aria-labelledby="bot-tab-identity"
-									hidden={tab !== "identity"}
-								>
-									<p className="dc-bot-section-intro">{t("localBotIdentityHint")}</p>
-									<fieldset className="dc-bot-section" disabled={busy}>
-										<legend>{t("localBotIdentity")}</legend>
-										<label className="dc-field">
-											{t("localBotName")}
-											<input
-												required
-												value={draft.name}
-												onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-											/>
-										</label>
-										<label className="dc-field">
-											{t("localBotDescription")}
-											<textarea
-												rows={2}
-												value={draft.description}
-												onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-											/>
-										</label>
-										<label className="dc-field">
-											{t("localBotSystemPrompt")}
-											<textarea
-												rows={9}
-												className="dc-bot-prompt"
-												spellCheck={false}
-												value={draft.systemPrompt}
-												onChange={(e) => setDraft({ ...draft, systemPrompt: e.target.value })}
-											/>
-										</label>
-									</fieldset>
-									<p className="dc-bot-local-note">{t("localBotPrivatePrompt")}</p>
-								</div>
-								<div
-									role="tabpanel"
-									id="bot-panel-runtime"
-									aria-labelledby="bot-tab-runtime"
-									hidden={tab !== "runtime"}
-								>
-									<p className="dc-bot-section-intro">{t("localBotRuntimeHint")}</p>
-									<fieldset className="dc-bot-section" disabled={busy}>
-										<legend>{t("localBotRuntime")}</legend>
-										<div className="dc-field">
-											<label htmlFor="local-bot-cwd">{t("localBotCwd")}</label>
-											<UniversalPathPicker
-												inputId="local-bot-cwd"
-												commitOnBlur
-												pathCompletions={pathCompletions}
-												cwd={draft.cwd}
-												baseCwd={baseCwd.current || draft.cwd}
-												projects={options?.projects.map((project) => ({ ...project, lastUsed: 0 })) ?? []}
-												disabled={busy}
-												onSelectCwd={(value) =>
-													setDraft({ ...draft, cwd: resolveBotCwd(value, baseCwd.current || draft.cwd) })
-												}
-											/>
-										</div>
-										<div className="dc-field">
-											<span>{t("localBotModel")}</span>
-											<div className="dc-actions">
-												<button
-													className="dc-button"
-													type="button"
-													aria-haspopup="dialog"
-													onClick={() => setModelOpen(true)}
-												>
-													{draft.model
-														? (chosenModel?.name ?? `${draft.model.provider}/${draft.model.modelId}`)
-														: t("localBotInheritModel")}
-												</button>
-												{draft.model && (
-													<button
-														className="dc-button"
-														type="button"
-														onClick={() => setDraft({ ...draft, model: undefined })}
-													>
-														{t("localBotInheritModel")}
-													</button>
-												)}
-											</div>
-											{draft.model && !chosenModel && (
-												<small>{loading ? t("localBotUnverified") : t("localBotUnavailable")}</small>
-											)}
-										</div>
-									</fieldset>
-								</div>
-								<div
-									role="tabpanel"
-									id="bot-panel-permissions"
-									aria-labelledby="bot-tab-permissions"
-									hidden={tab !== "permissions"}
-								>
-									<p className="dc-bot-section-intro">{t("localBotPermissionsHint")}</p>
-									<div className="dc-bot-options-status" aria-live="polite">
-										{loading && <span>{t("localBotOptionsLoading")}</span>}
-										{optionsError && <span role="alert">{optionsError}</span>}
-										<button
-											className="dc-button"
-											type="button"
-											disabled={loading || busy}
-											onClick={() => setReload((value) => value + 1)}
-										>
-											{optionsError ? t("deviceHubRetry") : t("localBotReload")}
-										</button>
-									</div>
-									<div className="dc-bot-catalog-tabs" role="tablist" aria-label={t("localBotPermissions")}>
-										{(
-											[
-												["tools", t("localBotTools")],
-												["skills", t("localBotSkills")],
-												["mcpServers", t("localBotMcpServers")],
-											] as const
-										).map(([key, title]) => (
-											<button
-												key={key}
-												type="button"
-												role="tab"
-												id={`bot-catalog-tab-${key}`}
-												aria-controls={`bot-catalog-${key}`}
-												aria-selected={catalogTab === key}
-												onClick={() => setCatalogTab(key)}
-											>
-												{title}
-												<span>{draft[key].length}</span>
-											</button>
-										))}
-									</div>
-									<div className="dc-bot-permissions">
-										{(
-											[
-												["tools", t("localBotTools")],
-												["skills", t("localBotSkills")],
-												["mcpServers", t("localBotMcpServers")],
-											] as const
-										).map(([key, title]) => (
-											<div
-												key={key}
-												role="tabpanel"
-												id={`bot-catalog-${key}`}
-												aria-labelledby={`bot-catalog-tab-${key}`}
-												hidden={catalogTab !== key}
-											>
-												<LocalBotCatalogPicker
-													title={title}
-													entries={options?.[key] ?? []}
-													selected={draft[key]}
-													disabled={busy}
-													pending={loading || !!optionsError}
-													onChange={(ids) => {
-														if (key === "tools") toolsInitialized.current = true;
-														setDraft({ ...draft, [key]: ids });
-													}}
-												/>
-											</div>
-										))}
-									</div>
-								</div>
+								<BotEditorForm
+									variant="dialog"
+									value={draft}
+									onChange={(next) => setDraft({ ...draft, ...next })}
+									options={options}
+									optionsLoading={loading}
+									optionsError={optionsError}
+									onReloadOptions={() => setReload((value) => value + 1)}
+									busy={busy}
+									baseCwd={baseCwd.current || draft.cwd}
+									modelPortalTarget={drawer.current ?? document.body}
+									modelOpen={modelOpen}
+									onModelOpenChange={setModelOpen}
+								/>
 							</div>
 							<footer className="dc-actions dc-bot-editor-footer">
 								<button className="dc-button dc-bot-save" disabled={busy || !draft.cwd || !draft.name.trim()}>
@@ -632,64 +438,6 @@ export function LocalBots({
 					</dialog>
 				)}
 			</div>
-			{draft &&
-				modelOpen &&
-				createPortal(
-					<div
-						className="modal-backdrop dc-bot-model-backdrop"
-						onClick={(event) => {
-							if (event.target === event.currentTarget) setModelOpen(false);
-						}}
-					>
-						<div
-							className="dc-bot-model-modal dd-menu-model"
-							role="dialog"
-							aria-modal="true"
-							aria-label={t("localBotModel")}
-						>
-							<div className="dg-heading">
-								<h3>{t("localBotModel")}</h3>
-								<button type="button" className="dc-button" onClick={() => setModelOpen(false)}>
-									{t("localBotCancel")}
-								</button>
-							</div>
-							<UniversalModelPicker
-								models={options?.models ?? []}
-								modelsLoading={loading}
-								defaultModel={options?.defaultModel}
-								currentModelId={draft.model ? `${draft.model.provider}/${draft.model.modelId}` : null}
-								active
-								onEnsureModels={() => {}}
-								onRefresh={() => setReload((value) => value + 1)}
-								onPickModel={(model) => {
-									setDraft({ ...draft, model: { provider: model.provider, modelId: modelId(model) } });
-									setModelOpen(false);
-								}}
-								isRowActive={(model) =>
-									model.provider === draft.model?.provider && modelId(model) === draft.model.modelId
-								}
-								extraTopRow={
-									<button
-										type="button"
-										className="dc-button"
-										onClick={() => {
-											setDraft({ ...draft, model: undefined });
-											setModelOpen(false);
-										}}
-									>
-										{t("localBotInheritModel")}
-									</button>
-								}
-								autoFocusSearch
-								hideTitle
-								bodyStyle={{ flex: 1, minHeight: 0 }}
-								scrollStyle={{ overflowY: "auto", minHeight: 0 }}
-							/>
-							{optionsError && <p role="alert">{optionsError}</p>}
-						</div>
-					</div>,
-					drawer.current ?? document.body,
-				)}
 		</section>
 	);
 }

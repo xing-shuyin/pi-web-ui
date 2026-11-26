@@ -36,12 +36,9 @@ export function projectSessionMessages(session: TurnCapableSession | undefined):
 
 export function projectStreamingMessage(session: TurnCapableSession | undefined): UiMessage | null {
 	if (!session?.isStreaming) return null;
-	const streaming = (session as any)?.agent?.state?.streamingMessage;
-	if (streaming) return serializeStreamingMessage(streaming as AgentMessage);
-	const raw = session?.messages ?? [];
-	const last = raw[raw.length - 1];
-	if (!last || (last as any).role !== "assistant") return null;
-	return serializeStreamingMessage(last as AgentMessage);
+	const streaming = (session as { agent?: { state?: { streamingMessage?: AgentMessage } } })?.agent?.state
+		?.streamingMessage;
+	return streaming ? serializeStreamingMessage(streaming) : null;
 }
 
 /**

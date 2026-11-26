@@ -160,6 +160,7 @@ function makeCtx(opts: {
 			softCapByModel: {},
 			botDraftModel: null,
 			botDraftThinking: "off" as const,
+			botDraftPrompt: "",
 		},
 		session: { model: null, modelRuntime: null } as unknown as AttachmentContext["session"],
 	};

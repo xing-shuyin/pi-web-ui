@@ -376,7 +376,44 @@ export function syncTerminalReadOnlySchema(session: { _toolRegistry?: Map<string
 	tool.parameters = readOnly ? restrictTerminalToolToReadOnly({ parameters }).parameters : parameters;
 }
 
-export function readOnlyToolCallAllowed(name: string, params: unknown): boolean {
+export type ReadOnlyCapability = boolean | ((params: Record<string, unknown>) => boolean);
+
+export interface ToolReadOnlyMeta {
+	readOnly?: ReadOnlyCapability;
+	readOnlyHint?: boolean;
+	pluginId?: string;
+}
+
+export interface ReadOnlyCheckContext {
+	/** 工具定义（用于读取声明式 `readOnly` / `readOnlyHint` 元数据） */
+	toolDef?: unknown;
+	/** 用户显式允许只读放行的工具名 */
+	trustedReadOnlyTools?: ReadonlySet<string>;
+	/** 用户显式信任其 `readOnlyHint` 的插件/MCP ID */
+	trustedReadOnlyPlugins?: ReadonlySet<string>;
+}
+
+const toolReadOnlyMeta = new WeakMap<object, ToolReadOnlyMeta>();
+
+/** 给工具定义挂载只读能力元数据（走 WeakMap，不污染传给模型/SDK 的枚举属性）。 */
+export function attachToolReadOnlyMeta(def: object, meta: ToolReadOnlyMeta): void {
+	if (meta.readOnly === undefined && meta.readOnlyHint === undefined && !meta.pluginId) return;
+	toolReadOnlyMeta.set(def, meta);
+}
+
+/** 读取工具定义上的只读能力元数据。 */
+export function getToolReadOnlyMeta(def: unknown): ToolReadOnlyMeta | undefined {
+	return def && typeof def === "object" ? toolReadOnlyMeta.get(def) : undefined;
+}
+
+/** 包装工具定义（如套门禁）时把只读元数据透传到新对象上。 */
+export function propagateToolReadOnlyMeta<T extends object>(from: unknown, to: T): T {
+	const meta = getToolReadOnlyMeta(from);
+	if (meta) toolReadOnlyMeta.set(to, meta);
+	return to;
+}
+
+export function readOnlyToolCallAllowed(name: string, params: unknown, context?: ReadOnlyCheckContext): boolean {
 	const p = params && typeof params === "object" ? (params as Record<string, unknown>) : {};
 	if (name === "terminal") return ["list", "read", "wait"].includes(String(p.action ?? ""));
 	if (
@@ -422,7 +459,39 @@ export function readOnlyToolCallAllowed(name: string, params: unknown): boolean 
 		].includes(action);
 	if (name === "browser_page") return ["pages", "read", "shot"].includes(String(p.op));
 	if (name === "browser_script") return ["list", "status"].includes(String(p.action));
+	if (context?.trustedReadOnlyTools?.has(name)) return true;
+	const meta = getToolReadOnlyMeta(context?.toolDef);
+	if (meta?.readOnly !== undefined) {
+		if (typeof meta.readOnly === "boolean") return meta.readOnly;
+		try {
+			return Boolean(meta.readOnly(p));
+		} catch {
+			return false;
+		}
+	}
+	if (meta?.readOnlyHint === true && meta.pluginId && context?.trustedReadOnlyPlugins?.has(meta.pluginId)) {
+		return true;
+	}
 	return false;
+}
+
+/**
+ * 判定一个插件/外部工具在只读模式下是否「必然不可用」（可在进模型前从活跃集裁剪）：
+ * - 静态 `readOnly === false`；
+ * - 未声明 `readOnly` 且未受信任（也不在 `trustedReadOnlyTools` 名单内）。
+ * 内置/混合型工具（无插件元数据）仍走执行期判定。
+ */
+export function isToolDefinitelyNonReadOnly(name: string, context?: ReadOnlyCheckContext): boolean {
+	if (BLOCKED_TOOLS.has(name)) return true;
+	const meta = getToolReadOnlyMeta(context?.toolDef);
+	if (!meta) return false;
+	if (context?.trustedReadOnlyTools?.has(name)) return false;
+	if (meta.readOnly === true || typeof meta.readOnly === "function") return false;
+	if (meta.readOnly === false) return true;
+	if (meta.readOnlyHint === true && meta.pluginId && context?.trustedReadOnlyPlugins?.has(meta.pluginId)) {
+		return false;
+	}
+	return true;
 }
 
 export interface PlanModeDenial {
@@ -431,7 +500,11 @@ export interface PlanModeDenial {
 	kind: "write-tool" | "bash" | "bypass-tool";
 }
 
-export function planModeDenial(toolName: string, params: unknown): PlanModeDenial | undefined {
+export function planModeDenial(
+	toolName: string,
+	params: unknown,
+	context?: ReadOnlyCheckContext,
+): PlanModeDenial | undefined {
 	const name = (toolName ?? "").trim();
 	if (isConversationTool(name)) {
 		const action =
@@ -475,7 +548,7 @@ export function planModeDenial(toolName: string, params: unknown): PlanModeDenia
 			reasonEn: `Plan mode: only read-only commands are allowed; rejected: \`${cmd.slice(0, 200)}\`. Use read/grep or read-only git (status/diff/log). Put proposed changes in the plan and wait for the user's go-ahead.`,
 		};
 	}
-	if (BLOCKED_TOOLS.has(name) || (name !== "plan_update" && !readOnlyToolCallAllowed(name, params))) {
+	if (BLOCKED_TOOLS.has(name) || (name !== "plan_update" && !readOnlyToolCallAllowed(name, params, context))) {
 		return {
 			kind: "write-tool",
 			reason: `计划模式：只规划不实施，${name} 被拒。请把这一步写进计划（plan_update 步骤 + 计划正文），等用户确认后在新一轮里实施。`,

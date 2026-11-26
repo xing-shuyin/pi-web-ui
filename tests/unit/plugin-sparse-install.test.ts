@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(here, "..", "..");
-const CLI_PATH = join(PKG_ROOT, "bin", "pi-web-ui.mjs");
+const CLI_PATH = join(PKG_ROOT, "bin", "keel.mjs");
 
 let testDataDir: string;
 

@@ -939,7 +939,7 @@ export interface AgentEngineCapabilities {
 	ephemeralChat?: boolean;
 }
 
-export type EngineId = import("./engine-catalog.js").BuiltinEngineId;
+export type EngineId = import("./engine-catalog.js").NativeCliEngineId;
 
 export interface EngineStatus {
 	id: string;
@@ -1145,7 +1145,7 @@ export interface QueuedPromptItem {
 	createdAt?: number;
 }
 
-export type CanvasEngineId = "pi" | "dsh" | "codex" | "claude" | "durable";
+export type CanvasEngineId = "pi" | "dsh" | "codex" | "claude" | "agy" | "durable";
 export type CanvasNodeRole =
 	| "architect"
 	| "coder"
@@ -1466,6 +1466,8 @@ export type ClientMessage =
 			ephemeral?: boolean;
 			requestId?: string;
 			independent?: boolean;
+			/** 指定新建对话使用的引擎；缺省沿用当前活动引擎。 */
+			engine?: EngineId;
 			/** 目标工作目录：服务端先切到该目录并核验，再建会话；切不过去就不建（`ok:false`）。 */
 			cwd?: string;
 			/** 私聊：把会话绑定到本机这个 Bot（普通对话 + Bot 身份；群聊仍走房间与 @ 路由）。 */
@@ -1523,8 +1525,8 @@ export type ClientMessage =
 	| { type: "get_tool_info"; name: string }
 	| { type: "get_tool_prompt"; name: string }
 	| { type: "list_sessions"; path?: string; limit?: number }
-	| { type: "switch_session"; path: string; sessionId?: string; independent?: boolean }
-	| { type: "switch_conversation"; id: string }
+	| { type: "switch_session"; path: string; sessionId?: string; independent?: boolean; engine?: EngineId }
+	| { type: "switch_conversation"; id: string; engine?: EngineId }
 	| { type: "take_over_conversation"; owner: string; id: string }
 	| { type: "peek_elsewhere_question"; owner: string; id: string }
 	| { type: "navigate_question"; id: string }
@@ -1702,6 +1704,7 @@ export type ClientMessage =
 			quickAskThinking?: ThinkingLevel;
 			botDraftModel?: string | null;
 			botDraftThinking?: ThinkingLevel;
+			botDraftPrompt?: string;
 			quickAskSystemPrompt?: string;
 			quickAskExplainPrompt?: string;
 			quickAskTranslateEnabled?: boolean;
@@ -2062,6 +2065,7 @@ export interface RemoteSshProfileSummary {
 }
 
 export interface SessionSummary {
+	engine?: EngineId;
 	nativeCli?: NativeCliConfig;
 	path: string;
 	sessionId?: string;
@@ -2840,6 +2844,7 @@ export interface ProviderKeyInfo {
  *  PLUS the ACTIVE one once it has content (issue #140: the chat you are
  *  looking at must not be missing; a blank new chat stays out). cwd groups. */
 export interface ConversationSummary {
+	engine?: EngineId;
 	nativeCli?: NativeCliConversation;
 	independent?: boolean;
 	id: string;
@@ -3243,6 +3248,7 @@ export interface UiSettingsState {
 	quickAskThinking: ThinkingLevel;
 	botDraftModel: string | null;
 	botDraftThinking: ThinkingLevel;
+	botDraftPrompt: string;
 	quickAskSystemPrompt: string;
 	quickAskExplainPrompt: string;
 	quickAskTranslateModel: string | null;
@@ -3266,6 +3272,7 @@ export interface UiSettingsState {
 	visionBridgeDefaultPrompt: string;
 	scmCommitMsgDefaultPrompt: string;
 	planModeDefaultPrompt: string;
+	botDraftDefaultPrompt: string;
 	visionModels: UiVisionBridgeModel[];
 	skills: UiSkillInfo[];
 	reviewSkills: UiSkillInfo[];
@@ -4009,6 +4016,8 @@ export type ServerMessage =
 			type: "remote_ssh_profiles_result";
 			reqId?: string;
 			profiles: RemoteSshProfileSummary[];
+			/** 本地 `~/.ssh` 自动检测到的可用私钥路径列表（按推荐优先级排序）。 */
+			localKeys?: string[];
 			/** 存储文件版本不认识 / 读不出时，列表是只读视图，这里说明原因。 */
 			error?: string;
 	  }

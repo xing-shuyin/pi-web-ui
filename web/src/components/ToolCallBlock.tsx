@@ -13,6 +13,7 @@ import {
 	FiCode,
 	FiCompass,
 	FiCopy,
+	FiCpu,
 	FiDatabase,
 	FiEdit2,
 	FiEdit3,
@@ -43,6 +44,7 @@ import { formatDuration as formatDurationShared, formatTimeFull, resolveToolTime
 import { useT } from "../i18n";
 import { openContextMenu } from "../context-menu-state";
 import { openToolInfo } from "../tool-info-state";
+import { parseAgentBotDraftDetail } from "./BotDraftInlineCard";
 import { getToolInspectorState, isFlowMode, openToolInspector, updateToolInspectorLive } from "../tool-inspector-state";
 import { CollapsibleHead } from "./CollapsibleHead";
 import { HalfRingSpinner } from "./HalfRingSpinner";
@@ -57,10 +59,9 @@ import {
 	type DelegateField,
 } from "../tool-args";
 import { PRESENT_FILES_TOOL_NAME } from "../../../server/tool-manager.js";
-import { parsePresentArgs, presentCardItems, primaryPreviewItem } from "../present-items";
-import { openFilePreview } from "../file-preview-bridge";
+import { parsePresentArgs, presentCardItems, previewablePresentKind, primaryPreviewItem } from "../present-items";
+import { openFilePreviewList } from "../file-preview-bridge";
 import { useCopyFeedback } from "../use-copy-feedback";
-import { PresentedFiles } from "./PresentedFiles";
 import { QuestionnaireCard } from "./QuestionnaireCard";
 import { renderHighlightedCommand } from "../bash-danger";
 import { FileChangeCard } from "./FileChangeCard";
@@ -99,6 +100,7 @@ const TOOL_ICONS: Record<string, ReactNode> = {
 	plan_update: <FiCheckSquare />,
 	skill: <FiBookOpen />,
 	schedule: <FiClock />,
+	agent_bot: <FiCpu />,
 	compact_context: <FiArchive />,
 	mcp_manage: <FiBox />,
 	sandbox: <FiBox />,
@@ -135,6 +137,7 @@ const TOOL_ICON_CLASSES: Record<string, string> = {
 	worktree: "toolcall-icon tc-tone-agent",
 	plan_update: "toolcall-icon tc-tone-agent",
 	schedule: "toolcall-icon tc-tone-agent",
+	agent_bot: "toolcall-icon tc-tone-agent",
 	ask_user_question: "toolcall-icon tc-tone-ui",
 	[PRESENT_FILES_TOOL_NAME]: "toolcall-icon tc-tone-ui",
 	browser_page: "toolcall-icon tc-tone-ui",
@@ -169,9 +172,13 @@ function tryOpenPresentPreview(argumentsText: string | undefined, details: unkno
 	const args = parsePresentArgs(argumentsText);
 	if (!args) return false;
 	const items = presentCardItems(args, details);
+	const previewList = items
+		.filter((i) => previewablePresentKind(i.kind))
+		.map((i) => ({ path: i.target, name: i.name }));
+	if (previewList.length === 0) return false;
 	const target = primaryPreviewItem(items);
-	if (!target) return false;
-	return openFilePreview({ path: target.target, name: target.name });
+	const idx = target ? previewList.findIndex((f) => f.path === target.target) : 0;
+	return openFilePreviewList(previewList, idx >= 0 ? idx : 0);
 }
 
 function useToolInspectorLiveSync({
@@ -503,7 +510,11 @@ const ToolCallCard = memo(function ToolCallCard({
 	const t = useT();
 	const [open, setOpen] = useState<boolean | null>(null);
 	const isPresent = block.name === PRESENT_FILES_TOOL_NAME;
-	const expanded = open ?? (isPresent ? true : wrap);
+	const botDraftDetail = useMemo(
+		() => (block.name === "agent_bot" ? parseAgentBotDraftDetail(view.result?.details) : null),
+		[block.name, view.result?.details],
+	);
+	const expanded = open ?? (isPresent || Boolean(botDraftDetail) ? true : wrap);
 	const shown = expanded || forceOpen;
 	const { copied, copy } = useCopyFeedback({ duration: 1200 });
 
@@ -937,14 +948,7 @@ const ToolCallCard = memo(function ToolCallCard({
 			)}
 			{!isFlow && shown && (
 				<div className="toolcall-body">
-					{isPresent && presentArgs ? (
-						<PresentedFiles
-							args={presentArgs}
-							details={view.result?.details}
-							toolCallId={view.result?.toolCallId ?? block.id}
-							resultTimestamp={view.result?.timestamp}
-						/>
-					) : isDelegate ? (
+					{isDelegate ? (
 						<DelegateBrief args={delegateArgs} />
 					) : isCodemode && codemodeArgs?.code ? (
 						<CodemodeCard
@@ -978,7 +982,7 @@ const ToolCallCard = memo(function ToolCallCard({
 						)
 					)}
 					{block.name === "tool_search" && <ToolSearchDetails details={view.result?.details} />}
-					{output.length > 0 && !(isQuestionnaire && questionnaireArgs) && (
+					{output.length > 0 && !(isQuestionnaire && questionnaireArgs) && !botDraftDetail && (
 						<div className="toolcall-output">
 							<div className="toolcall-output-label">
 								{isError ? t("errorOutput") : t("output")}

@@ -16,8 +16,8 @@ interface ProjectPickerProps {
 	initialTab?: "local" | "remote";
 	open: boolean;
 	currentCwd: string;
-	pathCompletions: { name: string; path: string; type: "dir" | "file" }[];
-	workspaceRoots: string[];
+	pathCompletions?: { name: string; path: string; type: "dir" | "file" }[];
+	workspaceRoots?: string[];
 	onClose: () => void;
 	onSelectDirectory: (path: string) => void;
 	onCreateProject?: (path: string) => void;
