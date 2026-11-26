@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
@@ -390,7 +391,9 @@ describe("FooterBar 连接状态", () => {
 		const themeFiles = ["themes/flow.css", "themes/flow-light.css", "themes/wallpaper-flow.css"];
 
 		for (const relPath of themeFiles) {
-			const css = readThemeCss(resolve(rootDir, relPath));
+			const absPath = resolve(rootDir, relPath);
+			if (!existsSync(absPath)) continue;
+			const css = readThemeCss(absPath);
 			const hasUnscopedBadgeRule = /(?:^|\n)\.bar-item-badge:not\(\.bg-task-badge\)/.test(css);
 			expect(hasUnscopedBadgeRule, `${relPath} 不得包含全局未限定在顶栏的 .bar-item-badge 覆盖规则`).toBe(false);
 

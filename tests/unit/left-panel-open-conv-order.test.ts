@@ -200,7 +200,7 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 		expect(badges[0].textContent).toBe("当前");
 		const currentRow = badges[0].closest(".lp-tree-session-item")!;
 		expect(currentRow.classList.contains("active")).toBe(true);
-		expect(currentRow.querySelector(".conv-title-text")?.previousElementSibling).toBe(badges[0]);
+		expect(currentRow.querySelector(".conv-current-badge")).toBe(badges[0]);
 		expect(currentRow.querySelector(".conv-title-text")?.textContent).toBe("正在查看的对话");
 		expect(currentRow.querySelector(".conv-meta-zone .conv-time")).toBeTruthy();
 		expect(currentRow.querySelector(".conv-meta-zone .conv-current-badge")).toBeNull();
@@ -377,12 +377,12 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 		expect(badge).toBeTruthy();
 		expect(badge?.textContent).toContain("临时");
 
-		expect(badge?.closest(".conv-meta-zone")).toBeTruthy();
+		expect(badge?.closest(".conv-tags-row")).toBeTruthy();
 		expect(container.querySelector(".conv-title-text .ephemeral-badge")).toBeNull();
 
 		const pin = container.querySelector(".pin-badge");
 		expect(pin).toBeTruthy();
-		expect(pin?.closest(".conv-meta-zone")).toBeTruthy();
+		expect(pin?.closest(".conv-tags-row")).toBeTruthy();
 		expect(container.querySelector(".conv-title-text .pin-badge")).toBeNull();
 	});
 

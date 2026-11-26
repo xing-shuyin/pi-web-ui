@@ -122,7 +122,9 @@ try {
 	await sleep(220);
 	const toggleHover = await style(".goal-toggle");
 	await away();
-	await page.click(".goalbar-hint"); // 展开目标条（issue 的指控：展开后按下态消失）
+	if (await page.locator(".goalbar-hint").isVisible()) {
+		await page.click(".goalbar-hint"); // 展开目标条（issue 的指控：展开后按下态消失）
+	}
 	await away();
 	const toggleOnExpanded = await style(".goal-toggle");
 

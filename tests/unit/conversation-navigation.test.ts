@@ -5,12 +5,15 @@ import { notifySessionSwitch, registerSessionSwitchSink, resetComposerSinks } fr
 
 const source = readFileSync(new URL("../../web/src/use-chat.ts", import.meta.url), "utf8");
 const begin = source.search(/if\s*\(\s*msg\.type === "new_chat" \|\|/);
-const end = source.indexOf('\t\tif (msg.type === "set_cwd" && msg.path)', begin);
+const end = source.indexOf('\t\tif (msg.type === "remove_project"', begin);
 const navigation = source.slice(begin, end);
 
-const transitionBegin = source.indexOf('\t\tif (msg.type === "set_cwd" && msg.path)');
+const transitionBegin = source.indexOf('if (msg.type === "set_cwd" && msg.path)');
 const transitionEnd = source.indexOf("\t\tif (isWsOpen(ws)) {", transitionBegin);
-const transitionLogic = source.slice(transitionBegin, transitionEnd).replace(/\(s\?:\s*string\)/g, "(s)");
+const transitionLogic = source
+	.slice(transitionBegin, transitionEnd)
+	.replace(/^\}\s*else\s+/, "")
+	.replace(/\(s\?:\s*string\)/g, "(s)");
 
 afterEach(resetComposerSinks);
 

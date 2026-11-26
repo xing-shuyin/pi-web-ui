@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { appUrl } from "../base-url";
-import { withToken } from "../auth-token";
+import { apiFetch } from "../api-client";
 import { useT } from "../i18n";
 import { useEscapeKey } from "../shortcut-stack";
 import type { ModelInfo } from "../types";
@@ -47,7 +46,7 @@ export function useBotOptions(enabled: boolean) {
 		const controller = new AbortController();
 		setLoading(true);
 		setError("");
-		void fetch(withToken(appUrl("/api/device-center/local-bot-options")), {
+		void apiFetch("/api/device-center/local-bot-options", {
 			method: "GET",
 			credentials: "same-origin",
 			signal: controller.signal,

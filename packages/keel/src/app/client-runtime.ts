@@ -1,4 +1,5 @@
 import type { ClientId, ConversationId } from "../contracts/ids.js";
+import { applyPromptAutoTitle, flushConversationAndPeer } from "./host-frames.js";
 import type { ModelAdminPort, ModelMemoryPort } from "../contracts/model-admin.js";
 import type { SettingsFramePort } from "../contracts/settings.js";
 import type { SlashCommandsPort } from "../contracts/commands.js";
@@ -540,21 +541,15 @@ export class ClientRuntime {
 		const conv = this.registry.activeConv() ?? this.createConversation();
 		// 从「受理」到「会话真的开起来」之间有一整段 await（ensure）：老 `conv.promptInFlight` 就是这一段。
 		this.turnInFlight.add(conv.id);
-		if ((conv.meta.title === "新对话" || conv.meta.title === "New Chat") && text.trim()) {
-			const first = text.trim().split("\n")[0].trim();
-			const clean = first.length > 30 ? `${first.slice(0, 30)}…` : first;
-			if (clean) conv.rename(clean, Date.now());
-		}
+		applyPromptAutoTitle(conv, text);
 		try {
 			const sessions = this.options.sessions;
 			if (!sessions) throw new Error("core: session registry is not wired");
 			const opened = await sessions.ensure(conv);
 			if (conv.phase === "running") {
-				if (queue) {
-					await this.turns.start(conv, opened.session, text, { deliverAs: "followUp" });
-				} else {
-					await this.turns.steer(conv, opened.session, text);
-				}
+				await (queue
+					? this.turns.start(conv, opened.session, text, { deliverAs: "followUp" })
+					: this.turns.steer(conv, opened.session, text));
 			} else {
 				await this.turns.start(conv, opened.session, text);
 			}
@@ -563,16 +558,7 @@ export class ClientRuntime {
 			else console.error("[core] turn failed:", error);
 		} finally {
 			this.turnInFlight.delete(conv.id);
-			this.publisher.flush({ forceFull: true });
-			this.pushConversations();
-			const currentClientId = conv.meta.clientId;
-			if (currentClientId && currentClientId !== this.clientId) {
-				const target = this.options.findRuntime?.(currentClientId);
-				if (target) {
-					target.publisher.flush({ forceFull: true });
-					target.pushConversations();
-				}
-			}
+			flushConversationAndPeer(this, conv, this.options.findRuntime);
 		}
 	}
 

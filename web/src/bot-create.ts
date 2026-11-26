@@ -23,10 +23,10 @@ export interface BotDraftResult {
 export const BOT_DRAFT_REQUEST_MAX = 2000;
 
 const FALLBACK_BOT_DRAFT_PROMPT = [
-	"请根据以下需求为我设计并起草一个智能体（Bot）：",
+	"Design and draft an AI agent (Bot) for the following request:",
 	"{{request}}",
 	"",
-	'调用 agent_bot 工具（op="draft"）生成智能体草案',
+	'Call the agent_bot tool (op="draft") to generate the agent draft.',
 ].join("\n");
 
 /**

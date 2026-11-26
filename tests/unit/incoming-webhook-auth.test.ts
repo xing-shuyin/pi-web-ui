@@ -58,7 +58,7 @@ describe("incoming webhook self-authentication (pure)", () => {
 describe("incoming webhook auth wiring (single source)", () => {
 	it("main app lets self-authenticated incoming webhooks reach the Hub forwarder", () => {
 		const source = readFileSync(join(root, "server", "index.ts"), "utf8");
-		const gate = source.slice(source.indexOf("const ok = tokenOk(req);"), source.indexOf("const isHtml ="));
+		const gate = source.slice(source.indexOf("const ok = auth.ok;"), source.indexOf("const isHtml ="));
 		expect(gate).toContain("isSelfAuthenticatedWebhook(req)");
 		// 不允许用更宽的路径判断替代单源判定：那会把整个 /api/rooms 变成免登录。
 		expect(gate).not.toMatch(/startsWith\("\/api\/rooms"\)/);

@@ -1214,7 +1214,7 @@
 }
 
 .lp-bots-create-menu button:hover {
-	background: var(--surface-2, rgba(128, 138, 160, 0.12));
+	background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 .attach-chip.is-bot-draft {

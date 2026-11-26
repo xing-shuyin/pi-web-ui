@@ -30,11 +30,11 @@ This capability requires updating and restarting the desktop shell; updating onl
 
 ## Choosing and running
 
-| Form                                               | Fits                                           | Install and start                                                                                                                                  |
-| -------------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Windows NSIS installer `*-setup.exe`               | A fixed machine                                | Run the installer, choose the install directory, then open the app                                                                                 |
-| macOS `.dmg`                                       | Mac desktop app                                | Drag the `.app` into Applications, then open it                                                                                                    |
-| Linux `.AppImage`                                  | Linux desktop app                              | Make it executable and run it, e.g. `chmod +x ./文件名.AppImage`                                                                                   |
+| Form                                  | Fits                                                                  | Install and start                                                                                                                                  |
+| ------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Windows NSIS installer `*-setup.exe`  | A fixed machine                                                       | Run the installer, choose the install directory, then open the app                                                                                 |
+| macOS `.dmg`                          | Mac desktop app                                                       | Drag the `.app` into Applications, then open it                                                                                                    |
+| Linux `.AppImage`                     | Linux desktop app                                                     | Make it executable and run it, e.g. `chmod +x ./文件名.AppImage`                                                                                   |
 | Windows `keel-<version>-portable.zip` | Carry the program and data on a portable drive (with built-in kernel) | Extract fully into a writable directory and run `启动Pi.bat` or `PiPortable.bat` in the root, see [portable build notes](../launcher/README.en.md) |
 
 The Windows portable ZIP is an Electron app plus a `.bat` launcher script and needs no Python to run; it isn't the same distribution form as the Python launcher. The current repo's `launcher/` contains no Python launcher. The macOS update ZIP is also not a Windows portable package.

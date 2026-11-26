@@ -91,6 +91,7 @@ export const ENV_SPECS: readonly EnvSpec[] = [
 
 	// ── 内部管道（设了会坏事，仅登记以示「不是配置」）────────────────────────
 	{ name: "PI_CODING_AGENT_SESSION_DIR", scope: "internal" },
+	{ name: "PI_CODEX_API_KEY", scope: "internal" },
 	{ name: "PI_EVAL_PROJECT_DIR", scope: "internal" },
 	{ name: "PI_EVAL_WORKDIR", scope: "internal" },
 	{ name: "PI_LOCAL_VERIFICATION_COMMAND", scope: "internal" },
@@ -116,6 +117,7 @@ export const ENV_SPECS: readonly EnvSpec[] = [
 	{ name: "PI_WEB_DSH_RUNTIME_BASE", scope: "internal" },
 	{ name: "PI_WEB_NATIVE_CLI_APPROVAL", scope: "internal" },
 	{ name: "PI_WEB_NATIVE_CLI_KEY", scope: "internal" },
+	{ name: "PI_WEB_THEME_CATALOG_URL", scope: "internal" },
 	{
 		name: "PI_WEB_PI_ENGINE_ATTACH",
 		scope: "internal",

@@ -91,13 +91,13 @@ describe("Codex CLI driver", () => {
 		async (version) => {
 			probeMock.mockResolvedValue({ available: true, version });
 			await expect(probeCodex("/custom path/codex.cmd")).resolves.toEqual({ available: true, version: "1.2.3" });
-			expect(probeMock).toHaveBeenCalledExactlyOnceWith("codex", "/custom path/codex.cmd");
+			expect(probeMock).toHaveBeenCalledExactlyOnceWith("codex", "/custom path/codex.cmd", false);
 		},
 	);
 	it("returns common probe failures without launching a process", async () => {
 		probeMock.mockResolvedValue({ available: false, error: "not installed" });
 		await expect(probeCodex()).resolves.toEqual({ available: false, error: "not installed" });
-		expect(probeMock).toHaveBeenCalledExactlyOnceWith("codex", undefined);
+		expect(probeMock).toHaveBeenCalledExactlyOnceWith("codex", undefined, false);
 		expect(spawnMock).not.toHaveBeenCalled();
 	});
 	it("maps JSONL output, tools, thread allocation and cached usage", async () => {

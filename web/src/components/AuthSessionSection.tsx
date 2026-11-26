@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { FiLogOut, FiShield, FiTrash2 } from "react-icons/fi";
 import { logoutAuthSession, requestJson, revokeAuthSessions } from "../api-client";
 import { clearAuthToken } from "../auth-token";
-import { isZhLocale, useI18n } from "../i18n";
+import { useT } from "../i18n";
 
 interface PublicSessionItem {
 	id: string;
@@ -26,8 +26,7 @@ interface SessionListResponse {
  * 仅在服务端启用口令认证时展示，支持退出当前登录、吊销单个设备会话、以及全部下线。
  */
 export function AuthSessionSection() {
-	const { locale } = useI18n();
-	const zh = isZhLocale(locale);
+	const t = useT();
 	const [data, setData] = useState<SessionListResponse | null>(null);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -91,16 +90,16 @@ export function AuthSessionSection() {
 		<div className="set-section">
 			<div className="set-section-title">
 				<FiShield className="set-section-icon" />
-				{zh ? "访问会话与登录" : "Access Sessions"}
+				{t("authSessionsTitle")}
 				<span className="set-count">{data.sessions.length}</span>
 			</div>
 			<div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
 				<button type="button" className="set-save-btn" disabled={busy} onClick={handleLogout}>
-					<FiLogOut /> {zh ? "退出登录" : "Log out"}
+					<FiLogOut /> {t("authSessionsLogout")}
 				</button>
 				{data.sessions.length > 0 && (
 					<button type="button" className="set-save-btn" disabled={busy} onClick={handleRevokeAll}>
-						<FiTrash2 /> {zh ? "全部下线" : "Revoke all sessions"}
+						<FiTrash2 /> {t("authSessionsRevokeAll")}
 					</button>
 				)}
 			</div>
@@ -123,12 +122,12 @@ export function AuthSessionSection() {
 							}}
 						>
 							<div style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-								<strong>{s.current ? (zh ? "当前设备" : "Current") : s.ip || s.id}</strong>
+								<strong>{s.current ? t("authSessionsCurrentDevice") : s.ip || s.id}</strong>
 								{s.current && s.ip ? ` (${s.ip})` : ""}
 								{s.userAgent ? ` · ${s.userAgent}` : ""}
 							</div>
 							<button type="button" className="set-save-btn" disabled={busy} onClick={() => handleRevokeOne(s)}>
-								{zh ? "下线" : "Revoke"}
+								{t("authSessionsRevoke")}
 							</button>
 						</div>
 					))}

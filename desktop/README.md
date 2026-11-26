@@ -38,11 +38,11 @@ Windows 不允许程序自己改默认程序：注册只是让 pi 出现在「�
 
 ## 选择与运行
 
-| 形式                                            | 适用场景                 | 安装和启动                                                                                                  |
-| ----------------------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| Windows NSIS 安装包 `*-setup.exe`               | 固定电脑使用             | 运行安装程序，选择安装目录，再打开应用                                                                      |
-| macOS `.dmg`                                    | Mac 桌面应用             | 将 `.app` 拖入 Applications 后打开                                                                          |
-| Linux `.AppImage`                               | Linux 桌面应用           | 赋予执行权限后运行，如 `chmod +x ./文件名.AppImage`                                                         |
+| 形式                               | 适用场景                                 | 安装和启动                                                                                                  |
+| ---------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Windows NSIS 安装包 `*-setup.exe`  | 固定电脑使用                             | 运行安装程序，选择安装目录，再打开应用                                                                      |
+| macOS `.dmg`                       | Mac 桌面应用                             | 将 `.app` 拖入 Applications 后打开                                                                          |
+| Linux `.AppImage`                  | Linux 桌面应用                           | 赋予执行权限后运行，如 `chmod +x ./文件名.AppImage`                                                         |
 | Windows `keel-<版本>-portable.zip` | 随移动硬盘携带程序和数据（内置完整内核） | 完整解压到可写目录，运行根目录的 `启动Pi.bat` 或 `PiPortable.bat`，详见 [便携版说明](../launcher/README.md) |
 
 Windows 便携 ZIP 是 Electron 应用加 `.bat` 启动脚本，运行它不需要 Python；它与 Python launcher 不是同一种分发形式。当前仓库的 `launcher/` 不含 Python 启动器。macOS 的更新用 ZIP 也不是 Windows 便携包。
@@ -121,13 +121,13 @@ Remove-Item Env:PI_WEB_DESKTOP_URL
 
 此 override 直接使用已有地址，不另起 sidecar；联调数据与端口由单独启动的开发服务决定。
 
-| 命令                            | 构建内容与输出                                                                                |
-| ------------------------------- | --------------------------------------------------------------------------------------------- |
-| `npm run build:desktop`         | 仅用 `desktop/tsconfig.json` 编译桌面壳到 `dist/desktop/`                                     |
-| `npm run desktop:dist`          | 编译桌面壳，按 `electron-builder.yml` 生成当前平台纯壳包（使用全局 `keel-agent`），输出到 `release/` |
-| `npm run desktop:msi`           | 编译桌面壳，生成 Windows MSI 纯壳安装包 `release/keel-<版本>-win-x64.msi`                                  |
-| `npm run desktop:portable`      | 先构建应用与桌面壳，再按 `electron-builder.portable.yml` 内置完整内核并组装 `release/PiWebUI-Portable/`    |
-| `npm run desktop:portable:full` | 同上，并增加 `--with-git`；名称中的 full 不表示包含独立 Node.js                                            |
+| 命令                            | 构建内容与输出                                                                                          |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `npm run build:desktop`         | 仅用 `desktop/tsconfig.json` 编译桌面壳到 `dist/desktop/`                                               |
+| `npm run desktop:dist`          | 编译桌面壳，按 `electron-builder.yml` 生成当前平台纯壳包（使用全局 `keel-agent`），输出到 `release/`    |
+| `npm run desktop:msi`           | 编译桌面壳，生成 Windows MSI 纯壳安装包 `release/keel-<版本>-win-x64.msi`                               |
+| `npm run desktop:portable`      | 先构建应用与桌面壳，再按 `electron-builder.portable.yml` 内置完整内核并组装 `release/PiWebUI-Portable/` |
+| `npm run desktop:portable:full` | 同上，并增加 `--with-git`；名称中的 full 不表示包含独立 Node.js                                         |
 
 Windows 便携组装建议在 Windows 上执行。已完成 `npm run build` 和 `npm run build:desktop` 后，可直接传组装参数：
 

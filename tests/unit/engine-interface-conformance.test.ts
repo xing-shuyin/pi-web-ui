@@ -168,6 +168,11 @@ describe("引擎接口一致性门禁 (DispatchSession Interface Conformance)", 
 			cwd: "E:/test-cwd",
 			activeConvId: "uconv-test-1",
 			conversations: new Map([["uconv-test-1", conv]]),
+			resolveConversationAcrossProjects: (id: string) => ({
+				conv: id === "uconv-test-1" ? conv : undefined,
+				cwd: "E:/test-cwd",
+			}),
+			emitConversations: vi.fn(),
 			store: {
 				saveConversation: vi.fn((_cwd, c) => {
 					savedStoreTitle = c.title;

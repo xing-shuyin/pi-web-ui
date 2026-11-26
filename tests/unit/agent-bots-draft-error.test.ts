@@ -8,47 +8,68 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AgentBotsSection } from "../../web/src/components/AgentBotsSection";
+import { BotDraftInlineCard } from "../../web/src/components/BotDraftInlineCard";
 import { closeContextMenu } from "../../web/src/context-menu-state";
 
-vi.mock("../../web/src/i18n", () => ({
-	useI18n: () => ({ locale: "zh" }),
-	isZhLocale: () => true,
-	// 只翻译测试用得到的几个键（其余返回键名，渲染不依赖具体文案）。
-	useT: () => (key: string) =>
-		({
-			agentBotsApprove: "创建",
-			agentBotsRetry: "重试",
-			agentBotsDraftErrorDismiss: "知道了",
-			agentBotsDraftBusy: "Bot 正在执行任务，等它跑完再试。",
-		})[key] ?? key,
-}));
+vi.mock("../../web/src/i18n", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../web/src/i18n")>();
+	return {
+		...actual,
+		useI18n: () => ({ locale: "zh" }),
+		isZhLocale: () => true,
+		// 只翻译测试用得到的几个键（其余返回键名，渲染不依赖具体文案）。
+		useT: () => (key: string) =>
+			({
+				agentBotsApprove: "创建",
+				agentBotsApproving: "创建中...",
+				agentBotsDraftBusy: "Bot 正在执行任务，等它跑完再试。",
+			})[key] ?? key,
+	};
+});
 
 const draft = {
 	id: "draft-1",
 	name: "审 PR 助手",
 	description: "只读审查",
-	systemPrompt: "",
+	systemPrompt: "你是 PR 审查助手。",
 	cwd: "D:/project",
 	tools: ["read"],
+	skills: [],
+	mcpServers: [],
 	trigger: "on_demand",
 	bootstrap: true,
 	highPrivilegeTools: [] as string[],
-	createdBy: "model",
-	createdAt: 1,
 };
 
 const response = (data: unknown, status = 200) =>
-	({ ok: status < 400, status, json: async () => data }) as unknown as Response;
+	({
+		ok: status < 400,
+		status,
+		headers: new Headers({ "content-type": "application/json" }),
+		json: async () => data,
+		text: async () => JSON.stringify(data),
+	}) as unknown as Response;
 
 let root: Root | undefined;
 let host: HTMLDivElement;
 
 function stubApi(onApprove: (attempt: number) => Response) {
 	let attempts = 0;
-	const fetcher = vi.fn(async (url: string) => {
-		const path = String(url).split("/api/device-center/")[1]?.split("?")[0] ?? "";
+	const fetcher = vi.fn(async (url: string | URL | Request) => {
+		const rawUrl = typeof url === "string" ? url : url instanceof Request ? url.url : String(url);
+		const path = rawUrl.split("/api/device-center/")[1]?.split("?")[0] ?? "";
 		if (path === "bot-panel") return response({ bots: [], drafts: [draft] });
+		if (path === "local-bot-options") {
+			return response({
+				cwd: "D:/project",
+				defaultCwd: "D:/project",
+				models: [],
+				tools: [],
+				skills: [],
+				mcpServers: [],
+				projects: [],
+			});
+		}
 		if (path === `bot-drafts/${draft.id}/approve`) return onApprove(++attempts);
 		return response({});
 	});
@@ -68,8 +89,11 @@ async function render() {
 	host = document.createElement("div");
 	document.body.append(host);
 	root = createRoot(host);
-	await act(async () => root!.render(createElement(AgentBotsSection, { active: true })));
-	await settle(() => Boolean(host.querySelector(".lp-bot-draft")));
+	await act(async () => root!.render(createElement(BotDraftInlineCard, { draft })));
+	await settle(() => {
+		const b = button("创建");
+		return Boolean(b && !b.disabled);
+	});
 }
 
 const button = (label: string, scope: ParentNode = host) =>
@@ -95,24 +119,24 @@ describe("待确认草案的失败提示", () => {
 		expect(banner.getAttribute("role")).toBe("alert");
 		expect(banner.textContent).toContain("Bot 正在执行任务，等它跑完再试。");
 		// 失败不等于草案消失：卡还在，重试才有意义。
-		expect(host.querySelector(".lp-bot-draft")).toBeTruthy();
+		expect(host.querySelector(".bot-draft-inline")).toBeTruthy();
 
-		await act(async () => button("重试", banner)!.click());
+		await act(async () => button("创建")!.click());
 		await settle(() => fetcher.mock.calls.filter(([url]) => String(url).endsWith("/approve")).length > 1);
 		expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/approve"))).toHaveLength(2);
 	});
 
-	it("后端 detail 原样展示，`知道了` 收起提示后草案仍可再创建", async () => {
+	it("后端 detail 原样展示，失败后草案仍可再创建", async () => {
 		const fetcher = stubApi(() => response({ code: "BOT_CWD_INVALID", detail: "目录不存在：D:/gone" }, 400));
 		await render();
 
 		await act(async () => button("创建")!.click());
 		await settle(() => Boolean(host.querySelector(".lp-bot-drafts-error")));
 		expect(host.querySelector(".lp-bot-drafts-error")!.textContent).toContain("目录不存在：D:/gone");
+		expect(host.querySelector(".bot-draft-inline")).toBeTruthy();
 
-		await act(async () => button("知道了")!.click());
-		expect(host.querySelector(".lp-bot-drafts-error")).toBeNull();
-		expect(host.querySelector(".lp-bot-draft")).toBeTruthy();
-		expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/approve"))).toHaveLength(1);
+		await act(async () => button("创建")!.click());
+		await settle(() => fetcher.mock.calls.filter(([url]) => String(url).endsWith("/approve")).length > 1);
+		expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/approve"))).toHaveLength(2);
 	});
 });

@@ -62,8 +62,8 @@ describe("引擎列表元数据与安装检测 (SUPPORTED_ENGINES & EnginePicker
 	it("包名与安装命令单一来源于引擎目录，界面不再手抄一份", () => {
 		for (const item of SUPPORTED_ENGINES) {
 			const engine = ENGINE_CATALOG[item.id as keyof typeof ENGINE_CATALOG];
-			expect(item.packageName).toBe(engine.packageName);
-			expect(item.installCommand).toBe(engine.installCommand);
+			expect(item.packageName ?? null).toBe(engine.packageName);
+			expect(item.installCommand ?? null).toBe(engine.packageName ? engine.installCommand : null);
 		}
 	});
 

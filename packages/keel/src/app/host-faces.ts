@@ -1,4 +1,3 @@
-import { resolve as resolveFsPath } from "node:path";
 import type { ServerMessage, UiApprovalPolicyState, UiToolPromptOverride, BgServer } from "../protocol.js";
 import type { Conversation } from "../kernel/conversation/index.js";
 import type { TransportPort } from "../contracts/ports.js";
@@ -26,13 +25,12 @@ import type { ServerLang } from "../i18n.js";
 import type { ProjectSource } from "../adapters/state/index.js";
 import { createModelRuntimeFactory } from "../adapters/models/index.js";
 import { chatModeTranscriptOf, type ChatModeTranscript } from "../adapters/sdk/chat-mode.js";
-import { pushProjects } from "../domains/projects/index.js";
-import { refreshSessions, sessionListLimitOf } from "../domains/history/index.js";
 import { createModelPusher, type ModelPusher } from "../domains/models/index.js";
 import type { TerminalHost } from "../domains/terminals/index.js";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
 import { lazyCatalogResolve } from "../domains/tools/lazy-state.js";
 import { createSubagentRuntime, type SubagentRuntime } from "./subagent-runtime.js";
+import { buildClientFrames, buildNativeCliPort } from "./host-frames.js";
 import type { SessionRegistry } from "./session-registry.js";
 import type { ClientFrames, ClientRuntime } from "./client-runtime.js";
 
@@ -547,70 +545,30 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 		...(deps.getRuntimes ? { getRuntimes: deps.getRuntimes } : {}),
 		...(deps.findRuntime ? { findRuntime: deps.findRuntime } : {}),
 	});
-	const pushSessionsFor = async (targetCwd: string, root: string | undefined): Promise<void> => {
-		if (!root) {
-			if (!transport.isClosed()) transport.send({ type: "sessions", sessions: [], cwd: targetCwd });
-			return;
-		}
-		const pinned = { isPinned: (owner: string, file: string) => stateStore.isSessionPinned(owner, file) };
-		// 条数是前端 `list_sessions.limit` 按项目设的（`setSessionListLimit`）：帧出口只按它截断，`hasMore` 跟着算。
-		const limit = sessionListLimitOf(runtime.sessionLimits, targetCwd);
-		await refreshSessions({ root, cwd: targetCwd, transport, state: runtime.historyState(), limit, ...pinned });
-	};
-	const frames: ClientFrames = {
-		// 设置面没注入 = 能力未接（不再由内核自建 SettingsService）。
-		pushSettings: () => settingsFrame?.push(),
-		pushDefaultModel: () => {
-			const modelId = stateStore.getDefaultModel("pi") ?? null;
-			if (!transport.isClosed()) transport.send({ type: "default_model", modelId });
-		},
-		pushProjects: async () => {
-			await pushProjects({ transport, clientId, cwd: runtime.cwd, source: deps.projectSource });
-		},
-		refreshSessions: async () => {
-			await pushSessionsFor(runtime.cwd, runtime.historyRoot());
-		},
-		// 侧栏展开非当前项目或钉子落在目标项目时，按 targetCwd 扫对应的会话目录并推帧。
-		refreshSessionsFor: async (targetCwd: string) => {
-			if (resolveFsPath(targetCwd) === resolveFsPath(runtime.cwd)) {
-				await frames.refreshSessions();
-				return;
-			}
-			await pushSessionsFor(targetCwd, runtime.historyRootFor(targetCwd));
-		},
-		listModels: () => {
-			void modelPusher.push();
-		},
-	};
+	const frames = buildClientFrames({
+		transport,
+		stateStore,
+		clientId,
+		runtime,
+		projectSource: deps.projectSource,
+		modelPusher,
+	});
+	(frames as ClientFrames & { bindSettingsPush?: (push: (() => void) | undefined) => void }).bindSettingsPush?.(
+		settingsFrame ? () => settingsFrame.push() : undefined,
+	);
 	runtime.attachFrames(frames);
 	// 宿主面：CLI 的 PTY 归每对话一支的终端管理器，Bot 私聊的注册表与转录锚点在宿主（`agentDir`）。
-	const nativeCli = deps.nativeCli?.({
-		// 管理器按对话懒建：`cwd` 传进来时用它定工作区根（CLI 对话可能不在当前工作区）。
-		terminalOf: (conversationId, cliCwd) => terminalHost.managerFor(conversationId, cliCwd ?? cwd),
-		emit: (msg) => {
-			if (!transport.isClosed()) transport.send(msg);
-		},
-		// 老实现 `scheduleSnapshot()` + `emitConversations()`：状态变了就把快照与运行列表一起推。
-		publish: () => {
-			if (runtime.isDisposed()) return;
-			runtime.publisher.request();
-			runtime.pushConversations();
-		},
-		refreshSessions: () => void frames.refreshSessions(),
-		renameConversation: (conversationId, title) => runtime.registry.get(conversationId)?.rename(title),
-		// 「继承当前对话模型」开关：开关在设置里，模型在当前对话的会话上。
-		inheritModel: (preset) => {
-			const inherit = stateStore.getSettingsSnapshot(clientId).nativeCliInheritModel as
-				Record<string, boolean | undefined> | undefined;
-			if (!inherit?.[preset]) return undefined;
-			return activeSessionModel();
-		},
-		...(deps.notifyMobile
-			? {
-					notifyMobile: (event: Omit<MobileNotificationEvent, "clientId">) =>
-						deps.notifyMobile?.({ ...event, clientId }),
-				}
-			: {}),
+	const nativeCli = buildNativeCliPort({
+		factory: deps.nativeCli,
+		terminalHost,
+		cwd,
+		transport,
+		runtime,
+		frames,
+		stateStore,
+		clientId,
+		activeSessionModel,
+		notifyMobile: deps.notifyMobile,
 	});
 	const bots = deps.bots?.();
 	const attachments = deps.attachments?.();

@@ -68,7 +68,7 @@ try {
 		userBody.slice(0, 40),
 	);
 
-	const builtinRes = await fetch(`${URL}/themes/mist.css`);
+	const builtinRes = await fetch(`${URL}/themes/flow-zurich.css`);
 	check("builtin theme still 200", builtinRes.status === 200, `status=${builtinRes.status}`);
 
 	const missingRes = await fetch(`${URL}/themes/no-such-theme.css`);

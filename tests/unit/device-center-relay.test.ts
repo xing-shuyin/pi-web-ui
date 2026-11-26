@@ -621,7 +621,7 @@ describe("device reverse relay", () => {
 		const data = JSON.parse(result.body);
 		expect(data.body).toBe("payload");
 		expect(data.headers.authorization).toBe("Bearer local-secret");
-		expect(data.headers.cookie).toBe("pi_web_token=local-secret");
+		expect(data.headers.cookie).toBeUndefined();
 		expect(data.headers.host).toBe(`127.0.0.1:${f.localPort}`);
 		expect(data.headers.origin).toBe(`http://127.0.0.1:${f.localPort}`);
 		expect(data.headers.range).toBe("bytes=0-3");

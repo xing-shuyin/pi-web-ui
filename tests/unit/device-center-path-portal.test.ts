@@ -315,7 +315,7 @@ describe("single-port device path portal", () => {
 			authorization: "Bearer hub-secret",
 		});
 		expect(result.status).toBe(200);
-		expect(f.received.at(-1)?.cookie).not.toContain("hub=secret");
+		expect(f.received.at(-1)?.cookie ?? "").not.toContain("hub=secret");
 		expect(f.received.at(-1)?.authorization).not.toContain("hub-secret");
 		expect(result.headers.get("access-control-allow-origin")).toBe("null");
 		expect(result.headers.get("access-control-allow-credentials")).toBeNull();
