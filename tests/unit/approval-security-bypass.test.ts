@@ -10,7 +10,7 @@ import {
 	wrapWriteToolWithPermission,
 	type AskApprovalFn,
 } from "../../server/tool-guards.js";
-import { withToolGuard } from "../../server/agent-service.js";
+import { withToolGuard } from "../../server/tool-guards.js";
 
 describe("Approval System Security Bypass & Path Traversal Fixes (#333)", () => {
 	const cwd = process.platform === "win32" ? "C:\\workspace\\project" : "/workspace/project";

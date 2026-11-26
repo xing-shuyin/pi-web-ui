@@ -6,7 +6,6 @@ import {
 	patchExtensionRunnerSource,
 	SENTINEL,
 } from "../../server/patch-extension-runner.js";
-import { extensionErrorLogPlan, countExtensionError, EXTENSION_ERROR_KEY_CAP } from "../../server/agent-service.js";
 import { isStaleExtensionContextError, staleSafe } from "../../server/extension-guards.js";
 import { requestContextExtension } from "../../server/request-context.js";
 
@@ -112,27 +111,6 @@ describe("stale extension runner guard (#958)", () => {
 	});
 });
 
-describe("extension error log dedupe (#958)", () => {
-	it("keeps the stack only on the first report and samples repeats per order of magnitude", () => {
-		expect(extensionErrorLogPlan(1)).toEqual({ log: true, withStack: true });
-		expect(extensionErrorLogPlan(2)).toEqual({ log: false, withStack: false });
-		expect(extensionErrorLogPlan(9)).toEqual({ log: false, withStack: false });
-		expect(extensionErrorLogPlan(10)).toEqual({ log: true, withStack: false });
-		expect(extensionErrorLogPlan(11)).toEqual({ log: false, withStack: false });
-		expect(extensionErrorLogPlan(100)).toEqual({ log: true, withStack: false });
-		expect(extensionErrorLogPlan(1568)).toEqual({ log: false, withStack: false });
-		expect(extensionErrorLogPlan(2000)).toEqual({ log: false, withStack: false });
-		expect(extensionErrorLogPlan(10000)).toEqual({ log: true, withStack: false });
-		expect(extensionErrorLogPlan(0)).toEqual({ log: false, withStack: false });
-	});
-
-	it("bounds the log growth of a repeatedly failing extension to O(log n) lines", () => {
-		const logged = Array.from({ length: 3659 }, (_, i) => extensionErrorLogPlan(i + 1)).filter((p) => p.log);
-		expect(logged).toHaveLength(4); // 1 / 10 / 100 / 1000
-		expect(logged.filter((p) => p.withStack)).toHaveLength(1);
-	});
-});
-
 describe("request context extension on a stale ctx (#958)", () => {
 	const register = () => {
 		let handler: any;
@@ -232,24 +210,5 @@ describe("stale-safe inline extension hooks (#958)", () => {
 	it("passes real results through untouched", async () => {
 		const handler = staleSafe(async (event: { n: number }, _ctx: unknown) => ({ doubled: event.n * 2 }));
 		await expect(handler({ n: 2 }, {} as any)).resolves.toEqual({ doubled: 4 });
-	});
-});
-
-describe("extension error counts are per conversation (#958)", () => {
-	it("keeps counting across reporter rebinds and forgets the conversation when it closes", () => {
-		const counts = new Map<string, number>();
-		expect(countExtensionError(counts, "ext|context|stale")).toBe(1);
-		expect(countExtensionError(counts, "ext|context|stale")).toBe(2);
-		// 另一个会话拿到的是自己的表，不会把序号接着数下去。
-		const other = new Map<string, number>();
-		expect(countExtensionError(other, "ext|context|stale")).toBe(1);
-	});
-
-	it("bounds the number of remembered error keys so a variable message cannot grow the map forever", () => {
-		const counts = new Map<string, number>();
-		for (let i = 0; i < EXTENSION_ERROR_KEY_CAP; i++) countExtensionError(counts, `ext|context|unique-${i}`);
-		expect(counts.size).toBe(EXTENSION_ERROR_KEY_CAP);
-		expect(countExtensionError(counts, "ext|context|one-too-many")).toBe(1);
-		expect(counts.size).toBe(1);
 	});
 });

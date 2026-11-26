@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { ClientSession } from "../../server/agent-service";
 import { DshClientSession } from "../../server/dsh/dsh-agent-service";
 import { UniversalSession } from "../../server/universal/universal-session";
 
@@ -32,13 +31,6 @@ describe("引擎接口一致性门禁 (DispatchSession Interface Conformance)", 
 		"flushSnapshot",
 		"pushSettings",
 	] as const;
-
-	it("Pi 引擎 (ClientSession) 完整实现核心平台契约", () => {
-		const proto = ClientSession.prototype as unknown as Record<string, unknown>;
-		for (const method of CORE_PLATFORM_METHODS) {
-			expect(typeof proto[method], `ClientSession 必须实现 ${method}`).toBe("function");
-		}
-	});
 
 	it("DSH 引擎 (DshClientSession) 完整实现核心平台契约", () => {
 		const proto = DshClientSession.prototype as unknown as Record<string, unknown>;

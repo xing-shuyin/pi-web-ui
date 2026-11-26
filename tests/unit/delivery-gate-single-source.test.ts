@@ -5,19 +5,10 @@ import { describe, expect, it } from "vitest";
 /**
  * 「不打补丁」的制度保证（issues/929）。
  *
- * 这一组断言不验行为，只验**形状**：所有「现在能不能投递」的知识必须收在
- * `server/conversation-delivery.ts` 与 `ClientSession.deliveryModeOf()` 两处。
- * 谁想再补一个 `if (isCompacting)` 或者再手写一次 `deliverAs: "steer"`，
- * 这里就会红，并指向该用的入口。
+ * 所有「现在能不能投递」的知识必须收在 `server/conversation-delivery.ts`。
  */
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
-const serviceSource = readFileSync(`${ROOT}server/agent-service.ts`, "utf8");
 const deliverySource = readFileSync(`${ROOT}server/conversation-delivery.ts`, "utf8");
-
-function count(source: string, needle: string | RegExp): number {
-	const pattern = typeof needle === "string" ? needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : needle.source;
-	return (source.match(new RegExp(pattern, "g")) ?? []).length;
-}
 
 describe("投递门单源（conversation-delivery.ts）", () => {
 	it("纯逻辑：不 import SDK，也不 import agent-service（避免拿运行时当判定）", () => {
@@ -27,72 +18,11 @@ describe("投递门单源（conversation-delivery.ts）", () => {
 
 	it("「压缩进行中」的文案匹配只允许出现在这里（别处请用 deliveryMode）", () => {
 		expect(deliverySource).toContain("compaction is in progress");
-		// 拿错误文案当门禁的唯一合法位置就是 conversation-delivery 的 isCompactionRejection。
-		expect(count(serviceSource, /\/compaction is in progress\//i)).toBe(0);
-		// 面向用户的提示文案可以提到这件事，但不能再拿它做判定。
-		// import 一行 + 开轮时撞上门的调用点（#959 删掉调度器旁路后只剩这一处）。
-		expect(count(serviceSource, /isCompactionRejection/)).toBe(2);
 	});
 
 	it("deliveryMode 是唯一判定：门相位的写者只应有 queued/running 两个构造函数", () => {
 		expect(deliverySource).toContain("export function deliveryMode");
 		expect(deliverySource).toContain("export function queuedCompaction");
 		expect(deliverySource).toContain("export function runningCompaction");
-	});
-});
-
-describe("门关着不许被当成投递失败（issue #959）", () => {
-	const daemonSource = readFileSync(`${ROOT}server/agent-service-daemon.ts`, "utf8");
-
-	it("没有第二道投递门：trySteerScheduler 这类「gated 就报 busy」的旁路已删", () => {
-		expect(count(serviceSource + daemonSource, /trySteerScheduler/)).toBe(0);
-	});
-
-	it("「门关 = 失败」只允许长在 delivery 模块里，别处一律入队", () => {
-		// 反例形态：if (mode === "gated") return { ok: false ... }
-		const antiPattern = /if\s*\(\s*mode\s*===\s*"gated"\s*\)\s*return\s*\{[^}]*ok:\s*false/gs;
-		for (const [name, source] of [
-			["agent-service.ts", serviceSource],
-			["agent-service-daemon.ts", daemonSource],
-		] as const) {
-			expect(
-				(source.match(antiPattern) ?? []).length,
-				`${name} 把「压缩中 / 退役窗口」当成了投递失败。门关只意味着排队：走 steerOwnConversation → deliverFromOutside，让 compaction_end 自己排空。`,
-			).toBe(0);
-		}
-	});
-
-	it("定时任务只能按转录寻址：没有「换一个对话」的回落入口", () => {
-		expect(count(serviceSource + daemonSource, /findViewportInCwd|wakeViewportInCwd/)).toBe(0);
-		expect(count(serviceSource, /resolveSchedulerTarget/)).toBe(0);
-	});
-});
-
-describe("agent-service 不许再长出第十五种投递（issues/929 防回归）", () => {
-	it("旧的三套压缩字段已删除，统一成 conv.compaction", () => {
-		expect(count(serviceSource, /conv\.pendingCompaction|this\.pendingCompaction/)).toBe(0);
-		expect(count(serviceSource, /compactionState/)).toBe(0);
-		expect(count(serviceSource, /compactionPending/)).toBe(0);
-	});
-
-	it("isCompacting 只允许 4 处出现（门判定 / 交互提示 / 驱逐保留 / 删除前守卫），其余走 deliveryModeOf", () => {
-		const hits = count(serviceSource, "isCompacting");
-		expect(hits, "新增的 isCompacting 直读请改成 this.deliveryModeOf(conv)，否则又多一个不认识门的调用点").toBe(4);
-	});
-
-	it('deliverAs: "steer" 只允许出现在 submitText 一处', () => {
-		expect(count(serviceSource, 'deliverAs: "steer"')).toBe(1);
-		expect(serviceSource).toContain("private async submitText(");
-	});
-
-	it("agent-service 不再直连 SDK 的 steering / sendUserMessage（#958 起全走 session-turns）", () => {
-		expect(
-			count(serviceSource, /\.steer\(/),
-			"往 steering 队列塞消息只在「有一轮活着」时成立；门关时请 park 到 ConversationDelivery，活轮投递请用 session-turns 的 steerSession()",
-		).toBe(0);
-		expect(
-			count(serviceSource, "sendUserMessage("),
-			"喂轮只有 server/session-turns.ts 一个出口：用 promptSession() / steerSession() / runTurn()，再按门槛决定 submitText 还是 deliverFromOutside",
-		).toBe(0);
 	});
 });

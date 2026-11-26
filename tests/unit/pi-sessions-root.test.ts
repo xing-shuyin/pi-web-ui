@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { isInsideSessionsDir, piSessionsRoot } from "../../server/agent-service.js";
+import { isInsideSessionsDir, piSessionsRoot } from "../../server/session-search.js";
 
 const original = process.env.PI_CODING_AGENT_SESSION_DIR;
 afterEach(() => {

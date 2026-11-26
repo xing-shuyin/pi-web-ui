@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { makeAdaptiveBashTool } from "../../server/agent-service.js";
+import { makeAdaptiveBashTool } from "../../server/bash-tool.js";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 describe("makeAdaptiveBashTool", () => {

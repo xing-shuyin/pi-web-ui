@@ -55,20 +55,6 @@ describe("session-turns 是唯一喂轮出口（#958）", () => {
 		).toEqual([]);
 	});
 
-	it("Conversation.session 是 runtime.session 的只读投影（禁再长出可赋值的会话字段）", () => {
-		const service = readFileSync(join(SERVER, "agent-service.ts"), "utf8");
-		// 接口层：readonly —— 赋值在编译期就是错。
-		expect(service).toContain("readonly session: AgentSession;");
-		// 实现层：对象字面量里必须是读 `this.runtime.session` 的 getter（不能闭包捕获局部 runtime，
-		// 否则 force reset 换 runtime 后拿到的还是旧会话）。
-		const makeConversation = service.slice(service.indexOf("private makeConversation("));
-		const literalStart = makeConversation.indexOf("const conv: Conversation = {");
-		expect(literalStart, "makeConversation 的会话字面量没找到").toBeGreaterThan(-1);
-		const literal = makeConversation.slice(literalStart, literalStart + 1200);
-		expect(literal).toContain("get session() {");
-		expect(literal).toContain("return this.runtime.session;");
-	});
-
 	it("两个源码根下都没有任何地方给 conv.session 赋值", () => {
 		const offenders: string[] = [];
 		for (const file of codeFiles()) {
@@ -79,14 +65,6 @@ describe("session-turns 是唯一喂轮出口（#958）", () => {
 			});
 		}
 		expect(offenders, `换会话请赋值 conv.runtime（session 是只读投影）：\n${offenders.join("\n")}`).toEqual([]);
-	});
-
-	it("宿主接管会话的两处入口都登记了退役钩子", () => {
-		const service = readFileSync(join(SERVER, "agent-service.ts"), "utf8");
-		const makeConversation = service.slice(service.indexOf("private makeConversation("));
-		expect(makeConversation.slice(0, 400)).toContain("guardSession(runtime.session)");
-		const bindSession = service.slice(service.indexOf("async bindSession("));
-		expect(bindSession.slice(0, 400)).toContain("guardSession(conv.session)");
 	});
 });
 

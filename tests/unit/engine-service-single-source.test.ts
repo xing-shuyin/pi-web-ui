@@ -59,9 +59,9 @@ describe("引擎契约单源", () => {
 		expect(offenders).toEqual([]);
 	});
 
-	it("五个引擎都显式 implements EngineService", () => {
+	it("所有引擎都显式 implements EngineService", () => {
 		const engines: [string, string][] = [
-			["pi", "server/agent-service-daemon.ts"],
+			["pi", "packages/keel/src/app/core-engine.ts"],
 			["dsh", "server/dsh/dsh-agent-service.ts"],
 			["claude/codex", "server/universal/universal-service.ts"],
 			["durable", "server/durable/durable-agent-service.ts"],

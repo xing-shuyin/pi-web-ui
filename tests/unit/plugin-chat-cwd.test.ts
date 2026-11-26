@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
-import { checkPluginCwd } from "../../server/agent-service.js";
+import { checkPluginCwd } from "../../server/client-id-utils.js";
 import { PluginManager, type PluginChatRequest } from "../../server/plugins.js";
 
 describe("checkPluginCwd", () => {

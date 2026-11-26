@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickAdoptableOrphan, type OrphanCandidate } from "../../server/agent-service.js";
+import { pickAdoptableOrphan, type OrphanCandidate } from "../../server/orphan-manager.js";
 
 const cand = (over: Partial<OrphanCandidate> & { id: string }): OrphanCandidate => ({
 	live: false,

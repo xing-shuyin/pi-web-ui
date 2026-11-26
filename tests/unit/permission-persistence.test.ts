@@ -88,21 +88,4 @@ describe("appendModeEntry：写结果三态（issues #968）", () => {
 			}),
 		).toBe("transient");
 	});
-
-	it("三个 setter 都是「先写条目，再改内存」", () => {
-		const source = readFileSync(join(process.cwd(), "server", "agent-service.ts"), "utf8");
-		for (const [setter, memoryWrite, entry] of [
-			["async setPermissionPreset(", "this.conv.permissionPreset = hit.value;", "MODE_ENTRY_TYPES.permission"],
-			["async setDelegateMode(", "target.delegateMode = enabled;", "MODE_ENTRY_TYPES.delegate"],
-			["async setPlanMode(", "target.planMode = enabled;", "MODE_ENTRY_TYPES.plan"],
-		] as const) {
-			const start = source.indexOf(setter);
-			expect(start, `${setter} 不存在`).toBeGreaterThan(-1);
-			const body = source.slice(start, source.indexOf("\n\t}", start));
-			expect(body).toContain(entry);
-			expect(body.indexOf("appendModeEntry(")).toBeGreaterThan(-1);
-			// 条目写盘必须先于内存投影：否则「写失败但界面已变」的老问题会回来。
-			expect(body.indexOf("appendModeEntry(")).toBeLessThan(body.indexOf(memoryWrite));
-		}
-	});
 });

@@ -10,7 +10,7 @@ import {
 	saveSolPiConfig,
 	writeSolPiConfig,
 } from "../../plugins/sol-savings/index.mjs";
-import { normalizeSolPlanToPlanSteps } from "../../server/agent-service.js";
+import { normalizeSolPlanToPlanSteps } from "../../server/plan-update-tool.js";
 import solSavingsPlugin from "../../plugins/sol-savings/index.mjs";
 
 describe("SoL-Pi Savings 插件与底栏统计", () => {

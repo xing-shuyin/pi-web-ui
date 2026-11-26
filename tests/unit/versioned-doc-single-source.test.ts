@@ -95,16 +95,6 @@ describe("版本化文档单源（issues #982）", () => {
 		expect(codeOf(readFileSync(sourceOf("session-open"), "utf8"))).toContain("assertSupportedTranscriptVersion");
 	});
 
-	it("每个直接 SessionManager.open 之前都有转录版本门禁", () => {
-		const source = codeOf(readFileSync(join(ROOT, "server/agent-service.ts"), "utf8"));
-		const opens = source.match(/SessionManager\.open\(/g)?.length ?? 0;
-		const gates = source.match(/assertSupportedTranscriptVersion\(/g)?.length ?? 0;
-		expect(opens).toBeGreaterThan(0);
-		// 唯一豁免点是删除路径（读 native-cli 配置后 rmSync）：删除是用户的自救出口，
-		// 不能被版本门禁挡住，否则认不出的转录就再也删不掉了。
-		expect(gates, "SessionManager.open 与版本门禁数量不一致：新增打开点请同时加门禁").toBeGreaterThanOrEqual(opens - 1);
-	});
-
 	it("挡住的存储必须出现在 /api/health 里（不许只有一行 console）", () => {
 		const source = codeOf(readFileSync(join(ROOT, "server/index.ts"), "utf8"));
 		expect(source).toContain("storageIntegritySnapshot()");

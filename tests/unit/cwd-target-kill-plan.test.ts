@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolve } from "node:path";
-import { processTreeKillPlan, resolveCwdTarget } from "../../server/agent-service.js";
+import { processTreeKillPlan, resolveCwdTarget } from "../../server/process-utils.js";
 
 describe("resolveCwdTarget", () => {
 	it("相对路径以当前会话 cwd 为基准（不是 server 进程 cwd）", () => {

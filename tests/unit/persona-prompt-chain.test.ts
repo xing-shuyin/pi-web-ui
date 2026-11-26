@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitAgentStartPrompt } from "../../server/agent-service.js";
+import { splitAgentStartPrompt } from "../../server/persona-chain.js";
 
 function fakeEvent(forced?: string) {
 	const systemPromptOptions: { forceSystemPrompt?: string } = {};

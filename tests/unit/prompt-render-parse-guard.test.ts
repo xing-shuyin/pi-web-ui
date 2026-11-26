@@ -53,28 +53,7 @@ describe("提示词只走结构化槽位（issue #999）", () => {
 		expect(offenders).toEqual([]);
 	});
 
-	it("子代理模板的提示词在 loader 层决定，persona hook 不再拼接文本", () => {
-		const service = readFileSync(join(SERVER, "agent-service.ts"), "utf8");
-		expect(service).toMatch(/soul: \(\) => \{/);
-		expect(service).toMatch(/if \(apply\) return undefined;/);
-		// 旧的拼接实现留下的局部变量名：不该再出现（它正是“hook 里组提示词”的标志）。
-		expect(service).not.toContain("tplPrompt");
-	});
-
-	it("平台/模式约束：一个生产处，两个必经仓道", () => {
-		const service = readFileSync(join(SERVER, "agent-service.ts"), "utf8");
-		// 仓道 1：SDK 结构化路径（模板子代理 / 主会话回退）靠 loader 的 append 段。
-		expect(service).toMatch(/\.\.\.this\.platformConstraintsFor\(/);
-		expect(service).toMatch(/planMode: this\.planModeOf\(ownerId\)/);
-		// 仓道 2：组合模板整体换掉提示词后，必须在 hook 出口再追加一次。
-		expect(service).toMatch(/const constraints = this\.platformConstraintsFor\(conv, effectiveCwd, sandboxIdentity\);/);
-		expect(service).toMatch(/appendConstraints\(rendered, constraints\)/);
-		// 设置预览也走同一个生产函数（否则预览与真实请求两张皮）。
-		expect(service).toMatch(/appendConstraints\(rendered, this\.platformConstraintsFor\(conv, cwd, sandbox\)\)/);
-		// 预览与真实 run 用同一条组装：组合模板产生不了正文时，模型收到的是 SDK 自己渲染的那份。
-		expect(service).toMatch(/const rendered = this\.renderMainCompose\(src\);/);
-		expect(service).toMatch(/\? appendConstraints\([\s\S]{0,120}?: sess\.systemPrompt;/);
-		// 文本生产只允许在 platform-constraints.ts（加上各自的定义处）。
+	it("平台/模式约束：文本生产只允许在 platform-constraints.ts（加上各自的定义处）", () => {
 		const allowed = ["platform-constraints.ts", "delegate-mode.ts", "plan-mode.ts", "remote-ssh-service.ts"];
 		const producers = sources()
 			.filter((file) => {

@@ -18,7 +18,6 @@ export const HEAVY_SUITE = [
 	"tests/unit/device-hub-integration.test.ts",
 	"tests/unit/task-workspace.test.ts",
 	"tests/unit/canvas-workspace.test.ts",
-	"tests/unit/device-center-runtime-code-artifact.test.ts",
 ];
 
 /** 重型池的硬性上限：这些用例靠子进程与 fsync 吃饭，再抬并发只会互相拖累（实测 8 worker 即破预算）。 */

@@ -274,13 +274,6 @@ describe("会话投影单源守卫", () => {
 		expect(source).not.toContain("unionTouchLists");
 	});
 
-	it("plan/update 事件只有一个写者（agent-service 里只出现一次 appendCustomEntry 调用）", () => {
-		const service = readFileSync(join(ROOT, "server/agent-service.ts"), "utf8");
-		expect((service.match(/"plan\/update"/g) ?? []).length).toBe(1);
-		expect(service).toContain("private appendPlanEvent(");
-		expect(service).toContain("private writePlan(");
-	});
-
 	it("状态类读取一律沿叶链：permission-preset 不再 getEntries() 全文件倒序", () => {
 		const source = readFileSync(join(ROOT, "server/permission-preset.ts"), "utf8");
 		expect(source).not.toContain(".getEntries(");

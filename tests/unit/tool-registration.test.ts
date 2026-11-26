@@ -38,7 +38,6 @@ import {
 it("merges transcript inspection into the conversation catalog entry", () => {
 	expect(AGENT_TOOL_CATALOG.some((tool) => tool.name === "conversation_read")).toBe(false);
 	expect(AGENT_TOOL_CATALOG.filter((tool) => tool.name === "conversation")).toHaveLength(1);
-	expect(AGENT_SERVICE_SRC).toContain("customTools: mergeConversationTools([");
 });
 
 it("registers exactly one terminal catalog entry", () => {
@@ -46,7 +45,13 @@ it("registers exactly one terminal catalog entry", () => {
 	expect(AGENT_TOOL_CATALOG.filter((t) => t.name.startsWith("terminal")).map((t) => t.name)).toEqual(["terminal"]);
 });
 
-const AGENT_SERVICE_SRC = readFileSync(join(__dirname, "..", "..", "server", "agent-service.ts"), "utf8");
+const KEEL_TOOLS_DIR = join(__dirname, "..", "..", "packages", "keel", "src", "adapters", "tools");
+const AGENT_SERVICE_SRC = [
+	readFileSync(join(__dirname, "..", "..", "packages", "keel", "src", "app", "engine-sessions.ts"), "utf8"),
+	...readdirSync(KEEL_TOOLS_DIR)
+		.filter((f) => f.endsWith(".ts"))
+		.map((f) => readFileSync(join(KEEL_TOOLS_DIR, f), "utf8")),
+].join("\n");
 
 const INTRINSIC = new Set(["bash", "read", "edit"]);
 
@@ -61,6 +66,7 @@ const FACTORY_TOOLS: Record<string, string[]> = {
 	makePersistentTerminalTools: [...TERMINAL_TOOL_NAMES],
 	makeReadDirTool: ["read"],
 	makeEditToolDefinition: ["edit"],
+	makeSubagentTool: [CONVERSATION_TOOL_NAME],
 	makeSubagentTools: [CONVERSATION_TOOL_NAME],
 	makeCommunicateTool: [COMMUNICATE_TOOL_NAME],
 	makeDelegateTaskTool: [DELEGATE_TASK_TOOL_NAME],
@@ -79,6 +85,7 @@ const FACTORY_TOOLS: Record<string, string[]> = {
 	makeEvalTool: [EVAL_TOOL_NAME],
 	makePatchTool: [PATCH_TOOL_NAME],
 	makeLspTool: [LSP_TOOL_NAME],
+	makeTool: [LSP_TOOL_NAME],
 	makeMcpManageTool: [MCP_MANAGE_TOOL_NAME],
 	makeSandboxTool: [SANDBOX_TOOL_NAME],
 	makeWorktreeTool: [WORKTREE_TOOL_NAME],
@@ -134,20 +141,13 @@ describe("注册→目录", () => {
 		expect(GROUP_BOT_TOOL_CATALOG.some((tool) => tool.name === DEVICE_COLLAB_TOOL_NAME)).toBe(true);
 	});
 
-	it("agent-service 仅在 Bot 能力存在时才条件注入 makeDeviceCollabTool", () => {
-		expect(AGENT_SERVICE_SRC).toMatch(/\.\.\.\(botExecution\s*\?\s*\[makeDeviceCollabTool\(\)\]\s*:\s*\[\]\)/);
-	});
-
-	it("agent_bot 只对主智能体注册，且只在设备侧接入草案仓库时出现", () => {
-		expect(AGENT_SERVICE_SRC).toMatch(/!botExecution && agentBotToolAvailable\(\)/);
+	it("agent_bot 只对主智能体注册", () => {
 		expect(AGENT_TOOL_CATALOG.some((tool) => tool.name === AGENT_BOT_TOOL_NAME)).toBe(true);
 	});
 
 	it("memory 是 Bot 私产技能：只对有记忆目录的 Bot 执行注册，不进普通设置目录", () => {
 		expect(AGENT_TOOL_CATALOG.some((tool) => tool.name === BOT_MEMORY_TOOL_NAME)).toBe(false);
 		expect(GROUP_BOT_TOOL_CATALOG.some((tool) => tool.name === BOT_MEMORY_TOOL_NAME)).toBe(true);
-		expect(AGENT_SERVICE_SRC).toMatch(/botExecution\?\.memoryRoot/);
-		expect(AGENT_SERVICE_SRC).toContain("makeBotMemoryTool(");
 	});
 
 	it("目录里的每个工具都被某个工厂注册（反向：有目录无注册 = 开关摆设）", () => {

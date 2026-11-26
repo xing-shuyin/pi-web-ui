@@ -10,8 +10,12 @@ import {
 	type SubagentToolHost,
 } from "../../server/subagents.js";
 import { MAX_SUBAGENTS, getMaxSubagents } from "../../server/agent-formatters.js";
-import { countActiveSubagents, isSubagentActive, toSubagentSnapshot } from "../../server/subagent-helpers.js";
-import type { Conversation } from "../../server/agent-service.js";
+import {
+	countActiveSubagents,
+	isSubagentActive,
+	toSubagentSnapshot,
+	type SubagentConversationLike,
+} from "../../server/subagent-helpers.js";
 import { testSettleWaiter } from "../helpers/subagent-settle.js";
 
 function makeHostSpies() {
@@ -1106,7 +1110,7 @@ describe("active subagent quota & retention decoupling (issue #589)", () => {
 		isStreaming?: boolean;
 		promptInFlight?: boolean;
 		stopReason?: string;
-	}): Conversation {
+	}): SubagentConversationLike {
 		return {
 			id: opts.id,
 			title: opts.id,
@@ -1125,7 +1129,7 @@ describe("active subagent quota & retention decoupling (issue #589)", () => {
 				getSessionStats: () => ({ totalMessages: 2 }),
 				getLastAssistantText: () => "done text",
 			},
-		} as unknown as Conversation;
+		} as unknown as SubagentConversationLike;
 	}
 
 	it("isSubagentActive 仅将流式中或首轮投递中的子代理计为活跃，已终态子代理与普通对话不占名额", () => {

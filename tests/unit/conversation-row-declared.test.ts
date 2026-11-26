@@ -12,7 +12,6 @@ import { describe, expect, it } from "vitest";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const ENGINES = [
-	"server/agent-service.ts", // pi（ClientSession）
 	"server/universal/universal-session.ts", // claude / codex 底座
 	"server/dsh/dsh-agent-service.ts", // DSH
 ];

@@ -15,7 +15,7 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | 功能 | 事实源文件（★=唯一单源） | 文档 |
 | --- | --- | --- |
 | **文档总索引**（主题 / 权重 / 按场景阅读路线） | — | [`docs/README.md`](docs/README.md) |
-| 快照驱动 / 出帧闸 / 协议单源 / 多对话并发 | `server/snapshot-channel.ts`★ · `packages/keel/src/protocol.ts`★ · `packages/keel/src/engine-service.ts`★ · `server/agent-service.ts` · `web/src/app-globals.ts` · `web/src/types.ts`（shim） | [`architecture-core.md`](docs/architecture-core.md) |
+| 快照驱动 / 出帧闸 / 协议单源 / 多对话并发 | `server/snapshot-channel.ts`★ · `packages/keel/src/protocol.ts`★ · `packages/keel/src/engine-service.ts`★ · `packages/keel/src/app/core-engine.ts` · `web/src/app-globals.ts` · `web/src/types.ts`（shim） | [`architecture-core.md`](docs/architecture-core.md) |
 | 侧栏会话排序 / 用户发送置顶 / 对话↔历史行归属与身份 | `web/src/conversation-order.ts`★ · `packages/keel/src/conversation-rows.ts`★ · `web/src/session-identity.ts`★ · `web/src/components/LeftPanel.tsx` · `web/src/use-chat.ts` | [`architecture-ui.md`](docs/architecture-ui.md#侧栏历史会话加载) |
 | 安全边界（loopback/Origin/Cookie/appUrl/口令落盘与限速） | `server/index.ts` · `server/auth-cookie.ts` · `server/server-config.ts` · `server/auth-throttle.ts`★ | [`architecture-core.md`](docs/architecture-core.md) · [`agent-rules.md`](docs/agent-rules.md#一通信协议与数据安全) |
 | 单源判定（路径/回包/投影/错误） | `packages/keel/src/path-boundary.ts`★ · `server/ws-refusal.ts`★ · `packages/keel/src/session-projection.ts`★ · `packages/keel/src/model-error.ts`★ | [`agent-rules.md`](docs/agent-rules.md#四架构与运行态约束) |
@@ -26,8 +26,8 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | 工具开关 / 工具提示词 / 内置工具覆盖 | `server/tool-manager.ts`★ · `server/tool-prompts.ts`★ · `packages/keel/src/tool-overrides.ts` · `server/bash-timeout.ts`（默认超时单源） | [`agent-rules.md`](docs/agent-rules.md#二工具定义与提示词规范) · [`tool-context-budget.md`](docs/tool-context-budget.md) |
 | 上下文预算 / 延迟加载 / 证据外置 | `server/soft-cap.ts` · `server/request-context.ts` · `server/evidence-tool-hooks.ts` · `server/context-recovery.ts` | [`tool-context-budget.md`](docs/tool-context-budget.md) |
 | **完整性单源** | `packages/keel/src/versioned-doc.ts`★ · `server/web-build.ts`★ | [`agent-rules.md`](docs/agent-rules.md#四架构与运行态约束) · [`architecture-kernel.md`](docs/architecture-kernel.md#31-界面资源缺失) |
-| **会话退役 / 唯一喂轮出口** | `packages/keel/src/session-turns.ts`★ · `server/patch-extension-runner.ts`★ · `server/extension-guards.ts`★ · `server/agent-service.ts`（按会话去重计数） | [`architecture-core.md`](docs/architecture-core.md#会话退役与扩展运行态958) |
-| **压缩期入站投递** | `server/conversation-delivery.ts`★ · `server/agent-service.ts` | [`architecture-runtime.md`](docs/architecture-runtime.md#压缩期的入站投递一个门一个队列一个排空点issues929) |
+| **会话退役 / 唯一喂轮出口** | `packages/keel/src/session-turns.ts`★ · `server/patch-extension-runner.ts`★ · `server/extension-guards.ts`★ | [`architecture-core.md`](docs/architecture-core.md#会话退役与扩展运行态958) |
+| **压缩期入站投递** | `server/conversation-delivery.ts`★ · `packages/keel/src/app/core-engine.ts` | [`architecture-runtime.md`](docs/architecture-runtime.md#压缩期的入站投递一个门一个队列一个排空点issues929) |
 | 工具审批门禁与规则库 | `packages/keel/src/tool-approval.ts` | [`architecture-runtime.md`](docs/architecture-runtime.md#审批队列与共享展示) |
 | 桌面更新（状态机 / 单源结论） | `desktop/updater.ts`★ · `desktop/main.ts` · `desktop/preload.cts` · `web/src/desktop-updater.ts` · `web/src/update-verdict.ts`★ · `web/src/components/UpdateModal.tsx` | [`architecture-desktop-update.md`](docs/architecture-desktop-update.md) |
 | 桌面更新演进（壳/运行时双层 · 自有密钥 · 回滚） | 设计稿（P0 未落地），现有落点 `desktop/updater.ts` · `desktop/main.ts` | [`architecture-desktop-runtime.md`](docs/architecture-desktop-runtime.md) |
@@ -51,7 +51,7 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | DSH 预设 / 问卷 / 底栏统计 | `server/dsh-*.ts` · `server/dsh/dsh-usage.ts` | [`dsh-engine.md`](docs/dsh-engine.md) |
 | 沙盒工作区 | `docs/architecture-sandbox.md` 列出的执行会话身份链 | [`architecture-sandbox.md`](docs/architecture-sandbox.md) |
 | 设备中心 / 群组 Bot / 远程桌面 / 文件同步 | `server/device-center/`（`hub-conversations.ts` · `task-recovery.ts` · `desktop*.ts`） | [`device-center.md`](docs/device-center.md) · [`device-collaboration.md`](docs/device-collaboration.md) · [`device-desktop.md`](docs/device-desktop.md) |
-| **Bot 独立化 / 私聊** | `server/device-center/bot-chat.ts`★（私聊=普通对话+会话级 Bot 能力）· `server/bot-draft-runner.ts`（一句话→草案）· `web/src/bot-create.ts`（＋新建入口）· `web/src/bot-import.ts`（导入）· `server/agent-service.ts`（`Conversation.bot` / `botOf()` / `newChat(botId)`）· `server/device-center/local.ts`★（房间引擎本机：`roomConfig()` / `bot-panel`）· `server/device-center/bots.ts`★（`LOCAL_BOT_SCOPE` 机器作用域）· `server/device-center/local-task-bridge.ts`★（本机直调）· `server/device-center/bot-memory.ts`★ · `server/device-center/direct-rooms.ts`（仅 legacy 清理/校验）· `web/src/bot-chat.ts`（`openBotChat`）· `web/src/components/BotEditDialog.tsx`· `web/src/components/AgentBotsSection.tsx`· `web/src/bot-reference.ts` | [`agent-bot-design.md`](docs/agent-bot-design.md) |
+| **Bot 独立化 / 私聊** | `server/device-center/bot-chat.ts`★（私聊=普通对话+会话级 Bot 能力）· `server/bot-draft-runner.ts`（一句话→草案）· `web/src/bot-create.ts`（＋新建入口）· `web/src/bot-import.ts`（导入）· `packages/keel/src/app/core-engine.ts` · `server/device-center/local.ts`★（房间引擎本机：`roomConfig()` / `bot-panel`）· `server/device-center/bots.ts`★（`LOCAL_BOT_SCOPE` 机器作用域）· `server/device-center/local-task-bridge.ts`★（本机直调）· `server/device-center/bot-memory.ts`★ · `server/device-center/direct-rooms.ts`（仅 legacy 清理/校验）· `web/src/bot-chat.ts`（`openBotChat`）· `web/src/components/BotEditDialog.tsx`· `web/src/components/AgentBotsSection.tsx`· `web/src/bot-reference.ts` | [`agent-bot-design.md`](docs/agent-bot-design.md) |
 | Hub 在线升级 / 发布包验收 | `bin/hub-upgrade.mjs`★ · `server/device-center/hub-upgrade.ts` · `tests/hub-upgrade-release-test.mjs` | [`device-center.md`](docs/device-center.md#hub-在线升级) · [`release.md`](docs/release.md#hub-发布包升级验收) |
 | 画布协同（版本 / 运行 / 产物） | `server/canvas/` · `server/workspace-handle.ts`（共享工作树原语） | [`architecture-canvas.md`](docs/architecture-canvas.md) |
 | 预设导入导出 / 社区分享 | `server/preset-share.ts` · `server/preset-fields.ts` | [`preset-sharing.md`](docs/preset-sharing.md) |
@@ -81,7 +81,7 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | **服务端/运行态** | 出帧只走 `snapshot-channel`；禁在 emit 处手判全量/增量、禁把基线挂回会话级；`flushSnapshot(true)` 只留给「客户端没状态」 | `snapshot-channel` |
 | **内核/客户端** | 权威链只由 `desktop/kernel-authority.ts` 决定（npm-global → userData runtime → 包内自带）、元数据只由 `server/kernel-identity.ts` 推导；壳的内核判定只走 `desktop/kernel-mode.ts`（`planKernelBoot`：打包版默认服务优先，壳不拉 sidecar） | `kernel-single-source` |
 | **内核/客户端** | 一个数据目录只允许一个内核（锁只住 `shared/instance-lock.ts`）；壳要不要自拉内核只由 `desktop/kernel-mode.ts` 裁定；内核身份/形态只由 `server/kernel-identity.ts` 推导，`/api/health.kernel` 不带 pid/路径 | `kernel-single-source` |
-| **服务端/运行态** | Bot 私聊按“一对一”执行：固定指令走 chat 分支、工具授权按**执行会话**解析；同一 Bot 不并发（私聊回合持租约、任务遇 BOT_BUSY 有界等待）；禁把私聊当群任务 | `bot-private-execution` · `bot-lease-wait` |
+| **服务端/运行态** | Bot 私聊按“一对一”执行：固定指令走 chat 分支、工具授权按**执行会话**解析；同一 Bot 不并发（私聊回合持租约、任务遇 BOT_BUSY 有界等待）；禁把私聊当群任务 | `bot-lease-wait` |
 | **服务端/运行态** | 入站投递只由 `deliveryMode()` 判定、门关入意图队列、门开排空；禁直连 `sendUserMessage`/`session.steer`，禁新增 `isCompacting` 直读 | `delivery-gate-single-source` |
 | **服务端/运行态** | 会话过户必须事务性回滚；跨 await 用稳定身份，禁读 active | `takeover-rollback-test` |
 | **服务端/运行态** | 工作区命令（set_cwd/new_chat/switch_*/沙盒）一律走 `server/workspace-queue.ts` 队列；`new_chat.cwd` 切不过去就不建会话 | `workspace-queue` · `pending-workspace` |
@@ -97,7 +97,6 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | **插件/依赖** | 复制黑名单只走 `server/fs-copy.ts` 按相对路径判定；插件代码目录可重建、状态只住 `plugin-data/<id>/` | `plugin-copy-single-source` · `plugin-bundled` |
 | **插件/依赖** | 插件市场 builtin 清单 `plugins/catalog.json` 只收本仓库 `plugins/<id>` 自带的插件；第三方插件登记到社区清单仓库 | `plugin-catalog-builtin-scope` |
 | **插件/依赖** | 改内置插件必递增 `manifest.json` 版本号并同步数据目录；插件 `arrange.label` 改名必落到渲染层 | `plugin-version-bump-guard` · `bar-item-unified` |
-| **测试规范** | 会话/守护假体一律走 `tests/helpers/fake-session.ts`（默认值从生产源码推导），禁手搓 `Object.create`（存量名单只许变短，迁移完删名单行） | `fake-session-sync` · `fake-session-adoption` |
 | **终端/执行** | 长驻服务走 `bash({background:true})`（面板可停）；源码仓库/CI 死命令走 `safe-exec`（硬超时 + 杀进程树 + 日志先落盘）；禁前台 watch/pager/等 stdin，禁手写 `timeout`/`nohup` 前缀 | `safe-exec` |
 | **文档/语言** | 除 `README` 外的 markdown 与 `docs/*.html` 只留中文单版本：禁新增 `*.en.md` / `*.zh-TW.md` 译本，也禁文档顶部的语言切换行 | `repo-hygiene` |
 | **发布/产物** | npm 只发归一化后的 tarball（`npm run release:npm`）：bin 可执行位要写进产物头，禁裸 `npm publish` 目录 | `npm-tarball-modes` |

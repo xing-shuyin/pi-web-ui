@@ -13,7 +13,7 @@ import {
 	GUARD_CONTEXT_CAP,
 } from "../../server/plugin-tool-guard.js";
 import { PluginManager, type PluginHost } from "../../server/plugins.js";
-import { withToolGuard } from "../../server/agent-service.js";
+import { withToolGuard } from "../../server/tool-guards.js";
 
 describe("guard 纯函数", () => {
 	it("normalizePreDecision：void/垃圾→allow，只认三决策", () => {

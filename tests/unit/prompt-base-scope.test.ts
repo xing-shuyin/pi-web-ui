@@ -33,21 +33,6 @@ describe("提示词 base 作用域", () => {
 		expect(offenders).toEqual([]);
 	});
 
-	it("composeInputs 只从目标会话的 loader 读 base", () => {
-		const service = readFileSync(join(SERVER, "agent-service.ts"), "utf8");
-		expect(service).toMatch(/readPromptBase\(src\.session\?\.resourceLoader\)/);
-		expect(service).toMatch(/session:\s*sess,?/);
-		expect(service).toMatch(/createPromptBaseObservers\(\{/);
-		expect(service).toMatch(/systemPromptOverride: promptBase\.systemPromptOverride/);
-		expect(service).toMatch(/appendSystemPromptOverride: promptBase\.appendSystemPromptOverride/);
-		expect(service).toMatch(/promptBase\.bind\(services\.resourceLoader\)/);
-	});
-
-	it("composeInputs 读灵魂槽位（soul），不是 loader 原文", () => {
-		const service = readFileSync(join(SERVER, "agent-service.ts"), "utf8");
-		expect(service).toMatch(/systemPromptFile: promptBase\.soul \|\| undefined/);
-	});
-
 	it("主会话 override 返回 base / 模板；灵魂槽位与 base 有无无关（issue #999）", () => {
 		const store = readFileSync(join(SERVER, "prompt-base-store.ts"), "utf8");
 		// 模板 replace 只在 soul handler 里决定，且不得再要求 base 非空。

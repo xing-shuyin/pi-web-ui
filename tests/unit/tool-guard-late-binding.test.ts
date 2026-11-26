@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { makeLateToolGuard, withToolGuard, type ToolGuardHook } from "../../server/agent-service.js";
+import { makeLateToolGuard, withToolGuard, type ToolGuardHook } from "../../server/tool-guards.js";
 
 const allowVerdict = { verdict: { decision: "allow" as const } };
 
