@@ -40,11 +40,29 @@ let optimisticQueue = createOptimisticQueueTracker();
 		if (msg.type === "snapshot") {
 			state = msg.state;
 		} else if (msg.type === "snapshot_delta") {
-			const next = _chatReducerForTest({ state, optimisticQueue } as any, { type: "snapshot_delta", msg });
+			const next = _chatReducerForTest(
+				{
+					state,
+					optimisticQueue,
+					liveOutputs: maps.liveOutputs,
+					toolStatuses: maps.toolStatuses,
+					approvals: [],
+				} as any,
+				{ type: "snapshot_delta", msg },
+			);
 			state = next.state;
 			optimisticQueue = next.optimisticQueue;
 		} else if (msg.type === "message_delta") {
-			const next = _chatReducerForTest({ state, optimisticQueue } as any, { type: "message_delta", msg });
+			const next = _chatReducerForTest(
+				{
+					state,
+					optimisticQueue,
+					liveOutputs: maps.liveOutputs,
+					toolStatuses: maps.toolStatuses,
+					approvals: [],
+				} as any,
+				{ type: "message_delta", msg },
+			);
 			state = next.state;
 			optimisticQueue = next.optimisticQueue;
 		}

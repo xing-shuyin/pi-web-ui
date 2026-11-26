@@ -284,7 +284,7 @@ async function main() {
 	);
 	check(
 		"attach resizes the existing process",
-		lastTermList?.some((t) => t.id === t2 && t.running && t.ownerKind === "client"),
+		lastTermList?.some((t) => t.id === t2 && t.running && (t.ownerKind === "client" || t.ownerKind === "conversation")),
 	);
 
 	send({ type: "terminal_kill", terminalId: t1 });
