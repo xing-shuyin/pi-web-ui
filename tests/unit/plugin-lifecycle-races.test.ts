@@ -97,7 +97,7 @@ export default async function(host) {
 		vi.useRealTimers();
 		state.resume.resolve();
 		delete (globalThis as any)[key];
-		rmSync(root, { recursive: true, force: true });
+		rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 	});
 
 	it("coalesces concurrent ensureLoaded calls until activation finishes", async () => {

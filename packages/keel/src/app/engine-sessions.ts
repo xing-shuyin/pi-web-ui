@@ -250,10 +250,15 @@ export function createEngineSessionRegistry(deps: EngineSessionDeps): SessionReg
 							},
 							conv.id,
 						),
-						...((
-							deps.getFaces().terminalOf?.(conv.id, conv.meta.cwd) as
-								{ persistentTools?: (cwd: string, lang?: () => string) => unknown[] } | undefined
-						)?.persistentTools?.(conv.meta.cwd, () => deps.langOf(deps.clientId)) ?? []),
+						...(() => {
+							try {
+								const mgr = deps.getFaces().terminalOf?.(conv.id, conv.meta.cwd) as
+									{ persistentTools?: (cwd: string, lang?: () => string) => unknown[] } | undefined;
+								return mgr?.persistentTools?.(conv.meta.cwd, () => deps.langOf(deps.clientId)) ?? [];
+							} catch {
+								return [];
+							}
+						})(),
 						...createGuardedBuiltinTools({
 							cwd: deps.cwd,
 							...(deps.remoteOpsOf ? { remoteOpsOf: deps.remoteOpsOf } : {}),

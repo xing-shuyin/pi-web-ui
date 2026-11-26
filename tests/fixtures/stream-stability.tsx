@@ -3,6 +3,7 @@ import { MessageList } from "../../web/src/components/MessageList";
 import { LanguageProvider } from "../../web/src/i18n";
 import { TemplateProvider } from "../../web/src/components/PromptTemplates";
 import { _chatReducerForTest } from "../../web/src/use-chat";
+import { createOptimisticQueueTracker } from "../../web/src/optimistic-queue";
 import "../../web/src/styles.css";
 
 const root = createRoot(document.getElementById("root")!);
@@ -33,14 +34,19 @@ function render() {
 		</LanguageProvider>,
 	);
 }
+let optimisticQueue = createOptimisticQueueTracker();
 (window as any).streamTest = {
 	frame(msg: any) {
 		if (msg.type === "snapshot") {
 			state = msg.state;
 		} else if (msg.type === "snapshot_delta") {
-			state = _chatReducerForTest({ state } as any, { type: "snapshot_delta", msg }).state;
+			const next = _chatReducerForTest({ state, optimisticQueue } as any, { type: "snapshot_delta", msg });
+			state = next.state;
+			optimisticQueue = next.optimisticQueue;
 		} else if (msg.type === "message_delta") {
-			state = _chatReducerForTest({ state } as any, { type: "message_delta", msg }).state;
+			const next = _chatReducerForTest({ state, optimisticQueue } as any, { type: "message_delta", msg });
+			state = next.state;
+			optimisticQueue = next.optimisticQueue;
 		}
 		render();
 	},
