@@ -94,6 +94,7 @@ export interface BarItemProps {
 		onThemeChange?: (themeId: string | null) => void;
 		reloadThemes?: () => void;
 		onLocaleModalOpen?: () => void;
+		onThemeModalOpen?: () => void;
 		/** 打开更新中心弹窗（弹窗本体只由 TopBar 渲染一次，这里只负责入口）。 */
 		onOpenUpdateCenter?: () => void;
 		/** 与弹窗同源的展示值：当前版本 / 是否有待处理更新 / 待更新到的版本。 */
@@ -815,6 +816,16 @@ export function BarItem({
 									{themeLabel(th)}
 								</DropdownItem>
 							))}
+							{dropdownProps?.onThemeModalOpen ? (
+								<DropdownItem
+									onClick={() => {
+										setThemeOpen(false);
+										dropdownProps.onThemeModalOpen?.();
+									}}
+								>
+									<FiDownload /> {t("themeGetMore")}
+								</DropdownItem>
+							) : null}
 						</>
 					);
 				})()}

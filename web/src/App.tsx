@@ -112,6 +112,9 @@ import { DirectoryBrowser } from "./components/DirectoryBrowser";
 import { ModelPickerModal } from "./components/ModelPickerModal";
 
 const SettingsModal = lazy(() => import("./components/SettingsModal").then((m) => ({ default: m.SettingsModal })));
+const ThemeMarketModal = lazy(() =>
+	import("./components/ThemeMarketModal").then((m) => ({ default: m.ThemeMarketModal })),
+);
 const BgTasksModal = lazy(() => import("./components/BgTasksModal").then((m) => ({ default: m.BgTasksModal })));
 import { PluginPage } from "./components/PluginPage";
 import { RollbackDialog } from "./components/RollbackDialog";
@@ -1506,6 +1509,7 @@ export function App() {
 	const [sound, setSound] = useState<SoundSettings>(loadSoundSettings);
 	const [tts, setTts] = useState<TtsSettings>(loadTtsSettings);
 	const { themes, theme, switchTheme, reloadThemes } = useTheme();
+	const [themeMarketOpen, setThemeMarketOpen] = useState(false);
 	useWallpaperEffect();
 	useEffect(() => {
 		try {
@@ -2604,7 +2608,13 @@ export function App() {
 		uiContextEntries: uiSlots["contextmenu.topbar"],
 		zenMode,
 		onToggleZenMode: toggleZenMode,
-		dropdownProps: { theme, themes, onThemeChange: switchTheme, reloadThemes },
+		dropdownProps: {
+			theme,
+			themes,
+			onThemeChange: switchTheme,
+			reloadThemes,
+			onThemeModalOpen: () => setThemeMarketOpen(true),
+		},
 	};
 
 	return (
@@ -2690,6 +2700,7 @@ export function App() {
 				theme={theme}
 				onThemeChange={switchTheme}
 				reloadThemes={reloadThemes}
+				onOpenThemeMarket={() => setThemeMarketOpen(true)}
 			/>
 			{nativeCliCreateCwd !== null && (
 				<NativeCliCreateModal
@@ -3610,6 +3621,17 @@ export function App() {
 						currentTheme={theme}
 						onThemeChange={switchTheme}
 						onReloadThemes={reloadThemes}
+					/>
+				</Suspense>
+			)}
+			{themeMarketOpen && (
+				<Suspense fallback={null}>
+					<ThemeMarketModal
+						themes={themes}
+						currentTheme={theme}
+						onThemeChange={switchTheme}
+						onReloadThemes={reloadThemes}
+						onClose={() => setThemeMarketOpen(false)}
 					/>
 				</Suspense>
 			)}

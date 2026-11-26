@@ -189,6 +189,7 @@ interface TopBarProps {
 	theme: string | null;
 	onThemeChange: (id: string | null) => void;
 	reloadThemes: () => void;
+	onOpenThemeMarket?: () => void;
 	onOpenIconEdit: () => void;
 	zenMode?: boolean;
 	onToggleZenMode?: () => void;
@@ -220,6 +221,7 @@ export function TopBar({
 	theme,
 	onThemeChange,
 	reloadThemes,
+	onOpenThemeMarket,
 	onOpenIconEdit,
 	zenMode,
 	onToggleZenMode,
@@ -906,6 +908,16 @@ export function TopBar({
 									{themeLabel(th)}
 								</DropdownItem>
 							))}
+							{onOpenThemeMarket ? (
+								<DropdownItem
+									onClick={() => {
+										setThemeOpen(false);
+										onOpenThemeMarket();
+									}}
+								>
+									<FiDownload /> {t("themeGetMore")}
+								</DropdownItem>
+							) : null}
 						</>
 					);
 				})()}
@@ -1111,6 +1123,7 @@ export function TopBar({
 						onThemeChange,
 						reloadThemes,
 						onLocaleModalOpen: () => setLocaleModalOpen(true),
+						onThemeModalOpen: onOpenThemeMarket,
 						onOpenUpdateCenter: openUpdateCenter,
 						updateVersion: shownVersion ?? null,
 						updatePending: updateWaiting,
