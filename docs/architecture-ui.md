@@ -81,7 +81,7 @@ React + Capacitor 手机客户端、Hub 账号隔离推送与设备切换见 [`m
 
 删除历史会话后同时刷新当前项目与记录所属项目的列表；所属项目从删除前捕获的运行对话或转录头确定，SSH 本机缓存路径还原为逻辑工作区 URI。列表失效会递增扫描代次并解除旧扫描的复用；失效前启动的扫描不能回写文件或列表缓存，其调用方沿用原项目与分页参数重读，避免旧 `sessions` 消息重新显示已删条目。扫描结束只清理自身仍持有的在途记录。验证：`tests/unit/native-cli-conversation.test.ts` 与 `tests/unit/session-cache-bounds.test.ts`。
 
-会话跑完一轮（`turn_end`）后按**该会话自己的 cwd** 补推一次会话列表（`scheduleSessionsPush`：首轮立刻推，600ms 内的后续轮次合并成一次尾部推送；客户端没请求过列表不推，会话销毁时清定时器）。内容变化只做缓存失效而不推送时，前端「运行中」分组会随着会话结束把那一行移走，左栏又没有新列表填进来——用户看到的是「对话跑完就消失了，点一下项目才回来」；若改成推迟到节流窗口结束再推，中间的空窗就是可见的闪烁。推送前先删掉该 cwd 的 `sessionInfosCache`，否则 TTL 30s 的旧列表会被原样推回去。验证：`tests/unit/session-list-refresh.test.ts`。
+会话跑完一轮后按**该会话自己的 cwd** 补推一次会话列表（`ClientTurnLifecycle.scheduleSessionsPush`：首轮立刻推，600ms 内的后续轮次合并成一次尾部推送；只推客户端已请求过的项目，运行时销毁时清定时器）。内容变化只做缓存失效而不推送时，前端「运行中」分组会随着会话结束把那一行移走，左栏又没有新列表填进来——用户看到的是「对话跑完就消失了，点一下项目才回来」；若改成推迟到节流窗口结束再推，中间的空窗就是可见的闪烁。当前内核在 `TurnRunner` 的 streaming 归位边界先启动刷新，再通知宿主推运行列表；连接期首推与前端 `list_sessions` 都会登记项目请求。验证：`tests/unit/session-list-refresh.test.ts`。
 
 置顶归属由**会话文件 header 的 `cwd`** 决定，不是由「当前在哪个项目里点的钉住」决定：`pinSession()` 先 `readCwdFromSessionHeader()` 再记账，预打开置顶会话前再用 `pinnedPathsOwnedBy()` 按归属过滤一次。在项目 A 的视图下钉住属于 B 的会话，记录落在 B 名下；历史上钉错项目的脏数据（`client-state.json` 里同一路径挂在两个 cwd 键下）也会被这层过滤拦住，不会把 B 的会话预打开进 A。验证：`tests/unit/pin-session-cwd.test.ts`。
 
