@@ -829,6 +829,7 @@
 		"uploadToCurrentDir": "Enviar arquivo para o diretório atual",
 		"openAsProject": "Abrir como projeto",
 		"fileOpenPreview": "Abrir pré-visualização",
+		"openInEditor": "Open in Editor",
 		"fileEnterDir": "Abrir pasta",
 		"fileReveal": "Mostrar no explorador de arquivos",
 		"fileOpenDefault": "Abrir com o aplicativo padrão",

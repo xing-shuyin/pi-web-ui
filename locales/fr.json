@@ -829,6 +829,7 @@
 		"uploadToCurrentDir": "Téléverser un fichier dans le dossier actuel",
 		"openAsProject": "Ouvrir comme projet",
 		"fileOpenPreview": "Aperçu",
+		"openInEditor": "Open in Editor",
 		"fileEnterDir": "Ouvrir le dossier",
 		"fileReveal": "Afficher dans l'explorateur de fichiers",
 		"fileOpenDefault": "Ouvrir avec l'app par défaut",

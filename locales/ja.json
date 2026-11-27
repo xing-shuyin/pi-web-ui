@@ -829,6 +829,7 @@
 		"uploadToCurrentDir": "現在のディレクトリにファイルをアップロードします",
 		"openAsProject": "プロジェクトとして開きます",
 		"fileOpenPreview": "プレビューを開く",
+		"openInEditor": "Open in Editor",
 		"fileEnterDir": "フォルダを開く",
 		"fileReveal": "エクスプローラーで表示",
 		"fileOpenDefault": "既定のアプリで開く",

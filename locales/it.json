@@ -829,6 +829,7 @@
 		"uploadToCurrentDir": "Carica file nella directory corrente",
 		"openAsProject": "Apri come progetto",
 		"fileOpenPreview": "Apri anteprima",
+		"openInEditor": "Open in Editor",
 		"fileEnterDir": "Apri cartella",
 		"fileReveal": "Mostra in Esplora file",
 		"fileOpenDefault": "Apri con l'app predefinita",

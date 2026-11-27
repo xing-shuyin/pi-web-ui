@@ -829,6 +829,7 @@
 		"uploadToCurrentDir": "Suba archivos al directorio actual",
 		"openAsProject": "Abrir como proyecto",
 		"fileOpenPreview": "Abrir vista previa",
+		"openInEditor": "Open in Editor",
 		"fileEnterDir": "Abrir carpeta",
 		"fileReveal": "Mostrar en el explorador de archivos",
 		"fileOpenDefault": "Abrir con la app predeterminada",

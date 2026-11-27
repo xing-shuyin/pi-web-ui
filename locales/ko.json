@@ -829,6 +829,7 @@
 		"uploadToCurrentDir": "현재 디렉터리에 파일 업로드하기",
 		"openAsProject": "프로젝트로 열기",
 		"fileOpenPreview": "미리보기 열기",
+		"openInEditor": "Open in Editor",
 		"fileEnterDir": "폴더 열기",
 		"fileReveal": "파일 탐색기에서 표시",
 		"fileOpenDefault": "기본 앱으로 열기",

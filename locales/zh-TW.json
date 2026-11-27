@@ -829,6 +829,7 @@
 		"uploadToCurrentDir": "上傳檔案到目前目錄",
 		"openAsProject": "以專案開啟",
 		"fileOpenPreview": "開啟預覽",
+		"openInEditor": "在編輯器中打开",
 		"fileEnterDir": "進入目錄",
 		"fileReveal": "在資源管理器中顯示",
 		"fileOpenDefault": "用預設應用程式開啟",

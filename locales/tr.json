@@ -829,6 +829,7 @@
 		"uploadToCurrentDir": "Dosyaları geçerli dizine yükle",
 		"openAsProject": "Proje olarak aç",
 		"fileOpenPreview": "Önizlemeyi aç",
+		"openInEditor": "Open in Editor",
 		"fileEnterDir": "Klasöre gir",
 		"fileReveal": "Dosya gezgininde göster",
 		"fileOpenDefault": "Varsayılan uygulamayla aç",

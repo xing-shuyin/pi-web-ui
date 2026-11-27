@@ -829,6 +829,7 @@
 		"uploadToCurrentDir": "Загрузить файлы в текущий каталог",
 		"openAsProject": "Открыть как проект",
 		"fileOpenPreview": "Открыть предпросмотр",
+		"openInEditor": "Open in Editor",
 		"fileEnterDir": "Открыть папку",
 		"fileReveal": "Показать в проводнике",
 		"fileOpenDefault": "Открыть в приложении по умолчанию",
