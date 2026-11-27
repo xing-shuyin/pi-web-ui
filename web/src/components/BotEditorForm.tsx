@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { apiFetch, requestJson } from "../api-client";
+import { useCopyFeedback } from "../use-copy-feedback";
 import { useT } from "../i18n";
 import { useEscapeKey } from "../shortcut-stack";
 import type { ModelInfo } from "../types";
@@ -159,7 +160,7 @@ export function BotEditorForm({
 	const [promptPreview, setPromptPreview] = useState<BotPromptPreviewData | null>(null);
 	const [previewLoading, setPreviewLoading] = useState(false);
 	const [previewError, setPreviewError] = useState("");
-	const [copiedPrompt, setCopiedPrompt] = useState(false);
+	const { copied: copiedPrompt, copy: copyPrompt } = useCopyFeedback({ duration: 1500 });
 	const selectedSections = effectiveSelectedSections(value);
 
 	useEffect(() => {
@@ -407,11 +408,7 @@ export function BotEditorForm({
 								style={{ padding: "3px 8px", fontSize: "11px" }}
 								disabled={!promptPreview?.full}
 								onClick={() => {
-									if (!promptPreview?.full) return;
-									void navigator.clipboard?.writeText(promptPreview.full).then(() => {
-										setCopiedPrompt(true);
-										setTimeout(() => setCopiedPrompt(false), 1500);
-									});
+									if (promptPreview?.full) void copyPrompt(promptPreview.full);
 								}}
 							>
 								{copiedPrompt ? t("localBotPromptCopied") : t("localBotPromptCopy")}

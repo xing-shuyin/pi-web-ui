@@ -152,7 +152,6 @@ export class UniversalSession implements DispatchSession {
 	private readonly driver: BaseAgentDriver;
 	private readonly sandboxes: SandboxManager;
 	private readonly markerSvc: MarkerService;
-	private readonly markerGuidedConvs = new Set<string>();
 	private worktreeInfo: WorktreeInfo | null = null;
 	private readonly dataDir: string;
 
@@ -972,7 +971,6 @@ export class UniversalSession implements DispatchSession {
 
 			this.sessionDrafts.delete(conv.id);
 
-			const isFreshDriverSession = !conv.driverSessionId;
 			if (conv.driverSessionId) {
 				await this.driver.resumeSession(conv.driverSessionId);
 				if (!isCurrent()) return;
@@ -1076,14 +1074,11 @@ export class UniversalSession implements DispatchSession {
 				// Must return: async sink methods (onApprovalRequest wiring, future ones) rely on
 				// the value/promise; the original form swallowed it, so callers waited forever.
 				const guardedSink = this.guardSink(sink, isCurrent);
-				const shouldInjectMarkers =
-					this.driver.id !== "mock" &&
-					!text.trimStart().startsWith("/") &&
-					((isFreshDriverSession && !this.markerGuidedConvs.has(conv.id)) || Boolean(rebuiltContext));
-				const markerGuidance = shouldInjectMarkers ? this.markerSvc.buildGuidance().trim() : "";
-				if (shouldInjectMarkers) this.markerGuidedConvs.add(conv.id);
-				const promptParts = [markerGuidance, rebuiltContext, finalPrompt].filter(Boolean);
-				await this.driver.sendPrompt(promptParts.join("\n\n"), effectiveAttachments, guardedSink);
+				await this.driver.sendPrompt(
+					rebuiltContext ? `${rebuiltContext}\n\n${finalPrompt}` : finalPrompt,
+					effectiveAttachments,
+					guardedSink,
+				);
 			} catch (err: unknown) {
 				if (!isCurrent()) return;
 				const msg = err instanceof Error ? err.message : String(err);

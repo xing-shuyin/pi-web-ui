@@ -31,7 +31,7 @@ import { ClientRuntime } from "./client-runtime.js";
 import type { Conversation } from "../kernel/conversation/index.js";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
 import { resolvePiEngineAttach } from "./engine-mode.js";
-import { isPseudoClientId } from "../client-id-utils.js";
+import { executeDismissConversation } from "./engine-dismiss.js";
 import { resolveServerLang, type ServerLang } from "../i18n.js";
 import { saveInterruptedRuns } from "./interrupted-runs.js";
 import { activeConversationsOf, pendingMessagesOf, serviceStatusOf } from "./engine-status.js";
@@ -487,50 +487,23 @@ export class CoreEngine implements EngineService {
 		clientId: string,
 		msg: { id: string; withFinishedSubagents?: boolean; force?: boolean; owner?: string },
 	): Promise<boolean> {
-		const requester = this.runtimes.get(clientId);
-		if (requester?.registry.has(msg.id)) {
-			await requester.handlers().dismissConversation(msg.id, msg.withFinishedSubagents);
-			return true;
-		}
-		let ownerId: string | undefined;
-		let ownerRuntime: ClientRuntime | undefined;
-		if (msg.owner) {
-			const candidate = this.runtimes.get(msg.owner);
-			if (candidate?.registry.has(msg.id)) {
-				ownerId = msg.owner;
-				ownerRuntime = candidate;
-			}
-		}
-		if (!ownerRuntime) {
-			for (const [cid, rt] of this.runtimes) {
-				if (rt.registry.has(msg.id)) {
-					ownerId = cid;
-					ownerRuntime = rt;
-					break;
-				}
-			}
-		}
-		if (!ownerId || !ownerRuntime) {
-			this.deliverTo(clientId, {
-				type: "notice",
-				level: "warning",
-				text: "该对话不存在或已关闭",
-				textEn: "This conversation does not exist or is already closed",
-			});
-			return false;
-		}
-		const isOffline = !isPseudoClientId(ownerId) && (this.sockets.get(ownerId)?.size ?? 0) === 0;
-		if (isOffline && ownerRuntime.registry.list().length <= 1) {
-			this.runtimes.delete(ownerId);
-			this.connectFrames.delete(ownerId);
-			this.askWaiters.delete(ownerId);
-			this.clearOffline(ownerId);
-			ownerRuntime.dispose();
-		} else {
-			await ownerRuntime.handlers().dismissConversation(msg.id, msg.withFinishedSubagents);
-		}
-		this.notifyExternalRunning(ownerId);
-		return true;
+		return executeDismissConversation(
+			{
+				runtimes: this.runtimes,
+				sockets: this.sockets,
+				deliverTo: (id, payload) => this.deliverTo(id, payload),
+				cleanupOfflineRuntime: (ownerId, ownerRuntime) => {
+					this.runtimes.delete(ownerId);
+					this.connectFrames.delete(ownerId);
+					this.askWaiters.delete(ownerId);
+					this.clearOffline(ownerId);
+					ownerRuntime.dispose();
+				},
+				notifyExternalRunning: (ownerId) => this.notifyExternalRunning(ownerId),
+			},
+			clientId,
+			msg,
+		);
 	}
 	async peekElsewhereQuestion(targetId: string, ownerId: string, convId: string): Promise<void> {
 		peekElsewhereQuestion(this.takeoverDeps, targetId, ownerId, convId);

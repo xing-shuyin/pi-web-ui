@@ -426,14 +426,9 @@ export function applyAgentToolsGating(
 		const allNames = session.getAllTools().map((t) => t.name);
 		const initialActiveNames = new Set(session.getActiveToolNames());
 
+		type ExtRunner = { getAllRegisteredTools?: () => Array<{ definition?: { name?: string } }> };
 		const registeredExtensionToolNames = new Set(
-			(
-				(
-					session as {
-						extensionRunner?: { getAllRegisteredTools?: () => Array<{ definition?: { name?: string } }> };
-					}
-				)?.extensionRunner?.getAllRegisteredTools?.() ?? []
-			)
+			((session as { extensionRunner?: ExtRunner }).extensionRunner?.getAllRegisteredTools?.() ?? [])
 				.map((tool) => tool?.definition?.name)
 				.filter((name): name is string => typeof name === "string" && name.length > 0),
 		);

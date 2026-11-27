@@ -139,73 +139,6 @@ export function createSubagentRuntime(options: SubagentRuntimeOptions): Subagent
 		},
 	};
 
-	const notified = new Set<string>();
-	const notifyChains = new Map<string, Promise<void>>();
-
-	const formatCompletionNotice = (childId: string, outcome: "done" | "failed", error?: string): string => {
-		const record = registry.get(childId);
-		const snap = snapshots.get(childId);
-		const title = record?.title || snap?.title || childId;
-		const type = record?.type || snap?.type || "general";
-		const statusLabel = outcome === "failed" ? `❌ 运行失败 (${error || "unknown error"})` : "✅ 正常完成";
-		const rawOutput = (snap?.output ?? "").trim();
-		const lines = rawOutput ? rawOutput.split("\n") : [];
-		const summary =
-			lines.length === 0
-				? "（无输出结果）"
-				: lines.length <= 20
-					? rawOutput
-					: `${lines.slice(0, 3).join("\n")}\n… [中间省略 ${lines.length - 18} 行，完整转录可通过 get_result 查看] …\n${lines.slice(-15).join("\n")}`;
-		const indented = summary
-			.split("\n")
-			.map((line) => `  > ${line}`)
-			.join("\n");
-		return [
-			`[子代理执行完成通知] 子代理 **${childId}**（${type}）已完成：`,
-			`- 状态: ${statusLabel}`,
-			`- 目标: ${title}`,
-			`- 产出摘要:\n${indented}`,
-			`如需完整转录与工具执行详情，可调用 conversation(action="get_result", runId="${childId}")。`,
-		].join("\n");
-	};
-
-	const findTargetRuntime = (parentId: string, fallback: ClientRuntime): ClientRuntime | undefined => {
-		if (fallback.registry.has(parentId)) return fallback;
-		if (options.getRuntimes) {
-			for (const other of options.getRuntimes()) {
-				if (other.registry.has(parentId)) return other;
-			}
-		}
-		return undefined;
-	};
-
-	const notifyParent = (
-		parentId: string,
-		childId: string,
-		fallbackRuntime: ClientRuntime,
-		outcome: "done" | "failed",
-		error?: string,
-	): void => {
-		if (notified.has(childId)) return;
-		notified.add(childId);
-		const prev = notifyChains.get(parentId) ?? Promise.resolve();
-		const next = prev
-			.catch(() => undefined)
-			.then(async () => {
-				const target = findTargetRuntime(parentId, fallbackRuntime);
-				if (!target) return;
-				const text = formatCompletionNotice(childId, outcome, error);
-				await target.noteConversation(parentId, text);
-			})
-			.catch((err: unknown) => {
-				console.error(`[core] subagent completion notice failed (${childId} -> ${parentId}):`, err);
-			})
-			.finally(() => {
-				if (notifyChains.get(parentId) === next) notifyChains.delete(parentId);
-			});
-		notifyChains.set(parentId, next);
-	};
-
 	const host = createSubagentToolHost({
 		registry,
 		snapshots,
@@ -241,14 +174,12 @@ export function createSubagentRuntime(options: SubagentRuntimeOptions): Subagent
 						const settled = registry.get(child.id);
 						if (settled?.state === "stopped") return;
 						registry.settle(child.id, { state: "done" });
-						notifyParent(parentId, child.id, ownerRuntime, "done");
 					},
 					(error: unknown) => {
 						const settled = registry.get(child.id);
 						if (settled?.state === "stopped") return;
 						const msg = error instanceof Error ? error.message : String(error);
 						registry.settle(child.id, { state: "failed", error: msg });
-						notifyParent(parentId, child.id, ownerRuntime, "failed", msg);
 					},
 				);
 			} catch (error) {
@@ -258,7 +189,6 @@ export function createSubagentRuntime(options: SubagentRuntimeOptions): Subagent
 			return child.id;
 		},
 		stop: async (id) => {
-			notified.add(id);
 			let owner = runtime;
 			if (options.getRuntimes && !runtime.registry.has(id)) {
 				for (const other of options.getRuntimes()) {
