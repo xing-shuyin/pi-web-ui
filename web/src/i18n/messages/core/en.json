@@ -825,6 +825,7 @@
 	"uploadToCurrentDir": "Upload files to current directory",
 	"openAsProject": "Open as project",
 	"fileOpenPreview": "Open preview",
+	"openInEditor": "Open in Editor",
 	"fileEnterDir": "Open folder",
 	"fileReveal": "Reveal in File Explorer",
 	"fileOpenDefault": "Open with Default App",

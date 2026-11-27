@@ -825,6 +825,7 @@
 	"uploadToCurrentDir": "上传文件到当前目录",
 	"openAsProject": "以项目打开",
 	"fileOpenPreview": "打开预览",
+	"openInEditor": "在编辑器中打开",
 	"fileEnterDir": "进入目录",
 	"fileReveal": "在资源管理器中显示",
 	"fileOpenDefault": "用默认应用打开",

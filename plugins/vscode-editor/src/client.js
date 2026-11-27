@@ -3785,6 +3785,17 @@ export default {
 				return;
 			}
 			switch (payload.event) {
+				case "open-file": {
+					// Issue #1006: host Files tab "Open in Editor" (stash covers first mount).
+					const p = typeof payload.path === "string" ? payload.path.trim() : "";
+					if (p && !p.startsWith("/") && !/^[A-Za-z]:($|[\\/])/.test(p) && !p.split("/").includes("..")) {
+						try {
+							sessionStorage.removeItem("pi-web-ui:editor-open-file");
+						} catch {}
+						void openFile("local", p);
+					}
+					break;
+				}
 				case "shell_data": {
 					for (const [, t] of terms.entries()) {
 						if (t.connId === payload.connId && t.shellId === payload.shellId) {
@@ -3904,6 +3915,17 @@ export default {
 			if (r.ok && r.state) applyState(r.state);
 		});
 		applyI18n();
+		// Issue #1006: consume a pending host "Open in Editor" (emitted before first mount).
+		try {
+			const pending = sessionStorage.getItem("pi-web-ui:editor-open-file");
+			if (pending) {
+				sessionStorage.removeItem("pi-web-ui:editor-open-file");
+				const p = pending.trim();
+				if (p && !p.startsWith("/") && !/^[A-Za-z]:($|[\\/])/.test(p) && !p.split("/").includes("..")) {
+					void openFile("local", p);
+				}
+			}
+		} catch {}
 
 		return () => {
 			container.ownerDocument.removeEventListener("keydown", onGlobalKey, true);

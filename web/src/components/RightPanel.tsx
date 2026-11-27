@@ -34,6 +34,7 @@ import { SlotTabs, type SlotTab } from "./SlotTabs";
 import { copyTextToClipboard } from "../use-copy-feedback";
 import { isRemoteWorkspaceUri, parseRemoteWorkspaceUri } from "../remote-ssh-client";
 import { DesktopPreview } from "./desktop-preview";
+import { canOpenInEditor, hasEditorPlugin, openFileInEditor } from "../plugin-view-open";
 
 const MACHINE_ROOT = "@root";
 
@@ -705,6 +706,9 @@ export const RightPanel = memo(function RightPanel({
 				case "host:file-open":
 					if (tg?.kind === "file") onPreview(tg.id, tg.label);
 					break;
+				case "host:file-open-editor":
+					if (tg?.kind === "file" && canOpenInEditor(tg.id)) openFileInEditor(tg.id);
+					break;
 				case "host:file-enter":
 					if (tg?.kind === "dir") openDir(tg.id);
 					break;
@@ -826,6 +830,10 @@ export const RightPanel = memo(function RightPanel({
 					case "host:file-open-default":
 					case "host:file-attach-ref":
 						return isFile ? entry : { ...entry, hidden: true };
+					case "host:file-open-editor":
+						return isFile && canOpenInEditor(target.id) && hasEditorPlugin(pluginList)
+							? entry
+							: { ...entry, hidden: true };
 					case "host:file-reveal":
 						return !onMachineRoot && target.id !== MACHINE_ROOT ? entry : { ...entry, hidden: true };
 					case "host:file-enter":
@@ -883,6 +891,7 @@ export const RightPanel = memo(function RightPanel({
 			cwd,
 			workspaceRoots,
 			clipboard,
+			pluginList,
 		],
 	);
 

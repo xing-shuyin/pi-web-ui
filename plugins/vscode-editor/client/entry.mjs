@@ -44155,6 +44155,17 @@ var client_default = {
         return;
       }
       switch (payload.event) {
+        case "open-file": {
+          const p = typeof payload.path === "string" ? payload.path.trim() : "";
+          if (p && !p.startsWith("/") && !/^[A-Za-z]:($|[\\/])/.test(p) && !p.split("/").includes("..")) {
+            try {
+              sessionStorage.removeItem("pi-web-ui:editor-open-file");
+            } catch {
+            }
+            void openFile("local", p);
+          }
+          break;
+        }
         case "shell_data": {
           for (const [, t2] of terms.entries()) {
             if (t2.connId === payload.connId && t2.shellId === payload.shellId) {
@@ -44270,6 +44281,17 @@ var client_default = {
       if (r.ok && r.state) applyState(r.state);
     });
     applyI18n();
+    try {
+      const pending2 = sessionStorage.getItem("pi-web-ui:editor-open-file");
+      if (pending2) {
+        sessionStorage.removeItem("pi-web-ui:editor-open-file");
+        const p = pending2.trim();
+        if (p && !p.startsWith("/") && !/^[A-Za-z]:($|[\\/])/.test(p) && !p.split("/").includes("..")) {
+          void openFile("local", p);
+        }
+      }
+    } catch {
+    }
     return () => {
       container.ownerDocument.removeEventListener("keydown", onGlobalKey, true);
       window.removeEventListener("beforeunload", onBeforeUnload);

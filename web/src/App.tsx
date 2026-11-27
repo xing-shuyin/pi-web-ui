@@ -95,6 +95,7 @@ import {
 	type LoadedPluginView,
 } from "./plugin-loader";
 import { setFenceSend, syncFenceRenderers, syncMessageWidgets } from "./plugin-fence";
+import { PLUGIN_VIEW_OPEN_EVENT } from "./plugin-view-open";
 import { findFileHandler, syncFileHandlers, type FileHandlerPlugin } from "./plugin-file-handlers";
 import { useChatDecorations } from "./plugin-decorations";
 const PiSetupModal = lazy(() => import("./components/PiSetupModal").then((m) => ({ default: m.PiSetupModal })));
@@ -1084,6 +1085,10 @@ export function App() {
 							case "host:file-download":
 							case "host:file-open-default":
 								return isFile ? entry : { ...entry, hidden: true };
+							case "host:file-open-editor":
+								// Plugin-bridge menu (e.g. inside the editor's own tree):
+								// the editor already opens its files on click.
+								return { ...entry, hidden: true };
 							case "host:file-attach-ref":
 								return isFile ? entry : { ...entry, hidden: true };
 							case "host:file-attach-folder":
@@ -1201,6 +1206,17 @@ export function App() {
 		window.addEventListener("pi:desktop-open", open);
 		return () => window.removeEventListener("pi:desktop-open", open);
 	}, [isMobile]);
+	// Issue #1006: Files tab "Open in Editor" switches the center view to the editor plugin.
+	useEffect(() => {
+		const open = (event: Event) => {
+			const detail = (event as CustomEvent).detail;
+			if (!detail || typeof detail !== "object" || typeof detail.pluginId !== "string") return;
+			if (!detail.pluginId) return;
+			setView(`plugin:${detail.pluginId}` as ViewName);
+		};
+		window.addEventListener(PLUGIN_VIEW_OPEN_EVENT, open);
+		return () => window.removeEventListener(PLUGIN_VIEW_OPEN_EVENT, open);
+	}, []);
 	useEffect(() => {
 		if (!pageDeviceId()) return;
 		const controller = new AbortController();
