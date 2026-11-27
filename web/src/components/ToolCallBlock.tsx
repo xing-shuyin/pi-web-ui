@@ -43,6 +43,15 @@ import type { ToolStatus, UiImageBlock, UiMessage, UiToolCallBlock } from "../ty
 import { formatDuration as formatDurationShared, formatTimeFull, resolveToolTimeRange } from "../tool-time";
 import { useT } from "../i18n";
 import { openContextMenu } from "../context-menu-state";
+import { BgTaskCluster } from "./BgTaskCluster";
+
+const BG_TOOL_NAMES: ReadonlySet<string> = new Set([
+	"bg_run",
+	"bg_status",
+	"bg_logs",
+	"bg_result",
+	"bg_kill",
+]);
 import { openToolInfo } from "../tool-info-state";
 import { parseAgentBotDraftDetail } from "./BotDraftInlineCard";
 import { getToolInspectorState, isFlowMode, openToolInspector, updateToolInspectorLive } from "../tool-inspector-state";
@@ -982,6 +991,7 @@ const ToolCallCard = memo(function ToolCallCard({
 						)
 					)}
 					{block.name === "tool_search" && <ToolSearchDetails details={view.result?.details} />}
+					{BG_TOOL_NAMES.has(block.name) && output.length > 0 && <BgTaskCluster text={output} />}
 					{output.length > 0 && !(isQuestionnaire && questionnaireArgs) && !botDraftDetail && (
 						<div className="toolcall-output">
 							<div className="toolcall-output-label">

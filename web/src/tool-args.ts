@@ -118,6 +118,19 @@ export function resolveToolHeadline(args: {
 				className: "toolcall-query",
 			};
 		}
+		case "bg_run": {
+			const bg = parseBgHeadline(argumentsText);
+			if (!bg) return null;
+			return { text: bg, title: bg, prefix: "\u25c9 ", className: "toolcall-query" };
+		}
+		case "bg_status":
+		case "bg_logs":
+		case "bg_result":
+		case "bg_kill": {
+			const bg = parseBgTaskId(argumentsText);
+			if (!bg) return null;
+			return { text: bg, title: bg, prefix: "\u25c9 ", className: "toolcall-query" };
+		}
 		default: {
 			if (hints.path) {
 				return {
@@ -328,4 +341,37 @@ export function parseQuestionnaireArgs(argsText?: string): { questions: UiQuesti
 	} catch {
 		return null;
 	}
+}
+
+// shortcut: bg_* capsule headline only; dirty input never throws.
+function safeJsonObj(argsText?: string): Record<string, unknown> | null {
+	if (!argsText || argsText.length > SCAN_LIMIT) return null;
+	try {
+		const o = JSON.parse(argsText) as unknown;
+		if (!o || typeof o !== "object" || Array.isArray(o)) return null;
+		return o as Record<string, unknown>;
+	} catch {
+		return null;
+	}
+}
+
+function cleanShort(v: unknown, max = 40): string | null {
+	if (typeof v !== "string") return null;
+	const s = v.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+	if (!s) return null;
+	return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
+function parseBgHeadline(argsText?: string): string | null {
+	const o = safeJsonObj(argsText);
+	if (!o) return null;
+	return cleanShort(o.name, 40) ?? cleanShort(o.command, 40);
+}
+
+function parseBgTaskId(argsText?: string): string | null {
+	const o = safeJsonObj(argsText);
+	if (!o) return null;
+	const id = cleanShort(o.taskId, 14);
+	if (id) return id;
+	return cleanShort(o.name, 40);
 }
