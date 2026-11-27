@@ -357,7 +357,10 @@ function safeJsonObj(argsText?: string): Record<string, unknown> | null {
 
 function cleanShort(v: unknown, max = 40): string | null {
 	if (typeof v !== "string") return null;
-	const s = v.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+	const s = v
+		.replace(/[\u0000-\u001f\u007f]/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
 	if (!s) return null;
 	return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }

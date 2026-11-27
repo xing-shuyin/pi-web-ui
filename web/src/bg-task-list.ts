@@ -33,7 +33,14 @@ function normStatus(raw: string): BgTaskStatus {
 }
 
 export function parseBgTaskList(text: string): BgTaskItem[] {
-	if (!text || !text.includes("running") && !text.includes("completed") && !text.includes("failed") && !text.includes("killed") && !text.includes("done")) {
+	if (
+		!text ||
+		(!text.includes("running") &&
+			!text.includes("completed") &&
+			!text.includes("failed") &&
+			!text.includes("killed") &&
+			!text.includes("done"))
+	) {
 		if (!/▶|✓|✗|■/.test(text)) return [];
 	}
 	const clean = text.replace(ANSI_RE, "");
@@ -60,8 +67,9 @@ export function parseBgTaskList(text: string): BgTaskItem[] {
 			return e?.index ?? -1;
 		})();
 		const head = dashIdx >= 0 ? rest.slice(0, dashIdx).trim() : rest;
-		const name = (dashIdx >= 0 ? rest.slice(dashIdx + 1).trim() : "").replace(/\s*error=.*$/, "").trim()
-			|| head.split(/\s{2,}/)[0].trim();
+		const name =
+			(dashIdx >= 0 ? rest.slice(dashIdx + 1).trim() : "").replace(/\s*error=.*$/, "").trim() ||
+			head.split(/\s{2,}/)[0].trim();
 		cur = {
 			id: m[1],
 			status: normStatus(m[2]),

@@ -43,15 +43,6 @@ import type { ToolStatus, UiImageBlock, UiMessage, UiToolCallBlock } from "../ty
 import { formatDuration as formatDurationShared, formatTimeFull, resolveToolTimeRange } from "../tool-time";
 import { useT } from "../i18n";
 import { openContextMenu } from "../context-menu-state";
-import { BgTaskCluster } from "./BgTaskCluster";
-
-const BG_TOOL_NAMES: ReadonlySet<string> = new Set([
-	"bg_run",
-	"bg_status",
-	"bg_logs",
-	"bg_result",
-	"bg_kill",
-]);
 import { openToolInfo } from "../tool-info-state";
 import { parseAgentBotDraftDetail } from "./BotDraftInlineCard";
 import { getToolInspectorState, isFlowMode, openToolInspector, updateToolInspectorLive } from "../tool-inspector-state";
@@ -75,6 +66,9 @@ import { QuestionnaireCard } from "./QuestionnaireCard";
 import { renderHighlightedCommand } from "../bash-danger";
 import { FileChangeCard } from "./FileChangeCard";
 import { parseFileMutationArgs } from "../file-diff";
+import { BgTaskCluster } from "./BgTaskCluster";
+
+const BG_TOOL_NAMES: ReadonlySet<string> = new Set(["bg_run", "bg_status", "bg_logs", "bg_result", "bg_kill"]);
 
 export interface ToolView {
 	result?: UiMessage;
