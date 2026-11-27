@@ -22,7 +22,7 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | 前端 HTTP 请求（URL + 口令 + 失败回执） | `web/src/api-client.ts`★（`requestJson` / `apiFetch` / `readApiFailure`） · `web/src/base-url.ts` · `web/src/auth-token.ts` | [`architecture-ui.md`](docs/architecture-ui.md#http-请求websrcapi-clientts-单源) |
 | 安静模式（只显示每轮最终回复 / 折叠与零痕迹） | `web/src/quiet-fold.ts`★ · `web/src/quiet-mode.ts`★ · `web/src/components/MessageList.tsx` · `web/src/components/SettingsModal.tsx` | [`architecture-ui.md`](docs/architecture-ui.md#安静模式issue-956) |
 | 随手问 / 选中文字解释 | `server/quick-ask.ts` · `web/src/quick-ask.ts` · `web/src/components/QuickAskPopover.tsx` | [`architecture-ui.md`](docs/architecture-ui.md#随手问独立小窗) |
-| 系统提示词组装 / 设置保存回执 | `server/prompt-composer.ts`★ · `server/prompt-base-store.ts`★ · `web/src/settings-sync.ts`★ | [`architecture-system-prompt.md`](docs/architecture-system-prompt.md) |
+| 系统提示词组装 / 设置保存回执 | `server/prompt-composer.ts`★ · `server/prompt-base-store.ts`★ · `server/global-prompt-files.ts` · `web/src/settings-sync.ts`★ | [`architecture-system-prompt.md`](docs/architecture-system-prompt.md) |
 | 工具开关 / 工具提示词 / 内置工具覆盖 | `server/tool-manager.ts`★ · `server/tool-prompts.ts`★ · `packages/keel/src/tool-overrides.ts` · `server/bash-timeout.ts`（默认超时单源） | [`agent-rules.md`](docs/agent-rules.md#二工具定义与提示词规范) · [`tool-context-budget.md`](docs/tool-context-budget.md) |
 | 上下文预算 / 延迟加载 / 证据外置 | `server/soft-cap.ts` · `server/request-context.ts` · `server/evidence-tool-hooks.ts` · `server/context-recovery.ts` | [`tool-context-budget.md`](docs/tool-context-budget.md) |
 | **完整性单源** | `packages/keel/src/versioned-doc.ts`★ · `server/web-build.ts`★ | [`agent-rules.md`](docs/agent-rules.md#四架构与运行态约束) · [`architecture-kernel.md`](docs/architecture-kernel.md#31-界面资源缺失) |
