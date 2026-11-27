@@ -33,6 +33,27 @@ const CONN_TIMEOUT_MS = 15000;
 const MAX_EXEC_OUTPUT = 256 * 1024;
 const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024;
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+// Issue #1001: inline image preview cap (separate from text read cap: screenshots run bigger).
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const IMAGE_MIME_BY_EXT = {
+	png: "image/png",
+	jpg: "image/jpeg",
+	jpeg: "image/jpeg",
+	gif: "image/gif",
+	webp: "image/webp",
+	svg: "image/svg+xml",
+	bmp: "image/bmp",
+	ico: "image/x-icon",
+	avif: "image/avif",
+};
+
+/** Image MIME for a workspace path, or null when it is not a previewable image. Pure. */
+export function imageMimeForPath(p) {
+	if (typeof p !== "string") return null;
+	const m = /\.([^.\\/]+)$/.exec(p.trim().toLowerCase());
+	if (!m) return null;
+	return IMAGE_MIME_BY_EXT[m[1]] ?? null;
+}
 const UPLOAD_STALE_MS = 30 * 60 * 1000;
 
 // ---- 服务端报错双语（随每条消息的 lang 切换；AsyncLocalStorage 透传，热路径无签名改动） ----
@@ -499,11 +520,23 @@ export default {
 			return new TextDecoder("latin1").decode(buf);
 		}
 
-		async function readFile(rel) {
+		async function readFile(rel, wantImage = false) {
 			const abs = safeResolve(rel);
 			if (!abs) throw new Error(SL("pathOutside"));
 			const stat = await fs.stat(abs);
 			if (!stat.isFile()) throw new Error(SL("notFile"));
+			if (!wantImage && stat.size > MAX_READ_BYTES)
+				throw new Error(SL("fileOverMB", { n: MAX_READ_BYTES / 1024 / 1024 }));
+			const mime = wantImage ? imageMimeForPath(rel) : null;
+			if (mime && stat.size <= MAX_IMAGE_BYTES) {
+				const buf = await fs.readFile(abs);
+				const out = { size: stat.size, mtimeMs: stat.mtimeMs, image: { mime, b64: buf.toString("base64") } };
+				if (looksLikeText(buf)) {
+					out.text = decodeBuf(buf);
+					out.encoding = "utf-8";
+				} else out.binary = true;
+				return out;
+			}
 			if (stat.size > MAX_READ_BYTES) throw new Error(SL("fileOverMB", { n: MAX_READ_BYTES / 1024 / 1024 }));
 			const buf = await fs.readFile(abs);
 			if (!looksLikeText(buf)) return { binary: true, size: stat.size, mtimeMs: stat.mtimeMs };
@@ -1700,9 +1733,23 @@ export default {
 			}
 		}
 
-		async function remoteRead(c, p) {
+		async function remoteRead(c, p, wantImage = false) {
 			const sftp = await getSftp(c);
 			const stat = await sftpCall(sftp, "stat", p);
+			if (!wantImage && stat.size > MAX_READ_BYTES)
+				throw new Error(SL("fileOverMB", { n: MAX_READ_BYTES / 1024 / 1024 }));
+			const mime = wantImage ? imageMimeForPath(p) : null;
+			if (mime && stat.size <= MAX_IMAGE_BYTES) {
+				const buf = await sftpCall(sftp, "readFile", p);
+				const mtimeMs = Number(stat.mtime ?? 0) * 1000;
+				const out = { size: buf.length, mtimeMs, image: { mime, b64: buf.toString("base64") } };
+				if (buf.includes(0)) out.binary = true;
+				else {
+					out.text = decodeBuf(buf);
+					out.encoding = "utf-8";
+				}
+				return out;
+			}
 			if (stat.size > MAX_READ_BYTES) throw new Error(SL("fileOverMB", { n: MAX_READ_BYTES / 1024 / 1024 }));
 			const buf = await sftpCall(sftp, "readFile", p);
 			const mtimeMs = Number(stat.mtime ?? 0) * 1000;
@@ -2335,9 +2382,10 @@ export default {
 						break;
 					}
 					case "read": {
+						const wantImage = msg.image === true;
 						const r = msg.connId
-							? await remoteRead(getSshConn(msg.connId), String(msg.path ?? ""))
-							: await readFile(msg.path);
+							? await remoteRead(getSshConn(msg.connId), String(msg.path ?? ""), wantImage)
+							: await readFile(msg.path, wantImage);
 						host.sendTo(clientId, { res: true, reqId, ok: true, action, path: msg.path, ...r });
 						break;
 					}

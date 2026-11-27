@@ -40807,6 +40807,13 @@ var STR = {
     openingBig: "正在打开大文件（{size}）…",
     bigReadonly: "大文件已只读打开（>1MB），编辑已禁用",
     binaryNo: "二进制文件暂不支持编辑",
+    imgTooBig: "图片超过 10MB，仅支持下载查看",
+    imgLoadFail: "图片加载失败：{error}",
+    imgZoomIn: "放大",
+    imgZoomOut: "缩小",
+    imgZoomFit: "适应窗口",
+    imgZoomReset: "原始大小",
+    imgDownload: "下载图片",
     connClosed: "连接断开：{label} {reason}",
     shellExited: "〔shell 已退出〕",
     tooBigSkip: "「{name}」超过 100MB 上限，已跳过",
@@ -40998,6 +41005,13 @@ var STR = {
     openingBig: "Opening large file ({size})…",
     bigReadonly: "Large file opened read-only (>1MB); editing disabled",
     binaryNo: "Binary files cannot be edited",
+    imgTooBig: "Image exceeds 10MB, download to view",
+    imgLoadFail: "Failed to load image: {error}",
+    imgZoomIn: "Zoom in",
+    imgZoomOut: "Zoom out",
+    imgZoomFit: "Fit to window",
+    imgZoomReset: "Actual size",
+    imgDownload: "Download image",
     connClosed: "Connection closed: {label} {reason}",
     shellExited: "[shell exited]",
     tooBigSkip: '"{name}" exceeds the 100MB limit, skipped',
@@ -41283,6 +41297,20 @@ var client_default = {
 			opacity: .45; text-align: center; line-height: 2; }
 		.vsc-editor { height: 100%; }
 		.vsc-editor .cm-editor { height: 100%; }
+		/* ---- 图片预览（issue #1001）：只读 viewer，同标签体系 ---- */
+		.vsc-image { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+		.vsc-imgbar { display: flex; align-items: center; gap: 4px; padding: 6px 10px;
+			border-bottom: 1px solid var(--border, #333); background: var(--bg-elev, #16161d); }
+		.vsc-imgmeta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+			opacity: .75; font-size: 12px; }
+		.vsc-imgbar button { all: unset; cursor: pointer; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+		.vsc-imgbar button:hover { background: var(--bg-elev2, #20202b); }
+		.vsc-imgview { flex: 1; min-height: 0; overflow: auto; display: flex; padding: 12px;
+			background-color: var(--bg, #101016);
+			background-image: conic-gradient(#2a2a35 0 25%, transparent 0 50%, #2a2a35 0 75%, transparent 0);
+			background-size: 20px 20px; }
+		.vsc-imgview img { margin: auto; max-width: 100%; max-height: 100%; object-fit: contain;
+			image-rendering: auto; user-select: none; }
 		.vsc-editor .cm-scroller { font-family: ui-monospace, Consolas, "Cascadia Mono", monospace; }
 		/* ---- 底部终端面板 ---- */
 		.vsc-termdrag { height: 4px; cursor: row-resize; flex-shrink: 0;
@@ -41971,8 +41999,11 @@ var client_default = {
     }
     function syncGroupChrome(g) {
       if (!g) return;
+      const t2 = g.active ? tabs.get(g.active) : null;
+      const isImg = !!t2 && t2.kind === "image";
       g.emptyEl.classList.toggle("vsc-hidden", Boolean(g.active));
-      g.edHost.classList.toggle("vsc-hidden", !g.active);
+      g.edHost.classList.toggle("vsc-hidden", !g.active || isImg);
+      if (g.imgHost) g.imgHost.classList.toggle("vsc-hidden", !g.active || !isImg);
     }
     function clearStatusBar() {
       stScope.textContent = "";
@@ -41992,6 +42023,14 @@ var client_default = {
       stScope.textContent = t2.scope !== "local" ? `🖥 ${connLabel(t2.scope)}` : tr2("localScope");
       stScope.classList.toggle("remote", t2.scope !== "local");
       stPath.textContent = t2.path;
+      if (t2.kind === "image") {
+        stLang.textContent = "Image";
+        stPos.textContent = t2.width > 0 ? `${t2.width}×${t2.height}` : fmtSize(t2.size ?? 0);
+        stState.textContent = "";
+        stState.classList.remove("dirty");
+        refreshSaveBtn();
+        return;
+      }
       stLang.textContent = langName(t2.path);
       updateStatus(g.view.state);
     }
@@ -42011,8 +42050,90 @@ var client_default = {
       const t2 = tabs.get(g.active);
       if (t2) t2.state = g.view.state;
     }
+    function imageMetaText(t2) {
+      const dims = t2.width > 0 && t2.height > 0 ? `${t2.width}×${t2.height} · ` : "";
+      return `${dims}${t2.mime} · ${fmtSize(t2.size ?? 0)}`;
+    }
+    function renderImageInto(g, t2) {
+      const host = g.imgHost;
+      if (!host) return;
+      host.replaceChildren();
+      const bar = document.createElement("div");
+      bar.className = "vsc-imgbar";
+      const meta2 = document.createElement("span");
+      meta2.className = "vsc-imgmeta";
+      meta2.textContent = `${t2.name} · ${imageMetaText(t2)}`;
+      bar.appendChild(meta2);
+      const mkBtn = (label, title, fn2) => {
+        const b2 = document.createElement("button");
+        b2.type = "button";
+        b2.textContent = label;
+        b2.title = title;
+        b2.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          fn2();
+        });
+        bar.appendChild(b2);
+        return b2;
+      };
+      const view2 = document.createElement("div");
+      view2.className = "vsc-imgview";
+      const img = document.createElement("img");
+      img.alt = t2.name;
+      img.draggable = false;
+      const applyZoom = () => {
+        if (t2.zoom > 0 && img.naturalWidth > 0) {
+          img.style.maxWidth = "none";
+          img.style.maxHeight = "none";
+          img.style.width = `${Math.round(img.naturalWidth * t2.zoom)}px`;
+        } else {
+          img.style.width = "";
+          img.style.maxWidth = "100%";
+          img.style.maxHeight = "100%";
+        }
+      };
+      img.addEventListener("load", () => {
+        t2.width = img.naturalWidth;
+        t2.height = img.naturalHeight;
+        meta2.textContent = `${t2.name} · ${imageMetaText(t2)}`;
+        applyZoom();
+        if (g.active === tkey(t2.scope, t2.path)) syncStatusForActive();
+      });
+      img.addEventListener("error", () => {
+        meta2.textContent = `${t2.name} · ${tr2("imgLoadFail", { error: t2.mime })}`;
+      });
+      img.src = t2.blobUrl;
+      view2.appendChild(img);
+      host.append(bar, view2);
+      mkBtn("−", tr2("imgZoomOut"), () => {
+        t2.zoom = t2.zoom > 0 ? Math.max(0.1, +(t2.zoom / 1.25).toFixed(2)) : 1;
+        applyZoom();
+      });
+      mkBtn("+", tr2("imgZoomIn"), () => {
+        t2.zoom = t2.zoom > 0 ? +(t2.zoom * 1.25).toFixed(2) : 1.25;
+        applyZoom();
+      });
+      mkBtn("1:1", tr2("imgZoomReset"), () => {
+        t2.zoom = 1;
+        applyZoom();
+      });
+      mkBtn("⤢", tr2("imgZoomFit"), () => {
+        t2.zoom = 0;
+        applyZoom();
+      });
+      mkBtn("⭳", tr2("imgDownload"), () => void downloadToPC(t2.scope, t2.path));
+    }
     function loadGroupActive(g) {
       const t2 = g?.active ? tabs.get(g.active) : null;
+      if (t2 && t2.kind === "image") {
+        renderImageInto(g, t2);
+        syncGroupChrome(g);
+        if (g.id === activeGroupId) {
+          activeTk = g.active;
+          syncStatusForActive();
+        }
+        return;
+      }
       if (!t2) {
         try {
           g.view.setState(EditorState.create({ extensions: makeExtensions(g) }));
@@ -42071,9 +42192,11 @@ var client_default = {
       empty2.innerHTML = emptyHintHTML();
       const edBox = document.createElement("div");
       edBox.className = "vsc-editor vsc-hidden";
-      wrap.append(empty2, edBox);
+      const imgBox = document.createElement("div");
+      imgBox.className = "vsc-image vsc-hidden";
+      wrap.append(empty2, edBox, imgBox);
       el2.append(bar, wrap);
-      const g = { id: gid, keys: [], active: null, el: el2, tabsEl: tabsBox, edHost: edBox, emptyEl: empty2, view: null };
+      const g = { id: gid, keys: [], active: null, el: el2, tabsEl: tabsBox, edHost: edBox, imgHost: imgBox, emptyEl: empty2, view: null };
       g.view = new EditorView({ state: EditorState.create({ extensions: makeExtensions(g) }), parent: edBox });
       groups.set(gid, g);
       el2.addEventListener("pointerdown", () => {
@@ -42161,6 +42284,13 @@ var client_default = {
       renderTabs();
     }
     function dropTabKey(k) {
+      const old = tabs.get(k);
+      if (old?.kind === "image" && old.blobUrl) {
+        try {
+          URL.revokeObjectURL(old.blobUrl);
+        } catch {
+        }
+      }
       tabs.delete(k);
       pinnedTabs.delete(k);
       const g = groupOfTab(k);
@@ -42796,8 +42926,25 @@ var client_default = {
       if (idx >= 0 && idx < g.keys.length - 1) items.push([tr2("tabCloseRight"), () => closeTabsToRight(k)]);
       showMenuItems(x, y, items);
     }
+    const IMAGE_EXTS = /* @__PURE__ */ new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "avif"]);
+    function isImagePath(p) {
+      if (typeof p !== "string") return false;
+      const m = /\.([^.\\/]+)$/.exec(p.trim().toLowerCase());
+      return !!m && IMAGE_EXTS.has(m[1]);
+    }
+    function imageBytes(b64s) {
+      try {
+        return b64.bytes(String(b64s ?? ""));
+      } catch {
+        return null;
+      }
+    }
     async function openFile(scope, p) {
       closeDrawer();
+      if (isImagePath(p)) {
+        await openImage(scope, p);
+        return;
+      }
       const k = tkey(scope, p);
       if (!tabs.has(k)) {
         let stSize = 0;
@@ -42833,6 +42980,55 @@ var client_default = {
       }
       await activateTab(k);
     }
+    async function openImage(scope, p) {
+      const k = tkey(scope, p);
+      if (!tabs.has(k)) {
+        const r = await req(scope, { action: "read", path: p, image: true });
+        if (!r.ok) {
+          toast(tr2("openFail", { error: r.error }));
+          return;
+        }
+        if (!r.image) {
+          toast(tr2("imgTooBig"));
+          return;
+        }
+        const bytes = imageBytes(r.image.b64);
+        if (!bytes) {
+          toast(tr2("imgLoadFail", { error: r.image.mime }));
+          return;
+        }
+        let blobUrl = "";
+        try {
+          blobUrl = URL.createObjectURL(new Blob([bytes], { type: r.image.mime }));
+        } catch {
+          toast(tr2("imgLoadFail", { error: r.image.mime }));
+          return;
+        }
+        tabs.set(k, {
+          kind: "image",
+          scope,
+          path: p,
+          name: p.split("/").pop(),
+          mime: r.image.mime,
+          size: r.size ?? bytes.length,
+          savedText: "",
+          binary: false,
+          dirty: false,
+          conflict: false,
+          readonly: true,
+          savedSize: r.size ?? bytes.length,
+          savedMtime: r.mtimeMs ?? 0,
+          crlf: false,
+          blobUrl,
+          width: 0,
+          height: 0,
+          zoom: 0
+        });
+        const g = activeGroup() ?? ensureActiveGroup();
+        if (g) g.keys.push(k);
+      }
+      await activateTab(k);
+    }
     async function activateTab(k) {
       const t2 = tabs.get(k);
       if (!t2) return;
@@ -42854,7 +43050,7 @@ var client_default = {
     }
     async function saveActive() {
       const tb = tabs.get(activeTk);
-      if (!activeTk || !tb || tb.binary || tb.readonly) {
+      if (!activeTk || !tb || tb.kind === "image" || tb.binary || tb.readonly) {
         if (tb?.readonly) toast(tr2("readOnlyNo"));
         return false;
       }
@@ -42890,7 +43086,7 @@ var client_default = {
     }
     async function saveAsActive() {
       const tb = tabs.get(activeTk);
-      if (!activeTk || !tb || tb.binary || tb.readonly) {
+      if (!activeTk || !tb || tb.kind === "image" || tb.binary || tb.readonly) {
         if (tb?.readonly) toast(tr2("readOnlyNo"));
         return false;
       }
