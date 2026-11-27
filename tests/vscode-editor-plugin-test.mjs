@@ -39,6 +39,9 @@ mkdirSync(join(workspace, "node_modules", "noise-pkg"), { recursive: true });
 writeFileSync(join(workspace, "src", "main.js"), 'console.log("hello vsc");\n');
 writeFileSync(join(workspace, "README.md"), "# 测试仓库\n");
 writeFileSync(join(workspace, "gbk.txt"), Buffer.from([0xc4, 0xe3, 0xba, 0xc3]));
+// 1px PNG for issue #1001 image preview tests.
+const DOT_PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+writeFileSync(join(workspace, "dot.png"), Buffer.from(DOT_PNG_B64, "base64"));
 writeFileSync(join(workspace, "node_modules", "noise-pkg", "index.js"), "// noise\n");
 
 function connect(clientId = "vsc-test") {
@@ -158,6 +161,13 @@ try {
 	r = await rpc(sock, { action: "read", path: "gbk.txt" });
 	if (!r.ok || r.text !== "你好") fail(`GBK 解码失败: ${JSON.stringify(r)}`);
 	else console.log("✓ read GBK 回退解码为「你好」");
+
+	r = await rpc(sock, { action: "read", path: "dot.png" });
+	if (!r.ok || !r.image || r.mime !== "image/png" || r.b64 !== DOT_PNG_B64) {
+		fail(`read 图片未返回正确预览数据: ${JSON.stringify(r)}`);
+	} else {
+		console.log("✓ read 图片返回 inline 预览数据（mime + b64）");
+	}
 
 	r = await rpc(sock, { action: "read", path: "../outside.txt" });
 	if (r.ok) fail("../ 越界未被拒绝");

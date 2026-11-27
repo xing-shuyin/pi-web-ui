@@ -28,6 +28,7 @@ const IGNORED = new Set([
 const MAX_LIST_ENTRIES = 8000;
 const MAX_DEPTH = 12;
 const MAX_READ_BYTES = 2 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const IMAGE_MIME_BY_EXT = {
 	".png": "image/png",
 	".jpg": "image/jpeg",
@@ -38,9 +39,21 @@ const IMAGE_MIME_BY_EXT = {
 	".ico": "image/x-icon",
 	".avif": "image/avif",
 };
-function imageMimeFor(filePath) {
-	const ext = path.extname(String(filePath || "")).toLowerCase();
+/** Image MIME for a workspace path, or null when it is not a previewable image. */
+export function imageMimeFor(filePath) {
+	if (typeof filePath !== "string") return null;
+	const ext = path.extname(filePath.trim()).toLowerCase();
 	return IMAGE_MIME_BY_EXT[ext] ?? null;
+}
+function buildImageReadResult(buf, size, mtimeMs, mime) {
+	return {
+		binary: true,
+		image: true,
+		mime,
+		b64: buf.toString("base64"),
+		size,
+		mtimeMs,
+	};
 }
 const MAX_SSH_HOSTS = 32;
 const CONN_TIMEOUT_MS = 15000;
@@ -518,22 +531,19 @@ export default {
 			if (!abs) throw new Error(SL("pathOutside"));
 			const stat = await fs.stat(abs);
 			if (!stat.isFile()) throw new Error(SL("notFile"));
-			if (stat.size > MAX_READ_BYTES) throw new Error(SL("fileOverMB", { n: MAX_READ_BYTES / 1024 / 1024 }));
+			const imgMime = imageMimeFor(rel);
+			if (imgMime && stat.size > MAX_IMAGE_BYTES) {
+				return { binary: true, image: false, imageTooBig: true, mime: imgMime, size: stat.size, mtimeMs: stat.mtimeMs };
+			}
+			if (!imgMime && stat.size > MAX_READ_BYTES) {
+				throw new Error(SL("fileOverMB", { n: MAX_READ_BYTES / 1024 / 1024 }));
+			}
 			const buf = await fs.readFile(abs);
 			if (!looksLikeText(buf)) {
-				const mime = imageMimeFor(rel);
-				if (mime) {
-					return {
-						binary: true,
-						image: true,
-						mime,
-						dataUrl: `data:${mime};base64,${buf.toString("base64")}`,
-						size: stat.size,
-						mtimeMs: stat.mtimeMs,
-					};
-				}
+				if (imgMime) return buildImageReadResult(buf, stat.size, stat.mtimeMs, imgMime);
 				return { binary: true, size: stat.size, mtimeMs: stat.mtimeMs };
 			}
+			if (stat.size > MAX_READ_BYTES) throw new Error(SL("fileOverMB", { n: MAX_READ_BYTES / 1024 / 1024 }));
 			return { text: decodeBuf(buf), encoding: "utf-8", size: stat.size, mtimeMs: stat.mtimeMs };
 		}
 
@@ -1730,23 +1740,20 @@ export default {
 		async function remoteRead(c, p) {
 			const sftp = await getSftp(c);
 			const stat = await sftpCall(sftp, "stat", p);
-			if (stat.size > MAX_READ_BYTES) throw new Error(SL("fileOverMB", { n: MAX_READ_BYTES / 1024 / 1024 }));
-			const buf = await sftpCall(sftp, "readFile", p);
 			const mtimeMs = Number(stat.mtime ?? 0) * 1000;
+			const imgMime = imageMimeFor(p);
+			if (imgMime && stat.size > MAX_IMAGE_BYTES) {
+				return { binary: true, image: false, imageTooBig: true, mime: imgMime, size: stat.size, mtimeMs };
+			}
+			if (!imgMime && stat.size > MAX_READ_BYTES) {
+				throw new Error(SL("fileOverMB", { n: MAX_READ_BYTES / 1024 / 1024 }));
+			}
+			const buf = await sftpCall(sftp, "readFile", p);
 			if (buf.includes(0)) {
-				const mime = imageMimeFor(p);
-				if (mime) {
-					return {
-						binary: true,
-						image: true,
-						mime,
-						dataUrl: `data:${mime};base64,${buf.toString("base64")}`,
-						size: buf.length,
-						mtimeMs,
-					};
-				}
+				if (imgMime) return buildImageReadResult(buf, buf.length, mtimeMs, imgMime);
 				return { binary: true, size: buf.length, mtimeMs };
 			}
+			if (stat.size > MAX_READ_BYTES) throw new Error(SL("fileOverMB", { n: MAX_READ_BYTES / 1024 / 1024 }));
 			return { text: decodeBuf(buf), encoding: "utf-8", size: buf.length, mtimeMs };
 		}
 

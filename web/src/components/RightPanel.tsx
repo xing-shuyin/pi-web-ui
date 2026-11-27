@@ -34,6 +34,7 @@ import { SlotTabs, type SlotTab } from "./SlotTabs";
 import { copyTextToClipboard } from "../use-copy-feedback";
 import { isRemoteWorkspaceUri, parseRemoteWorkspaceUri } from "../remote-ssh-client";
 import { DesktopPreview } from "./desktop-preview";
+import { canOpenInEditor } from "../editor-open-guard";
 
 const MACHINE_ROOT = "@root";
 
@@ -708,7 +709,7 @@ export const RightPanel = memo(function RightPanel({
 					if (tg?.kind === "file") onPreview(tg.id, tg.label);
 					break;
 				case "host:file-open-in-editor":
-					if (tg?.kind === "file") onOpenInEditor?.(tg.id);
+					if (tg?.kind === "file" && canOpenInEditor(tg.id)) onOpenInEditor?.(tg.id);
 					break;
 				case "host:file-enter":
 					if (tg?.kind === "dir") openDir(tg.id);
@@ -832,7 +833,7 @@ export const RightPanel = memo(function RightPanel({
 					case "host:file-attach-ref":
 						return isFile ? entry : { ...entry, hidden: true };
 					case "host:file-open-in-editor":
-						return isFile && onOpenInEditor ? entry : { ...entry, hidden: true };
+						return isFile && onOpenInEditor && canOpenInEditor(target.id) ? entry : { ...entry, hidden: true };
 					case "host:file-reveal":
 						return !onMachineRoot && target.id !== MACHINE_ROOT ? entry : { ...entry, hidden: true };
 					case "host:file-enter":

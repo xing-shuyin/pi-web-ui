@@ -95,6 +95,7 @@ import {
 	type LoadedPluginView,
 } from "./plugin-loader";
 import { setFenceSend, syncFenceRenderers, syncMessageWidgets } from "./plugin-fence";
+import { canOpenInEditor } from "./editor-open-guard";
 import { findFileHandler, syncFileHandlers, type FileHandlerPlugin } from "./plugin-file-handlers";
 import { useChatDecorations } from "./plugin-decorations";
 const PiSetupModal = lazy(() => import("./components/PiSetupModal").then((m) => ({ default: m.PiSetupModal })));
@@ -468,6 +469,7 @@ export function App() {
 		pluginFileOpenRef.current = pluginFile;
 	}, [previewFiles, pluginFile]);
 	const openInVscodeEditor = useCallback((path: string) => {
+		if (!canOpenInEditor(path)) return;
 		(window as { __piVscodeEditorPendingOpen?: string }).__piVscodeEditorPendingOpen = path;
 		setView("plugin:vscode-editor");
 		window.dispatchEvent(new CustomEvent("pi:open-in-vscode-editor", { detail: { path } }));
@@ -1090,7 +1092,7 @@ export function App() {
 							case "host:file-open-default":
 								return isFile ? entry : { ...entry, hidden: true };
 							case "host:file-open-in-editor":
-								return isFile && enabledPlugins.some((p) => p.id === "vscode-editor")
+								return isFile && canOpenInEditor(target.id) && enabledPlugins.some((p) => p.id === "vscode-editor")
 									? entry
 									: { ...entry, hidden: true };
 							case "host:file-attach-ref":

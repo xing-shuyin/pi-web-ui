@@ -244,6 +244,13 @@ const STR = {
 		openingBig: "正在打开大文件（{size}）…",
 		bigReadonly: "大文件已只读打开（>1MB），编辑已禁用",
 		binaryNo: "二进制文件暂不支持编辑",
+		imgTooBig: "图片超过 10MB，仅支持下载查看",
+		imgLoadFail: "图片加载失败：{error}",
+		imgZoomIn: "放大",
+		imgZoomOut: "缩小",
+		imgZoomFit: "适应窗口",
+		imgZoomReset: "原始大小",
+		imgDownload: "下载图片",
 		connClosed: "连接断开：{label} {reason}",
 		shellExited: "〔shell 已退出〕",
 		tooBigSkip: "「{name}」超过 100MB 上限，已跳过",
@@ -438,6 +445,13 @@ const STR = {
 		openingBig: "Opening large file ({size})…",
 		bigReadonly: "Large file opened read-only (>1MB); editing disabled",
 		binaryNo: "Binary files cannot be edited",
+		imgTooBig: "Image exceeds 10MB, download to view",
+		imgLoadFail: "Failed to load image: {error}",
+		imgZoomIn: "Zoom in",
+		imgZoomOut: "Zoom out",
+		imgZoomFit: "Fit to window",
+		imgZoomReset: "Actual size",
+		imgDownload: "Download image",
 		connClosed: "Connection closed: {label} {reason}",
 		shellExited: "[shell exited]",
 		tooBigSkip: '"{name}" exceeds the 100MB limit, skipped',
@@ -735,12 +749,19 @@ export default {
 		.vsc-editor { height: 100%; }
 		.vsc-editor .cm-editor { height: 100%; }
 		.vsc-editor .cm-scroller { font-family: ui-monospace, Consolas, "Cascadia Mono", monospace; }
-		.vsc-imgpreview { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
-			justify-content: center; gap: 10px; padding: 16px; overflow: auto;
-			background: repeating-conic-gradient(rgba(128,128,128,.08) 0% 25%, transparent 0% 50%) 50% / 16px 16px; }
-		.vsc-imgpreview img { max-width: 100%; max-height: calc(100% - 28px); object-fit: contain;
-			border-radius: 4px; box-shadow: 0 2px 12px rgba(0,0,0,.25); }
-		.vsc-imgpreview-meta { font-size: 12px; opacity: .75; }
+		.vsc-imgpreview { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; }
+		.vsc-imgbar { display: flex; align-items: center; gap: 4px; padding: 6px 10px;
+			border-bottom: 1px solid var(--border, #333); background: var(--bg-elev, #16161d); }
+		.vsc-imgmeta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+			opacity: .75; font-size: 12px; }
+		.vsc-imgbar button { all: unset; cursor: pointer; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+		.vsc-imgbar button:hover { background: var(--bg-elev2, #20202b); }
+		.vsc-imgview { flex: 1; min-height: 0; overflow: auto; display: flex; padding: 12px;
+			background-color: var(--bg, #101016);
+			background-image: repeating-conic-gradient(rgba(128,128,128,.08) 0% 25%, transparent 0% 50%);
+			background-size: 16px 16px; }
+		.vsc-imgview img { margin: auto; max-width: 100%; max-height: 100%; object-fit: contain;
+			border-radius: 4px; box-shadow: 0 2px 12px rgba(0,0,0,.25); user-select: none; }
 		/* ---- 底部终端面板 ---- */
 		.vsc-termdrag { height: 4px; cursor: row-resize; flex-shrink: 0;
 			background: var(--bg-elev, #16161d); border-top: 1px solid var(--border, #333); }
@@ -1456,6 +1477,79 @@ export default {
 		function setGroupActiveClass() {
 			for (const g of groups.values()) g.el.classList.toggle("active-group", g.id === activeGroupId);
 		}
+		function imageMetaText(t) {
+			const dims = t.width > 0 && t.height > 0 ? `${t.width}×${t.height}` : "";
+			return [dims, t.imageMime, t.savedSize ? fmtSize(t.savedSize) : ""].filter(Boolean).join(" · ");
+		}
+		function renderImageInto(g, t) {
+			const host = g.imgHost;
+			if (!host) return;
+			host.replaceChildren();
+			const bar = document.createElement("div");
+			bar.className = "vsc-imgbar";
+			const meta = document.createElement("span");
+			meta.className = "vsc-imgmeta";
+			meta.textContent = `${t.name || t.path} · ${imageMetaText(t)}`;
+			bar.appendChild(meta);
+			const mkBtn = (label, title, fn) => {
+				const b = document.createElement("button");
+				b.type = "button";
+				b.textContent = label;
+				b.title = title;
+				b.addEventListener("click", (ev) => {
+					ev.stopPropagation();
+					fn();
+				});
+				bar.appendChild(b);
+				return b;
+			};
+			const viewBox = document.createElement("div");
+			viewBox.className = "vsc-imgview";
+			const img = document.createElement("img");
+			img.alt = t.name || t.path;
+			img.draggable = false;
+			const applyZoom = () => {
+				if (t.zoom > 0 && img.naturalWidth > 0) {
+					img.style.maxWidth = "none";
+					img.style.maxHeight = "none";
+					img.style.width = `${Math.round(img.naturalWidth * t.zoom)}px`;
+				} else {
+					img.style.width = "";
+					img.style.maxWidth = "100%";
+					img.style.maxHeight = "100%";
+				}
+			};
+			img.addEventListener("load", () => {
+				t.width = img.naturalWidth;
+				t.height = img.naturalHeight;
+				meta.textContent = `${t.name || t.path} · ${imageMetaText(t)}`;
+				applyZoom();
+				if (g.active === tkey(t.scope, t.path)) syncStatusForActive();
+			});
+			img.addEventListener("error", () => {
+				meta.textContent = `${t.name || t.path} · ${tr("imgLoadFail", { error: t.imageMime || "" })}`;
+			});
+			img.src = t.imageUrl;
+			viewBox.appendChild(img);
+			host.append(bar, viewBox);
+			mkBtn("−", tr("imgZoomOut"), () => {
+				t.zoom = t.zoom > 0 ? Math.max(0.1, +(t.zoom / 1.25).toFixed(2)) : 1;
+				applyZoom();
+			});
+			mkBtn("+", tr("imgZoomIn"), () => {
+				t.zoom = t.zoom > 0 ? +(t.zoom * 1.25).toFixed(2) : 1.25;
+				applyZoom();
+			});
+			mkBtn("1:1", tr("imgZoomReset"), () => {
+				t.zoom = 1;
+				applyZoom();
+			});
+			mkBtn("⤢", tr("imgZoomFit"), () => {
+				t.zoom = 0;
+				applyZoom();
+			});
+			mkBtn("⭳", tr("imgDownload"), () => void downloadToPC(t.scope, t.path));
+		}
 		function syncGroupChrome(g) {
 			if (!g) return;
 			const t = g.active ? tabs.get(g.active) : null;
@@ -1467,18 +1561,7 @@ export default {
 				if (isImg) {
 					if (g.imgHost.dataset.tabKey !== g.active) {
 						g.imgHost.dataset.tabKey = g.active;
-						const img = document.createElement("img");
-						img.alt = t.name || t.path;
-						img.src = t.imageUrl;
-						const meta = document.createElement("div");
-						meta.className = "vsc-imgpreview-meta";
-						const baseMeta = [t.imageMime, t.savedSize ? fmtSize(t.savedSize) : ""].filter(Boolean).join(" · ");
-						meta.textContent = baseMeta;
-						img.addEventListener("load", () => {
-							const dims = img.naturalWidth && img.naturalHeight ? `${img.naturalWidth}×${img.naturalHeight}` : "";
-							meta.textContent = [dims, baseMeta].filter(Boolean).join(" · ");
-						});
-						g.imgHost.replaceChildren(img, meta);
+						renderImageInto(g, t);
 					}
 				} else if (g.imgHost.dataset.tabKey) {
 					delete g.imgHost.dataset.tabKey;
@@ -1504,6 +1587,14 @@ export default {
 			stScope.textContent = t.scope !== "local" ? `🖥 ${connLabel(t.scope)}` : tr("localScope");
 			stScope.classList.toggle("remote", t.scope !== "local");
 			stPath.textContent = t.path;
+			if (t.imageUrl) {
+				stLang.textContent = "Image";
+				stPos.textContent = t.width > 0 ? `${t.width}×${t.height}` : fmtSize(t.savedSize ?? 0);
+				stState.textContent = "";
+				stState.classList.remove("dirty");
+				refreshSaveBtn();
+				return;
+			}
 			stLang.textContent = langName(t.path);
 			updateStatus(g.view.state);
 		}
@@ -1683,6 +1774,12 @@ export default {
 			renderTabs();
 		}
 		function dropTabKey(k) {
+			const old = tabs.get(k);
+			if (old?.isBlobUrl && old.imageUrl) {
+				try {
+					URL.revokeObjectURL(old.imageUrl);
+				} catch {}
+			}
 			tabs.delete(k);
 			pinnedTabs.delete(k);
 			const g = groupOfTab(k);
@@ -2403,6 +2500,24 @@ export default {
 					toast(tr("openFail", { error: r.error }));
 					return;
 				}
+				if (r.imageTooBig) {
+					toast(tr("imgTooBig"));
+					return;
+				}
+				let imageUrl = null;
+				let isBlobUrl = false;
+				if (r.image && r.b64) {
+					try {
+						const bytes = b64.bytes(String(r.b64));
+						imageUrl = URL.createObjectURL(new Blob([bytes], { type: r.mime || "application/octet-stream" }));
+						isBlobUrl = true;
+					} catch {
+						toast(tr("imgLoadFail", { error: r.mime || "" }));
+						return;
+					}
+				} else if (r.image && r.dataUrl) {
+					imageUrl = r.dataUrl;
+				}
 				const readonly = !r.binary && (stSize || r.size || 0) > 1024 * 1024;
 				tabs.set(k, {
 					scope,
@@ -2410,8 +2525,12 @@ export default {
 					name: p.split("/").pop(),
 					savedText: r.text ?? "",
 					binary: !!r.binary,
-					imageUrl: r.image && r.dataUrl ? r.dataUrl : null,
+					imageUrl,
+					isBlobUrl,
 					imageMime: r.mime ?? null,
+					width: 0,
+					height: 0,
+					zoom: 0,
 					dirty: false,
 					conflict: false,
 					readonly,
