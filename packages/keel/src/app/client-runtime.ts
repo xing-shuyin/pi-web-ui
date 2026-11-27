@@ -28,16 +28,15 @@ import { ComposerDraftsStore } from "../composer-drafts.js";
 import { Conversation, ConversationRegistry, type ConversationInit } from "../kernel/conversation/index.js";
 import { createSnapshotBuilders, SnapshotPublisher, type SnapshotBuilders } from "../domains/snapshots/index.js";
 import { statsOfSession } from "../adapters/sdk/session-stats.js";
-import { sessionDirOfBase } from "../adapters/sdk/session-persist.js";
-import { piSessionsRoot } from "../session-search.js";
-import { resolveWorkspaceSessionDir } from "../remote-workspace.js";
 import { TurnRunner, type TurnRunnerDeps } from "../domains/turns/index.js";
 import type { SessionListScanState } from "../session-list-scan.js";
-import { dirname, join, resolve as resolveFsPath } from "node:path";
+import { join } from "node:path";
 import { CoreEngineNotReadyError } from "../contracts/core-engine-errors.js";
 import type { SessionRegistry } from "./session-registry.js";
 import type { BashKills } from "../domains/background/index.js";
 import type { ScmCommitMessagePort } from "../contracts/scm.js";
+import { ClientTurnLifecycle } from "./turn-lifecycle.js";
+import { HistoryRoots } from "./history-roots.js";
 
 export type ClientEnvView = Omit<SnapshotEnvView, "clientId" | "cwd" | "workspaceRoots">;
 
@@ -191,7 +190,7 @@ export class ClientRuntime {
 	private adapter: DispatchSession | undefined;
 	private assembly: DispatchAssembly | undefined;
 	private frames: ClientFrames | undefined;
-	private historyRootPath: string | undefined;
+	private readonly historyRoots: HistoryRoots;
 	private scanState: Map<string, SessionListScanState> | undefined;
 	private sessionSurface: SessionSurface | undefined;
 	private workspaceCwd: string; // 当前工作区与额外根：换工作区会就地改它们（快照 / 目录类 handler 都现取）。
@@ -199,6 +198,7 @@ export class ClientRuntime {
 	private worktreeInfo: WorktreeInfo | null = null; // 工作树全貌：工作树域的发布口写它，刷新/删除都从这里读「当前是哪个」。
 	/** 沙盒全貌：`null` = 不是沙盒（宿主写）。 */ private sandboxInfo: SandboxInfo | null = null;
 	/** 会话列表条数：`sessions` 帧与 `setSessionListLimit` 共读。 */ readonly sessionLimits = new Map<string, number>();
+	private readonly turnLifecycle: ClientTurnLifecycle;
 	/** 输入框草稿：不传就按 `dataDir/composer-drafts.json` 建（构造不读盘，首次访问才读）。 */ readonly drafts: ComposerDraftsStore;
 	/**
 	 * 「消息已受理、这一轮还没真正开始」（老 `conv.promptInFlight`）：`feedTurn` 的 `ensure` 窗口。
@@ -218,13 +218,24 @@ export class ClientRuntime {
 	constructor(readonly options: ClientRuntimeOptions) {
 		this.workspaceCwd = options.cwd;
 		this.workspaceRoots = options.workspaceRoots ?? [];
+		this.historyRoots = new HistoryRoots(
+			() => options.stateStore?.()?.dataDir,
+			() => this.workspaceCwd,
+		);
 		this.drafts = options.drafts ?? new ComposerDraftsStore(join(options.cwd, "composer-drafts.json"));
 		this.publisher = new SnapshotPublisher({
 			transport: options.transport,
 			clock: options.clock,
 			build: options.builders ?? createSnapshotBuilders(() => this.snapshotView()),
 		});
-		this.turns = new TurnRunner({ clock: options.clock, events: options.turnEvents });
+		this.turnLifecycle = new ClientTurnLifecycle({
+			clock: options.clock,
+			registry: this.registry,
+			events: options.turnEvents,
+			isDisposed: () => this.disposed,
+			refreshSessions: (cwd) => this.frames?.refreshSessionsFor?.(cwd) ?? Promise.resolve(),
+		});
+		this.turns = this.turnLifecycle.runner;
 	}
 
 	get clientId(): ClientId {
@@ -258,6 +269,8 @@ export class ClientRuntime {
 	attachFrames(frames: ClientFrames): void {
 		this.frames = frames;
 	}
+	/** 某个项目的历史列表已被客户端请求过（连接期首推也算），之后回合收尾才自动补推。 */
+	readonly noteSessionsRequested = (cwd: string): void => this.turnLifecycle.noteSessionsRequested(cwd);
 	/** 连接是否已被换掉 / 卸掉（宿主面据此停止出帧）。 */
 	isDisposed(): boolean {
 		return this.disposed;
@@ -355,7 +368,7 @@ export class ClientRuntime {
 
 	/** 会话文件落在哪个目录，只有真正开过会话才知道（不猜 SDK 的目录布局）。 */
 	noteSessionFile(file: string | undefined): void {
-		if (file) this.historyRootPath = dirname(file);
+		this.historyRoots.noteSessionFile(file);
 	}
 	/** 历史列表重扫：CLI 转录这种「不是本运行时开出来的会话」也得进列表。 */
 	refreshSessions(): void {
@@ -384,40 +397,13 @@ export class ClientRuntime {
 			return undefined;
 		}
 	}
-	/**
-	 * 会话文件落在哪个目录（历史列表 / 检索的根）：**不靠**「本进程开过会话」才知道。
-	 *
-	 * 老实现每次扫列表都现算一次：`resolveWorkspaceSessionDir(dataDir, cwd)` →
-	 * `SessionManager.create(base).getSessionDir()`（`loadSessionInfos` 同一条公式）。
-	 * 以前只有 `noteSessionFile` 一个写点 ⇒ 连接期拿不到 root，历史列表恒空。
-	 * `noteSessionFile` 学到的目录仍作兼底（CLI 转录这种不按 cwd 落盘的会话）。
-	 */
+	/** 当前项目的历史目录；CLI 转录等非本运行时来源也能由此列出。 */
 	historyRoot(): string | undefined {
-		// 学到的目录优先（`noteSessionFile` = 本进程真开过会话，换 cwd 时会跟着更新），
-		// 否则再按老公式现算——两者都拿不到才算「不知道」。
-		if (this.historyRootPath) return this.historyRootPath;
-		const extra = piSessionsRoot();
-		if (extra) return extra;
-		try {
-			const base = resolveWorkspaceSessionDir(this.options.stateStore?.()?.dataDir, this.workspaceCwd);
-			return sessionDirOfBase(base) ?? undefined;
-		} catch {
-			// 算不出来（宿主没给 dataDir / SDK 目录推不出来）就用学到的那个。
-			return this.historyRootPath;
-		}
+		return this.historyRoots.root();
 	}
-	/**
-	 * 任意目标项目的会话目录（侧栏展开非当前项目时也要能扫历史列表）。
-	 * 目标是当前工作区时复用 `historyRoot()`；其它项目按同一公式推导。
-	 */
+	/** 任意目标项目的历史目录（侧栏展开非当前项目时也要能扫历史列表）。 */
 	historyRootFor(targetCwd: string): string | undefined {
-		if (resolveFsPath(targetCwd) === resolveFsPath(this.workspaceCwd)) return this.historyRoot();
-		try {
-			const base = resolveWorkspaceSessionDir(this.options.stateStore?.()?.dataDir, targetCwd);
-			return sessionDirOfBase(base) ?? undefined;
-		} catch {
-			return undefined;
-		}
+		return this.historyRoots.rootFor(targetCwd);
 	}
 	historyState(): Map<string, SessionListScanState> {
 		return (this.scanState ??= new Map());
@@ -581,6 +567,7 @@ export class ClientRuntime {
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
+		this.turnLifecycle.dispose();
 		this.publisher.dispose();
 		// bash 中止表：连接断开时把所有在跑的命令真拉死（不留孤儿进程，也不留表项）。
 		this.options.bashKills?.abortAll();

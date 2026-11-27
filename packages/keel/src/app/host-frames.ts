@@ -24,6 +24,8 @@ export function buildClientFrames(opts: {
 	const { transport, stateStore, clientId, runtime, projectSource, modelPusher } = opts;
 	let settingsFramePush: (() => void) | undefined;
 	const pushSessionsFor = async (targetCwd: string, root: string | undefined): Promise<void> => {
+		// 客户端请求过这个项目后，回合收尾才知道该自动补推哪一份历史列表。
+		runtime.noteSessionsRequested(targetCwd);
 		if (!root) {
 			if (!transport.isClosed()) transport.send({ type: "sessions", sessions: [], cwd: targetCwd });
 			return;
