@@ -30,6 +30,7 @@ import { ALL_AGENT_TOOL_ENTRIES, effectiveDisabledAgentTools, isToolSupportedOnP
 import "./patch-remote-catalog.js";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { registerPromptTemplateRoutes } from "./prompt-templates.js";
+import { registerGlobalPromptRoutes } from "./global-prompt-files.js";
 import { createQuickAskRuntime, registerQuickAskRoutes } from "./quick-ask.js";
 import { QuickAskError, readQuickAskHistoryConversation } from "./quick-ask-context.js";
 import { SandboxManager } from "./sandbox-service.js";
@@ -774,6 +775,7 @@ registerTtsRoutes(app);
 
 const sharedStateStore = new ClientStateStore(join(DATA_DIR, "client-state.json"));
 registerPromptTemplateRoutes(app, DATA_DIR);
+registerGlobalPromptRoutes(app, { dataDir: DATA_DIR, agentDir: getAgentDir() });
 registerSystemScreenshotRoutes(app);
 registerEngineUpdateRoutes(app);
 const quickAskSandboxes = new SandboxManager(DATA_DIR);

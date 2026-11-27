@@ -207,6 +207,33 @@
     「恢复默认模板并清空所有覆盖」必须把现存 token 逐个发空串：空对象补丁在服务端
     是「不删任何子键」，发 {} 等于什么都没清（历史 bug，已有单测守卫）。
 
+## 全局 Agent 指令文件中心
+
+设置 → 系统提示词 →「全局 Agent 指令文件」集中管理各 Agent 的全局指令文件。事实源是
+`server/global-prompt-files.ts` 的注册表与 `web/src/components/GlobalPromptFiles.tsx` 的编辑面板；
+它管理的是**文件本身**，与 `promptOverrides` 的会话级覆盖是两条独立通道，不互相冒充。
+
+内置扫描范围：
+
+- Pi：`<agentDir>/SYSTEM.md`、`APPEND_SYSTEM.md`、`AGENTS.md`、`CLAUDE.md`。
+- Claude Code：`~/.claude/CLAUDE.md` 与 `~/.claude/rules/*.md`。
+- Codex：`$CODEX_HOME/AGENTS.md`（缺省 `~/.codex/AGENTS.md`）。
+- Cursor：`~/.cursor/rules/*.{md,mdc}`（项目根目录的 `AGENTS.md` 不属于全局文件中心）。
+- Windsurf：`~/.codeium/windsurf/memories/global_rules.md`。
+- Gemini CLI：`$GEMINI_CLI_HOME/GEMINI.md`（缺省 `~/.gemini/GEMINI.md`）。
+- OpenCode：`$XDG_CONFIG_HOME/opencode/AGENTS.md`（缺省 `~/.config/opencode/AGENTS.md`）。
+- Qwen Code：`$QWEN_CODE_HOME/QWEN.md`（缺省 `~/.qwen/QWEN.md`）。
+
+未内置适配的 Agent 可在面板登记已存在的 `.md` / `.mdc` / `.txt` 绝对路径；登记清单版本化存储在
+`<dataDir>/global-prompt-files.json`，移除登记不删除文件。扫描不遍历家目录或磁盘，只读取注册表
+列出的精确文件与规则目录。单文件读取上限 512KB、单轮总读取上限 4MB；超限文件只显示状态，
+禁止编辑，避免把截断内容写回造成数据丢失。
+
+保存走 `PUT /api/global-prompts`：服务端按注册 id 解析路径，使用 `path-boundary` 的真实路径判据
+拒绝越界/链接穿透，比较 `expectedRevision` 防止覆盖外部修改，再通过 `writeAtomic` 保留原权限
+原子落盘。Pi 文件保存成功后前端发送 `extensions_reload`，沿用现有设置运行时重载与流式延迟
+应用语义；其他 Agent 的文件只落盘，由其自身下次启动时读取。
+
 ## 八、与子代理模板的关系
 
     子代理模板保留自身 append/replace 语义（角色化预设）：白名单过滤技能/扩展；

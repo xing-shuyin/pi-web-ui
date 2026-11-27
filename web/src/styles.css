@@ -23787,6 +23787,204 @@
 	.override-row.src-off {
 		opacity: 0.5;
 	}
+	/* 全局 Agent 指令文件：注册表扫描、就地编辑、自定义文件登记 */
+	.global-prompts-body {
+		padding: 8px 0 2px;
+	}
+	.global-prompts-toolbar {
+		display: flex;
+		align-items: flex-start;
+		gap: 10px;
+		min-width: 0;
+	}
+	.global-prompts-toolbar .set-hint {
+		flex: 1;
+		min-width: 0;
+		margin: 0;
+	}
+	.global-prompts-error {
+		margin: 8px 0;
+		padding: 7px 9px;
+		border: 1px solid color-mix(in srgb, var(--red) 35%, var(--border));
+		border-radius: 7px;
+		background: var(--red-soft);
+		color: var(--err-text);
+		font-size: 11.5px;
+		overflow-wrap: anywhere;
+	}
+	.global-prompt-dirs {
+		display: grid;
+		gap: 5px;
+		margin: 9px 0;
+		padding: 8px 10px;
+		border: 1px solid var(--border-soft);
+		border-radius: 7px;
+		background: var(--bg-elev);
+	}
+	.global-prompt-dir {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
+		font-size: 11px;
+		color: var(--text-dim);
+	}
+	.global-prompt-dir code {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		overflow-wrap: anywhere;
+	}
+	.global-prompt-list {
+		margin-top: 9px;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		background: var(--bg-elev);
+		overflow: hidden;
+	}
+	.global-prompt-file + .global-prompt-file {
+		border-top: 1px solid var(--border-soft);
+	}
+	.global-prompt-file-head {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		width: 100%;
+		min-width: 0;
+		padding: 7px 10px;
+		border: 0;
+		background: none;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.global-prompt-file-head:hover,
+	.global-prompt-file.open .global-prompt-file-head {
+		background: rgba(255, 255, 255, 0.025);
+	}
+	.global-prompt-file-head:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: -2px;
+	}
+	.global-prompt-file-icon {
+		flex: none;
+		color: var(--text-faint);
+	}
+	.global-prompt-file-title {
+		flex: 0 1 auto;
+		min-width: 0;
+		display: flex;
+		align-items: baseline;
+		gap: 6px;
+		font-size: 12px;
+		color: var(--text);
+		white-space: nowrap;
+	}
+	.global-prompt-file-title em {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		font-size: 10.5px;
+		font-style: normal;
+		color: var(--text-faint);
+	}
+	.global-prompt-file-path {
+		flex: 1 1 auto;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		overflow-wrap: anywhere;
+		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+		font-size: 10.5px;
+		color: var(--text-faint);
+	}
+	.global-prompt-file-status {
+		flex: none;
+		padding: 1px 5px;
+		border: 1px solid var(--border-soft);
+		border-radius: 5px;
+		font-size: 10px;
+		color: var(--text-faint);
+		white-space: nowrap;
+	}
+	.global-prompt-file-status.exists {
+		color: var(--text);
+		border-color: color-mix(in srgb, var(--green) 30%, var(--border));
+	}
+	.global-prompt-file-chev {
+		flex: none;
+		font-size: 10px;
+		color: var(--text-faint);
+		transition: transform 0.15s ease;
+	}
+	.global-prompt-file-chev.open {
+		transform: rotate(180deg);
+	}
+	.global-prompt-file-body {
+		padding: 0 10px 10px;
+	}
+	.global-prompt-file-body .set-hint {
+		margin: 0 0 7px;
+	}
+	.global-prompt-editor {
+		width: 100%;
+		min-height: 220px;
+		resize: vertical;
+		overflow-wrap: anywhere;
+	}
+	.global-prompt-file-foot {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-top: 7px;
+		min-width: 0;
+		font-size: 11px;
+	}
+	.global-prompt-foot-spacer {
+		flex: 1;
+	}
+	.global-prompt-custom {
+		display: grid;
+		gap: 5px;
+		margin-top: 11px;
+		padding-top: 10px;
+		border-top: 1px solid var(--border-soft);
+	}
+	.global-prompt-custom .set-hint {
+		margin: 0;
+	}
+	.global-prompt-custom-row {
+		display: flex;
+		gap: 7px;
+		min-width: 0;
+	}
+	.global-prompt-custom-row .set-input {
+		flex: 1;
+		min-width: 0;
+	}
+	@media (max-width: 720px) {
+		.global-prompt-dir {
+			grid-template-columns: minmax(0, 1fr) auto;
+		}
+		.global-prompt-dir code {
+			grid-column: 1 / -1;
+			grid-row: 2;
+		}
+		.global-prompt-file-head {
+			flex-wrap: wrap;
+		}
+		.global-prompt-file-path {
+			flex-basis: 100%;
+			order: 5;
+		}
+		.global-prompt-custom-row {
+			flex-direction: column;
+		}
+	}
 	/* 提示词来源：单列表（开关 + 中文名 + 一句话 + 顺序），点名字就地展开编辑；
 	   展开区左右不留白，输入框只保留自身内边距 */
 	.prompt-sources-head {

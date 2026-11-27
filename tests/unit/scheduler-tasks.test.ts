@@ -481,7 +481,7 @@ describe("SchedulerStore", () => {
 		expect(s.list()[0]!.nextFire).toBe(next0 + 30 * 60 * 1000);
 
 		finishRun();
-		await new Promise((r) => setTimeout(r, 10));
+		await flushDisk(() => !s.list()[0]!.running);
 		expect(s.list()[0]!.running).toBe(false);
 		expect(s.list()[0]!.nextFire).toBe(next0 + 30 * 60 * 1000);
 	});

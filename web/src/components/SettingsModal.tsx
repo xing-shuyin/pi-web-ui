@@ -58,6 +58,7 @@ import type { ThemeInfo } from "../theme";
 import { DSH_PERMISSION_ORDER, permDescKey, permLabelKey } from "./DshPermissionBar";
 import { InstalledPluginsPanel } from "./InstalledPluginsPanel";
 import { ToolPromptEditor } from "./ToolPromptEditor";
+import { GlobalPromptFiles } from "./GlobalPromptFiles";
 import { McpServersPanel } from "./McpServersPanel";
 import { DeviceExecutionSettings } from "./DeviceExecutionSettings";
 import { DesktopAppSettings } from "./DesktopAppSettings";
@@ -2674,6 +2675,7 @@ function LoadedSettingsModal({
 								)}
 								{!isDsh ? (
 									<>
+										<GlobalPromptFiles onApplied={() => appSend({ type: "extensions_reload" })} />
 										<details className="set-field prompt-templates set-fold">
 											<summary className="prompt-templates-head">
 												<span className="set-field-label">{t("promptTemplateLibLabel")}</span>
