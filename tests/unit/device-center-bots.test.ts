@@ -363,4 +363,22 @@ describe("local Bot registry", () => {
 			code: "WORKSPACE_INVALID",
 		});
 	});
+
+	it("persists useGlobalPrompt boolean and rejects non-boolean values", async () => {
+		const f = await fixture();
+		const bot = await f.registry.upsert({ ...f.input, useGlobalPrompt: false });
+		expect(bot.useGlobalPrompt).toBe(false);
+		expect((await createLocalBotRegistry(f.dataDir)).get(bot.id)?.useGlobalPrompt).toBe(false);
+		const updated = await f.registry.upsert({ ...bot, useGlobalPrompt: true });
+		expect(updated.useGlobalPrompt).toBe(true);
+		await expect(
+			f.registry.upsert({ ...updated, useGlobalPrompt: "false" } as unknown as LocalBotInput),
+		).rejects.toMatchObject({ code: "BOT_INVALID" });
+
+		const scoped = await f.registry.upsert({ ...updated, promptSections: ["tools", "cwd"] });
+		expect(scoped.promptSections).toEqual(["tools", "cwd"]);
+		await expect(f.registry.upsert({ ...scoped, promptSections: ["unknown_section"] })).rejects.toMatchObject({
+			code: "BOT_INVALID",
+		});
+	});
 });

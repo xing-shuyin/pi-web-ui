@@ -28,6 +28,20 @@ const IGNORED = new Set([
 const MAX_LIST_ENTRIES = 8000;
 const MAX_DEPTH = 12;
 const MAX_READ_BYTES = 2 * 1024 * 1024;
+const IMAGE_MIME_BY_EXT = {
+	".png": "image/png",
+	".jpg": "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif": "image/gif",
+	".webp": "image/webp",
+	".bmp": "image/bmp",
+	".ico": "image/x-icon",
+	".avif": "image/avif",
+};
+function imageMimeFor(filePath) {
+	const ext = path.extname(String(filePath || "")).toLowerCase();
+	return IMAGE_MIME_BY_EXT[ext] ?? null;
+}
 const MAX_SSH_HOSTS = 32;
 const CONN_TIMEOUT_MS = 15000;
 const MAX_EXEC_OUTPUT = 256 * 1024;
@@ -506,7 +520,20 @@ export default {
 			if (!stat.isFile()) throw new Error(SL("notFile"));
 			if (stat.size > MAX_READ_BYTES) throw new Error(SL("fileOverMB", { n: MAX_READ_BYTES / 1024 / 1024 }));
 			const buf = await fs.readFile(abs);
-			if (!looksLikeText(buf)) return { binary: true, size: stat.size, mtimeMs: stat.mtimeMs };
+			if (!looksLikeText(buf)) {
+				const mime = imageMimeFor(rel);
+				if (mime) {
+					return {
+						binary: true,
+						image: true,
+						mime,
+						dataUrl: `data:${mime};base64,${buf.toString("base64")}`,
+						size: stat.size,
+						mtimeMs: stat.mtimeMs,
+					};
+				}
+				return { binary: true, size: stat.size, mtimeMs: stat.mtimeMs };
+			}
 			return { text: decodeBuf(buf), encoding: "utf-8", size: stat.size, mtimeMs: stat.mtimeMs };
 		}
 
@@ -1706,7 +1733,20 @@ export default {
 			if (stat.size > MAX_READ_BYTES) throw new Error(SL("fileOverMB", { n: MAX_READ_BYTES / 1024 / 1024 }));
 			const buf = await sftpCall(sftp, "readFile", p);
 			const mtimeMs = Number(stat.mtime ?? 0) * 1000;
-			if (buf.includes(0)) return { binary: true, size: buf.length, mtimeMs };
+			if (buf.includes(0)) {
+				const mime = imageMimeFor(p);
+				if (mime) {
+					return {
+						binary: true,
+						image: true,
+						mime,
+						dataUrl: `data:${mime};base64,${buf.toString("base64")}`,
+						size: buf.length,
+						mtimeMs,
+					};
+				}
+				return { binary: true, size: buf.length, mtimeMs };
+			}
 			return { text: decodeBuf(buf), encoding: "utf-8", size: buf.length, mtimeMs };
 		}
 

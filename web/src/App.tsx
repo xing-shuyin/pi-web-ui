@@ -467,6 +467,11 @@ export function App() {
 		previewOpenRef.current = previewFiles !== null;
 		pluginFileOpenRef.current = pluginFile;
 	}, [previewFiles, pluginFile]);
+	const openInVscodeEditor = useCallback((path: string) => {
+		(window as { __piVscodeEditorPendingOpen?: string }).__piVscodeEditorPendingOpen = path;
+		setView("plugin:vscode-editor");
+		window.dispatchEvent(new CustomEvent("pi:open-in-vscode-editor", { detail: { path } }));
+	}, []);
 	const openFile = useCallback((path: string, name: string) => {
 		const entry = findFileHandler(name);
 		if (entry) {
@@ -1084,6 +1089,10 @@ export function App() {
 							case "host:file-download":
 							case "host:file-open-default":
 								return isFile ? entry : { ...entry, hidden: true };
+							case "host:file-open-in-editor":
+								return isFile && enabledPlugins.some((p) => p.id === "vscode-editor")
+									? entry
+									: { ...entry, hidden: true };
 							case "host:file-attach-ref":
 								return isFile ? entry : { ...entry, hidden: true };
 							case "host:file-attach-folder":
@@ -1137,6 +1146,9 @@ export function App() {
 									break;
 								case "host:file-open-default":
 									if (tg.kind === "file") send({ type: "file_open_default", path: tg.id });
+									break;
+								case "host:file-open-in-editor":
+									if (tg.kind === "file") openInVscodeEditor(tg.id);
 									break;
 								case "host:file-copy-name":
 									void navigator.clipboard?.writeText(tg.label ?? tg.id);
@@ -3415,6 +3427,14 @@ export function App() {
 									setDrawer(null);
 									openFile(path, name);
 								}}
+								onOpenInEditor={
+									enabledPlugins.some((p) => p.id === "vscode-editor")
+										? (path) => {
+												setDrawer(null);
+												openInVscodeEditor(path);
+											}
+										: undefined
+								}
 								onNotice={(level, text) => pushNotice(level, text)}
 								uiRightPanelTabs={uiSlots["rightpanel.tabs"]}
 								uiContextFile={uiSlots["contextmenu.file"]}

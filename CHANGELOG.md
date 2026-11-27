@@ -10,6 +10,27 @@
 
 ## [Unreleased]
 
+## [0.125.0] - 2026-11-27
+
+### Added
+
+- **Bot 提示词组成定制与完整预览（`BotEditorForm` / `server/device-center/bot-prompt.ts`）**：支持在 Bot 编辑表单中按来源勾选要注入的系统提示词段落（`promptSections`），一键切换「仅 Bot 提示词」或「恢复默认」，并提供实时生成与复制完整系统提示词的预览能力。
+- **后台任务列表聚类卡片（`BgTaskCluster` / `web/src/bg-task-list.ts`）**：`bg_task` 工具列表结果自动解析并渲染为结构化的后台任务卡片，展示各任务状态、名称与输出摘要，支持切换查看原始文本。
+- **VS Code 编辑器图片预览与文件树快捷打开（`plugins/vscode-editor`）**：支持在内置编辑器标签页中直接预览图片并显示尺寸与格式信息，新增「在编辑器中打开」入口以在当前编辑器中直接打开工作区文件。
+
+### Changed
+
+- **Bot 执行与子代理提示词隔离优化**：细化 `execution-system-prompt.ts`、`core-settings-adapter.ts` 与 `subagent-runtime.ts` 的提示词分段装配与工具参数渲染。
+
+<!-- auto-i18n:start -->
+
+### i18n
+
+- 前端新增 key（17）：`fileOpenInEditor`、`localBotPromptComposition`、`localBotPromptPureOnly`、`localBotPromptResetDefault`、`localBotPromptFullPreview`、`localBotPromptPreviewLoading`、`localBotPromptCopy`、`localBotPromptCopied`、`promptTok_execution`、`promptTok_execution_desc`、`promptTok_memory`、`promptTok_memory_desc`、`bgTasksTitle`、`bgTasksSummary`、`bgTasksRunning`、`bgTasksRaw`、`bgTasksHideRaw`
+- 前端删除 key（4）：`localBotIdentityHint`、`localBotRuntimeHint`、`localBotPermissionsHint`、`localBotPrivatePrompt`
+
+<!-- auto-i18n:end -->
+
 ## [0.124.0] - 2026-11-27
 
 ### Added

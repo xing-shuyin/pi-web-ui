@@ -22,6 +22,8 @@ export interface BotHomeBot {
 	name: string;
 	description: string;
 	systemPrompt: string;
+	useGlobalPrompt?: boolean;
+	promptSections?: string[];
 	cwd: string;
 	model?: { provider: string; modelId: string };
 	tools: string[];
@@ -75,6 +77,8 @@ export async function exportBotHome(dataDir: string, bot: BotHomeBot & { id: str
 			name: bot.name,
 			description: bot.description,
 			systemPrompt: bot.systemPrompt,
+			...(bot.useGlobalPrompt !== undefined ? { useGlobalPrompt: bot.useGlobalPrompt } : {}),
+			...(bot.promptSections !== undefined ? { promptSections: [...bot.promptSections] } : {}),
 			cwd: bot.cwd,
 			...(bot.model ? { model: { provider: bot.model.provider, modelId: bot.model.modelId } } : {}),
 			tools: [...bot.tools],
@@ -142,6 +146,10 @@ export function parseBotHomeBundle(raw: unknown): BotHomeBundle {
 			name: text(botDef.name, 200, "name"),
 			description: typeof botDef.description === "string" ? botDef.description.slice(0, 4000) : "",
 			systemPrompt: typeof botDef.systemPrompt === "string" ? botDef.systemPrompt.slice(0, 32 * 1024) : "",
+			...(typeof botDef.useGlobalPrompt === "boolean" ? { useGlobalPrompt: botDef.useGlobalPrompt } : {}),
+			...(Array.isArray(botDef.promptSections)
+				? { promptSections: list(botDef.promptSections, "promptSections") }
+				: {}),
 			cwd: typeof botDef.cwd === "string" ? botDef.cwd : "",
 			...(model && typeof model.provider === "string" && typeof model.modelId === "string"
 				? { model: { provider: model.provider, modelId: model.modelId } }

@@ -15,6 +15,8 @@ export type Bot = {
 	name: string;
 	description: string;
 	systemPrompt: string;
+	useGlobalPrompt?: boolean;
+	promptSections?: string[];
 	cwd: string;
 	model?: { provider: string; modelId: string };
 	tools: string[];
@@ -39,6 +41,7 @@ const blank = (cwd = ""): Omit<Bot, "id" | "revision"> => ({
 	name: "",
 	description: "",
 	systemPrompt: "",
+	useGlobalPrompt: true,
 	cwd,
 	tools: [],
 	skills: [],
@@ -353,87 +356,98 @@ export function LocalBots({
 								void mutate();
 							}}
 						>
-							<header className="dc-bot-editor-head">
-								<span className="dc-bot-avatar" aria-hidden="true">
-									{draft.name.slice(0, 2).toUpperCase() || "B"}
-								</span>
-								<div>
-									<h3>{draft.name || t("localBotCreate")}</h3>
-									{draft.id && (
-										<small>
-											{draft.id} · r{draft.revision}
-										</small>
-									)}
-								</div>
-								<label className="dc-bot-enabled">
-									<input
-										type="checkbox"
-										role="switch"
-										disabled={busy}
-										checked={draft.enabled}
-										onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
-									/>
-									{t("localBotEnable")}
-								</label>
-								<button
-									className="dc-button dc-bot-drawer-close"
-									type="button"
-									aria-label={t("localBotCancel")}
-									disabled={busy}
-									onClick={closeDraft}
-								>
-									×
-								</button>
-							</header>
-							<div className="dc-bot-editor-body">
-								{error && (
-									<p className="dc-bot-error" role="alert">
-										{error}
-									</p>
-								)}
-								<BotEditorForm
-									variant="dialog"
-									value={draft}
-									onChange={(next) => setDraft({ ...draft, ...next })}
-									options={options}
-									optionsLoading={loading}
-									optionsError={optionsError}
-									onReloadOptions={() => setReload((value) => value + 1)}
-									busy={busy}
-									baseCwd={baseCwd.current || draft.cwd}
-									modelPortalTarget={drawer.current ?? document.body}
-									modelOpen={modelOpen}
-									onModelOpenChange={setModelOpen}
-								/>
-							</div>
-							<footer className="dc-actions dc-bot-editor-footer">
-								<button className="dc-button dc-bot-save" disabled={busy || !draft.cwd || !draft.name.trim()}>
-									{t("localBotSave")}
-								</button>
-								<button
-									className="dc-button"
-									type="button"
-									disabled={busy}
-									onClick={() => {
-										closeDraft();
-										setModelOpen(false);
-									}}
-								>
-									{t("localBotCancel")}
-								</button>
-								{draft.id && (
-									<button
-										className="dc-button is-danger"
-										type="button"
-										disabled={busy}
-										onClick={() => {
-											if (window.confirm(t("localBotDeleteConfirm"))) void mutate(true);
-										}}
-									>
-										{t("localBotDelete")}
-									</button>
-								)}
-							</footer>
+							<BotEditorForm
+								variant="dialog"
+								value={draft}
+								onChange={(next) => setDraft({ ...draft, ...next })}
+								options={options}
+								optionsLoading={loading}
+								optionsError={optionsError}
+								onReloadOptions={() => setReload((value) => value + 1)}
+								busy={busy}
+								baseCwd={baseCwd.current || draft.cwd}
+								modelPortalTarget={drawer.current ?? document.body}
+								modelOpen={modelOpen}
+								onModelOpenChange={setModelOpen}
+								dialogChrome={{
+									railHeader: (
+										<div className="dc-bot-b-badge">
+											<span className="dc-bot-avatar" aria-hidden="true">
+												{draft.name.slice(0, 2).toUpperCase() || "B"}
+											</span>
+											<div>
+												<h3>{draft.name || t("localBotCreate")}</h3>
+												{draft.id && (
+													<small>
+														{draft.id} · r{draft.revision}
+													</small>
+												)}
+											</div>
+										</div>
+									),
+									railFooter: (
+										<div className="dc-bot-b-rail-foot">
+											<label className="dc-bot-enabled">
+												<input
+													type="checkbox"
+													role="switch"
+													disabled={busy}
+													checked={draft.enabled}
+													onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
+												/>
+												{t("localBotEnable")}
+											</label>
+											{draft.id && (
+												<button
+													className="dc-button is-danger"
+													type="button"
+													style={{ width: "100%" }}
+													disabled={busy}
+													onClick={() => {
+														if (window.confirm(t("localBotDeleteConfirm"))) void mutate(true);
+													}}
+												>
+													{t("localBotDelete")}
+												</button>
+											)}
+										</div>
+									),
+									closeButton: (
+										<button
+											className="dc-button dc-bot-drawer-close"
+											type="button"
+											aria-label={t("localBotCancel")}
+											disabled={busy}
+											onClick={closeDraft}
+										>
+											×
+										</button>
+									),
+									errorBanner: error ? (
+										<p className="dc-bot-error" role="alert">
+											{error}
+										</p>
+									) : undefined,
+									footer: (
+										<>
+											<button
+												className="dc-button"
+												type="button"
+												disabled={busy}
+												onClick={() => {
+													closeDraft();
+													setModelOpen(false);
+												}}
+											>
+												{t("localBotCancel")}
+											</button>
+											<button className="dc-button dc-bot-save" disabled={busy || !draft.cwd || !draft.name.trim()}>
+												{t("localBotSave")}
+											</button>
+										</>
+									),
+								}}
+							/>
 						</form>
 					</dialog>
 				)}

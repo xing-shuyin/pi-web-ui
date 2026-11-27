@@ -66,6 +66,10 @@ import { QuestionnaireCard } from "./QuestionnaireCard";
 import { renderHighlightedCommand } from "../bash-danger";
 import { FileChangeCard } from "./FileChangeCard";
 import { parseFileMutationArgs } from "../file-diff";
+import { BgTaskCluster } from "./BgTaskCluster";
+import { parseBgTaskSnapshot } from "../bg-task-list";
+
+const BG_TOOL_NAMES: ReadonlySet<string> = new Set(["bg_run", "bg_status", "bg_logs", "bg_result", "bg_kill"]);
 
 export interface ToolView {
 	result?: UiMessage;
@@ -540,6 +544,12 @@ const ToolCallCard = memo(function ToolCallCard({
 		return rawOutput.replace(/…\[LIVE_OMIT:(\d+)\]…\n/, (_, n) => t("liveOutputOmitted", { n }));
 	}, [shown, rawOutput, t]);
 
+	const bgTaskSnapshot = useMemo(
+		() => (BG_TOOL_NAMES.has(block.name) && output.length > 0 ? parseBgTaskSnapshot(output) : null),
+		[block.name, output],
+	);
+	const hasBgCluster = Boolean(bgTaskSnapshot && bgTaskSnapshot.items.length > 0);
+
 	useEffect(() => {
 		if (shown && (running || waitingModel) && outputStickRef.current && outputPreRef.current) {
 			outputPreRef.current.scrollTop = outputPreRef.current.scrollHeight;
@@ -982,7 +992,15 @@ const ToolCallCard = memo(function ToolCallCard({
 						)
 					)}
 					{block.name === "tool_search" && <ToolSearchDetails details={view.result?.details} />}
-					{output.length > 0 && !(isQuestionnaire && questionnaireArgs) && !botDraftDetail && (
+					{hasBgCluster && bgTaskSnapshot && (
+						<BgTaskCluster
+							snapshot={bgTaskSnapshot}
+							rawOutput={output}
+							isError={isError}
+							running={running || waitingModel}
+						/>
+					)}
+					{output.length > 0 && !(isQuestionnaire && questionnaireArgs) && !botDraftDetail && !hasBgCluster && (
 						<div className="toolcall-output">
 							<div className="toolcall-output-label">
 								{isError ? t("errorOutput") : t("output")}

@@ -426,11 +426,23 @@ export function applyAgentToolsGating(
 		const allNames = session.getAllTools().map((t) => t.name);
 		const initialActiveNames = new Set(session.getActiveToolNames());
 
+		const registeredExtensionToolNames = new Set(
+			(
+				(
+					session as {
+						extensionRunner?: { getAllRegisteredTools?: () => Array<{ definition?: { name?: string } }> };
+					}
+				)?.extensionRunner?.getAllRegisteredTools?.() ?? []
+			)
+				.map((tool) => tool?.definition?.name)
+				.filter((name): name is string => typeof name === "string" && name.length > 0),
+		);
+
 		const names = new Set<string>();
 		for (const name of allNames) {
 			if (isHostManagedTool(name)) {
 				names.add(name);
-			} else if (initialActiveNames.has(name) && !off.has(name)) {
+			} else if ((initialActiveNames.has(name) || registeredExtensionToolNames.has(name)) && !off.has(name)) {
 				names.add(name);
 			}
 		}
@@ -438,17 +450,7 @@ export function applyAgentToolsGating(
 		for (const t of AGENT_TOOL_CATALOG) {
 			if (off.has(t.name)) {
 				const isShadowedCustomTool = t.name === toolNames.CONVERSATION_TOOL_NAME;
-				const hasExtensionTool =
-					isShadowedCustomTool &&
-					Boolean(
-						(
-							session as {
-								extensionRunner?: { getAllRegisteredTools?: () => Array<{ definition?: { name?: string } }> };
-							}
-						)?.extensionRunner
-							?.getAllRegisteredTools?.()
-							?.some((tool) => tool.definition?.name === t.name),
-					);
+				const hasExtensionTool = isShadowedCustomTool && registeredExtensionToolNames.has(t.name);
 				if (!hasExtensionTool) {
 					names.delete(t.name);
 				}

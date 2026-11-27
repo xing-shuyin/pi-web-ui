@@ -1346,6 +1346,7 @@ const deviceCenter = await installLocalDeviceCenter({
 	// dev 的 Vite 代理（页面 origin ≠ 后端 Host）由这里显式放行；生产反向代理通常同源。
 	allowOrigins: ALLOW_ORIGINS,
 	lanAccess: deviceLanAccess,
+	getGlobalPromptOverrides: () => sharedStateStore.getSettings("").promptOverrides,
 	botCatalog: {
 		defaultCwd: CWD,
 		dataDir: DATA_DIR,

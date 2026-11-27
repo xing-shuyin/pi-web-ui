@@ -766,7 +766,7 @@ export function TopBar({
 			<button
 				type="button"
 				className={`chip${quietMode.enabled ? " active" : ""}`}
-				data-tip={t("quietModeDesc")}
+				data-tip={t("quietMode")}
 				onClick={() => saveQuietModeSettings({ ...quietMode, enabled: !quietMode.enabled })}
 				aria-label={t("quietMode")}
 				aria-pressed={quietMode.enabled}

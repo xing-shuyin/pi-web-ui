@@ -152,6 +152,7 @@ export class UniversalSession implements DispatchSession {
 	private readonly driver: BaseAgentDriver;
 	private readonly sandboxes: SandboxManager;
 	private readonly markerSvc: MarkerService;
+	private readonly markerGuidedConvs = new Set<string>();
 	private worktreeInfo: WorktreeInfo | null = null;
 	private readonly dataDir: string;
 
@@ -411,7 +412,14 @@ export class UniversalSession implements DispatchSession {
 				origin.conv.title = title;
 				origin.conv.updatedAt = Date.now();
 				if (!origin.conv.isEphemeral) this.store.queueWrite(origin.cwd, origin.conv);
-				if (this.cwd === origin.cwd) this.flushSnapshot();
+				this.stateStore?.saveSessionTitle(origin.cwd, convId, title);
+				if (normalizePathKey(this.cwd) === normalizePathKey(origin.cwd)) {
+					this.emitConversations();
+					this.flushSnapshot();
+					void this.refreshSessions();
+				} else {
+					void this.pushSessionsForCwd(origin.cwd);
+				}
 			},
 			refreshMarkers: () => this.flushSnapshot(),
 			onActionsChange: (convId) => {
@@ -964,6 +972,7 @@ export class UniversalSession implements DispatchSession {
 
 			this.sessionDrafts.delete(conv.id);
 
+			const isFreshDriverSession = !conv.driverSessionId;
 			if (conv.driverSessionId) {
 				await this.driver.resumeSession(conv.driverSessionId);
 				if (!isCurrent()) return;
@@ -1067,11 +1076,14 @@ export class UniversalSession implements DispatchSession {
 				// Must return: async sink methods (onApprovalRequest wiring, future ones) rely on
 				// the value/promise; the original form swallowed it, so callers waited forever.
 				const guardedSink = this.guardSink(sink, isCurrent);
-				await this.driver.sendPrompt(
-					rebuiltContext ? `${rebuiltContext}\n\n${finalPrompt}` : finalPrompt,
-					effectiveAttachments,
-					guardedSink,
-				);
+				const shouldInjectMarkers =
+					this.driver.id !== "mock" &&
+					!text.trimStart().startsWith("/") &&
+					((isFreshDriverSession && !this.markerGuidedConvs.has(conv.id)) || Boolean(rebuiltContext));
+				const markerGuidance = shouldInjectMarkers ? this.markerSvc.buildGuidance().trim() : "";
+				if (shouldInjectMarkers) this.markerGuidedConvs.add(conv.id);
+				const promptParts = [markerGuidance, rebuiltContext, finalPrompt].filter(Boolean);
+				await this.driver.sendPrompt(promptParts.join("\n\n"), effectiveAttachments, guardedSink);
 			} catch (err: unknown) {
 				if (!isCurrent()) return;
 				const msg = err instanceof Error ? err.message : String(err);

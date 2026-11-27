@@ -41284,6 +41284,12 @@ var client_default = {
 		.vsc-editor { height: 100%; }
 		.vsc-editor .cm-editor { height: 100%; }
 		.vsc-editor .cm-scroller { font-family: ui-monospace, Consolas, "Cascadia Mono", monospace; }
+		.vsc-imgpreview { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+			justify-content: center; gap: 10px; padding: 16px; overflow: auto;
+			background: repeating-conic-gradient(rgba(128,128,128,.08) 0% 25%, transparent 0% 50%) 50% / 16px 16px; }
+		.vsc-imgpreview img { max-width: 100%; max-height: calc(100% - 28px); object-fit: contain;
+			border-radius: 4px; box-shadow: 0 2px 12px rgba(0,0,0,.25); }
+		.vsc-imgpreview-meta { font-size: 12px; opacity: .75; }
 		/* ---- 底部终端面板 ---- */
 		.vsc-termdrag { height: 4px; cursor: row-resize; flex-shrink: 0;
 			background: var(--bg-elev, #16161d); border-top: 1px solid var(--border, #333); }
@@ -41971,8 +41977,33 @@ var client_default = {
     }
     function syncGroupChrome(g) {
       if (!g) return;
+      const t2 = g.active ? tabs.get(g.active) : null;
+      const isImg = Boolean(t2?.imageUrl);
       g.emptyEl.classList.toggle("vsc-hidden", Boolean(g.active));
-      g.edHost.classList.toggle("vsc-hidden", !g.active);
+      g.edHost.classList.toggle("vsc-hidden", !g.active || isImg);
+      if (g.imgHost) {
+        g.imgHost.classList.toggle("vsc-hidden", !isImg);
+        if (isImg) {
+          if (g.imgHost.dataset.tabKey !== g.active) {
+            g.imgHost.dataset.tabKey = g.active;
+            const img = document.createElement("img");
+            img.alt = t2.name || t2.path;
+            img.src = t2.imageUrl;
+            const meta2 = document.createElement("div");
+            meta2.className = "vsc-imgpreview-meta";
+            const baseMeta = [t2.imageMime, t2.savedSize ? fmtSize(t2.savedSize) : ""].filter(Boolean).join(" · ");
+            meta2.textContent = baseMeta;
+            img.addEventListener("load", () => {
+              const dims = img.naturalWidth && img.naturalHeight ? `${img.naturalWidth}×${img.naturalHeight}` : "";
+              meta2.textContent = [dims, baseMeta].filter(Boolean).join(" · ");
+            });
+            g.imgHost.replaceChildren(img, meta2);
+          }
+        } else if (g.imgHost.dataset.tabKey) {
+          delete g.imgHost.dataset.tabKey;
+          g.imgHost.replaceChildren();
+        }
+      }
     }
     function clearStatusBar() {
       stScope.textContent = "";
@@ -42071,9 +42102,21 @@ var client_default = {
       empty2.innerHTML = emptyHintHTML();
       const edBox = document.createElement("div");
       edBox.className = "vsc-editor vsc-hidden";
-      wrap.append(empty2, edBox);
+      const imgBox = document.createElement("div");
+      imgBox.className = "vsc-imgpreview vsc-hidden";
+      wrap.append(empty2, edBox, imgBox);
       el2.append(bar, wrap);
-      const g = { id: gid, keys: [], active: null, el: el2, tabsEl: tabsBox, edHost: edBox, emptyEl: empty2, view: null };
+      const g = {
+        id: gid,
+        keys: [],
+        active: null,
+        el: el2,
+        tabsEl: tabsBox,
+        edHost: edBox,
+        imgHost: imgBox,
+        emptyEl: empty2,
+        view: null
+      };
       g.view = new EditorView({ state: EditorState.create({ extensions: makeExtensions(g) }), parent: edBox });
       groups.set(gid, g);
       el2.addEventListener("pointerdown", () => {
@@ -42819,6 +42862,8 @@ var client_default = {
           name: p.split("/").pop(),
           savedText: r.text ?? "",
           binary: !!r.binary,
+          imageUrl: r.image && r.dataUrl ? r.dataUrl : null,
+          imageMime: r.mime ?? null,
           dirty: false,
           conflict: false,
           readonly,
@@ -42828,7 +42873,7 @@ var client_default = {
         });
         const g = activeGroup() ?? ensureActiveGroup();
         if (g) g.keys.push(k);
-        if (r.binary) toast(tr2("binaryNo"));
+        if (r.binary && !r.image) toast(tr2("binaryNo"));
         else if (readonly) toast(tr2("bigReadonly"));
       }
       await activateTab(k);
@@ -44270,7 +44315,28 @@ var client_default = {
       if (r.ok && r.state) applyState(r.state);
     });
     applyI18n();
+    const openExternalPath = (rawPath) => {
+      if (!rawPath || typeof rawPath !== "string") return;
+      let rel = rawPath.replace(/\\/g, "/");
+      const normRoot = (localRoot || "").replace(/\\/g, "/").replace(/\/+$/, "");
+      if (normRoot && (rel === normRoot || rel.startsWith(`${normRoot}/`))) {
+        rel = rel.slice(normRoot.length + 1);
+      }
+      rel = rel.replace(/^\/+/, "");
+      if (rel) void openFile("local", rel);
+    };
+    const onExternalOpen = (ev) => {
+      const p = ev?.detail?.path;
+      if (p) openExternalPath(p);
+    };
+    window.addEventListener("pi:open-in-vscode-editor", onExternalOpen);
+    if (window.__piVscodeEditorPendingOpen) {
+      const pending2 = window.__piVscodeEditorPendingOpen;
+      window.__piVscodeEditorPendingOpen = null;
+      openExternalPath(pending2);
+    }
     return () => {
+      window.removeEventListener("pi:open-in-vscode-editor", onExternalOpen);
       container.ownerDocument.removeEventListener("keydown", onGlobalKey, true);
       window.removeEventListener("beforeunload", onBeforeUnload);
       document.removeEventListener("click", onDocClick);

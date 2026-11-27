@@ -26,12 +26,15 @@ export function createPromptRenderExtension(binding: PromptRenderBinding): Inlin
 					deferred: deferredToolNames(inventory),
 					settings: binding.settings(),
 				});
-				if (!tools) return undefined;
+				const botId = typeof binding.botId === "function" ? binding.botId() : binding.botId;
+				const isBot = Boolean(botId) || binding.clientId.startsWith("device-task-");
+				if (!tools && !isBot) return undefined;
 				const rendered = binding.port.render({
 					cwd: ctx.cwd,
 					clientId: binding.clientId,
 					conversationId: binding.conversationId,
-					tools,
+					...(botId ? { botId } : {}),
+					...(tools ? { tools } : {}),
 				});
 				return typeof rendered === "string" && rendered.trim() !== "" ? { systemPrompt: rendered } : undefined;
 			});

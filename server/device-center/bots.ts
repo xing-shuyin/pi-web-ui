@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/p
 import { join } from "node:path";
 import { DeviceWorkspaceError, validateDeviceProject } from "./workspaces.js";
 import { isBotToolHighPrivilege } from "./bot-execution.js";
+import { isBotPromptSection } from "./bot-prompt.js";
 
 export interface LocalBot {
 	id: string;
@@ -15,6 +16,10 @@ export interface LocalBot {
 	skills: string[];
 	mcpServers: string[];
 	enabled: boolean;
+	/** 是否使用全局系统提示词（缺省为 true：沿用全局模板/规则；false：仅使用 Bot 自身提示词及必要环境段）。 */
+	useGlobalPrompt?: boolean;
+	/** 显式勾选的系统提示词来源段（未设时按 useGlobalPrompt 推导默认集合）。 */
+	promptSections?: string[];
 	revision: number;
 	/**
 	 * 身份元数据（存量数据 / 迁移包兼容）：Bot registry 不按它自动调度。
@@ -89,6 +94,17 @@ function validate(input: LocalBot): LocalBot {
 	}
 	if (input.trigger !== undefined && !["on_demand", "always_on", "scheduled"].includes(input.trigger))
 		fail(400, "BOT_INVALID", "Invalid Bot trigger");
+	if (input.useGlobalPrompt !== undefined && typeof input.useGlobalPrompt !== "boolean")
+		fail(400, "BOT_INVALID", "Invalid Bot useGlobalPrompt");
+	if (input.promptSections !== undefined) {
+		if (
+			!Array.isArray(input.promptSections) ||
+			input.promptSections.length > 32 ||
+			input.promptSections.some((v) => typeof v !== "string" || !isBotPromptSection(v)) ||
+			new Set(input.promptSections).size !== input.promptSections.length
+		)
+			fail(400, "BOT_INVALID", "Invalid Bot promptSections");
+	}
 	if (
 		input.identity !== undefined &&
 		(!input.identity ||
@@ -109,6 +125,8 @@ function validate(input: LocalBot): LocalBot {
 		skills: [...input.skills],
 		mcpServers: [...input.mcpServers],
 		enabled: input.enabled,
+		...(input.useGlobalPrompt !== undefined ? { useGlobalPrompt: input.useGlobalPrompt } : {}),
+		...(input.promptSections !== undefined ? { promptSections: [...input.promptSections] } : {}),
 		revision: input.revision,
 		...(input.trigger ? { trigger: input.trigger } : {}),
 		...(input.identity

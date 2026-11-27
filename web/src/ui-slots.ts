@@ -1078,6 +1078,16 @@ export const BUILTIN_UI_ITEMS: BuiltinUiItem[] = [
 		group: "open",
 	},
 	{
+		id: "host:file-open-in-editor",
+		slot: "contextmenu.file",
+		labelKey: "fileOpenInEditor",
+		icon: "open",
+		kind: "action",
+		context: "file",
+		order: 12,
+		group: "open",
+	},
+	{
 		id: "host:file-enter",
 		slot: "contextmenu.file",
 		labelKey: "fileEnterDir",

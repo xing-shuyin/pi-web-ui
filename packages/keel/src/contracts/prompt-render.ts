@@ -29,7 +29,9 @@ export interface PromptRenderInput {
 	cwd: string;
 	clientId: string;
 	conversationId: string;
-	tools: LazyCatalogInput;
+	/** Bot 私聊的 Bot ID（仅 `kind: "bot"` 时提供，用于宿主查询 Bot 配置与提示词开关）。 */
+	botId?: string;
+	tools?: LazyCatalogInput;
 }
 
 export interface PromptRenderPort {
@@ -64,7 +66,10 @@ export interface PromptRenderHost {
 }
 
 /** 一次开会话的绑定：接线包 + 这条对话的 id（渲染体按它取会话与设置）。 */
-export type PromptRenderBinding = PromptRenderHost & { conversationId: string };
+export type PromptRenderBinding = PromptRenderHost & {
+	conversationId: string;
+	botId?: string | (() => string | undefined);
+};
 
 /**
  * 设置面顺带交出的渲染端口。

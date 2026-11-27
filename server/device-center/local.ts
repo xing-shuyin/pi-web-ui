@@ -7,10 +7,16 @@ import { createMobileNotificationForwarder } from "./mobile-notification-forward
 import { getLocalBotOptions, type BotCatalogSources } from "./bot-catalog.js";
 import { applyLocalBotPreset } from "./bot-presets.js";
 import { listBotChatTranscripts } from "./bot-chat.js";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, loadSkills } from "@earendil-works/pi-coding-agent";
 import type { BotDraft, BotDraftStore } from "./bot-drafts.js";
 import { resolveDraftReview } from "./bot-creation-tool.js";
-import { botMemoryRoot, createBotMemory, type BotMemory } from "./bot-memory.js";
+import { botMemoryRoot, buildBotMemoryInjection, createBotMemory, type BotMemory } from "./bot-memory.js";
+import { composeBotSystemPrompt, resolveBotPromptSections } from "./bot-prompt.js";
+import { getBotExecutionInstructions } from "./execution-instructions.js";
+import { BUILTIN_SOUL, resolveSectionTexts } from "../prompt-composer.js";
+import { buildPlatformConstraints } from "../platform-constraints.js";
+import { isRemoteWorkspaceUri } from "../../packages/keel/src/remote-workspace.js";
+import { formatCwdForPrompt } from "../remote-ssh-service.js";
 import { appendIdentityChange } from "./bot-identity.js";
 import { exportBotHome, importBotHome, parseBotHomeBundle } from "./bot-home.js";
 import { ALL_AGENT_TOOL_ENTRIES } from "../tool-manager.js";
@@ -82,6 +88,8 @@ interface Options {
 	/** 显式声明的同源例外（dev 的 Vite 代理：页面 origin 与后端 Host 不同）。 */
 	allowOrigins?: readonly string[];
 	lanAccess?: DeviceLanAccess;
+	/** 全局提示词覆盖（用于 Bot 提示词预览与运行时保持同源）。 */
+	getGlobalPromptOverrides?: () => Record<string, string> | undefined;
 }
 
 /** Hub enrollment accepts HTTP(S) origins, including public IP addresses. */
@@ -1191,6 +1199,8 @@ export async function installLocalDeviceCenter(options: Options) {
 							"skills",
 							"mcpServers",
 							"enabled",
+							"useGlobalPrompt",
+							"promptSections",
 							// GET 会回传这两个字段（身份台账 / 存量元数据），编辑时必须允许原样带回：
 							// 客户端把读到的 Bot 改一改再 POST 是正常用法。写入时身份由服务端重盖。
 							"identity",
@@ -1284,6 +1294,126 @@ export async function installLocalDeviceCenter(options: Options) {
 		} finally {
 			req.off("aborted", cancel);
 			res.off("close", cancel);
+		}
+	});
+	options.app.post("/api/device-center/local-bot-prompt-preview", async (req, res) => {
+		if (
+			(req.headers.origin || req.headers["sec-fetch-site"] === "cross-site") &&
+			!allowsLocalWriteOrigin(req.headers.origin, req.headers.host, allowOrigins)
+		) {
+			res.status(403).json({ code: "LOCAL_ONLY", error: "Same-origin request required" });
+			return;
+		}
+		res.setHeader("Cache-Control", "no-store");
+		try {
+			const body = (req.body && typeof req.body === "object" ? req.body : {}) as {
+				id?: unknown;
+				systemPrompt?: unknown;
+				cwd?: unknown;
+				tools?: unknown;
+				skills?: unknown;
+				promptSections?: unknown;
+				useGlobalPrompt?: unknown;
+			};
+			const agentDir = options.botCatalog?.agentDir ?? getAgentDir();
+			const fallbackCwd = options.botCatalog?.defaultCwd ?? process.cwd();
+			const requestedCwd = typeof body.cwd === "string" && body.cwd.trim() ? body.cwd.trim() : fallbackCwd;
+			let cwd = requestedCwd;
+			try {
+				cwd = await validateDeviceProject(requestedCwd, options.dataDir);
+			} catch {
+				cwd = requestedCwd;
+			}
+			const isRemote = isRemoteWorkspaceUri(cwd);
+			const readOpt = async (p: string): Promise<string> => {
+				try {
+					return await readFile(p, "utf8");
+				} catch {
+					return "";
+				}
+			};
+			const selectedTools = Array.isArray(body.tools)
+				? body.tools.filter((v): v is string => typeof v === "string")
+				: [];
+			const selectedSkillNames = Array.isArray(body.skills)
+				? body.skills.filter((v): v is string => typeof v === "string")
+				: [];
+			const toolSnippets: Record<string, string> = {};
+			for (const entry of ALL_AGENT_TOOL_ENTRIES) {
+				if (selectedTools.includes(entry.name)) {
+					toolSnippets[entry.name] = entry.name;
+				}
+			}
+			let skills: { name: string; description: string; filePath: string }[] = [];
+			if (!isRemote && selectedSkillNames.length > 0) {
+				try {
+					const loaded = loadSkills({ cwd, agentDir, skillPaths: [], includeDefaults: true });
+					const allowSet = new Set(selectedSkillNames);
+					skills = loaded.skills
+						.filter((s) => allowSet.has(s.name))
+						.map((s) => ({ name: s.name, description: s.description ?? "", filePath: s.filePath ?? "" }));
+				} catch {}
+			}
+			const systemFile = isRemote
+				? await readOpt(join(agentDir, "SYSTEM.md"))
+				: (await readOpt(join(cwd, ".pi", "SYSTEM.md"))) || (await readOpt(join(agentDir, "SYSTEM.md")));
+			const appendFile = isRemote
+				? await readOpt(join(agentDir, "APPEND_SYSTEM.md"))
+				: (await readOpt(join(cwd, ".pi", "APPEND_SYSTEM.md"))) || (await readOpt(join(agentDir, "APPEND_SYSTEM.md")));
+			const contextFiles: { path: string; content: string }[] = [];
+			for (const candidate of isRemote
+				? [join(agentDir, "AGENTS.md")]
+				: [join(agentDir, "AGENTS.md"), join(cwd, "AGENTS.md"), join(cwd, "CLAUDE.md")]) {
+				const content = await readOpt(candidate);
+				if (content.trim()) contextFiles.push({ path: candidate, content });
+			}
+			const sectionTexts = resolveSectionTexts({
+				cwd: formatCwdForPrompt(cwd),
+				systemPromptFile: systemFile || undefined,
+				builtinSoul: BUILTIN_SOUL,
+				selectedTools,
+				toolSnippets,
+				appendFiles: appendFile.trim() ? [appendFile] : [],
+				markersGuidance: "",
+				contextFiles,
+				skills,
+				lang: "zh",
+			});
+			let memoryBlock: string | undefined;
+			if (typeof body.id === "string" && body.id.trim()) {
+				try {
+					const root = botMemoryRoot(options.dataDir, body.id.trim());
+					memoryBlock = (
+						await buildBotMemoryInjection(createBotMemory({ root }), {
+							cwd,
+							searchable: selectedTools.includes("memory"),
+						})
+					)?.text;
+				} catch {}
+			}
+			const selectedSections = resolveBotPromptSections({
+				promptSections: Array.isArray(body.promptSections)
+					? body.promptSections.filter((v): v is string => typeof v === "string")
+					: undefined,
+				useGlobalPrompt: typeof body.useGlobalPrompt === "boolean" ? body.useGlobalPrompt : undefined,
+			});
+			const preview = composeBotSystemPrompt({
+				sectionTexts,
+				promptOverrides: options.getGlobalPromptOverrides?.(),
+				botSystemPrompt: typeof body.systemPrompt === "string" ? body.systemPrompt : "",
+				executionInstructions: getBotExecutionInstructions(false, true),
+				memoryBlock,
+				constraints: isRemote
+					? buildPlatformConstraints({ remoteCwd: cwd, planMode: false, delegateMode: false })
+					: undefined,
+				selectedSections,
+			});
+			res.json(preview);
+		} catch (error) {
+			res.status(500).json({
+				code: "BOT_PROMPT_PREVIEW_FAILED",
+				error: error instanceof Error ? error.message : "Failed to preview Bot prompt",
+			});
 		}
 	});
 	async function scaffoldBotHome(bot: { id: string; name: string; description: string }, draft: BotDraft) {
@@ -1626,6 +1756,8 @@ export async function installLocalDeviceCenter(options: Options) {
 				name: bundle.bot.name,
 				description: bundle.bot.description,
 				systemPrompt: bundle.bot.systemPrompt,
+				...(bundle.bot.useGlobalPrompt !== undefined ? { useGlobalPrompt: bundle.bot.useGlobalPrompt } : {}),
+				...(bundle.bot.promptSections !== undefined ? { promptSections: bundle.bot.promptSections } : {}),
 				cwd,
 				...(bundle.bot.model ? { model: bundle.bot.model } : {}),
 				tools,

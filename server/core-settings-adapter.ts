@@ -35,10 +35,14 @@ import {
 import {
 	BUILTIN_SOUL,
 	buildToolsSchemaText,
+	renderPromptTemplate,
 	resolveSectionTexts,
 	type PromptComposerInputs,
 	type ToolSchemaEntry,
 } from "./prompt-composer.js";
+import { getBotExecution } from "./device-center/bot-execution.js";
+import { getBotChatCapability } from "./device-center/bot-chat.js";
+import { composeBotSystemPrompt, resolveBotPromptSections } from "./device-center/bot-prompt.js";
 import { renderMainCompose } from "./prompt-assembler.js";
 import { formatCompactSignature } from "./tool-signature.js";
 import { readPromptBase } from "./prompt-base-store.js";
@@ -174,6 +178,10 @@ function computePromptSnapshot(
 		cwd?: string;
 		/** 内核算好的目录口径（常驻基线 + 按需目录）；缺省 = 按设置现算（设置帧预览走这条）。 */
 		tools?: LazyCatalogInput;
+		/** Bot 禁用全局系统提示词时，只保留工具 / 技能 / 工作目录等必要环境段。 */
+		skipGlobalPrompt?: boolean;
+		/** Bot 技能白名单：存在时仅保留白名单内的技能。 */
+		allowedSkills?: readonly string[];
 	},
 ): {
 	full: string;
@@ -244,12 +252,16 @@ function computePromptSnapshot(
 			}
 		}
 
-		const rawSkills =
+		const rawSkillsAll =
 			loader?.getSkills?.()?.skills?.map((s: any) => ({
 				name: s.name,
 				description: s.description ?? "",
 				filePath: s.filePath ?? "",
 			})) ?? [];
+		const allowedSkillSet = target?.allowedSkills ? new Set(target.allowedSkills) : undefined;
+		const rawSkills = allowedSkillSet
+			? rawSkillsAll.filter((s: { name: string }) => allowedSkillSet.has(s.name))
+			: rawSkillsAll;
 		const showSkills = presetShowsSkillCatalog(preset);
 		const effectiveSkills = showSkills
 			? fillSkillContents(rawSkills, settings.skillsFullText, {
@@ -280,16 +292,18 @@ function computePromptSnapshot(
 		};
 
 		const texts = resolveSectionTexts(inputs);
-		const rendered = renderMainCompose(inputs, {
-			promptTemplate: settings.promptTemplate,
-			promptOverrides: settings.promptOverrides,
-			promptDisabled: settings.promptDisabled ?? [],
-			preset,
-			disabledToolCount: effectiveDisabledAgentTools(settings).length,
-			isLazy: lazyOn,
-			hasSkills: effectiveSkills.length > 0,
-			hasSkillsFullText: (settings.skillsFullText?.length ?? 0) > 0,
-		});
+		const rendered = target?.skipGlobalPrompt
+			? renderPromptTemplate("{{tools}}\n\n{{skills}}\n\n{{cwd}}", texts, undefined)
+			: renderMainCompose(inputs, {
+					promptTemplate: settings.promptTemplate,
+					promptOverrides: settings.promptOverrides,
+					promptDisabled: settings.promptDisabled ?? [],
+					preset,
+					disabledToolCount: effectiveDisabledAgentTools(settings).length,
+					isLazy: lazyOn,
+					hasSkills: effectiveSkills.length > 0,
+					hasSkillsFullText: (settings.skillsFullText?.length ?? 0) > 0,
+				});
 
 		const constraints = buildPlatformConstraints({
 			remoteCwd: isRemoteWorkspaceUri(realCwd) ? realCwd : undefined,
@@ -312,9 +326,35 @@ function computePromptSnapshot(
  */
 function renderTurnPrompt(options: CoreSettingsAdapterOptions, input: PromptRenderInput): string | undefined {
 	const settings = options.stateStore.getSettings(options.clientId);
-	if (!lazyEffectiveOf(settings)) return undefined;
+	const botExecution = getBotExecution(input.clientId) ?? (input.botId ? getBotChatCapability(input.botId) : undefined);
+	if (!botExecution && !lazyEffectiveOf(settings)) return undefined;
 	const session = sessionOfConversation(options, input.conversationId);
 	if (!session) return undefined;
+	if (botExecution) {
+		const selectedSections = resolveBotPromptSections(botExecution.bot);
+		const snapshot = computePromptSnapshot(options, session, {
+			cwd: input.cwd,
+			tools: input.tools,
+			allowedSkills: botExecution.bot.skills,
+		});
+		const realCwd = restoreWorkspaceUriFromSessionDir(input.cwd);
+		const constraints = buildPlatformConstraints({
+			remoteCwd: isRemoteWorkspaceUri(realCwd) ? realCwd : undefined,
+			planMode: false,
+			delegateMode: false,
+			planPrompt: { mode: settings.planModePromptMode, custom: settings.planModePrompt },
+		});
+		const result = composeBotSystemPrompt({
+			sectionTexts: snapshot.texts,
+			promptOverrides: settings.promptOverrides,
+			botSystemPrompt: botExecution.bot.systemPrompt,
+			executionInstructions: botExecution.instructions,
+			memoryBlock: botExecution.memoryBlock,
+			constraints,
+			selectedSections,
+		});
+		return result.full || undefined;
+	}
 	const snapshot = computePromptSnapshot(options, session, { cwd: input.cwd, tools: input.tools });
 	return snapshot.full.trim() === "" ? undefined : snapshot.full;
 }

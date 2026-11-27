@@ -345,6 +345,34 @@ export function pickBotChatConversation<T extends BotChatConversationRef>(
 	return best;
 }
 
+const chatCapabilitiesByBotId = new Map<string, BotExecutionCapability>();
+
+/** 获取私聊会话的 Bot 提示词上下文（优先读取注册表最新配置，改完 Bot 提示词下一轮即生效）。 */
+export function getBotChatCapability(botId: string):
+	| {
+			readonly bot: Readonly<LocalBot>;
+			readonly instructions: string;
+			readonly memoryBlock?: string;
+	  }
+	| undefined {
+	const cached = chatCapabilitiesByBotId.get(botId);
+	let latest: LocalBot | undefined;
+	try {
+		const resolved = host?.resolve(botId);
+		if (resolved && typeof (resolved as Promise<unknown>).then !== "function") {
+			const candidate = resolved as LocalBot;
+			if (candidate.enabled) latest = candidate;
+		}
+	} catch {}
+	const bot = latest ?? cached?.bot;
+	if (!bot) return undefined;
+	return {
+		bot,
+		instructions: cached?.instructions ?? "",
+		memoryBlock: cached?.memoryBlock,
+	};
+}
+
 /**
  * 为一个私聊会话准备常驻的 Bot 能力（工具白名单 / 技能过滤 / 记忆 / 模型）。
  * 返回的 capability 会活到进程结束：不像设备任务那样一轮一 release——私聊会话要一直能接着聊。
@@ -382,5 +410,7 @@ export async function createBotChatCapability(botId: string): Promise<
 		memoryRoot,
 		memoryBlock,
 	});
+	chatCapabilitiesByBotId.get(bot.id)?.revoke();
+	chatCapabilitiesByBotId.set(bot.id, binding.capability);
 	return { bot, capability: binding.capability };
 }

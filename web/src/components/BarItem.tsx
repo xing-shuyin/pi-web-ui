@@ -1018,7 +1018,7 @@ export function BarItem({
 			labelText = named(t("quietMode"));
 			extraClasses = "chip";
 			isActive = quietMode.enabled;
-			tipOverride = t("quietModeDesc");
+			tipOverride = t("quietMode");
 			onClick = () => saveQuietModeSettings({ ...quietMode, enabled: !quietMode.enabled });
 			break;
 		case "host:device-center":

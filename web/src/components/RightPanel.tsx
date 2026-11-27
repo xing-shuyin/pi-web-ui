@@ -186,6 +186,7 @@ interface RightPanelProps {
 	plugins?: UiPluginInfo[];
 	pluginsEpoch?: number;
 	send?: (msg: { type: "plugin_message"; pluginId: string; payload: unknown }) => void;
+	onOpenInEditor?: (path: string) => void;
 }
 
 export const RightPanel = memo(function RightPanel({
@@ -208,6 +209,7 @@ export const RightPanel = memo(function RightPanel({
 	plugins,
 	pluginsEpoch,
 	send,
+	onOpenInEditor,
 }: RightPanelProps) {
 	const t = useT();
 	const pluginList = plugins ?? EMPTY_PLUGINS;
@@ -705,6 +707,9 @@ export const RightPanel = memo(function RightPanel({
 				case "host:file-open":
 					if (tg?.kind === "file") onPreview(tg.id, tg.label);
 					break;
+				case "host:file-open-in-editor":
+					if (tg?.kind === "file") onOpenInEditor?.(tg.id);
+					break;
 				case "host:file-enter":
 					if (tg?.kind === "dir") openDir(tg.id);
 					break;
@@ -826,6 +831,8 @@ export const RightPanel = memo(function RightPanel({
 					case "host:file-open-default":
 					case "host:file-attach-ref":
 						return isFile ? entry : { ...entry, hidden: true };
+					case "host:file-open-in-editor":
+						return isFile && onOpenInEditor ? entry : { ...entry, hidden: true };
 					case "host:file-reveal":
 						return !onMachineRoot && target.id !== MACHINE_ROOT ? entry : { ...entry, hidden: true };
 					case "host:file-enter":

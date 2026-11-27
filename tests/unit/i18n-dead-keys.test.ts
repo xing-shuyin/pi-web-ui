@@ -132,6 +132,11 @@ function dynamicKeys(): Set<string> {
 		out.add(`promptSec_${tk}_edit`);
 		out.add(`promptSec_${tk}_hint`);
 	}
+	// BotEditorForm.tsx (BOT_PROMPT_SECTION_ORDER) 动态拼接的 Bot 专属提示词段
+	for (const tk of ["execution", "memory"]) {
+		out.add(`promptTok_${tk}`);
+		out.add(`promptTok_${tk}_desc`);
+	}
 	for (const file of collectFiles(join(ROOT, "server/canvas"))) {
 		if (!file.endsWith(".ts")) continue;
 		const source = readFileSync(file, "utf8");

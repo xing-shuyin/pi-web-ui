@@ -11,6 +11,7 @@ import {
 	type CoreSettingsAdapterOptions,
 } from "../../server/core-settings-adapter.js";
 import { SettingsService } from "../../server/settings-service.js";
+import { registerBotExecution } from "../../server/device-center/bot-execution.js";
 import type { ServerMessage, UiSettingsState } from "../../server/protocol.js";
 
 const CLIENT_ID = "core-settings-client";
@@ -302,5 +303,62 @@ describe("宿主设置适配器（core-settings-adapter）", () => {
 		const host = createCoreSettingsHost(options());
 		await expect(host.reloadSession()).resolves.toBeUndefined();
 		expect(host.getMcpServers?.()).toEqual({ servers: [], globalPath: "", projectPath: "" });
+	});
+
+	it("Bot 执行按 useGlobalPrompt 决定是否叠加全局系统提示词", () => {
+		store.saveSettings(CLIENT_ID, { promptOverrides: { soul: "GLOBAL_SOUL_OVERRIDE" } });
+		const baseBot = {
+			id: "bot-prompt-test",
+			name: "PromptBot",
+			description: "test",
+			systemPrompt: "BOT_ONLY_SYSTEM_PROMPT",
+			cwd: dir,
+			tools: ["read"],
+			skills: [],
+			mcpServers: [],
+			enabled: true,
+			revision: 1,
+		};
+		const withGlobal = registerBotExecution({ ...baseBot, useGlobalPrompt: true }, undefined, { chat: true });
+		const withoutGlobal = registerBotExecution({ ...baseBot, useGlobalPrompt: false }, undefined, { chat: true });
+		try {
+			const frameWithGlobal = createCoreSettingsAdapter(options({ clientId: withGlobal.clientId }));
+			const renderedWithGlobal = frameWithGlobal.promptRender?.render({
+				cwd: dir,
+				clientId: withGlobal.clientId,
+				conversationId: "conv-1",
+			});
+			expect(renderedWithGlobal).toContain("GLOBAL_SOUL_OVERRIDE");
+			expect(renderedWithGlobal).toContain("<device_bot>\nBOT_ONLY_SYSTEM_PROMPT\n</device_bot>");
+
+			const frameWithoutGlobal = createCoreSettingsAdapter(options({ clientId: withoutGlobal.clientId }));
+			const renderedWithoutGlobal = frameWithoutGlobal.promptRender?.render({
+				cwd: dir,
+				clientId: withoutGlobal.clientId,
+				conversationId: "conv-2",
+			});
+			expect(renderedWithoutGlobal).not.toContain("GLOBAL_SOUL_OVERRIDE");
+			expect(renderedWithoutGlobal).not.toContain("# Core Engineering Principles");
+			expect(renderedWithoutGlobal).not.toContain("<device_execution>");
+			expect(renderedWithoutGlobal).not.toContain("demo");
+			expect(renderedWithoutGlobal).toContain("BOT_ONLY_SYSTEM_PROMPT");
+			expect(renderedWithoutGlobal).toContain(`Current working directory: ${dir.replace(/\\/g, "/")}`);
+		} finally {
+			withGlobal.release();
+			withoutGlobal.release();
+		}
+
+		const pureOnly = registerBotExecution({ ...baseBot, promptSections: [] }, undefined, { chat: true });
+		try {
+			const framePure = createCoreSettingsAdapter(options({ clientId: pureOnly.clientId }));
+			const renderedPure = framePure.promptRender?.render({
+				cwd: dir,
+				clientId: pureOnly.clientId,
+				conversationId: "conv-3",
+			});
+			expect(renderedPure).toBe("BOT_ONLY_SYSTEM_PROMPT");
+		} finally {
+			pureOnly.release();
+		}
 	});
 });

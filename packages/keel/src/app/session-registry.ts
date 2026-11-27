@@ -101,7 +101,13 @@ export class SessionRegistry {
 			// 模板子代理（`kind: "subagent"`）的提示词完全由 loader 的模板槽位决定，组合模板不接进去
 			// （老实现 `pi-webui-persona` 钩子里的 `if (apply) return undefined` 同一语义）。
 			...(this.promptRender && conv.meta.kind !== "subagent"
-				? { promptRender: { ...this.promptRender, conversationId: conv.id } }
+				? {
+						promptRender: {
+							...this.promptRender,
+							conversationId: conv.id,
+							botId: () => conv.meta.botId,
+						},
+					}
 				: {}),
 		});
 		if (opened.sessionFile && opened.sessionFile !== conv.meta.sessionFile) conv.setSessionFile(opened.sessionFile);
