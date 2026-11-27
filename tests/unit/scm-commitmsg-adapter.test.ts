@@ -7,6 +7,7 @@ import type { ClientStateStore } from "../../server/client-state.js";
 import { createCoreScmCommitMessage } from "../../server/core-scm-adapter.js";
 import {
 	generateScmCommitMessageForCurrent,
+	generateScmCommitMessageWithInference,
 	noScmCommitModelMessage,
 	type ScmCommitRuntime,
 } from "../../server/scm-commitmsg.js";
@@ -94,6 +95,35 @@ describe.skipIf(!hasGit)("generateScmCommitMessageForCurrent · happy path（真
 			const userText = String(seen[0].context.messages?.[0]?.content?.[0]?.text ?? "");
 			expect(userText).toContain("Staged diff");
 			expect(userText).toContain("a.txt");
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	}, 60000);
+
+	it("共享推断端口把系统提示词、真实 diff 和超时信号交给引擎，并清洗返回值", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "shared-scm-commitmsg-"));
+		try {
+			execFileSync("git", ["init", "-q"], { cwd: dir, windowsHide: true });
+			writeFileSync(join(dir, "c.txt"), "shared\n");
+			execFileSync("git", ["add", "c.txt"], { cwd: dir, windowsHide: true });
+			let seenPrompt = "";
+			let seenInput = "";
+			const result = await generateScmCommitMessageWithInference({
+				cwd: dir,
+				lang: "zh",
+				promptMode: "replace",
+				customPrompt: "只写一句中文",
+				infer: async (input, systemPrompt, signal) => {
+					seenInput = input;
+					seenPrompt = systemPrompt;
+					expect(signal).toBeInstanceOf(AbortSignal);
+					return "feat: 共享推断";
+				},
+			});
+			expect(result).toEqual({ ok: true, text: "feat: 共享推断" });
+			expect(seenPrompt).toBe("只写一句中文");
+			expect(seenInput).toContain("Staged diff");
+			expect(seenInput).toContain("c.txt");
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

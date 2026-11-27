@@ -5,12 +5,14 @@ import type { TransportPort } from "../../contracts/ports.js";
 export interface ProjectEntry {
 	path: string;
 	lastUsed: number;
+	name?: string;
 }
 
 /** 域对项目来源的窄面：只读最近列表与墓碑；扫盘与写回由适配器负责。 */
 export interface RecentProjectsSource {
 	recent(clientId: string): Promise<ProjectEntry[]>;
 	removed(clientId: string): readonly string[];
+	nameOf?(path: string): string | undefined;
 }
 
 export interface PushProjectsInput {
@@ -29,6 +31,7 @@ export interface OrderProjectsInput {
 	cwd: string;
 	recent: readonly ProjectEntry[];
 	removed: readonly string[];
+	cwdName?: string;
 }
 
 /**
@@ -44,10 +47,17 @@ export interface OrderProjectsInput {
 export function orderProjects(input: OrderProjectsInput): ProjectSummary[] {
 	const currentKey = normalizePathKey(input.cwd);
 	const removedKeys = new Set(input.removed.map(normalizePathKey));
-	const copied = input.recent.map((p) => ({ path: p.path, lastUsed: p.lastUsed }));
+	const copied: ProjectSummary[] = input.recent.map((p) => ({
+		path: p.path,
+		lastUsed: p.lastUsed,
+		...(p.name ? { name: p.name } : {}),
+	}));
 	const known = copied.some((p) => normalizePathKey(p.path) === currentKey);
 	if (removedKeys.has(currentKey) || known) return copied;
-	return [{ path: input.cwd, lastUsed: 0 }, ...copied].slice(0, RECENT_PROJECTS_MAX);
+	return [{ path: input.cwd, lastUsed: 0, ...(input.cwdName ? { name: input.cwdName } : {}) }, ...copied].slice(
+		0,
+		RECENT_PROJECTS_MAX,
+	);
 }
 
 export function buildProjectsFrame(projects: readonly ProjectSummary[]): ServerMessage {
@@ -57,7 +67,12 @@ export function buildProjectsFrame(projects: readonly ProjectSummary[]): ServerM
 async function readProjects(input: PushProjectsInput): Promise<ProjectSummary[]> {
 	try {
 		const recent = await input.source.recent(input.clientId);
-		return orderProjects({ cwd: input.cwd, recent, removed: input.source.removed(input.clientId) });
+		return orderProjects({
+			cwd: input.cwd,
+			recent,
+			removed: input.source.removed(input.clientId),
+			cwdName: input.source.nameOf?.(input.cwd),
+		});
 	} catch {
 		// 读不出来就发空帧（不抛）：客户端自己会把当前 cwd 补回列表，这里不去猜墓碑。
 		return [];

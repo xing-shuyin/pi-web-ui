@@ -2,11 +2,17 @@ import { existsSync } from "node:fs";
 import type { EngineService, DispatchSession } from "../engine-service.js";
 import type { ServerMessage, UiServiceInfo } from "../protocol.js";
 import type { ClientStateStore } from "../client-state.js";
-import type { PluginCommandDef } from "../plugins.js";
+import type {
+	PluginCommandDef,
+	PluginConversationQuery,
+	PluginConversationSnapshot,
+	PluginRunEvent,
+} from "../plugins.js";
 import { UniversalSessionStore } from "../universal/session-store.js";
 import { UniversalSession } from "../universal/universal-session.js";
 import { DurableAgentDriver } from "./durable-driver.js";
 import { getAppVersion } from "../pkg-info.js";
+import type { BackgroundTaskService } from "../background-task-service.js";
 
 export class DurableAgentService implements EngineService {
 	private readonly cwd: string;
@@ -15,20 +21,34 @@ export class DurableAgentService implements EngineService {
 	private readonly stateStore?: ClientStateStore;
 	private readonly sessions = new Map<string, UniversalSession>();
 	private readonly agentDir?: string;
+	private readonly backgroundTasks?: BackgroundTaskService;
+	private readonly internalMcpUrl?: () => string | null;
 
 	private quiesced = false;
 	private quiescedSince?: number;
 	private socketCount = 0;
 
 	pluginCommandsProvider?: () => PluginCommandDef[];
+	pluginToolsProvider?: (cwd?: string) => unknown[];
 	onQuit?: () => boolean;
+	onRunEvent?: (event: PluginRunEvent) => void;
+	onConversationChanged?: () => void;
 
-	constructor(opts: { cwd: string; dataDir: string; agentDir?: string; stateStore?: ClientStateStore }) {
+	constructor(opts: {
+		cwd: string;
+		dataDir: string;
+		agentDir?: string;
+		stateStore?: ClientStateStore;
+		backgroundTasks?: BackgroundTaskService;
+		internalMcpUrl?: () => string | null;
+	}) {
 		this.cwd = opts.cwd;
 		this.dataDir = opts.dataDir;
 		this.agentDir = opts.agentDir;
 		this.store = new UniversalSessionStore(opts.dataDir, "durable");
 		this.stateStore = opts.stateStore;
+		this.backgroundTasks = opts.backgroundTasks;
+		this.internalMcpUrl = opts.internalMcpUrl;
 	}
 
 	async attach(clientId: string, send: (msg: ServerMessage) => void): Promise<DispatchSession> {
@@ -44,7 +64,7 @@ export class DurableAgentService implements EngineService {
 				} catch {}
 			}
 			if (typeof this.stateStore?.remember === "function") {
-				this.stateStore.remember(clientId, effectiveCwd, { promote: false });
+				this.stateStore.remember(clientId, effectiveCwd, { promote: false, clearTombstone: false });
 			}
 
 			const driver = new DurableAgentDriver(effectiveCwd, { dataDir: this.dataDir, agentDir: this.agentDir });
@@ -59,8 +79,13 @@ export class DurableAgentService implements EngineService {
 				driver,
 				driverFactory: (cwd) => new DurableAgentDriver(cwd, { dataDir: this.dataDir, agentDir: this.agentDir }),
 				engine: "durable",
+				backgroundTasks: this.backgroundTasks,
+				internalMcpUrl: this.internalMcpUrl,
 				pluginCommandsProvider: () => this.pluginCommandsProvider?.() ?? [],
+				pluginToolsProvider: (cwd) => this.pluginToolsProvider?.(cwd) ?? [],
 				onQuit: () => this.onQuit?.() ?? false,
+				onRunEvent: (event) => this.onRunEvent?.(event),
+				onConversationChanged: () => this.onConversationChanged?.(),
 			});
 			this.sessions.set(clientId, session);
 			session.attachSink(send);
@@ -79,6 +104,17 @@ export class DurableAgentService implements EngineService {
 
 	get(clientId: string): DispatchSession | undefined {
 		return this.sessions.get(clientId);
+	}
+
+	readConversationForPlugins(opts?: PluginConversationQuery): PluginConversationSnapshot | null {
+		const targetId = opts?.clientId;
+		if (targetId) return this.sessions.get(targetId)?.readConversationForPlugins({ clientId: targetId }) ?? null;
+		let latest: PluginConversationSnapshot | null = null;
+		for (const session of this.sessions.values()) {
+			const snap = session.readConversationForPlugins();
+			if (snap && !snap.isSubagent && (!latest || snap.at > latest.at)) latest = snap;
+		}
+		return latest;
 	}
 
 	async disposeAll(): Promise<void> {

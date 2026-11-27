@@ -11,6 +11,7 @@ const DISCOVERY_TTL_MS = 60_000;
 export interface ProjectEntry {
 	path: string;
 	lastUsed: number;
+	name?: string;
 }
 
 export interface ProjectSourceOptions {
@@ -33,6 +34,7 @@ export interface ProjectSource {
 	recent(clientId: string): Promise<ProjectEntry[]>;
 	/** 用户明确移除过的路径（墓碑）：域据此判断「当前项目被移除就不补」。 */
 	removed(clientId: string): readonly string[];
+	nameOf?(path: string): string | undefined;
 	forget(clientId: string, path: string): void;
 	/** 之后不再扫盘（读仍可用）：本适配器没有定时器与文件句柄，没有别的资源要收。 */
 	close(): void;
@@ -85,6 +87,9 @@ export function createProjectSource(options: ProjectSourceOptions): ProjectSourc
 		},
 		removed(clientId) {
 			return store.getRemovedProjects(clientId);
+		},
+		nameOf(path) {
+			return store.getProjectName?.(path);
 		},
 		forget(clientId, path) {
 			store.removeProject(clientId, path);

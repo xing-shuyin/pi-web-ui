@@ -8,6 +8,6 @@
 	"name": "会话迁移",
 	"nameEn": "Session Migration",
 	"permissions": ["ui", "tools", "fs", "http"],
-	"version": "0.5.3",
+	"version": "0.5.4",
 	"view": true
 }

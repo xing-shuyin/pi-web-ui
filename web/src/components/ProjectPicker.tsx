@@ -19,8 +19,8 @@ interface ProjectPickerProps {
 	pathCompletions?: { name: string; path: string; type: "dir" | "file" }[];
 	workspaceRoots?: string[];
 	onClose: () => void;
-	onSelectDirectory: (path: string) => void;
-	onCreateProject?: (path: string) => void;
+	onSelectDirectory: (path: string, name?: string) => void;
+	onCreateProject?: (path: string, name?: string) => void;
 	mode?: "folder" | "project";
 }
 
@@ -49,8 +49,8 @@ export function ProjectPicker({
 			pathCompletions={pathCompletions}
 			workspaceRoots={workspaceRoots}
 			onClose={onClose}
-			onSelectDirectory={(p) => {
-				onSelectDirectory(p);
+			onSelectDirectory={(p, name) => {
+				onSelectDirectory(p, name);
 				onClose();
 			}}
 			onCreateProject={onCreateProject}

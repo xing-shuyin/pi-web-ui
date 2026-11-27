@@ -40,6 +40,12 @@ function kimiShareDir() {
 	return env || join(homedir(), ".kimi");
 }
 
+function agyBrainDir() {
+	const env = (process.env.AGY_HOME || "").trim();
+	const home = env ? (isAbsolute(env) ? env : resolve(process.cwd(), env)) : join(homedir(), ".gemini", "antigravity");
+	return join(home, "brain");
+}
+
 const SOURCES = [
 	{ id: "omp", dir: join(homedir(), ".omp", "agent", "sessions"), kind: "pi" },
 	{ id: "pi", dir: PI_DIR, kind: "pi" },
@@ -470,6 +476,93 @@ function convertKimi(contextFile, targetCwd) {
 	return { lines, skipped: 0, cwd: targetCwd };
 }
 
+function extractAgyUserText(raw) {
+	if (typeof raw !== "string") return "";
+	const reqMatch = raw.match(/<USER_REQUEST>\s*([\s\S]*?)\s*<\/USER_REQUEST>/);
+	if (reqMatch) return reqMatch[1].trim();
+	return raw.replace(/<ADDITIONAL_METADATA>[\s\S]*?<\/ADDITIONAL_METADATA>/g, "").trim();
+}
+
+function extractAgyCwdFromText(raw) {
+	if (typeof raw !== "string") return "";
+	const cmdCwd = raw.match(/Command Working Directory:\s*([^\r\n]+)/);
+	if (cmdCwd?.[1]?.trim()) return cmdCwd[1].trim();
+	const wsMatch = raw.match(/Active Workspaces:\s*\n\s*-\s*([^\r\n]+)/);
+	if (wsMatch?.[1]?.trim()) return wsMatch[1].trim();
+	return "";
+}
+
+function parseAgyTranscript(transcriptFile) {
+	const id = basename(resolve(transcriptFile, "..", "..", ".."));
+	const messages = [];
+	let timestamp = "";
+	let cwd = "";
+	let skipped = 0;
+	for (const line of readLines(transcriptFile)) {
+		const obj = parseJson(line);
+		if (!obj || typeof obj !== "object") continue;
+		if (!timestamp && typeof obj.created_at === "string") timestamp = obj.created_at;
+		if (!cwd && typeof obj.content === "string") cwd = extractAgyCwdFromText(obj.content);
+		if (obj.type === "USER_INPUT") {
+			const text = extractAgyUserText(obj.content);
+			if (text) messages.push({ role: "user", text });
+			else skipped++;
+		} else if (obj.type === "PLANNER_RESPONSE") {
+			const text = typeof obj.content === "string" ? obj.content.trim() : "";
+			if (text) messages.push({ role: "assistant", text });
+			else skipped++;
+		}
+	}
+	const preview = (messages.find((m) => m.role === "user")?.text || "").slice(0, 120);
+	return { id, cwd, timestamp, messages, preview, skipped };
+}
+
+function scanAgy() {
+	const brain = agyBrainDir();
+	if (!existsSync(brain)) {
+		return { items: [], note: `[agy] 目录不存在：${brain}（AGY_HOME 可覆盖，默认 ~/.gemini/antigravity）` };
+	}
+	const items = [];
+	for (const ent of readdirSync(brain, { withFileTypes: true })) {
+		if (!ent.isDirectory()) continue;
+		const transcript = join(brain, ent.name, ".system_generated", "logs", "transcript.jsonl");
+		if (!existsSync(transcript)) continue;
+		try {
+			const parsed = parseAgyTranscript(transcript);
+			if (parsed.messages.length === 0) continue;
+			items.push({
+				source: "agy",
+				file: transcript,
+				id: parsed.id,
+				cwd: parsed.cwd,
+				timestamp: parsed.timestamp,
+				messages: parsed.messages.length,
+				preview: parsed.preview,
+			});
+		} catch (err) {
+			items.push({ source: "agy", file: transcript, id: ent.name, error: String(err?.message || err) });
+		}
+	}
+	return { items };
+}
+
+function convertAgy(transcriptFile, targetCwd) {
+	const parsed = parseAgyTranscript(transcriptFile);
+	const cwd = targetCwd || parsed.cwd;
+	if (!cwd) throw new Error("agy 来源需指定目标 cwd（请填写目标项目路径）");
+	const ts = parsed.timestamp || new Date().toISOString();
+	const lines = [JSON.stringify({ type: "session", version: 3, id: randomUUID(), timestamp: ts, cwd })];
+	let parentId = null;
+	const push = (role, text) => {
+		const r = piMsg(role, text, parentId);
+		lines.push(r.line);
+		parentId = r.id;
+	};
+	push("user", `[imported-from:agy] ${IMPORT_NOTICE}`);
+	for (const m of parsed.messages) push(m.role, m.text);
+	return { lines, skipped: parsed.skipped, cwd, id: parsed.id };
+}
+
 function scanOpencode() {
 	try {
 		if (!existsSync(OPENCODE_DB)) return { items: [], note: `[opencode] 目录不存在：${OPENCODE_DB}` };
@@ -584,6 +677,9 @@ function scanSources() {
 	const kimi = scanKimi();
 	out.kimi = kimi.items;
 	if (kimi.note) out.notes.push(kimi.note);
+	const agy = scanAgy();
+	out.agy = agy.items;
+	if (agy.note) out.notes.push(agy.note);
 	return out;
 }
 
@@ -690,13 +786,16 @@ function importSessions(files, targetCwd) {
 			const norm = (p) => String(p || "").replace(/\\/g, "/");
 			const inGrok = norm(file).startsWith(norm(grokSessionsDir()));
 			const inKimi = norm(file).startsWith(norm(join(kimiShareDir(), "sessions")));
+			const inAgy = norm(file).startsWith(norm(agyBrainDir()));
 			const src = file.startsWith("opencode:")
 				? "opencode"
 				: inGrok
 					? "grok"
 					: inKimi
 						? "kimi"
-						: (SOURCES.find((s) => file.startsWith(s.dir))?.id ?? "pi");
+						: inAgy
+							? "agy"
+							: (SOURCES.find((s) => file.startsWith(s.dir))?.id ?? "pi");
 			let out;
 			let cwd;
 			if (src === "opencode" || file.startsWith("opencode:")) {
@@ -715,6 +814,10 @@ function importSessions(files, targetCwd) {
 				cwd = conv.cwd;
 			} else if (src === "kimi") {
 				const conv = convertKimi(file, targetCwd);
+				out = conv.lines;
+				cwd = conv.cwd;
+			} else if (src === "agy") {
+				const conv = convertAgy(file, targetCwd);
 				out = conv.lines;
 				cwd = conv.cwd;
 			} else if (src === "claude" || src === "codex") {
@@ -759,7 +862,9 @@ function importSessions(files, targetCwd) {
 					? basename(join(file, ".."))
 					: src === "kimi"
 						? basename(join(file, ".."))
-						: basename(file).replace(/\.[^.]+$/, "");
+						: src === "agy"
+							? basename(resolve(file, "..", "..", ".."))
+							: basename(file).replace(/\.[^.]+$/, "");
 			const dest = join(destDir, `${base || sessionId}.jsonl`);
 			if (existsSync(dest)) {
 				results.push({ file, ok: false, skipped: true, error: "目标已存在，跳过" });

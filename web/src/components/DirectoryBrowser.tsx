@@ -13,6 +13,7 @@ import {
 	FiHome,
 	FiMonitor,
 	FiServer,
+	FiTag,
 	FiTrash2,
 	FiX,
 } from "react-icons/fi";
@@ -93,9 +94,9 @@ interface DirectoryBrowserProps {
 	pathCompletions?: { name: string; path: string; type: "dir" | "file" }[];
 	workspaceRoots?: string[];
 	onClose: () => void;
-	onSelectDirectory: (path: string) => void;
+	onSelectDirectory: (path: string, name?: string) => void;
 	mode?: "folder" | "project";
-	onCreateProject?: (path: string) => void;
+	onCreateProject?: (path: string, name?: string) => void;
 	className?: string;
 	backdropClassName?: string;
 	role?: string;
@@ -137,6 +138,8 @@ export function DirectoryBrowser({
 		if (stored) return stored;
 		return isRemoteWorkspaceUri(currentCwd) ? "remote" : "local";
 	});
+	const [projectNameDraft, setProjectNameDraft] = useState("");
+	const customProjectName = mode === "project" ? projectNameDraft.trim() || undefined : undefined;
 
 	const setActiveTab = (tab: "local" | "remote") => {
 		setActiveTabState(tab);
@@ -255,7 +258,7 @@ export function DirectoryBrowser({
 	const commitLocal = (path: string) => {
 		const trimmed = path.trim();
 		if (!trimmed || trimmed === MACHINE_ROOT) return;
-		onSelectDirectory(trimmed);
+		onSelectDirectory(trimmed, customProjectName);
 	};
 
 	const goQuickJump = (target: string) => {
@@ -276,10 +279,10 @@ export function DirectoryBrowser({
 			}
 			const fullPath = joinProjectPath(browsePath, trimmed);
 			if (onCreateProject) {
-				onCreateProject(fullPath);
+				onCreateProject(fullPath, customProjectName);
 			} else {
 				appSend({ type: "make_dir", path: fullPath });
-				onSelectDirectory(fullPath);
+				onSelectDirectory(fullPath, customProjectName);
 			}
 			setShowNew(false);
 			setNewName("");
@@ -472,7 +475,7 @@ export function DirectoryBrowser({
 			resolved = `${homeDir.replace(/\/+$/, "")}/${resolved.slice(2).replace(/\\/g, "/")}`;
 		}
 		const uri = formatRemoteWorkspaceUri(sshUser, sshHost, port, resolved);
-		onSelectDirectory(uri);
+		onSelectDirectory(uri, customProjectName);
 		onClose();
 	};
 
@@ -489,10 +492,10 @@ export function DirectoryBrowser({
 		const uri = formatRemoteWorkspaceUri(sshUser, sshHost, port, abs);
 		if (mode === "project") {
 			if (onCreateProject) {
-				onCreateProject(uri);
+				onCreateProject(uri, customProjectName);
 			} else {
 				appSend({ type: "make_dir", path: uri });
-				onSelectDirectory(uri);
+				onSelectDirectory(uri, customProjectName);
 			}
 			setShowRemoteNew(false);
 			setRemoteNewName("");
@@ -700,6 +703,24 @@ export function DirectoryBrowser({
 								</TipButton>
 							)}
 						</div>
+						{mode === "project" && (
+							<div className="cwd-picker-row cwd-project-name-row">
+								<FiTag className="cwd-project-name-icon" aria-hidden="true" />
+								<input
+									className="status-cwd-input cwd-picker-input"
+									value={projectNameDraft}
+									placeholder={t("projectNamePlaceholder")}
+									spellCheck={false}
+									onChange={(e) => setProjectNameDraft(e.target.value)}
+									onKeyDown={(e) => {
+										if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+											e.preventDefault();
+											commitLocal(draft.trim() || browsePath);
+										}
+									}}
+								/>
+							</div>
+						)}
 						<div className="cwd-list">
 							{upPath && (
 								<div key=".." className="cwd-item">
@@ -1177,6 +1198,24 @@ export function DirectoryBrowser({
 										<FiCheck />
 									</TipButton>
 								</div>
+								{mode === "project" && (
+									<div className="cwd-picker-row cwd-project-name-row">
+										<FiTag className="cwd-project-name-icon" aria-hidden="true" />
+										<input
+											className="status-cwd-input cwd-picker-input"
+											value={projectNameDraft}
+											placeholder={t("projectNamePlaceholder")}
+											spellCheck={false}
+											onChange={(e) => setProjectNameDraft(e.target.value)}
+											onKeyDown={(e) => {
+												if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+													e.preventDefault();
+													commitRemote(remoteDraft.trim() || remoteCwd);
+												}
+											}}
+										/>
+									</div>
+								)}
 
 								<div className="cwd-list">
 									{!loadingRemoteDir && remoteUpPath && (

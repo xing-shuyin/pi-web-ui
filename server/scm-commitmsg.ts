@@ -70,6 +70,37 @@ export async function generateScmCommitMessageForCurrent(opts: {
 	});
 }
 
+export async function generateScmCommitMessageWithInference(opts: {
+	cwd: string;
+	lang: ServerLang;
+	promptMode?: "append" | "replace";
+	customPrompt?: string;
+	timeoutMs?: number;
+	/** 引擎只提供一次独立文本推断；git 采集、提示词、超时与清洗仍由本文件单源负责。 */
+	infer(input: string, systemPrompt: string, signal?: AbortSignal): Promise<string>;
+}): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+	const runtime: ScmCommitRuntime = {
+		completeSimple: async (_model, context, options) => {
+			const input = (context?.messages ?? [])
+				.flatMap((message: { content?: Array<{ type?: string; text?: string }> }) => message.content ?? [])
+				.filter((block: { type?: string }) => block.type === "text")
+				.map((block: { text?: string }) => block.text ?? "")
+				.join("\n");
+			const text = await opts.infer(input, context?.systemPrompt ?? "", options?.signal as AbortSignal | undefined);
+			return { stopReason: "stop", content: [{ type: "text", text }] };
+		},
+	};
+	return generateScmCommitMessage({
+		cwd: opts.cwd,
+		model: null,
+		runtime,
+		lang: opts.lang,
+		promptMode: opts.promptMode,
+		customPrompt: opts.customPrompt,
+		timeoutMs: opts.timeoutMs,
+	});
+}
+
 const MAX_FILE_LINES = 200;
 
 export const COMMITMSG_SYSTEM_PROMPT = `You write git commit messages. You receive the pending changes of a repository and output exactly one commit message: a single subject line.

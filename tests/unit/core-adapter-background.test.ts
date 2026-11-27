@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ServerMessage } from "../../server/protocol.js";
+import type { JobRegistry } from "../../server/job-runner.js";
 
 /**
  * 宿主后台任务适配器：`BgServerTracker`（真叶子）+ `JobRegistry`（替身：真实现会 spawn 进程）。
@@ -103,6 +104,7 @@ function makePort(overrides: Sinks = {}) {
 	const frames: ServerMessage[] = [];
 	let flushes = 0;
 	const port = createCoreBackground({
+		clientId: "client-1",
 		dataDir: "/data/pi-web",
 		emit: (msg) => frames.push(msg),
 		flushSnapshot: () => {
@@ -189,6 +191,7 @@ describe("后台任务适配器：装配", () => {
 		];
 		expect(trackerOpts.jobs()).toEqual([
 			{
+				kind: "job",
 				taskId: "job:abc",
 				pid: 11,
 				since: 5,
@@ -416,5 +419,17 @@ describe("后台任务适配器：7 个成员", () => {
 		const { port } = makePort();
 		port.dispose();
 		expect(h.disposed).toBe(1);
+	});
+
+	it("dispose：外部共享 JobRegistry 不归本适配器所有，切引擎不能把任务一起收掉", () => {
+		const shared = {
+			list: () => [],
+			killAll: () => [],
+			dispose: vi.fn(),
+		} as unknown as JobRegistry;
+		const { port } = makePort({ jobs: shared });
+		port.dispose();
+		expect(shared.dispose).not.toHaveBeenCalled();
+		expect(h.disposed).toBe(0);
 	});
 });

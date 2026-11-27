@@ -46,8 +46,9 @@
 
 - **RPC 方法仅 3 个**：`initialize`（cwd/provider/model/maxTokens）、`session/prompt`（sessionId + contentBlocks → 返回 `{messageId}`，**按需隐式建会话**）、`shutdown`。
 - **通知**：`session.event`（sessionId + event，全量持久事件）、`session.status`（running/idle）、`subagent.started` / `subagent.finished`。
-- **官方明确限制**：无 per-session close、无 prompt 取消、无 per-prompt 结果 → **中止 = 强杀运行时进程**，**换模型 = 重启运行时**，**会话管理/列表/回放 = 直读 JSONL**。
+- **官方明确限制**：JSON-RPC SDK 无 per-session close/cancel、无 per-prompt 结果；但 Agent 内核提供 `agent.cancel({kind:"user"})`。官方宿主直接持有 Agent 并调用它，pi-web-ui 通过自包装的 `session/cancel` RPC 复刻单会话停止，无需重启 runtime。换模型仍需切换/重启对应 runtime；会话管理/列表/回放 = 直读 JSONL。
 - 每进程一个 provider/model；`initialize` 无 provider adapter 时自动挂 dsh-llm-deepseek fallback。
+- **pi-web-ui 的 DSH Web 式隔离层**：每个 client 按 `provider + model` 共享 runtime，同模型的跨项目对话共用一个进程；每条 session 通过 `session/working-directory/set` 绑定自己的项目目录。切换对话/项目或给空闲对话换模型不会重启其他模型桶。停止单条对话通过 wrapper 的 `session/cancel` 调用 `agent.cancel({kind:"user"})`，只中止目标 session，并通过 `keepInbox:true` 保留排队消息。
 
 ### 2.2 运行时组合（已实证可 boot）
 
@@ -122,7 +123,7 @@
 **用户提问桥**（= pi 引擎 WebUIContext 等价物）：
 
 - DSH 机制：`dsh-user-questions`（ctx.userQuestions.ask() 阻塞等答案，registerProvider 注册 UI 侧）+ `dsh-tool-ask-user`（ask_user_question 工具，**base bundle 未挂，需 override.patch.yml 手动 insert**）。
-- 桥实现（goal-rpc.mjs）：apply 里 `ctx.userQuestions.registerProvider({ ask })` → 发 `question.pending` 通知 → 等 `question/answer` RPC（带 answers/cancelled）→ 恢复工具结果。单客户端隔离（每客户端一 runtime）。取消 → reject → 工具报错 → 模型继续。
+- 桥实现（goal-rpc.mjs）：apply 里 `ctx.userQuestions.registerProvider({ ask })` → 发 `question.pending` 通知（带 `sessionId`）→ 等 `question/answer` RPC（带 answers/cancelled）→ 恢复工具结果。每个 runtime 桶独立；服务端按 sessionId 路由回源 runtime，并在多个桶同时提问时串行展示。取消 → reject → 工具报错 → 模型继续。
 - 协议：客户端 `question_answer`；服务端 `question_pending`（questions 含 options{label,description,preview?}/multiSelect）。
 - 前端：QuestionDialog.tsx（每题单选/多选 + 自由文本补充 + 提交/取消，复用 .dialog-inline 样式）。`question/detail/description/preview` 走 `Markdown(rawHtml)` 富渲染（模型可自选 markdown 或 HTML）；选中带 `preview` 的选项时展示「选项预览」框，对齐 rpiv-ask-user-question。`preview` 为可选新增，DSH 模型未发时前端回退纯文本。
 - 实测：模型 ask_user_question → 浏览器收到"喜欢什么颜色 红/蓝/绿" → 答"蓝+偏深蓝" → 模型回应"你选择的是蓝（偏深蓝）"。
@@ -474,7 +475,7 @@ E:/pi-web-ui/server/dsh/
 - **无逐字流式**：message_delta 通道已实现，60ms 快照节流是设计使然（pi 同款）。
 - **queue = 发送即清**：DSH 无 mid-run steering，isStreaming 时 prompt 走 followUp，前端乐观消息即时入流。
 - **无独立审查者**：goal 完成/受阻由模型自判定（DSH 官方设计）；blocked 需连续 3 轮同条件。
-- **abort = 重启运行时**：所有会话的运行一起停（DSH 协议面无 per-session close）。
+- **abort = 单 session cancel**：wrapper 暴露 `session/cancel`，内部调用 Agent 的 `cancel({kind:"user"})`；普通停止保留 inbox，不重启 runtime。
 - **模型配置表单 / 自定义 provider**：DSH 引擎只有内置 deepseek 模型，v1 明确不支持。
 
 ### 8.6 dsh 专属冒烟套件（#22，本轮完成）

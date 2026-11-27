@@ -14,7 +14,7 @@ function appRoot() {
 }
 const base = () => `${appRoot()}/plugins-api/session-migrate`;
 
-const CHUNK_KINDS = ["omp", "pi", "claude", "codex", "opencode", "grok", "kimi"];
+const CHUNK_KINDS = ["omp", "pi", "claude", "codex", "opencode", "grok", "kimi", "agy"];
 
 function el(tag, style, text) {
 	const node = document.createElement(tag);
@@ -135,7 +135,7 @@ export default {
 				list.appendChild(rowEl);
 			}
 			say(
-				`omp ${data.omp?.length || 0} · pi ${data.pi?.length || 0} · claude ${data.claude?.length || 0} · codex ${data.codex?.length || 0} · opencode ${data.opencode?.length || 0} · grok ${data.grok?.length || 0} · kimi ${data.kimi?.length || 0}` +
+				`omp ${data.omp?.length || 0} · pi ${data.pi?.length || 0} · claude ${data.claude?.length || 0} · codex ${data.codex?.length || 0} · opencode ${data.opencode?.length || 0} · grok ${data.grok?.length || 0} · kimi ${data.kimi?.length || 0} · agy ${data.agy?.length || 0}` +
 					(data.notes?.length ? `\n${data.notes.join("\n")}` : ""),
 			);
 		};

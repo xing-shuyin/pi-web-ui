@@ -1546,9 +1546,9 @@ export type ClientMessage =
 	| { type: "set_default_model"; modelId: string }
 	| { type: "clear_default_model" }
 	| { type: "set_thinking"; level: string }
-	| { type: "set_cwd"; path: string }
+	| { type: "set_cwd"; path: string; name?: string }
 	| { type: "complete_path"; path: string }
-	| { type: "make_dir"; path: string; setAsCwd?: boolean }
+	| { type: "make_dir"; path: string; setAsCwd?: boolean; name?: string }
 	| { type: "dialog_response"; id: number; value: string | boolean | null }
 	| { type: "tui_overlay_input"; id: number; data: string }
 	| { type: "tui_overlay_resize"; id: number; cols: number; rows: number }
@@ -1663,6 +1663,7 @@ export type ClientMessage =
 			readDirEnabled?: boolean;
 			bgAutoCleanupMin?: number;
 			toolLazyLoading?: boolean;
+			internalMcpEnabled?: boolean;
 			codemodeMode?: "on" | "only";
 			codemodeInlineBudget?: number;
 			questionnaireEnabled?: boolean;
@@ -1936,6 +1937,7 @@ export type ClientMessage =
 			requestId?: string;
 	  }
 	| { type: "remove_project"; path: string }
+	| { type: "rename_project"; path: string; name: string }
 	| { type: "create_sandbox"; name?: string; sourcePath?: string; ephemeral?: boolean }
 	| { type: "reset_sandbox"; path?: string }
 	| { type: "persist_sandbox"; path?: string }
@@ -2133,6 +2135,7 @@ export interface WorktreeInfo {
 export interface ProjectSummary {
 	path: string;
 	lastUsed: number;
+	name?: string;
 	sandbox?: SandboxInfo;
 }
 
@@ -3207,6 +3210,7 @@ export interface UiSettingsState {
 	readDirEnabled: boolean;
 	bgAutoCleanupMin: number;
 	toolLazyLoading: boolean;
+	internalMcpEnabled?: boolean;
 	codemodeMode: "on" | "only";
 	codemodeInlineBudget: number;
 	questionnaireEnabled: boolean;

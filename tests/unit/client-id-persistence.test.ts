@@ -59,4 +59,16 @@ describe("getClientId 跨刷新持久化守护", () => {
 		const id2 = getClientId();
 		expect(id2).not.toBe(id1);
 	});
+
+	it("桌面主 Agent 视图通过 piDesktop.agentClientId 注入持久化 ID 时优先复用", () => {
+		const desktopWin = window as unknown as { piDesktop?: { agentClientId?: string } };
+		desktopWin.piDesktop = { agentClientId: "desktop-uuid-1234-5678" };
+		try {
+			const id = getClientId();
+			expect(id).toBe("desktop-uuid-1234-5678");
+			expect(sessionStorage.getItem("pi-web-client-id")).toBe("desktop-uuid-1234-5678");
+		} finally {
+			delete desktopWin.piDesktop;
+		}
+	});
 });

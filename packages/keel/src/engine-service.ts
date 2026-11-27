@@ -120,6 +120,7 @@ export interface DispatchSession {
 	setSessionListLimit?(cwd: string, limit?: number): number;
 	pushProjects(): Promise<void>;
 	removeProject(path: string): Promise<void>;
+	renameProject?(path: string, name: string): Promise<void>;
 	createSandbox?(opts: { name?: string; sourcePath?: string; ephemeral?: boolean }): Promise<void>;
 	resetSandbox?(path?: string): Promise<void>;
 	persistSandbox?(path?: string): Promise<void>;

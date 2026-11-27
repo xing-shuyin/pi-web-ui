@@ -26,6 +26,7 @@ export interface ClientState {
 	presets?: SettingsPreset[];
 	interrupted?: { title: string; cwd: string; at: number; sessionFile?: string }[];
 	removedProjects?: string[];
+	projectNames?: Record<string, string>;
 	workspaceRoots?: Record<string, string[]>;
 	projectProviderKeys?: Record<string, Record<string, string>>;
 	projectModels?: Record<string, string>;

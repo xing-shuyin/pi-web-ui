@@ -34,6 +34,7 @@ import { TERMINAL_TOOL_NAMES } from "../tool-manager.js";
 import { unattendedApprovalTimeoutMs } from "../tool-approval.js";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { BgServerTracker } from "../bg-servers.js";
+import type { BackgroundTaskService } from "../background-task-service.js";
 import { ModelAdminService } from "../model-admin.js";
 import { WebUIContext } from "../webui-context.js";
 import type { BaseAgentDriver, AgentEventSink, AgentTurnMeta } from "./driver-base.js";
@@ -66,6 +67,24 @@ import { SandboxManager } from "../sandbox-service.js";
 import { assertEngineWorkspaceSupported } from "../sandbox-engines.js";
 import { getWorktreeContext, removeWorktree } from "../worktree-service.js";
 import { MarkerService } from "../marker-service.js";
+import { stripMarkers } from "../markers/index.js";
+import { makePresentFilesTool } from "../present-files-tool.js";
+import { makeLspTool } from "../lsp-tool.js";
+import { makePatchTool } from "../patch-tool.js";
+import { makeAgentBotTool } from "../device-center/bot-creation-tool.js";
+import {
+	makeBrowserPageTool,
+	type PageCallRequest,
+	type PageCallResult,
+} from "../../packages/keel/src/browser-page-tool.js";
+import { makeBrowserScriptTool } from "../browser-script-tool.js";
+import { makeBrowserDesignTool } from "../browser-design-tool.js";
+import {
+	internalMcpRegistry,
+	isInternalMcpToolEligible,
+	unwrapInternalMcpToolName,
+	type InternalMcpToolDef,
+} from "./internal-mcp.js";
 import { SlashCommandsService, parseSlash } from "../slash-commands.js";
 import { discoverDiskSkills, readSkillInstruction, type DiscoveredSkill } from "../skill-discovery.js";
 import {
@@ -74,9 +93,16 @@ import {
 	formatPromptWithSkills,
 	materializeUploads,
 } from "./universal-attachments.js";
-import type { PluginCommandDef } from "../plugins.js";
-import { scmCommitContext } from "../scm.js";
-import { buildCommitMsgInput, sanitizeCommitMessage } from "../scm-commitmsg.js";
+import type {
+	PluginCommandDef,
+	PluginConversationQuery,
+	PluginConversationSnapshot,
+	PluginRunEvent,
+} from "../plugins.js";
+import { PluginTurnTimer } from "../../packages/keel/src/plugin-run-timing.js";
+import { generateScmCommitMessageWithInference } from "../scm-commitmsg.js";
+import { toWireModel } from "../../packages/keel/src/domains/models/catalog.js";
+import { mergeSettingsPatch } from "../settings-patch.js";
 import { getAppVersion } from "../pkg-info.js";
 import { createQueuedEntry, removeQueuedEntry, toQueuedPromptItems, type QueuedMessageEntry } from "../queue-utils.js";
 import {
@@ -116,6 +142,21 @@ import {
 
 const SNAPSHOT_INTERVAL_MS = 60;
 
+interface ActiveUniversalTurn {
+	conv: UniversalConversation;
+	cwd: string;
+	driver: BaseAgentDriver;
+	streamingMessage: UiMessage | null;
+	streamingThinking: string;
+	streamingText: string;
+	streamingBlockRaw: string;
+	pendingToolResults: UiMessage[];
+	followUpQueue: QueuedMessageEntry[];
+	pendingToolCalls: number;
+	runId: string;
+	turnTimer: PluginTurnTimer;
+}
+
 /** 把一份完整状态拆成「出帧闸要的输入」：light 参与内容键，messages 单独走（全量带上 / 增量切片）。 */
 function snapshotProductOf(state: UiState): SnapshotProduct {
 	const { messages, ...light } = state;
@@ -149,7 +190,7 @@ export class UniversalSession implements DispatchSession {
 	private pendingFullFrame = false;
 	private readonly store: UniversalSessionStore;
 	private readonly stateStore?: ClientStateStore;
-	private readonly driver: BaseAgentDriver;
+	private driver: BaseAgentDriver;
 	private readonly sandboxes: SandboxManager;
 	private readonly markerSvc: MarkerService;
 	private worktreeInfo: WorktreeInfo | null = null;
@@ -162,6 +203,7 @@ export class UniversalSession implements DispatchSession {
 	private readonly agentDir: string;
 
 	private readonly slash: SlashCommandsService;
+	private readonly pluginToolsProvider?: (cwd?: string) => unknown[];
 	private readonly pluginCommandsProvider?: () => PluginCommandDef[];
 	private readonly onQuit?: () => boolean;
 	private readonly subagentTemplates: SubagentTemplatesStore;
@@ -172,37 +214,44 @@ export class UniversalSession implements DispatchSession {
 	private version = 1;
 	private activeConvId: string;
 	private conversations = new Map<string, UniversalConversation>();
+	private readonly conversationDrivers = new Map<string, BaseAgentDriver>();
+	private readonly activeTurns = new Map<string, ActiveUniversalTurn>();
+	private readonly conversationAborts = new Map<string, Promise<void>>();
 
-	public isStreaming = false;
-	private turnConvId: string | null = null;
-	private turn: { conv: UniversalConversation; cwd: string } | null = null;
+	public get isStreaming(): boolean {
+		return this.activeTurns.has(this.activeConvId);
+	}
 	private projectGeneration = 0;
 	private switchingProject = false;
-	private abortPromise: Promise<void> | null = null;
 	private markerOrigins = new Map<string, { conv: UniversalConversation; cwd: string }>();
-	private streamingMessage: UiMessage | null = null;
-	private streamingThinking = "";
-	private streamingText = "";
-	private deltaSeq = 0;
+	private readonly deltaSeqByConversation = new Map<string, number>();
 	private snapshotTimer: NodeJS.Timeout | null = null;
-	private pendingToolResults: UiMessage[] = [];
 	/** Engine permission requests awaiting a human answer: approval id -> request info. */
 	private readonly pendingApprovals = new Map<
 		string,
-		{ requestId: string; toolName: string; driver?: BaseAgentDriver }
+		{ requestId: string; toolName: string; driver?: BaseAgentDriver; conversationId?: string }
 	>();
 	/** Auto-deny timers for approvals nobody may answer (unattended runs). */
 	private readonly approvalTimers = new Map<string, NodeJS.Timeout>();
+	private readonly pendingPageCalls = new Map<
+		string,
+		{ resolve: (res: PageCallResult) => void; timer: NodeJS.Timeout }
+	>();
+	private pageCallSeq = 0;
 	private readonly sessionDrafts = new Map<string, { text: string; ts: number }>();
-	private followUpQueue: QueuedMessageEntry[] = [];
 
 	private readonly engine: string;
+	private readonly backgroundTasks?: BackgroundTaskService;
 	private currentModel = "default";
 	private thinkingLevel = "medium";
 	private lang = "zh";
 	private readonly modelsMap = new Map<string, { id: string; name: string; provider: string; vision: boolean }>();
 
 	private readonly driverFactory?: DriverFactory;
+	private onRunEvent?: (event: PluginRunEvent) => void;
+	private onConversationChanged?: () => void;
+	private readonly internalMcpUrl?: () => string | null;
+	private lastPluginConversationId = "";
 	private readonly subagentDrivers = new Map<string, BaseAgentDriver>();
 	private subagentHandoffs: SubagentHandoffRecord[] = [];
 	private readonly subagentWaitListeners = new Set<() => void>();
@@ -221,14 +270,20 @@ export class UniversalSession implements DispatchSession {
 		driverFactory?: DriverFactory;
 		lang?: string;
 		engine?: string;
+		backgroundTasks?: BackgroundTaskService;
+		pluginToolsProvider?: (cwd?: string) => unknown[];
 		pluginCommandsProvider?: () => PluginCommandDef[];
 		onQuit?: () => boolean;
+		onRunEvent?: (event: PluginRunEvent) => void;
+		onConversationChanged?: () => void;
+		internalMcpUrl?: () => string | null;
 	}) {
 		this.clientId = opts.clientId;
 		this.cwd = opts.cwd;
 		this.dataDir = opts.dataDir ?? (opts.stateStore as any)?.dataDir ?? "";
 		this.agentDir = opts.agentDir ?? process.env.PI_CODING_AGENT_DIR ?? "";
 		this.engine = opts.engine ?? (opts.driver.id === "claude-code" ? "claude" : opts.driver.id);
+		this.backgroundTasks = opts.backgroundTasks;
 		this.sinks.add(opts.send);
 		this.store = opts.store;
 		this.stateStore = opts.stateStore;
@@ -239,8 +294,12 @@ export class UniversalSession implements DispatchSession {
 			if (savedMode) this.driver.setPermissionMode?.(savedMode);
 		} catch {}
 		this.driverFactory = opts.driverFactory;
+		this.pluginToolsProvider = opts.pluginToolsProvider;
 		this.pluginCommandsProvider = opts.pluginCommandsProvider;
 		this.onQuit = opts.onQuit;
+		this.onRunEvent = opts.onRunEvent;
+		this.onConversationChanged = opts.onConversationChanged;
+		this.internalMcpUrl = opts.internalMcpUrl;
 		this.sandboxes = new SandboxManager(this.dataDir);
 		assertEngineWorkspaceSupported(this.sandboxes, this.cwd, this.engine);
 		void this.refreshWorktreeInfo();
@@ -493,6 +552,8 @@ export class UniversalSession implements DispatchSession {
 			flushSnapshot: () => this.flushSnapshot(),
 			isDisposed: () => this.disposed,
 			pluginTasks: () => [],
+			jobs: () => this.backgroundTasks?.rows(this.clientId) ?? [],
+			killAllJobs: () => this.backgroundTasks?.killAllJobs(this.clientId) ?? [],
 			cleanupMinutes: () => 0,
 			workspaceCwd: () => this.cwd,
 		});
@@ -512,8 +573,9 @@ export class UniversalSession implements DispatchSession {
 		}
 
 		if (typeof this.stateStore?.remember === "function" && this.cwd) {
-			this.stateStore.remember(this.clientId, this.cwd, { promote: false });
+			this.stateStore.remember(this.clientId, this.cwd, { promote: false, clearTombstone: false });
 		}
+		this.conversationDrivers.set(this.activeConvId, this.driver);
 
 		if (this.driver instanceof CodexDriver) {
 			void probeCodex()
@@ -636,6 +698,30 @@ export class UniversalSession implements DispatchSession {
 		};
 	}
 
+	private freshDriver(cwd: string): BaseAgentDriver | null {
+		if (this.driverFactory) return this.driverFactory(cwd);
+		try {
+			return new (this.driver.constructor as new (cwd: string) => BaseAgentDriver)(cwd);
+		} catch {
+			return null;
+		}
+	}
+
+	private configureDriver(driver: BaseAgentDriver): void {
+		void Promise.resolve(driver.setModel?.(this.currentModel)).catch(() => {});
+		driver.setThinkingLevel?.(this.thinkingLevel);
+	}
+
+	private conversationDriver(conv: UniversalConversation): BaseAgentDriver {
+		const existing = this.conversationDrivers.get(conv.id);
+		if (existing) return existing;
+		const cwd = conv.cwd ?? this.cwd;
+		const driver = this.freshDriver(cwd) ?? this.driver;
+		this.configureDriver(driver);
+		this.conversationDrivers.set(conv.id, driver);
+		return driver;
+	}
+
 	attachSink(send: (msg: ServerMessage) => void): void {
 		this.sinks.add(send);
 		this.pushClaudePermission();
@@ -724,9 +810,10 @@ export class UniversalSession implements DispatchSession {
 					: null,
 		};
 		// 帧里的 `messages` 必须是**出帧那一刻**的快照（`conv.messages` 会继续长，模块外可能延后序列化）。
+		const activeTurn = this.activeTurns.get(conv.id);
 		const messages =
-			this.turnConvId === conv.id && this.pendingToolResults.length > 0
-				? [...conv.messages, ...this.pendingToolResults]
+			activeTurn && activeTurn.pendingToolResults.length > 0
+				? [...conv.messages, ...activeTurn.pendingToolResults]
 				: [...conv.messages];
 		const state: UiState = {
 			clientId: this.clientId,
@@ -736,8 +823,8 @@ export class UniversalSession implements DispatchSession {
 			conversationId: conv.id,
 			rev: this.rev,
 			messages,
-			streamingMessage: !this.turnConvId || this.turnConvId === conv.id ? this.streamingMessage : null,
-			isStreaming: !this.turnConvId || this.turnConvId === conv.id ? this.isStreaming : false,
+			streamingMessage: activeTurn?.streamingMessage ?? null,
+			isStreaming: Boolean(activeTurn),
 			turnTiming: conv.turnTiming ?? null,
 			isEphemeral: Boolean(conv.isEphemeral),
 			draft: this.sessionDrafts.get(conv.id) ?? null,
@@ -754,10 +841,10 @@ export class UniversalSession implements DispatchSession {
 					: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
 			queue: {
 				steering: [],
-				followUp: this.followUpQueue.map((q) => q.text),
+				followUp: activeTurn?.followUpQueue.map((q) => q.text) ?? [],
 				entries: {
 					steering: [],
-					followUp: toQueuedPromptItems(this.followUpQueue),
+					followUp: toQueuedPromptItems(activeTurn?.followUpQueue ?? []),
 				},
 			},
 			tools: [],
@@ -804,13 +891,40 @@ export class UniversalSession implements DispatchSession {
 		return this.activeConvId;
 	}
 
+	readConversationForPlugins(opts?: PluginConversationQuery): PluginConversationSnapshot | null {
+		if (opts?.clientId && opts.clientId !== this.clientId) return null;
+		const conv = this.conversations.get(this.activeConvId);
+		if (!conv) return null;
+		const stats = conv.stats;
+		return {
+			clientId: this.clientId,
+			conversationId: conv.id,
+			isSubagent: Boolean(conv.isSubagent),
+			sessionId: conv.driverSessionId ?? conv.id,
+			title: conv.title,
+			model: this.currentModel,
+			at: conv.updatedAt,
+			isStreaming: this.activeTurns.has(conv.id),
+			messages: this.getMessagesOfConversation(conv.id) ?? [],
+			streamingMessage: this.activeTurns.get(conv.id)?.streamingMessage ?? null,
+			stats: {
+				totalMessages: conv.messages.length,
+				tokens: {
+					input: stats?.tokens.input ?? 0,
+					output: stats?.tokens.output ?? 0,
+					total: stats?.tokens.total ?? 0,
+				},
+				cost: stats?.cost ?? 0,
+			},
+		};
+	}
+
 	getMessagesOfConversation(convId: string): UiMessage[] | undefined {
 		if (!convId) return undefined;
 		const conv = this.resolveConversationAcrossProjects(convId).conv;
 		if (!conv) return undefined;
-		return this.turnConvId === conv.id && this.pendingToolResults.length > 0
-			? [...conv.messages, ...this.pendingToolResults]
-			: [...conv.messages];
+		const pending = this.activeTurns.get(conv.id)?.pendingToolResults;
+		return pending && pending.length > 0 ? [...conv.messages, ...pending] : [...conv.messages];
 	}
 
 	async prompt(
@@ -820,13 +934,14 @@ export class UniversalSession implements DispatchSession {
 		targetConv = this.activeConv,
 		rebuiltContext = "",
 	): Promise<void> {
-		assertEngineWorkspaceSupported(this.sandboxes, this.cwd, this.engine);
-		if (this.switchingProject || this.disposed || this.abortPromise) return;
-		const generation = this.projectGeneration;
-		if (this.isStreaming) {
+		const targetCwd = targetConv.cwd ?? this.cwd;
+		assertEngineWorkspaceSupported(this.sandboxes, targetCwd, this.engine);
+		if (this.switchingProject || this.disposed || this.conversationAborts.has(targetConv.id)) return;
+		const activeTurn = this.activeTurns.get(targetConv.id);
+		if (activeTurn) {
 			if (_queue === true) {
 				const entry = createQueuedEntry(text, { attachments });
-				this.followUpQueue.push(entry);
+				activeTurn.followUpQueue.push(entry);
 				this.flushSnapshot();
 				this.emitNotice(
 					"info",
@@ -840,7 +955,7 @@ export class UniversalSession implements DispatchSession {
 				"正在插队，中断当前生成并提交新问题...",
 				"Steering: aborting current turn and submitting prompt...",
 			);
-			await this.abort();
+			await this.abortConversation(targetConv.id);
 		}
 
 		const slash = parseSlash(text);
@@ -857,7 +972,7 @@ export class UniversalSession implements DispatchSession {
 					return;
 				}
 				try {
-					const { convId } = await this.spawnSubagent(subPrompt, type, this.cwd);
+					const { convId } = await this.spawnSubagent(subPrompt, type, targetCwd);
 					// Record the dispatch itself: `/subagent …` is a task instruction, not a pure
 					// settings command, so without it the transcript shows a subagent appearing
 					// out of nowhere (and the notice above is transient).
@@ -872,7 +987,7 @@ export class UniversalSession implements DispatchSession {
 						});
 						dispatchConv.updatedAt = dispatchNow;
 						if (!dispatchConv.isEphemeral) {
-							await this.store.saveConversation(this.cwd, dispatchConv);
+							await this.store.saveConversation(targetCwd, dispatchConv);
 						}
 						this.flushSnapshot();
 					}
@@ -889,7 +1004,7 @@ export class UniversalSession implements DispatchSession {
 			}
 			if (slash.name.startsWith("skill:")) {
 				const skillName = slash.name.slice(6);
-				const skills = await this.collectUniversalSkills();
+				const skills = await this.collectUniversalSkills(targetCwd);
 				const found = skills.find(
 					(s) =>
 						s.name.toLowerCase() === skillName.toLowerCase() ||
@@ -904,34 +1019,55 @@ export class UniversalSession implements DispatchSession {
 				}
 			}
 			// Native CLI commands (e.g. Claude Code's /compact, /init, skills) go to the engine verbatim.
-			if (!this.driver.handlesNativeSlashCommand?.(slash.name)) {
+			if (!this.conversationDriver(targetConv).handlesNativeSlashCommand?.(slash.name)) {
 				const handled = await this.slash.exec(slash.name, slash.args);
 				if (handled) return;
 			}
 		}
 
-		if (this.switchingProject || this.disposed || this.abortPromise || generation !== this.projectGeneration) return;
-		if (this.activeConv !== targetConv) return;
-		// 真的发消息才算「项目最近对话」：左栏项目排序只认这个，浏览/切换不刷新
-		if (typeof this.stateStore?.remember === "function") this.stateStore.remember(this.clientId, this.cwd);
+		if (
+			this.switchingProject ||
+			this.disposed ||
+			this.conversationAborts.has(targetConv.id) ||
+			this.activeTurns.has(targetConv.id)
+		)
+			return;
+		if (typeof this.stateStore?.remember === "function") this.stateStore.remember(this.clientId, targetCwd);
 		void this.pushProjects().catch(() => {});
-		this.isStreaming = true;
+		const driver = this.conversationDriver(targetConv);
+		const runId = `ur-${randomUUID()}`;
+		const turn: ActiveUniversalTurn = {
+			conv: targetConv,
+			cwd: targetCwd,
+			driver,
+			streamingMessage: null,
+			streamingThinking: "",
+			streamingText: "",
+			streamingBlockRaw: "",
+			pendingToolResults: [],
+			followUpQueue: [],
+			pendingToolCalls: 0,
+			runId,
+			turnTimer: new PluginTurnTimer((event) => this.onRunEvent?.(event), {
+				conversationId: targetConv.id,
+				clientId: this.clientId,
+				sessionId: targetConv.driverSessionId,
+			}),
+		};
+		this.activeTurns.set(targetConv.id, turn);
+		startTurnTiming(targetConv);
 		const conv = targetConv;
-		startTurnTiming(conv);
-		const turn = { conv, cwd: this.cwd };
-		this.turn = turn;
-		const isCurrent = () => this.turn === turn && !this.disposed;
-		this.turnConvId = conv.id;
+		const isCurrent = () => this.activeTurns.get(conv.id) === turn && !this.disposed;
 		const now = Date.now();
 
 		try {
-			const availableSkills = await this.collectUniversalSkills();
+			const availableSkills = await this.collectUniversalSkills(turn.cwd);
 			if (!isCurrent()) return;
 			const scanResult = scanAtMentions(text, turn.cwd, availableSkills, attachments ?? []);
 			const effectiveAttachments = materializeUploads([...(attachments ?? []), ...scanResult.detectedAttachments], {
 				clientId: this.clientId,
 				dataDir: this.dataDir,
-				maxInlineImageBytes: this.driver.maxInlineImageBytes,
+				maxInlineImageBytes: driver.maxInlineImageBytes,
 			});
 			const finalPrompt = formatPromptWithSkills(text, scanResult.detectedSkills);
 
@@ -941,10 +1077,10 @@ export class UniversalSession implements DispatchSession {
 				const cleanTitle = trimmed.length > 30 ? `${trimmed.slice(0, 30)}…` : trimmed;
 				conv.title = cleanTitle;
 				if (this.stateStore) {
-					this.stateStore.saveSessionTitle(this.cwd, conv.id, cleanTitle);
+					this.stateStore.saveSessionTitle(turn.cwd, conv.id, cleanTitle);
 				}
 				if (!conv.isEphemeral) {
-					await this.store.saveConversation(this.cwd, conv);
+					await this.store.saveConversation(turn.cwd, conv);
 				}
 				void this.refreshSessions();
 			}
@@ -966,16 +1102,17 @@ export class UniversalSession implements DispatchSession {
 
 			conv.updatedAt = now;
 			if (!conv.isEphemeral) {
-				await this.store.saveConversation(this.cwd, conv);
+				await this.store.saveConversation(turn.cwd, conv);
 			}
 
 			this.sessionDrafts.delete(conv.id);
+			this.emitConversations();
 
 			if (conv.driverSessionId) {
-				await this.driver.resumeSession(conv.driverSessionId);
+				await driver.resumeSession(conv.driverSessionId);
 				if (!isCurrent()) return;
 			} else {
-				const sid = await this.driver.createSession();
+				const sid = await driver.createSession();
 				if (!isCurrent()) return;
 				conv.driverSessionId = sid;
 				if (!conv.isEphemeral) {
@@ -984,9 +1121,7 @@ export class UniversalSession implements DispatchSession {
 			}
 
 			const assistantMsgId = `a-${now}-${randomUUID().slice(0, 6)}`;
-			this.streamingThinking = "";
-			this.streamingText = "";
-			this.streamingMessage = {
+			turn.streamingMessage = {
 				id: assistantMsgId,
 				role: "assistant",
 				content: [],
@@ -996,45 +1131,83 @@ export class UniversalSession implements DispatchSession {
 
 			this.flushSnapshot();
 
+			this.onRunEvent?.({
+				type: "run_start",
+				conversationId: conv.id,
+				clientId: this.clientId,
+				sessionId: conv.driverSessionId,
+				runId,
+				at: Date.now(),
+			});
+			turn.turnTimer.setSessionId(conv.driverSessionId);
+			turn.turnTimer.start();
+
 			const sink: AgentEventSink = {
 				onSessionStarted: (sessionId) => {
 					conv.driverSessionId = sessionId;
+					turn.turnTimer.setSessionId(sessionId);
 					if (!conv.isEphemeral) this.store.queueWrite(turn.cwd, conv);
 				},
 				onThinkingDelta: (delta: string) => {
-					this.streamingThinking += delta;
-					if (!this.streamingMessage) return;
-					const lastBlock = this.streamingMessage.content.at(-1);
+					if (delta) turn.turnTimer.first();
+					turn.streamingThinking += delta;
+					if (!turn.streamingMessage) return;
+					const lastBlock = turn.streamingMessage.content.at(-1);
 					if (lastBlock?.type === "thinking") {
 						lastBlock.thinking += delta;
 					} else {
-						this.streamingMessage.content.push({ type: "thinking", thinking: delta });
+						turn.streamingMessage.content.push({ type: "thinking", thinking: delta });
 					}
-					this.emitDelta({ type: "thinking_delta", delta });
+					this.emitDelta(turn, { type: "thinking_delta", delta });
 				},
 				onTextDelta: (delta: string) => {
-					this.streamingText += delta;
-					if (!this.streamingMessage) return;
-					const lastBlock = this.streamingMessage.content[this.streamingMessage.content.length - 1];
+					if (delta) turn.turnTimer.first();
+					turn.streamingText += delta;
+					if (!turn.streamingMessage) return;
+					const lastBlock = turn.streamingMessage.content[turn.streamingMessage.content.length - 1];
+					const hasMarker = turn.streamingBlockRaw.includes("[[") || delta.includes("[[");
 					if (lastBlock && lastBlock.type === "text" && !lastBlock.truncated) {
+						turn.streamingBlockRaw += delta;
+						if (hasMarker) {
+							(lastBlock as UiTextBlock).text = stripMarkers(turn.streamingBlockRaw, {
+								stripTrailingIncomplete: true,
+							});
+							this.scheduleThrottledSnapshot();
+							return;
+						}
 						(lastBlock as UiTextBlock).text += delta;
 					} else {
-						this.streamingMessage.content.push({ type: "text", text: delta });
+						turn.streamingBlockRaw = delta;
+						const text = hasMarker ? stripMarkers(delta, { stripTrailingIncomplete: true }) : delta;
+						turn.streamingMessage.content.push({ type: "text", text });
+						if (hasMarker) {
+							this.scheduleThrottledSnapshot();
+							return;
+						}
 					}
-					this.emitDelta({ type: "text_delta", delta });
+					this.emitDelta(turn, { type: "text_delta", delta });
 				},
 				onToolStart: (callId: string, toolName: string, args: Record<string, unknown>) => {
-					if (!this.streamingMessage) return;
+					turn.pendingToolCalls += 1;
+					turn.turnTimer.first();
+					if (!turn.streamingMessage) return;
+					const displayToolName = unwrapInternalMcpToolName(toolName);
 					const toolBlock: UiContentBlock = {
 						type: "toolCall",
 						id: callId,
-						name: toolName,
+						name: displayToolName,
 						argumentsText: JSON.stringify(args, null, 2),
 					};
-					this.streamingMessage.content.push(toolBlock);
+					turn.streamingMessage.content.push(toolBlock);
 					this.flushSnapshot();
 				},
 				onToolEnd: (callId: string, result: { output?: string; error?: string }) => {
+					// CLI 在工具结果后发起下一次模型请求；从此刻重新计首包。
+					turn.pendingToolCalls = Math.max(0, turn.pendingToolCalls - 1);
+					if (turn.pendingToolCalls === 0) {
+						if (turn.turnTimer.isActive) turn.turnTimer.end();
+						turn.turnTimer.start();
+					}
 					const toolMsg: UiMessage = {
 						id: `t-${callId}`,
 						role: "toolResult",
@@ -1043,16 +1216,16 @@ export class UniversalSession implements DispatchSession {
 						isError: Boolean(result.error),
 						timestamp: Date.now(),
 					};
-					this.pendingToolResults.push(toolMsg);
+					turn.pendingToolResults.push(toolMsg);
 					this.scheduleThrottledSnapshot();
 				},
 				onTurnComplete: (meta) => {
-					this.finalizeTurn(meta);
+					this.finalizeTurn(turn, meta);
 				},
 				onError: (err) => {
 					const errText = typeof err === "string" ? err : err.message;
 					this.emitNotice("error", `执行出错: ${errText}`, `Execution error: ${errText}`);
-					this.finalizeTurn();
+					this.finalizeTurn(turn);
 				},
 				// Engine permission request (Claude Code `can_use_tool`) -> reuse the same
 				// tool_approval_* messages the pi engine already drives the approval dialog with.
@@ -1063,18 +1236,34 @@ export class UniversalSession implements DispatchSession {
 				// one-shot: "always allow for this conversation" would be a lie (scopeless).
 				supportsApproval: true,
 				onApprovalRequest: (requestId, toolName, params, options) => {
-					this.requestApproval(requestId, toolName, params, this.driver, {
-						idPrefix: "ua-",
+					this.requestApproval(requestId, toolName, params, driver, {
+						idPrefix: `ua-${conv.id}-`,
 						suggestions: options?.suggestions,
+						conversationId: conv.id,
 					});
 				},
 			};
 
+			let internalMcpToken: string | null = null;
 			try {
 				// Must return: async sink methods (onApprovalRequest wiring, future ones) rely on
 				// the value/promise; the original form swallowed it, so callers waited forever.
 				const guardedSink = this.guardSink(sink, isCurrent);
-				await this.driver.sendPrompt(
+				driver.setSystemPromptAppendix?.(this.markerSvc.buildGuidance().trim());
+				const mcpUrl = this.internalMcpUrl?.();
+				const internalMcpEnabled = this.stateStore?.getSettingsSnapshot(this.clientId)?.internalMcpEnabled !== false;
+				if (internalMcpEnabled && mcpUrl && driver.capabilities.mcpTransport === "http") {
+					internalMcpToken = internalMcpRegistry.register({
+						clientId: this.clientId,
+						conversationId: conv.id,
+						cwd: turn.cwd,
+						listTools: () => this.buildInternalMcpTools(conv.id),
+					});
+					driver.setInternalMcp?.({ url: mcpUrl, token: internalMcpToken });
+				} else {
+					driver.setInternalMcp?.(null);
+				}
+				await driver.sendPrompt(
 					rebuiltContext ? `${rebuiltContext}\n\n${finalPrompt}` : finalPrompt,
 					effectiveAttachments,
 					guardedSink,
@@ -1083,64 +1272,68 @@ export class UniversalSession implements DispatchSession {
 				if (!isCurrent()) return;
 				const msg = err instanceof Error ? err.message : String(err);
 				this.emitNotice("error", `驱动执行异常: ${msg}`, `Driver execution error: ${msg}`);
-				this.finalizeTurn();
+				this.finalizeTurn(turn);
+			} finally {
+				if (internalMcpToken) {
+					internalMcpRegistry.unregister(internalMcpToken);
+					driver.setInternalMcp?.(null);
+				}
 			}
 		} catch (err) {
 			if (!isCurrent()) return;
-			this.finalizeTurn();
+			this.finalizeTurn(turn);
 			this.emitNotice("error", String(err), String(err));
 		}
 	}
 
-	private updateStreamingContent(): void {
-		if (!this.streamingMessage) return;
-		const content: UiContentBlock[] = [];
-		if (this.streamingThinking) {
-			content.push({ type: "thinking", thinking: this.streamingThinking });
-		}
-		if (this.streamingText) {
-			content.push({ type: "text", text: this.streamingText });
-		}
-		for (const b of this.streamingMessage.content) {
-			if (b.type === "toolCall") {
-				content.push(b);
-			}
-		}
-		this.streamingMessage.content = content;
-	}
-
-	private emitDelta(assistantMessageEvent: { type: string; delta?: string }): void {
-		if (!this.streamingMessage) return;
+	private emitDelta(turn: ActiveUniversalTurn, assistantMessageEvent: { type: string; delta?: string }): void {
+		if (!turn.streamingMessage) return;
+		const seq = (this.deltaSeqByConversation.get(turn.conv.id) ?? 0) + 1;
+		this.deltaSeqByConversation.set(turn.conv.id, seq);
 		this.send({
 			type: "message_delta",
-			conversationId: this.turnConvId ?? this.activeConvId,
-			seq: ++this.deltaSeq,
-			messageId: this.streamingMessage.id,
+			conversationId: turn.conv.id,
+			seq,
+			messageId: turn.streamingMessage.id,
 			usage: null,
 			assistantMessageEvent,
 		});
 	}
 
-	private finalizeTurn(meta?: AgentTurnMeta): void {
-		if (this.snapshotTimer) {
+	private finalizeTurn(turn: ActiveUniversalTurn, meta?: AgentTurnMeta): void {
+		if (this.activeTurns.get(turn.conv.id) !== turn) return;
+		turn.turnTimer.end();
+		turn.turnTimer.clear();
+		this.onRunEvent?.({
+			type: "run_end",
+			conversationId: turn.conv.id,
+			clientId: this.clientId,
+			sessionId: turn.conv.driverSessionId,
+			runId: turn.runId,
+			at: Date.now(),
+		});
+		this.activeTurns.delete(turn.conv.id);
+		if (this.activeTurns.size === 0 && this.snapshotTimer) {
 			clearTimeout(this.snapshotTimer);
 			this.snapshotTimer = null;
 		}
 
-		const turn = this.turn;
-		if (!turn) return;
-		this.turn = null;
-		this.turnConvId = null;
 		const conv = turn.conv;
-
-		if (this.streamingMessage) {
-			conv.messages.push(this.streamingMessage);
-			this.streamingMessage = null;
+		if (turn.streamingMessage) {
+			if (turn.streamingText.includes("[[")) {
+				for (const block of turn.streamingMessage.content) {
+					if (block.type === "text") {
+						(block as UiTextBlock).text = stripMarkers((block as UiTextBlock).text);
+					}
+				}
+			}
+			conv.messages.push(turn.streamingMessage);
+			turn.streamingMessage = null;
 		}
 
-		if (this.pendingToolResults.length > 0) {
-			conv.messages.push(...this.pendingToolResults);
-			this.pendingToolResults = [];
+		if (turn.pendingToolResults.length > 0) {
+			conv.messages.push(...turn.pendingToolResults);
+			turn.pendingToolResults = [];
 		}
 
 		if (!conv.stats) {
@@ -1174,35 +1367,31 @@ export class UniversalSession implements DispatchSession {
 			};
 		}
 
-		if (typeof (this.driver as any).getActiveSessionId === "function") {
-			const activeSid = (this.driver as any).getActiveSessionId();
+		if (typeof (turn.driver as any).getActiveSessionId === "function") {
+			const activeSid = (turn.driver as any).getActiveSessionId();
 			if (activeSid && conv.driverSessionId !== activeSid) {
 				conv.driverSessionId = activeSid;
 			}
 		}
-		if (this.driver.consumeSlashCommandsChanged?.()) void this.pushSlashCommands();
+		if (turn.driver.consumeSlashCommandsChanged?.()) void this.pushSlashCommands();
 
 		finishTurnTiming(conv);
-		this.isStreaming = false;
-		this.streamingThinking = "";
-		const finalText = this.streamingText;
-		this.streamingText = "";
 		conv.updatedAt = Date.now();
 		if (!conv.isEphemeral) {
-			// 收尾是同步契约（sink 的 onTurnComplete 不 await）：排队落盘，顺序由 store 写链保证。
 			this.store.queueWrite(turn.cwd, conv);
 		}
+		const finalText = turn.streamingText;
 		if (finalText && finalText.includes("[[")) {
-			this.markerOrigins.set(conv.id, turn);
+			this.markerOrigins.set(conv.id, { conv, cwd: turn.cwd });
 			void this.markerSvc.handleAssistantText(conv.id, finalText);
 		}
 		this.flushSnapshot();
 		void this.refreshSessions();
 
-		if (!this.switchingProject && !this.disposed && this.followUpQueue.length > 0) {
-			const next = this.followUpQueue.shift()!;
+		if (!this.disposed && turn.followUpQueue.length > 0) {
+			const next = turn.followUpQueue.shift()!;
 			this.flushSnapshot(true);
-			void this.prompt(next.text, next.attachments);
+			void this.prompt(next.text, next.attachments, undefined, conv);
 		}
 	}
 
@@ -1281,7 +1470,7 @@ export class UniversalSession implements DispatchSession {
 			);
 			return;
 		}
-		this.pendingApprovals.set(id, { requestId, toolName, driver });
+		this.pendingApprovals.set(id, { requestId, toolName, driver, conversationId: opts?.conversationId });
 		const timeoutMs = unattendedApprovalTimeoutMs(this.clientId);
 		if (timeoutMs !== null) {
 			const timer = setTimeout(() => {
@@ -1300,7 +1489,7 @@ export class UniversalSession implements DispatchSession {
 			timer.unref?.();
 			this.approvalTimers.set(id, timer);
 		}
-		const convId = opts?.conversationId ?? this.turnConvId ?? undefined;
+		const convId = opts?.conversationId;
 		this.send({
 			type: "tool_approval_pending",
 			id,
@@ -1341,34 +1530,45 @@ export class UniversalSession implements DispatchSession {
 	}
 
 	/** Deny every outstanding approval (turn aborted/ended) so the engine never hangs. */
-	private denyPendingApprovals(reason: string): void {
+	private denyPendingApprovals(reason: string, conversationId?: string): void {
 		if (this.pendingApprovals.size === 0) return;
 		for (const [id, entry] of this.pendingApprovals) {
+			if (conversationId && entry.conversationId !== conversationId) continue;
 			this.clearApprovalTimer(id);
 			void (entry.driver ?? this.driver).respondApproval(entry.requestId, "deny", undefined, reason);
 			this.send({ type: "tool_approval_resolved", id });
+			this.pendingApprovals.delete(id);
 		}
-		this.pendingApprovals.clear();
+	}
+
+	private async abortConversation(conversationId: string): Promise<void> {
+		const existing = this.conversationAborts.get(conversationId);
+		if (existing) return existing;
+		const turn = this.activeTurns.get(conversationId);
+		if (!turn) return;
+		this.denyPendingApprovals("aborted", conversationId);
+		const aborting = Promise.resolve().then(async () => {
+			turn.followUpQueue.length = 0;
+			this.finalizeTurn(turn);
+			await turn.driver.abort();
+			this.emitNotice("info", "已停止生成", "Generation stopped");
+		});
+		this.conversationAborts.set(conversationId, aborting);
+		try {
+			await aborting;
+		} finally {
+			if (this.conversationAborts.get(conversationId) === aborting) {
+				this.conversationAborts.delete(conversationId);
+			}
+		}
 	}
 
 	async abort(): Promise<void> {
-		this.denyPendingApprovals("aborted");
-		if (this.abortPromise) return this.abortPromise;
-		if (!this.isStreaming) return;
-		this.abortPromise = Promise.resolve().then(async () => {
-			this.finalizeTurn();
-			await this.driver.abort();
-			this.emitNotice("info", "已停止生成", "Generation stopped");
-		});
-		try {
-			await this.abortPromise;
-		} finally {
-			this.abortPromise = null;
-		}
+		await this.abortConversation(this.activeConvId);
 	}
 
-	async abortBash(): Promise<void> {
-		await this.abort();
+	async abortBash(conversationId?: string): Promise<void> {
+		await this.abortConversation(conversationId ?? this.activeConvId);
 	}
 
 	async retryLast(): Promise<void> {
@@ -1387,9 +1587,11 @@ export class UniversalSession implements DispatchSession {
 
 	removeQueued(kind: "steer" | "followUp", text: string, index?: number, id?: string): void {
 		if (kind === "followUp") {
-			const next = removeQueuedEntry(this.followUpQueue, { id, text, index });
-			if (next.length !== this.followUpQueue.length) {
-				this.followUpQueue = next;
+			const queue = this.activeTurns.get(this.activeConvId)?.followUpQueue;
+			if (!queue) return;
+			const next = removeQueuedEntry(queue, { id, text, index });
+			if (next.length !== queue.length) {
+				queue.splice(0, queue.length, ...next);
 				this.flushSnapshot();
 			}
 		}
@@ -1452,9 +1654,6 @@ export class UniversalSession implements DispatchSession {
 		if (conv) {
 			this.conversations.set(conv.id, conv);
 			this.activeConvId = conv.id;
-			if (conv.driverSessionId) {
-				await this.driver.resumeSession(conv.driverSessionId).catch(() => {});
-			}
 		} else {
 			this.emitNotice(
 				"warning",
@@ -1544,12 +1743,11 @@ export class UniversalSession implements DispatchSession {
 			this.conversations.get(targetId)?.cwd ??
 			(this.conversations.has(targetId) ? this.cwd : this.store.findConversationById(targetId)?.cwd) ??
 			this.cwd;
-		await this.store.deleteConversation(knownCwd, targetId);
 		if (this.conversations.has(targetId)) {
 			await this.dismissConversation(targetId, true, true);
-		} else {
-			this.flushSnapshot();
 		}
+		await this.store.deleteConversation(knownCwd, targetId);
+		this.flushSnapshot();
 		if (normalizePathKey(knownCwd) !== normalizePathKey(this.cwd)) {
 			void this.pushSessionsForCwd(knownCwd);
 		} else {
@@ -1573,7 +1771,14 @@ export class UniversalSession implements DispatchSession {
 		if (conv.isSubagent && conv.subagentStreaming) {
 			await this.stopSubagent(id);
 		}
-
+		if (this.activeTurns.has(id)) await this.abortConversation(id);
+		const driver = this.conversationDrivers.get(id);
+		if (driver && driver !== this.driver) {
+			try {
+				void driver.dispose();
+			} catch {}
+		}
+		this.conversationDrivers.delete(id);
 		this.conversations.delete(id);
 		this.sessionDrafts.delete(id);
 
@@ -1592,6 +1797,7 @@ export class UniversalSession implements DispatchSession {
 				return;
 			}
 		}
+		this.emitConversations();
 		this.flushSnapshot();
 		void this.refreshSessions();
 	}
@@ -1646,9 +1852,8 @@ export class UniversalSession implements DispatchSession {
 			targetConv = this.activeConv;
 		}
 
-		if (targetConv.id === this.activeConvId && (this.isStreaming || this.streamingMessage)) {
-			await this.abort();
-			targetConv = this.activeConv;
+		if (this.activeTurns.has(targetConv.id)) {
+			await this.abortConversation(targetConv.id);
 		}
 
 		const idx = targetConv.messages.findIndex((m) => m.id === messageId);
@@ -1718,9 +1923,10 @@ export class UniversalSession implements DispatchSession {
 			forkedConv.updatedAt = Date.now();
 		}
 
-		if (targetConv.driverSessionId && typeof this.driver.forkSession === "function") {
+		const sourceDriver = this.conversationDriver(targetConv);
+		if (targetConv.driverSessionId && typeof sourceDriver.forkSession === "function") {
 			try {
-				const forkedSid = await this.driver.forkSession(targetConv.driverSessionId);
+				const forkedSid = await sourceDriver.forkSession(targetConv.driverSessionId);
 				if (forkedSid) {
 					forkedConv.driverSessionId = forkedSid;
 				}
@@ -1776,7 +1982,8 @@ export class UniversalSession implements DispatchSession {
 		conv.driverSessionId = undefined;
 		const context = conv.messages.map((m) => `[${m.role}] ${messageTextWithQuotes(m)}`).join("\n");
 		conv.updatedAt = Date.now();
-		this.followUpQueue.length = 0;
+		const activeTurn = this.activeTurns.get(conv.id);
+		if (activeTurn) activeTurn.followUpQueue.length = 0;
 		if (!conv.isEphemeral) {
 			await this.store.saveConversation(conv.cwd ?? this.cwd, conv);
 		}
@@ -1821,13 +2028,13 @@ export class UniversalSession implements DispatchSession {
 			title: c.title,
 			cwd: this.cwd,
 			messageCount: c.messages.length,
-			isStreaming: Boolean(c.id === this.activeConvId ? this.isStreaming : c.subagentStreaming),
+			isStreaming: Boolean(this.activeTurns.has(c.id) || c.subagentStreaming),
 			isSubagent: Boolean(c.isSubagent),
 			pinned: Boolean(c.pinned),
 			sessionId: c.id,
 			modified: c.updatedAt,
 			rowKind: conversationRowKind({
-				isStreaming: c.id === this.activeConvId ? this.isStreaming : c.subagentStreaming,
+				isStreaming: Boolean(this.activeTurns.has(c.id) || c.subagentStreaming),
 				isSubagent: c.isSubagent,
 				parentId: c.subagentParentId,
 				pinned: c.pinned,
@@ -1841,6 +2048,10 @@ export class UniversalSession implements DispatchSession {
 			...(c.subagentError ? { error: c.subagentError } : {}),
 		}));
 		this.send({ type: "conversations", conversations: convs, activeId: this.activeConvId });
+		if (this.lastPluginConversationId !== this.activeConvId) {
+			this.lastPluginConversationId = this.activeConvId;
+			this.onConversationChanged?.();
+		}
 		return allList;
 	}
 
@@ -1926,6 +2137,12 @@ export class UniversalSession implements DispatchSession {
 	async removeProject(path: string): Promise<void> {
 		if (typeof this.stateStore?.removeProject !== "function") return;
 		this.stateStore.removeProject(this.clientId, path);
+		await this.pushProjects();
+	}
+
+	async renameProject(path: string, name: string): Promise<void> {
+		if (typeof this.stateStore?.saveProjectName !== "function") return;
+		this.stateStore.saveProjectName(path, name);
 		await this.pushProjects();
 	}
 
@@ -2078,7 +2295,8 @@ export class UniversalSession implements DispatchSession {
 		return this.cwd;
 	}
 
-	async killBackgroundServer(port?: number, _taskId?: string): Promise<boolean> {
+	async killBackgroundServer(port?: number, taskId?: string): Promise<boolean> {
+		if (taskId?.startsWith("job:")) return (await this.backgroundTasks?.killJob(this.clientId, taskId)) ?? false;
 		if (port === undefined) return false;
 		const killed = await this.bg.killOne(port);
 		if (killed) this.bg.push();
@@ -2110,24 +2328,19 @@ export class UniversalSession implements DispatchSession {
 			const models = await this.driver.listModels();
 			const modelInfos: ModelInfo[] = models.map((m) => {
 				const hasSlash = m.id.includes("/");
-				const provider = hasSlash ? m.id.split("/")[0] : this.driver.id;
+				const provider = m.provider ?? (hasSlash ? m.id.split("/")[0] : this.driver.id);
 				const bareId = hasSlash ? m.id.slice(m.id.indexOf("/") + 1) : m.id;
-				const canonicalId = hasSlash ? m.id : `${this.driver.id}/${m.id}`;
-				const entry = {
+				const wire = toWireModel({
 					id: bareId,
 					name: m.name,
 					provider,
-					vision: true,
-				};
-				this.modelsMap.set(canonicalId, entry);
+					reasoning: m.reasoning ?? false,
+					input: m.input ?? (m.vision ? ["image"] : []),
+				});
+				const entry = { ...wire, id: bareId };
+				this.modelsMap.set(wire.id, entry);
 				this.modelsMap.set(bareId, entry);
-				return {
-					id: canonicalId,
-					name: m.name,
-					provider,
-					reasoning: true,
-					vision: true,
-				};
+				return wire;
 			});
 			this.send({
 				type: "models",
@@ -2143,22 +2356,22 @@ export class UniversalSession implements DispatchSession {
 		if (this.stateStore) {
 			this.stateStore.saveProjectModel(this.clientId, this.cwd, modelId, this.engine);
 		}
-		if (this.driver.setModel) {
-			await this.driver.setModel(modelId);
-		}
 		const remembered = getModelThinkingLevelFromSettings(modelId, this.agentDir);
 		if (remembered) {
 			this.thinkingLevel = remembered;
 		}
-		if (typeof this.driver.getSupportedThinkingLevels === "function") {
-			const supported = this.driver.getSupportedThinkingLevels(modelId);
-			if (supported.length > 0 && !supported.includes(this.thinkingLevel)) {
-				const clamped = clampThinkingLevelToSupported(supported, this.thinkingLevel);
-				this.thinkingLevel = clamped;
+		const drivers = new Set<BaseAgentDriver>([this.driver, ...this.conversationDrivers.values()]);
+		for (const driver of drivers) {
+			if (driver.setModel) await driver.setModel(modelId);
+			if (typeof driver.getSupportedThinkingLevels === "function") {
+				const supported = driver.getSupportedThinkingLevels(modelId);
+				if (supported.length > 0 && !supported.includes(this.thinkingLevel)) {
+					this.thinkingLevel = clampThinkingLevelToSupported(supported, this.thinkingLevel);
+				}
 			}
-		}
-		if (typeof this.driver.setThinkingLevel === "function") {
-			this.driver.setThinkingLevel(this.thinkingLevel);
+			if (typeof driver.setThinkingLevel === "function") {
+				driver.setThinkingLevel(this.thinkingLevel);
+			}
 		}
 		const info = this.resolveCurrentModelInfo();
 		this.emitNotice("info", `已切换到模型：${info.name}`, `Switched to model: ${info.name}`);
@@ -2189,8 +2402,8 @@ export class UniversalSession implements DispatchSession {
 
 	setThinking(level: string): void {
 		this.thinkingLevel = level;
-		if (typeof this.driver.setThinkingLevel === "function") {
-			this.driver.setThinkingLevel(level);
+		for (const driver of new Set([this.driver, ...this.conversationDrivers.values()])) {
+			if (typeof driver.setThinkingLevel === "function") driver.setThinkingLevel(level);
 		}
 		if (this.currentModel) {
 			saveModelThinkingLevelToSettings(this.currentModel, level, this.agentDir);
@@ -2203,8 +2416,6 @@ export class UniversalSession implements DispatchSession {
 		if (this.switchingProject) throw new Error("Workspace switch already in progress");
 		this.switchingProject = true;
 		try {
-			this.followUpQueue = [];
-			await this.abort();
 			for (const id of this.subagentDrivers.keys()) await this.stopSubagent(id);
 			const prevCwd = this.cwd;
 			for (const conv of this.conversations.values()) {
@@ -2212,6 +2423,13 @@ export class UniversalSession implements DispatchSession {
 			}
 			this.projectGeneration++;
 			this.cwd = path;
+			if ([...this.conversationDrivers.values()].includes(this.driver)) {
+				const template = this.freshDriver(path);
+				if (template && template !== this.driver) {
+					this.configureDriver(template);
+					this.driver = template;
+				}
+			}
 			this.driver.setCwd(path);
 
 			const existing = this.store.listConversations(this.cwd);
@@ -2268,6 +2486,85 @@ export class UniversalSession implements DispatchSession {
 		if (this.cwd !== cwd) return;
 		this.worktreeInfo = info;
 		this.flushSnapshot();
+	}
+
+	pageCall(req: PageCallRequest, signal: { aborted?: boolean }, _conversationId?: string): Promise<PageCallResult> {
+		if (signal?.aborted) return Promise.resolve({ ok: false, error: "aborted" });
+		if (this.disposed || this.sinks.size === 0) return Promise.resolve({ ok: false, error: "no active client" });
+		return new Promise<PageCallResult>((resolve) => {
+			const timeoutMs =
+				typeof req.timeoutMs === "number" && req.timeoutMs > 0 ? Math.min(req.timeoutMs, 120_000) : 30_000;
+			const id = `upage-${++this.pageCallSeq}-${Date.now()}`;
+			const timer = setTimeout(() => {
+				if (this.pendingPageCalls.delete(id)) {
+					resolve({ ok: false, error: "page_request timed out" });
+				}
+			}, timeoutMs);
+			this.pendingPageCalls.set(id, { resolve, timer });
+			this.send({ type: "page_request", id, op: req.op, args: req.args, target: req.target, timeoutMs });
+		});
+	}
+
+	resolvePageCall(id: string, ok: boolean, result?: unknown, error?: string): void {
+		const entry = this.pendingPageCalls.get(id);
+		if (!entry) return;
+		this.pendingPageCalls.delete(id);
+		clearTimeout(entry.timer);
+		entry.resolve(ok ? { ok: true, result } : { ok: false, error: error?.trim() || "page_request failed" });
+	}
+
+	private buildInternalMcpTools(conversationId = this.activeConvId): InternalMcpToolDef[] {
+		const snap = this.stateStore?.getSettingsSnapshot(this.clientId);
+		const disabledAgent = new Set(snap?.disabledAgentTools ?? []);
+		const disabledPlugin = new Set(snap?.disabledPluginTools ?? []);
+		const lang = (): ServerLang => this.lang as ServerLang;
+		const pageClient = {
+			pageCall: (req: PageCallRequest, sig: { aborted?: boolean }, convId?: string) =>
+				this.pageCall(req, sig, convId ?? conversationId),
+		};
+		const rawPluginTools = (this.pluginToolsProvider?.(this.cwd) ?? []).filter((t): t is ToolDefinition =>
+			Boolean(t && typeof t === "object" && typeof (t as { name?: unknown }).name === "string"),
+		);
+		const defs: ToolDefinition[] = [
+			...this.getTerminalTools(),
+			makeBrowserPageTool(pageClient, conversationId),
+			makeBrowserScriptTool(pageClient, conversationId),
+			makeBrowserDesignTool(pageClient, conversationId),
+			makePresentFilesTool(this.cwd, { getLang: lang }),
+			makeLspTool({ cwd: this.cwd, ownerId: this.clientId, lang }),
+			makePatchTool({ cwd: this.cwd, ownerId: this.clientId, lang }),
+			makeAgentBotTool(),
+			...rawPluginTools,
+		];
+		const seen = new Set<string>();
+		const out: InternalMcpToolDef[] = [];
+		for (const tool of defs) {
+			if (!isInternalMcpToolEligible(tool.name)) continue;
+			if (disabledAgent.has(tool.name) || disabledPlugin.has(tool.name)) continue;
+			if (seen.has(tool.name)) continue;
+			seen.add(tool.name);
+			out.push({
+				name: tool.name,
+				description: tool.description ?? tool.label ?? tool.name,
+				inputSchema: (tool.parameters as Record<string, unknown>) ?? { type: "object", properties: {} },
+				execute: async (args) => {
+					try {
+						const res = (await tool.execute(
+							`mcp_${Date.now()}`,
+							args as never,
+							undefined as any,
+							undefined as any,
+							undefined as any,
+						)) as { content?: Array<{ type: string; text?: string }> };
+						const text = (res.content ?? []).map((c) => (c.type === "text" ? (c.text ?? "") : "")).join("\n");
+						return { output: text };
+					} catch (err: unknown) {
+						return { error: err instanceof Error ? err.message : String(err) };
+					}
+				},
+			});
+		}
+		return out;
 	}
 
 	getTerminalTools(): ToolDefinition[] {
@@ -2555,8 +2852,9 @@ export class UniversalSession implements DispatchSession {
 		await this.files.completePath(path);
 	}
 
-	async makeDir(path: string): Promise<void> {
-		await this.files.makeDir(path);
+	async makeDir(path: string, setAsCwd = false): Promise<void> {
+		const created = await this.files.makeDir(path);
+		if (created && setAsCwd) await this.setCwd(created);
 	}
 
 	emitNotice(level: "info" | "warning" | "error", text: string, textEn?: string): void {
@@ -2572,7 +2870,7 @@ export class UniversalSession implements DispatchSession {
 	}
 
 	activeConversations(): number {
-		return this.isStreaming ? 1 : 0;
+		return this.activeTurns.size;
 	}
 
 	pendingMessages(): number {
@@ -2603,8 +2901,8 @@ export class UniversalSession implements DispatchSession {
 		return out;
 	}
 
-	async collectUniversalSkills(): Promise<DiscoveredSkill[]> {
-		const disk = discoverDiskSkills({ cwd: this.cwd, agentDir: this.agentDir });
+	async collectUniversalSkills(cwd = this.cwd): Promise<DiscoveredSkill[]> {
+		const disk = discoverDiskSkills({ cwd, agentDir: this.agentDir });
 		const out = [...disk];
 		if (this.driver.getSkills) {
 			try {
@@ -2615,7 +2913,7 @@ export class UniversalSession implements DispatchSession {
 							name: es.name,
 							description: es.description,
 							filePath: es.filePath || "",
-							dirPath: this.cwd,
+							dirPath: cwd,
 						});
 					}
 				}
@@ -2668,7 +2966,7 @@ export class UniversalSession implements DispatchSession {
 			customSystemPrompt: s?.customSystemPrompt ?? "",
 			disabledSkills: s?.disabledSkills ?? [],
 			disabledExtensions: s?.disabledExtensions ?? [],
-			disabledAgentTools: [],
+			disabledAgentTools: [...(s?.disabledAgentTools ?? [])],
 			toolOnDemandTools: [],
 			disabledPluginTools: [],
 			nativeCliInheritModel: { ...s?.nativeCliInheritModel },
@@ -2680,6 +2978,7 @@ export class UniversalSession implements DispatchSession {
 			readDirEnabled: true,
 			bgAutoCleanupMin: s?.bgAutoCleanupMin ?? 0,
 			toolLazyLoading: false,
+			internalMcpEnabled: s?.internalMcpEnabled !== false,
 			codemodeMode: "on",
 			codemodeInlineBudget: 3000,
 			retryMaxAttempts: 0,
@@ -2712,8 +3011,8 @@ export class UniversalSession implements DispatchSession {
 			visionBridgeModel: null,
 			visionBridgePromptMode: "append",
 			visionBridgePrompt: "",
-			scmCommitMsgPromptMode: "append",
-			scmCommitMsgPrompt: "",
+			scmCommitMsgPromptMode: s?.scmCommitMsgPromptMode === "replace" ? "replace" : "append",
+			scmCommitMsgPrompt: s?.scmCommitMsgPrompt ?? "",
 			planModePromptMode: "append",
 			planModePrompt: "",
 			planModeDefaultPrompt: "",
@@ -2725,7 +3024,7 @@ export class UniversalSession implements DispatchSession {
 			promptTemplate: s?.promptTemplate ?? "",
 			promptOverrides: s?.promptOverrides ?? {},
 			promptDisabled: [...(s?.promptDisabled ?? [])],
-			toolPromptOverrides: {},
+			toolPromptOverrides: s?.toolPromptOverrides ?? {},
 			effectiveSystemPrompt: "",
 			promptSourceDefaults: {},
 			toolsSchema: "",
@@ -2756,8 +3055,12 @@ export class UniversalSession implements DispatchSession {
 	}
 
 	async setSettings(partial: Record<string, unknown>): Promise<void> {
+		if (Array.isArray(partial.disabledMarkers)) {
+			this.markerSvc.setDisabledMarkers(partial.disabledMarkers.filter((x): x is string => typeof x === "string"));
+		}
 		if (this.stateStore) {
-			this.stateStore.saveSettings(this.clientId, partial as Partial<ClientSettings>);
+			const before = this.stateStore.getSettingsSnapshot(this.clientId);
+			this.stateStore.saveSettings(this.clientId, mergeSettingsPatch(before, partial) as Partial<ClientSettings>);
 		}
 		this.pushSettings();
 	}
@@ -2969,42 +3272,54 @@ export class UniversalSession implements DispatchSession {
 			this.send({ type: "scm_data", reqId, kind: "commitmsg", ok, ...extra });
 		};
 		try {
-			const ctx = await scmCommitContext(this.cwd, () => this.getLang() as any);
-			const input = buildCommitMsgInput(ctx, this.lang === "zh" ? "zh" : "en");
-			if (!input) {
-				reply(false, {
-					error: this.lang === "zh" ? "没有可描述的更改（工作区干净）" : "Nothing to describe (working tree clean)",
-				});
-				return;
-			}
-			let commitText = "";
-			const prompt = `Based on the following git changes, write a single-line conventional commit message (e.g. feat(...): ..., fix(...): ...):\n\n${input}`;
-			let doneResolve!: () => void;
-			const p = new Promise<void>((res) => {
-				doneResolve = res;
-			});
-			const sink: AgentEventSink = {
-				onThinkingDelta: () => {},
-				onTextDelta: (d) => {
-					commitText += d;
+			const settings = this.stateStore?.getSettingsSnapshot(this.clientId);
+			const result = await generateScmCommitMessageWithInference({
+				cwd: this.cwd,
+				lang: this.getLang() as ServerLang,
+				promptMode: settings?.scmCommitMsgPromptMode === "replace" ? "replace" : "append",
+				customPrompt: settings?.scmCommitMsgPrompt ?? "",
+				infer: async (input, systemPrompt, signal) => {
+					// 独立驱动实例：不借用当前对话会话，也不把「生成提交信息」塞进用户转录。
+					const driver = this.driverFactory?.(this.cwd) ?? this.driver;
+					const ownsDriver = driver !== this.driver;
+					let text = "";
+					let finish!: () => void;
+					let fail!: (error: unknown) => void;
+					const completed = new Promise<void>((resolve, reject) => {
+						finish = resolve;
+						fail = reject;
+					});
+					const sink: AgentEventSink = {
+						onThinkingDelta: () => {},
+						onTextDelta: (delta) => {
+							text += delta;
+						},
+						onToolStart: () => {},
+						onToolEnd: () => {},
+						onTurnComplete: () => finish(),
+						onError: (error) => fail(error),
+					};
+					const onAbort = () => {
+						void driver.abort().catch(() => {});
+					};
+					signal?.addEventListener("abort", onAbort, { once: true });
+					try {
+						if (signal?.aborted) onAbort();
+						await driver.createSession();
+						if (this.currentModel && this.currentModel !== "default") await driver.setModel?.(this.currentModel);
+						const request = systemPrompt ? `${systemPrompt}\n\n${input}` : input;
+						await Promise.all([driver.sendPrompt(request, undefined, sink), completed]);
+						return text;
+					} finally {
+						signal?.removeEventListener("abort", onAbort);
+						if (ownsDriver) driver.dispose();
+					}
 				},
-				onToolStart: () => {},
-				onToolEnd: () => {},
-				onTurnComplete: () => doneResolve(),
-				onError: () => doneResolve(),
-			};
-			await this.driver.sendPrompt(prompt, undefined, sink);
-			await p;
-			const clean = sanitizeCommitMessage(commitText.trim());
-			if (clean) {
-				reply(true, { text: clean });
-			} else {
-				reply(false, {
-					error: this.lang === "zh" ? "未能生成提交信息" : "Failed to generate commit message",
-				});
-			}
-		} catch (err: unknown) {
-			reply(false, { error: err instanceof Error ? err.message : String(err) });
+			});
+			if (result.ok) reply(true, { text: result.text });
+			else reply(false, { error: result.error });
+		} catch (error: unknown) {
+			reply(false, { error: error instanceof Error ? error.message : String(error) });
 		}
 	}
 
@@ -3696,7 +4011,13 @@ export class UniversalSession implements DispatchSession {
 
 	dispose(): void {
 		this.disposed = true;
-		this.finalizeTurn();
+		this.denyPendingApprovals("disposed");
+		for (const entry of this.pendingPageCalls.values()) {
+			clearTimeout(entry.timer);
+			entry.resolve({ ok: false, error: "disposed" });
+		}
+		this.pendingPageCalls.clear();
+		for (const turn of this.activeTurns.values()) this.finalizeTurn(turn);
 		this.projectGeneration++;
 		if (this.snapshotTimer) {
 			clearTimeout(this.snapshotTimer);
@@ -3711,9 +4032,16 @@ export class UniversalSession implements DispatchSession {
 		this.subagentDrivers.clear();
 		this.subagentWaitListeners.clear();
 		this.files.unwatchDir();
+		this.bg.stop();
 		this.modelAdmin.dispose();
 		this.webUi.dispose();
 		this.terminals.killAll({ shutdown: true });
-		this.driver.dispose();
+		for (const driver of new Set([this.driver, ...this.conversationDrivers.values()])) {
+			try {
+				void driver.abort();
+				void driver.dispose();
+			} catch {}
+		}
+		this.conversationDrivers.clear();
 	}
 }

@@ -217,4 +217,29 @@ describe("ClientStateStore 最近项目删除全局持久化", () => {
 
 		expect(await store.getRecentProjects("clientA")).toEqual([{ path: onlyOnDisk, lastUsed: 12345 }]);
 	});
+
+	it("连接恢复（clearTombstone: false）不得复活已被删除的项目或覆盖 lastCwd", async () => {
+		const removedDir = join(dir, "removed-home");
+		const activeDir = join(dir, "active-proj");
+		mkdirSync(removedDir);
+		mkdirSync(activeDir);
+
+		store.remember("clientA", activeDir);
+		store.remember("clientA", removedDir);
+		store.removeProject("clientA", removedDir);
+
+		// 模拟重启后新客户端或无 lastCwd 的引擎用默认 cwd（removedDir）做 attach 初始化
+		store.remember("brandNewClient", removedDir, { promote: false, clearTombstone: false });
+
+		expect(store.getRemovedProjects("brandNewClient")).toContain(removedDir);
+		expect(store.get("brandNewClient").lastCwd).toBeUndefined();
+		expect((await store.getRecentProjects("brandNewClient")).map((p) => p.path)).toEqual([activeDir]);
+
+		// 未被删除的项目在 clearTombstone: false 时仍正常登记
+		const freshDir = join(dir, "fresh-proj");
+		mkdirSync(freshDir);
+		store.remember("brandNewClient", freshDir, { promote: false, clearTombstone: false });
+		expect(store.get("brandNewClient").lastCwd).toBe(freshDir);
+		expect((await store.getRecentProjects("brandNewClient")).map((p) => p.path)).toContain(freshDir);
+	});
 });

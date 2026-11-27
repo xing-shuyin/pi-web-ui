@@ -17,6 +17,7 @@ import { mkdir, readFile, realpath, rm, stat, writeFile, rename } from "node:fs/
 import { basename, extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
+import { formatAgentClientIdArg } from "./agent-client-id.js";
 import { BrowserManager } from "../browser/runtime/manager.js";
 import { ElectronChromeExtensions } from "electron-chrome-extensions";
 import { extractCrxInto, readCrxManifest } from "../browser/runtime/crx.js";
@@ -319,6 +320,8 @@ export class DesktopBrowserHost {
 			assetsDir: string;
 			browserPreload: string;
 			agentPreload: string;
+			/** 桌面主 Agent 视图的持久化 clientId（仅注入主 Agent 视图，不共享给普通标签页）。 */
+			agentClientId?: string;
 			dataDir: string;
 			/** Agent 页就绪（含重新加载）：主进程用它把双击文件/点链接的待打开目标送进界面。 */
 			onAgentReady?: () => void;
@@ -1238,6 +1241,9 @@ export class DesktopBrowserHost {
 					sandbox: true,
 					contextIsolation: true,
 					nodeIntegration: false,
+					...(this.options.agentClientId
+						? { additionalArguments: [formatAgentClientIdArg(this.options.agentClientId)] }
+						: {}),
 				},
 			});
 			this.window.contentView.addChildView(this.agent);

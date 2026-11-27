@@ -60,12 +60,15 @@ export class AgyDriver extends BaseAgentDriver {
 		supportsThinkingLevels: false,
 		supportsAskUser: false,
 		supportsSubagents: true,
+		mcpTransport: "none",
+		systemPromptChannel: "turn-prefix",
 	};
 	private sessionId = "";
 	private model = "default";
 	private active?: ActiveRun;
 	private disposed = false;
 	private cachedModels?: Array<{ id: string; name: string }>;
+	private systemPromptAppendix = "";
 
 	constructor(
 		cwd: string,
@@ -89,6 +92,10 @@ export class AgyDriver extends BaseAgentDriver {
 
 	async setModel(modelId: string): Promise<void> {
 		this.model = modelId.replace(/^agy\//, "");
+	}
+
+	override setSystemPromptAppendix(appendix: string): void {
+		this.systemPromptAppendix = appendix.trim();
 	}
 
 	async listModels(): Promise<Array<{ id: string; name: string }>> {
@@ -120,7 +127,7 @@ export class AgyDriver extends BaseAgentDriver {
 		if (this.active) throw new Error("Antigravity is already running");
 		const cwd = this.cwd;
 		let imageDir: string | undefined;
-		let input = prompt;
+		let input = !this.sessionId && this.systemPromptAppendix ? `${this.systemPromptAppendix}\n\n${prompt}` : prompt;
 		let imageCount = 0;
 		try {
 			for (const att of attachments ?? []) {

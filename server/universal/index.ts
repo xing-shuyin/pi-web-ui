@@ -1,4 +1,18 @@
-export { BaseAgentDriver, type AgentCapabilities, type AgentEventSink } from "./driver-base.js";
+export {
+	BaseAgentDriver,
+	type AgentCapabilities,
+	type AgentEventSink,
+	type InternalMcpEndpoint,
+} from "./driver-base.js";
+export {
+	InternalMcpRegistry,
+	internalMcpRegistry,
+	unwrapInternalMcpToolName,
+	INTERNAL_MCP_EXCLUDED_TOOLS,
+	isInternalMcpToolEligible,
+	type InternalMcpContext,
+	type InternalMcpToolDef,
+} from "./internal-mcp.js";
 export { UniversalSessionStore } from "./session-store.js";
 export { UniversalSession } from "./universal-session.js";
 export { UniversalAgentService, type DriverFactory } from "./universal-service.js";

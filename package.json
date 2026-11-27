@@ -78,6 +78,7 @@
 		"verify:device-p2p": "node scripts/verify-device-p2p.mjs",
 		"pack:npm": "node scripts/pack-npm.mjs",
 		"install:global": "node scripts/install-global-local.mjs",
+		"install:desktop": "node scripts/install-desktop-local.mjs",
 		"pack:p2p": "npm run build:release && npm run verify:device-p2p && node scripts/pack-npm.mjs",
 		"build:device-p2p": "node scripts/build-device-p2p.mjs",
 		"build:ffmpeg": "node scripts/fetch-ffmpeg.mjs",

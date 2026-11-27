@@ -5,6 +5,7 @@ const OPTIONAL_ONLY_KEYS = [
 	"devNoCache",
 	"autoReload",
 	"claudePermissionMode",
+	"internalMcpEnabled",
 ] as const satisfies readonly (keyof ClientSettings)[];
 
 export const CLIENT_SETTINGS_KEYS: ReadonlySet<string> = new Set<string>([

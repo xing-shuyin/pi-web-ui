@@ -83,6 +83,7 @@ export class MultiEngineBroker {
 	private readonly sessionsByKey = new Map<string, StoredSessions>();
 	private readonly convEngineMap = new Map<string, EngineId>();
 	private readonly sessionEngineMap = new Map<string, EngineId>();
+	private readonly needsFullSnapshot = new Set<EngineId>();
 	private readonly nativeCliConvIds = new Set<string>();
 	private readonly nativeCliSessionKeys = new Set<string>();
 	private readonly requestedProjectPaths = new Set<string>();
@@ -241,6 +242,16 @@ export class MultiEngineBroker {
 			return;
 		}
 		if (engine === this.activeEngine) {
+			if (msg.type === "snapshot") {
+				this.needsFullSnapshot.delete(engine);
+			} else if (msg.type === "snapshot_delta" && this.needsFullSnapshot.has(engine)) {
+				this.needsFullSnapshot.delete(engine);
+				const cs = this.attached.get(engine)?.cs;
+				if (cs?.flushSnapshot) {
+					cs.flushSnapshot(true);
+					return;
+				}
+			}
 			this.options.send(msg);
 		} else if (msg.type === "notice" && msg.level === "error") {
 			this.options.send(msg);
@@ -284,6 +295,7 @@ export class MultiEngineBroker {
 					byPath.set(key, {
 						path: prev.path || p.path,
 						lastUsed: Math.max(prev.lastUsed ?? 0, p.lastUsed ?? 0),
+						...(prev.name || p.name ? { name: prev.name ?? p.name } : {}),
 						...(prev.sandbox || p.sandbox ? { sandbox: prev.sandbox ?? p.sandbox } : {}),
 					});
 				}
@@ -322,6 +334,7 @@ export class MultiEngineBroker {
 		if (targetEngine === this.activeEngine) {
 			const cs = await this.ensureAttached(targetEngine);
 			if (wasCliOverlay) {
+				this.needsFullSnapshot.add(targetEngine);
 				if (!opts?.skipSnapshot) {
 					this.options.onAfterActiveAttach?.(targetEngine, cs);
 				}
@@ -346,6 +359,7 @@ export class MultiEngineBroker {
 		}
 		const seq = ++this.switchSeq;
 		this.activeEngine = targetEngine;
+		this.needsFullSnapshot.add(targetEngine);
 		this.options.onEngineChanged(targetEngine);
 		const cs = await this.ensureAttached(targetEngine);
 		if (this.disposed || seq !== this.switchSeq) return null;
@@ -484,6 +498,10 @@ export class MultiEngineBroker {
 					void entry.cs.removeProject(msg.path).catch(() => {});
 				}
 			}
+			return { handled: false, targetCs: activeCs };
+		}
+		if (msg.type === "rename_project") {
+			const activeCs = await this.ensureAttached(this.activeEngine);
 			return { handled: false, targetCs: activeCs };
 		}
 		return { handled: false, targetCs: await this.ensureAttached(this.activeEngine) };

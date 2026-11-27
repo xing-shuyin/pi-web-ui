@@ -8,9 +8,10 @@ import type { PromptAttachment } from "../../protocol.js";
 import { probeEngineCliVersion, resolveEngineCliLaunch } from "../../engine-cli.js";
 import { spawnChildPiped, type SpawnedChild } from "../../spawn-child.js";
 import { decodeInlineImage, describeCliAttachment } from "../universal-attachments.js";
-import { collectEnabledMcpServers, toCodexMcpOverrides } from "../engine-mcp.js";
+import { collectEnabledMcpServers, toCodexMcpOverrides, withInternalMcpServer } from "../engine-mcp.js";
 import {
 	isModelProtocolSupportedByEngine,
+	isProtocolSupportedByEngine,
 	listCustomModelsFromConfig,
 	readModelsJson,
 	resolveModelProtocol,
@@ -110,12 +111,16 @@ export class CodexDriver extends BaseAgentDriver {
 		supportsThinkingLevels: true,
 		supportsAskUser: false,
 		supportsSubagents: true,
+		mcpTransport: "http",
+		systemPromptChannel: "turn-prefix",
 	};
 	private sessionId = "";
 	private model = "default";
 	private effort = "medium";
 	private active?: ActiveRun;
 	private disposed = false;
+	private systemPromptAppendix = "";
+	private internalMcp: import("../driver-base.js").InternalMcpEndpoint | null = null;
 	constructor(
 		cwd: string,
 		private readonly options: CodexDriverOptions = {},
@@ -138,6 +143,12 @@ export class CodexDriver extends BaseAgentDriver {
 	}
 	setThinkingLevel(level: string): void {
 		this.effort = this.getSupportedThinkingLevels().includes(level) ? level : "medium";
+	}
+	override setSystemPromptAppendix(appendix: string): void {
+		this.systemPromptAppendix = appendix.trim();
+	}
+	override setInternalMcp(endpoint: import("../driver-base.js").InternalMcpEndpoint | null): void {
+		this.internalMcp = endpoint;
 	}
 	getSupportedThinkingLevels(): string[] {
 		return ["minimal", "low", "medium", "high", "xhigh"];
@@ -168,7 +179,7 @@ export class CodexDriver extends BaseAgentDriver {
 		const cwd = this.cwd;
 		let imageDir: string | undefined;
 		const imageArgs: string[] = [];
-		let input = prompt;
+		let input = !this.sessionId && this.systemPromptAppendix ? `${this.systemPromptAppendix}\n\n${prompt}` : prompt;
 		try {
 			for (const att of attachments ?? []) {
 				if (att.imageData && !att.fileData && !att.uploadPath) {
@@ -185,7 +196,10 @@ export class CodexDriver extends BaseAgentDriver {
 				if (note) input += `\n${note}`;
 			}
 			const mcp = toCodexMcpOverrides(
-				collectEnabledMcpServers({ cwd, agentDir: this.options.agentDir, dataDir: this.options.dataDir }),
+				withInternalMcpServer(
+					collectEnabledMcpServers({ cwd, agentDir: this.options.agentDir, dataDir: this.options.dataDir }),
+					this.internalMcp,
+				),
 			);
 			const launch = resolveEngineCliLaunch("codex", { executablePath: this.options.executablePath, cwd });
 			const customEnv: Record<string, string> = { ...mcp.env };
@@ -204,14 +218,18 @@ export class CodexDriver extends BaseAgentDriver {
 					: undefined;
 				const api = typeof providerRow?.api === "string" ? providerRow.api : undefined;
 				const protocol = resolveModelProtocol(api, targetProvider, targetModel);
-				const wireApi = protocol === "openai-responses" ? "responses" : "chat";
+				if (!isProtocolSupportedByEngine("codex", api, targetProvider, targetModel)) {
+					throw new Error(
+						`Codex CLI only supports openai-responses models (${this.model} uses ${protocol}). Switch to an openai-responses model or "default".`,
+					);
+				}
 				customConfigArgs.push(
 					"-c",
 					`model_provider=${JSON.stringify(safeKey)}`,
 					"-c",
 					`model_providers.${safeKey}.name=${JSON.stringify(targetProvider)}`,
 					"-c",
-					`model_providers.${safeKey}.wire_api=${JSON.stringify(wireApi)}`,
+					`model_providers.${safeKey}.wire_api="responses"`,
 				);
 				if (cred.baseUrl) {
 					customConfigArgs.push("-c", `model_providers.${safeKey}.base_url=${JSON.stringify(cred.baseUrl)}`);
@@ -261,6 +279,7 @@ export class CodexDriver extends BaseAgentDriver {
 			let pending = "",
 				stderr = "",
 				error: Error | undefined,
+				lastReconnectError: string | undefined,
 				completed = false,
 				settled = false;
 			let usage: AgentTurnUsage | undefined;
@@ -287,8 +306,14 @@ export class CodexDriver extends BaseAgentDriver {
 						outputTokens: u.output_tokens ?? 0,
 					};
 				} else if (event.type === "turn.failed") error = new Error(event.error?.message || "Codex turn failed");
-				else if (event.type === "error") error = new Error(event.message || "Codex error");
-				else if (event.type?.startsWith("item.") && event.item) {
+				else if (event.type === "error") {
+					const msg = typeof event.message === "string" ? event.message : "";
+					if (/^Reconnecting\.\.\./i.test(msg)) {
+						lastReconnectError = msg;
+					} else {
+						error = new Error(msg || "Codex error");
+					}
+				} else if (event.type?.startsWith("item.") && event.item) {
 					const item = event.item,
 						id = String(item.id);
 					if (item.type === "agent_message" || item.type === "reasoning") {
@@ -357,7 +382,9 @@ export class CodexDriver extends BaseAgentDriver {
 					if (run.cancelled) {
 						if (error) sink.onError(error);
 					} else if (error || code !== 0 || !completed)
-						sink.onError(error ?? new Error(stderr.trim() || `Codex exited before completion (${code})`));
+						sink.onError(
+							error ?? new Error(lastReconnectError || stderr.trim() || `Codex exited before completion (${code})`),
+						);
 					else sink.onTurnComplete({ usage });
 				} catch (err) {
 					sink.onError(err instanceof Error ? err : String(err));

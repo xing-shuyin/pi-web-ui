@@ -92,6 +92,7 @@ describe("bg_task 与 bash waitMs/background 集成", () => {
 	it("bash background=true 启动后可用 bg_task list/status/kill 管理", async () => {
 		const dir = makeDir();
 		const bg = createCoreBackground({
+			clientId: "client-bg",
 			dataDir: dir,
 			emit: () => {},
 			flushSnapshot: () => {},

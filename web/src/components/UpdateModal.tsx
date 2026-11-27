@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Markdown } from "./Markdown";
 import { formatSize } from "../format-bytes";
@@ -210,6 +210,14 @@ export function UpdateModal({
 	const [msiLeaving, setMsiLeaving] = useState(false);
 	const [msiError, setMsiError] = useState<string | null>(null);
 	useEscapeKey(onClose, open);
+
+	// 打开弹窗时若壳还在等启动 15s 延迟（phase === "idle"），立即触发一次检查，不必干等
+	useEffect(() => {
+		if (!open || !inDesktopShell) return;
+		if (updater.state?.mode === "auto" && updater.state.phase === "idle") {
+			void updater.check({ manual: false });
+		}
+	}, [open, inDesktopShell, updater.state?.mode, updater.state?.phase]);
 
 	if (!open) return null;
 

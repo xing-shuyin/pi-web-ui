@@ -37,7 +37,7 @@ describe("engine-capabilities", () => {
 	it("DSH 引擎明确禁用不支持的特性", () => {
 		expect(DEFAULT_DSH_CAPABILITIES.remoteSsh).toBe(false);
 		expect(DEFAULT_DSH_CAPABILITIES.conversationRef).toBe(false);
-		expect(DEFAULT_DSH_CAPABILITIES.pageRef).toBe(false);
+		expect(DEFAULT_DSH_CAPABILITIES.pageRef).toBe(true);
 		expect(DEFAULT_DSH_CAPABILITIES.planMode).toBe(false);
 		expect(DEFAULT_DSH_CAPABILITIES.subagents).toBe(false);
 		expect(DEFAULT_DSH_CAPABILITIES.lazyTools).toBe(false);

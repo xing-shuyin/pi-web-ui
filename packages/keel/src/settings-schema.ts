@@ -112,6 +112,8 @@ export interface ClientSettings {
 	defaultPermissionPreset?: string;
 	/** Claude Code engine: permission mode surfaced in Settings (env remains the fallback). */
 	claudePermissionMode?: string;
+	/** Universal CLI engines (Claude/Codex): inject pi-web-ui host & plugin tools via internal MCP. */
+	internalMcpEnabled?: boolean;
 }
 
 export const DEFAULT_DARK_MINIMAL_SETTINGS: ClientSettings = Object.freeze({

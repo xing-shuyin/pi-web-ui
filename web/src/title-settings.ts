@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 
 import { useSyncExternalStore } from "react";
+import { normalizeSessionPathKey } from "./use-chat";
 
 const TITLE_SETTINGS_KEY = "pi-web-ui:project-title";
 
@@ -23,6 +24,18 @@ export function projectNameFromCwd(cwd: string): string {
 	const trimmed = cwd.replace(/[\\/]+$/, "");
 	const name = trimmed.split(/[\\/]/).pop() ?? "";
 	return name;
+}
+
+/** 优先返回用户自定义的项目名称，否则回退到目录名。 */
+export function resolveProjectDisplayName(cwd: string, projects?: readonly { path: string; name?: string }[]): string {
+	if (!cwd) return "";
+	if (projects?.length) {
+		const target = normalizeSessionPathKey(cwd);
+		const hit = projects.find((p) => normalizeSessionPathKey(p.path) === target);
+		const custom = hit?.name?.trim();
+		if (custom) return custom;
+	}
+	return projectNameFromCwd(cwd);
 }
 
 function loadTitleSettings(): TitleSettings {

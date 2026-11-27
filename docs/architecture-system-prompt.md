@@ -194,8 +194,8 @@
     1. 任何修改先进 pending overlay（服务端快照 ⊕ 未确认补丁），只有服务端 settings_state
        回执与补丁值一致才移除。UI 因此不会因为一次未确认（或已失败）的保存回退旧值。
     2. promptOverrides / toolPromptOverrides 是 map 语义字段（服务端「子键覆盖、空串删除」）。
-       本地 overlay 用同一语义叠加，绝不把局部 patch 当整值 —— 否则面板会把没动过的 token
-       当成已删除，再把重建结果写回服务端就是真丢配置。
+       服务端统一走 `server/settings-patch.ts`，Core / Universal / DSH 同口径；本地 overlay 用同一语义叠加，
+       绝不把局部 patch 当整值 —— 否则面板会把没动过的 token 当成已删除，再把重建结果写回服务端就是真丢配置。
     3. 草稿重建只刷新未被本地占用的 token（reconcileOverrideDraft）：正在编辑（focus）
        与已改未回执（dirty）的 token 永远保留；服务端回执一致后才释放 dirty。
     4. 顶部胶囊显示真实回执状态：saving / saved / failed（超时未确认或通道断开）。failed

@@ -128,4 +128,10 @@ describe("多引擎实际协议类型（Protocol-Based）针对性过滤规范",
 		expect(isProtocolSupportedByEngine("durable", "anthropic-messages")).toBe(true);
 		expect(isProtocolSupportedByEngine("durable", "google-generative-ai")).toBe(true);
 	});
+
+	it("Codex 引擎：只放行 openai-responses，拒绝 openai-completions（Codex CLI 已移除 wire_api=chat）", () => {
+		expect(isProtocolSupportedByEngine("codex", "openai-responses", "openai")).toBe(true);
+		expect(isProtocolSupportedByEngine("codex", "openai-completions", "magpie")).toBe(false);
+		expect(isProtocolSupportedByEngine("codex", "anthropic-messages", "anthropic")).toBe(false);
+	});
 });

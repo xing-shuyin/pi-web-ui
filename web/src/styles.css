@@ -2756,14 +2756,6 @@
 	.lp-project-tree-children .lp-row.lp-sub {
 		padding-left: 0;
 	}
-	.lp-project-tree-children .lp-sub:not(.lp-has-kids) .session-item,
-	.lp-project-tree-children .lp-sub:not(.lp-has-kids) .session-item.active {
-		padding-left: calc(24px + var(--depth, 1) * 12px);
-	}
-	.lp-project-tree-children .lp-row.lp-has-kids .session-item,
-	.lp-project-tree-children .lp-row.lp-has-kids .session-item.active {
-		padding-left: calc(24px + var(--depth, 0) * 12px);
-	}
 
 	.lp-project-tree-children .session-item.active {
 		min-height: 28px;
@@ -3214,105 +3206,81 @@
 		}
 	}
 
-	.lp-tree-caret {
+	.subagents-toggle-badge {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 18px;
-		height: 24px;
-		padding: 0;
-		border: none;
-		background: transparent;
-		color: var(--text-dim);
-		border-radius: 4px;
-		cursor: pointer;
-		flex-shrink: 0;
-		transition:
-			color 0.15s,
-			background-color 0.15s;
-	}
-	.lp-row.lp-has-kids > .lp-tree-caret {
-		position: absolute;
-		left: calc(4px + var(--depth, 0) * 12px);
-		top: 50%;
-		transform: translateY(-50%);
-		z-index: 2;
-		margin: 0;
-	}
-	.lp-tree-caret:hover,
-	.lp-tree-caret:focus-visible {
-		background: var(--bg-elev2);
-		color: var(--text);
-	}
-	.lp-tree-caret:focus-visible {
-		outline: 2px solid var(--accent);
-		outline-offset: -1px;
-	}
-	.lp-tree-caret svg {
-		width: 12px;
-		height: 12px;
-		stroke-width: 1.5;
-		pointer-events: none;
-	}
-
-	.subagents-collapsed-badge {
-		display: inline-flex;
-		align-items: center;
 		gap: 4px;
+		flex-shrink: 0;
+		min-width: 18px;
 		padding: 1px 6px;
-		margin-left: 6px;
-		font-size: 11px;
-		line-height: 1.4;
-		font-weight: 500;
 		border-radius: 10px;
 		background: var(--bg-elev2);
 		color: var(--text-dim);
 		border: 1px solid var(--border);
+		font-size: 11px;
+		line-height: 1.4;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
 		cursor: pointer;
-		vertical-align: middle;
 		user-select: none;
 		transition:
 			background-color 0.15s,
 			border-color 0.15s,
 			color 0.15s;
 	}
-	.subagents-collapsed-badge:hover {
+	.subagents-toggle-badge:hover,
+	.subagents-toggle-badge:focus-visible {
 		background: var(--bg-elev3);
 		color: var(--text);
-		border-color: var(--border);
+		border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 	}
-	.subagents-collapsed-badge.has-streaming {
+	.subagents-toggle-badge:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
+	}
+	.subagents-toggle-badge.is-collapsed {
+		color: var(--text);
+		border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+	}
+	.subagents-toggle-badge.has-streaming {
 		background: color-mix(in srgb, var(--green) 12%, transparent);
 		color: var(--green);
 		border-color: rgba(34, 197, 94, 0.3);
 	}
-	.subagents-collapsed-badge.has-question {
+	.subagents-toggle-badge.has-question {
 		background: color-mix(in srgb, var(--amber) 12%, transparent);
 		color: var(--amber);
 		border-color: rgba(245, 158, 11, 0.3);
 	}
-	.subagents-collapsed-badge.has-error {
+	.subagents-toggle-badge.has-error {
 		background: color-mix(in srgb, var(--red) 12%, transparent);
 		color: var(--red);
 		border-color: rgba(239, 68, 68, 0.3);
 	}
-	.subagents-collapsed-badge .subagent-dot {
+	.subagents-toggle-badge .subagent-dot {
 		width: 6px;
 		height: 6px;
 		border-radius: 50%;
 		flex-shrink: 0;
 	}
-	.subagents-collapsed-badge .subagent-dot.question {
+	.subagents-toggle-badge .subagent-dot.streaming {
+		background: var(--green);
+		box-shadow: 0 0 4px var(--green);
+		animation: conv-pulse 1.2s ease-in-out infinite;
+	}
+	.subagents-toggle-badge .subagent-dot.question {
 		width: auto;
 		height: auto;
 		font-size: 10px;
 		font-weight: bold;
 		color: var(--amber);
 	}
-	.subagents-collapsed-badge .subagent-dot.error {
+	.subagents-toggle-badge .subagent-dot.error {
 		background: var(--red);
 		box-shadow: 0 0 4px var(--red);
 	}
+
 	.lp-row .lp-del {
 		position: absolute;
 		right: 6px;
@@ -9852,6 +9820,15 @@
 	.cwd-picker-input {
 		flex: 1;
 		min-width: 0;
+	}
+	.cwd-project-name-row {
+		gap: 6px;
+	}
+	.cwd-project-name-icon {
+		flex-shrink: 0;
+		width: 13px;
+		height: 13px;
+		color: var(--text-dim);
 	}
 
 	.cwd-choose-btn {
@@ -39476,29 +39453,10 @@
 .lp-project-tree-children .lp-row.lp-sub {
 	padding-left: 0;
 }
-.lp-project-tree-children .lp-sub:not(.lp-has-kids) .session-item,
-.lp-project-tree-children .lp-sub:not(.lp-has-kids) .session-item.active,
-.lp-project-tree-children .lp-sub:not(.lp-has-kids) .lp-tree-session-item,
-.lp-project-tree-children .lp-sub:not(.lp-has-kids) .lp-tree-session-item.active {
-	padding-left: calc(24px + var(--depth, 1) * 12px);
-}
 
 .session-item.is-running::after,
 .lp-project-tree-children .session-item.is-running::after {
 	display: none;
-}
-
-.lp-project-tree-children .lp-row.lp-has-kids > .lp-tree-caret {
-	left: calc(4px + var(--depth, 0) * 12px);
-	width: 18px;
-	height: 24px;
-}
-
-.lp-project-tree-children .lp-row.lp-has-kids .session-item,
-.lp-project-tree-children .lp-row.lp-has-kids .session-item.active,
-.lp-project-tree-children .lp-row.lp-has-kids .lp-tree-session-item,
-.lp-project-tree-children .lp-row.lp-has-kids .lp-tree-session-item.active {
-	padding-left: calc(24px + var(--depth, 0) * 12px);
 }
 
 .lp-project-tree-children .session-item.active,
@@ -41075,12 +41033,13 @@
 .lp-panel .lp-tree-session-item:hover {
 	background: color-mix(in srgb, var(--text) 5%, transparent);
 }
-.lp-panel .lp-project-tree-children .lp-sub:not(.lp-has-kids) .session-item,
-.lp-panel .lp-project-tree-children .lp-sub:not(.lp-has-kids) .session-item.active,
-.lp-panel .lp-project-tree-children .lp-sub:not(.lp-has-kids) .lp-tree-session-item,
-.lp-panel .lp-project-tree-children .lp-sub:not(.lp-has-kids) .lp-tree-session-item.active {
-	padding-left: calc(8px + var(--depth, 1) * 12px);
+.lp-panel .lp-project-tree-children .lp-row.lp-sub .session-item,
+.lp-panel .lp-project-tree-children .lp-row.lp-sub .session-item.active,
+.lp-panel .lp-project-tree-children .lp-row.lp-sub .lp-tree-session-item,
+.lp-panel .lp-project-tree-children .lp-row.lp-sub .lp-tree-session-item.active {
+	padding-left: calc(8px + var(--depth, 0) * 12px);
 }
+
 .lp-panel .conv-current-badge {
 	display: none;
 }

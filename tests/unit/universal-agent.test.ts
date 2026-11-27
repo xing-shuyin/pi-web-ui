@@ -260,6 +260,53 @@ describe("Universal Agent 底座体系单测", () => {
 			session.dispose();
 		});
 
+		it("模型列表保留驱动提供的 reasoning/vision/provider，不再硬编码 true", async () => {
+			class MetadataDriver extends MockAgentDriver {
+				override async listModels() {
+					return [
+						{ id: "relay/text-model", name: "Text Model", provider: "relay", reasoning: false, vision: false },
+						{ id: "relay/vision-model", name: "Vision Model", provider: "relay", reasoning: true, vision: true },
+					];
+				}
+			}
+			const sent: ServerMessage[] = [];
+			const session = new UniversalSession({
+				clientId: "test-client-model-meta",
+				cwd: tempDir,
+				send: (message) => sent.push(message),
+				store: new UniversalSessionStore(tempDir),
+				driver: new MetadataDriver(tempDir),
+			});
+			await session.listModels();
+			const frame = sent.find((message) => message.type === "models");
+			expect(frame).toMatchObject({
+				type: "models",
+				models: [
+					{ id: "relay/text-model", provider: "relay", reasoning: false, vision: false },
+					{ id: "relay/vision-model", provider: "relay", reasoning: true, vision: true },
+				],
+			});
+			session.dispose();
+		});
+
+		it("makeDir(setAsCwd=true) 建目录成功后切工作区，false 时保持原目录", async () => {
+			const store = new UniversalSessionStore(tempDir);
+			const session = new UniversalSession({
+				clientId: "test-client-mkdir",
+				cwd: tempDir,
+				send: () => {},
+				store,
+				driver: new MockAgentDriver(tempDir),
+			});
+			const created = join(tempDir, "created");
+			await session.makeDir(created, false);
+			expect(session.cwd).toBe(tempDir);
+			await session.makeDir(created, true);
+			expect(session.cwd).toBe(created);
+			expect(existsSync(created)).toBe(true);
+			session.dispose();
+		});
+
 		it("支持停止生成 (abort)", async () => {
 			const store = new UniversalSessionStore(tempDir);
 			const sentMessages: ServerMessage[] = [];

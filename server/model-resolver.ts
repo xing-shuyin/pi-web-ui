@@ -318,8 +318,12 @@ export function isProtocolSupportedByEngine(
 		return true;
 	}
 
-	if (normEngine === "dsh" || normEngine === "codex") {
+	if (normEngine === "dsh") {
 		return protocol === "openai-completions" || protocol === "openai-responses";
+	}
+
+	if (normEngine === "codex") {
+		return protocol === "openai-responses" || protocol === "openai-codex-responses";
 	}
 
 	if (normEngine === "claude") {

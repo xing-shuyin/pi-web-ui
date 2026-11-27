@@ -8,6 +8,11 @@ import {
 } from "react";
 import { FiChevronDown, FiChevronUp, FiX } from "react-icons/fi";
 import { useT } from "../i18n";
+import {
+	saveTerminalDockPrefs,
+	useTerminalDock,
+	type TerminalDockSide,
+} from "../terminal-dock";
 
 export interface BottomDockTab {
 	id: string;
@@ -16,22 +21,10 @@ export interface BottomDockTab {
 	element: ReactNode;
 }
 
-const HEIGHT_KEY = "pi-web-ui:bottom-dock-h";
-const LEGACY_HEIGHT_KEY = "pi-web-ui:term-drawer-h";
-const MIN_H = 180;
-const DEFAULT_H = 318;
-
-function readHeight(): number {
-	try {
-		// 老键名继续读：升级不应该把用户拖过的高度丢掉。
-		const raw = localStorage.getItem(HEIGHT_KEY) ?? localStorage.getItem(LEGACY_HEIGHT_KEY);
-		const v = raw === null ? Number.NaN : Number(raw);
-		if (Number.isFinite(v) && v >= MIN_H) return v;
-	} catch {
-		/* localStorage 可能被禁用，退回默认值 */
-	}
-	return DEFAULT_H;
-}
+const MIN_BOTTOM = 180;
+const DEFAULT_BOTTOM = 318;
+const MIN_SIDE = 240;
+const DEFAULT_SIDE = 360;
 
 /**
  * 底部抽屉（全宽）：高度 + 折叠 + 拖拽把手 + 多标签。
@@ -47,6 +40,7 @@ export function BottomDock({
 	tabs,
 	activeId,
 	onSelectTab,
+	side: sideProp,
 }: {
 	open: boolean;
 	collapsed: boolean;
@@ -55,65 +49,68 @@ export function BottomDock({
 	tabs: BottomDockTab[];
 	activeId: string;
 	onSelectTab: (id: string) => void;
+	side?: TerminalDockSide;
 }) {
 	const t = useT();
+	const dockPrefs = useTerminalDock();
+	const side = sideProp ?? dockPrefs.side;
+	const size = dockPrefs.sizes[side];
 	const ref = useRef<HTMLElement | null>(null);
-	const [height, setHeight] = useState<number>(readHeight);
 	const [dragging, setDragging] = useState(false);
 	const multi = tabs.length > 1;
 	const active = tabs.find((tab) => tab.id === activeId) ?? tabs[0];
 
-	useEffect(() => {
-		if (dragging) return;
-		try {
-			localStorage.setItem(HEIGHT_KEY, String(Math.round(height)));
-		} catch {
-			/* 忽略持久化失败 */
+	const maxSize = useCallback(() => {
+		if (side === "bottom") {
+			const host = ref.current?.parentElement?.clientHeight ?? window.innerHeight;
+			return Math.max(MIN_BOTTOM + 40, Math.round(host * 0.7));
 		}
-	}, [height, dragging]);
-
-	const maxHeight = useCallback(() => {
-		const host = ref.current?.parentElement?.clientHeight ?? window.innerHeight;
-		return Math.max(MIN_H + 40, Math.round(host * 0.7));
-	}, []);
+		const host =
+			ref.current?.closest(".terminal-workspace")?.clientWidth ??
+			ref.current?.parentElement?.parentElement?.clientWidth ??
+			window.innerWidth;
+		return Math.max(MIN_SIDE + 80, Math.round(host * 0.7));
+	}, [side]);
 
 	const onGripDown = useCallback(
 		(e: ReactPointerEvent<HTMLDivElement>) => {
 			e.preventDefault();
 			const el = e.currentTarget;
+			const vertical = side === "bottom";
+			const startX = e.clientX;
 			const startY = e.clientY;
-			const startH = height;
-			const ceil = maxHeight();
-			let last = startH;
+			const startSize = size;
+			const ceil = maxSize();
+			const min = side === "bottom" ? MIN_BOTTOM : MIN_SIDE;
+			let last = startSize;
 			el.setPointerCapture(e.pointerId);
 			setDragging(true);
-			document.body.classList.add("td-resizing");
+			document.body.classList.add(vertical ? "td-resizing" : "td-resizing-x");
 			const move = (ev: PointerEvent) => {
-				last = Math.min(ceil, Math.max(MIN_H, Math.round(startH + (startY - ev.clientY))));
-				setHeight(last);
+				const delta = vertical ? startY - ev.clientY : side === "left" ? ev.clientX - startX : startX - ev.clientX;
+				last = Math.min(ceil, Math.max(min, Math.round(startSize + delta)));
+				saveTerminalDockPrefs({ sizes: { [side]: last } });
 			};
 			const up = () => {
 				el.removeEventListener("pointermove", move);
 				el.removeEventListener("pointerup", up);
 				el.removeEventListener("pointercancel", up);
 				document.body.classList.remove("td-resizing");
+				document.body.classList.remove("td-resizing-x");
 				setDragging(false);
-				try {
-					localStorage.setItem(HEIGHT_KEY, String(last));
-				} catch {
-					/* 忽略持久化失败 */
-				}
+				saveTerminalDockPrefs({ sizes: { [side]: last } });
 			};
 			el.addEventListener("pointermove", move);
 			el.addEventListener("pointerup", up);
 			el.addEventListener("pointercancel", up);
 		},
-		[height, maxHeight],
+		[maxSize, side, size],
 	);
 
 	const onGripDoubleClick = useCallback(() => {
-		setHeight((h) => (h > DEFAULT_H + 40 ? DEFAULT_H : Math.round(maxHeight() * 0.82)));
-	}, [maxHeight]);
+		const fallback = side === "bottom" ? DEFAULT_BOTTOM : DEFAULT_SIDE;
+		saveTerminalDockPrefs({ sizes: { [side]: size > fallback + 40 ? fallback : Math.round(maxSize() * 0.82) } });
+	}, [maxSize, side, size]);
 
 	if (tabs.length === 0) return null;
 
@@ -123,7 +120,7 @@ export function BottomDock({
 			className={`term-drawer bottom-dock${open ? "" : " closed"}${open && collapsed ? " collapsed" : ""}${
 				dragging ? " dragging" : ""
 			}`}
-			style={{ "--td-h": `${Math.round(height)}px` } as React.CSSProperties}
+			style={{ "--td-h": `${Math.round(size)}px` } as React.CSSProperties}
 			aria-label={active?.label ?? t("terminal")}
 			aria-expanded={open}
 		>

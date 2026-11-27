@@ -1,4 +1,12 @@
-import { BaseAgentDriver, type AgentCapabilities, type AgentEventSink } from "../universal/driver-base.js";
+import { resolve } from "node:path";
+import {
+	BaseAgentDriver,
+	type AgentCapabilities,
+	type AgentEventSink,
+	type DriverModelInfo,
+	type InternalMcpEndpoint,
+} from "../universal/driver-base.js";
+import { internalMcpRegistry } from "../universal/internal-mcp.js";
 import type { AgentEngineCapabilities, PromptAttachment, SlashCommandInfo } from "../protocol.js";
 import { openDurableStorage } from "./durable-storage.js";
 import { setupDurableRegistry } from "./durable-tools.js";
@@ -13,6 +21,30 @@ import { loadDurableModule, loadDurablePeerModule } from "./durable-loader.js";
 import { DurableEventProjector } from "./durable-event-projector.js";
 import { DEFAULT_DURABLE_CAPABILITIES } from "../engine-capabilities.js";
 
+interface SharedHarnessState {
+	harness: any;
+	storage: any;
+	registry: any;
+	models: any;
+	backgroundContext: any;
+	durableModule: any;
+	initError?: string;
+}
+
+interface SharedHarnessEntry {
+	key: string;
+	refCount: number;
+	initPromise?: Promise<SharedHarnessState>;
+	state?: SharedHarnessState;
+}
+
+/** 同进程内按 `(dataDir, cwd)` 共享单个 Durable `Harness`，避免多对话并发打开同一份 SQLite 引发 entry/conversation ID 冲突。 */
+const sharedHarnesses = new Map<string, SharedHarnessEntry>();
+
+function sharedHarnessKey(dataDir: string, cwd: string): string {
+	return `${resolve(dataDir)}\0${resolve(cwd)}`;
+}
+
 export class DurableAgentDriver extends BaseAgentDriver {
 	readonly id = "durable";
 	readonly name = "Pi Durable Agent";
@@ -24,6 +56,7 @@ export class DurableAgentDriver extends BaseAgentDriver {
 		supportsThinkingLevels: true,
 		supportsAskUser: true,
 		supportsSubagents: true,
+		mcpTransport: "http",
 	};
 
 	override getEngineCapabilities(): AgentEngineCapabilities {
@@ -38,6 +71,7 @@ export class DurableAgentDriver extends BaseAgentDriver {
 
 	private durableModule: any = null;
 	private storage: any = null;
+	private registry: any = null;
 	private harness: any = null;
 	private backgroundContext: any = null;
 	private models: any = null;
@@ -47,11 +81,61 @@ export class DurableAgentDriver extends BaseAgentDriver {
 	private activeWatch: any = null;
 	private currentRunningConv: any = null;
 	private currentThinkingLevel: string = "medium";
+	private internalMcpEndpoint: InternalMcpEndpoint | null = null;
+	private installedInternalMcpKey = "";
+	private sharedEntry: SharedHarnessEntry | null = null;
+	private disposed = false;
 
 	constructor(cwd: string, opts?: { dataDir?: string; agentDir?: string }) {
 		super(cwd);
 		this.dataDir = opts?.dataDir ?? process.cwd();
 		this.agentDir = opts?.agentDir;
+	}
+
+	override setInternalMcp(endpoint: InternalMcpEndpoint | null): void {
+		this.internalMcpEndpoint = endpoint;
+		this.syncInternalMcpTools();
+	}
+
+	private syncInternalMcpTools(): void {
+		if (
+			!this.registry ||
+			typeof this.registry.install !== "function" ||
+			typeof this.durableModule?.defineExtension !== "function" ||
+			typeof this.durableModule?.defineTool !== "function"
+		) {
+			return;
+		}
+		if (!this.internalMcpEndpoint) return;
+		const ctx = internalMcpRegistry.getContext(this.internalMcpEndpoint.token);
+		const tools = ctx?.listTools() ?? [];
+		const key = tools.map((t) => t.name).join(",");
+		if (key === this.installedInternalMcpKey) return;
+		this.installedInternalMcpKey = key;
+		try {
+			if (typeof this.registry.uninstall === "function") {
+				this.registry.uninstall("pi_host_mcp");
+			}
+		} catch {}
+		if (tools.length === 0) return;
+		const ext = this.durableModule.defineExtension({
+			name: "pi_host_mcp",
+			tools: tools.map((t) =>
+				this.durableModule.defineTool({
+					name: t.name,
+					description: t.description,
+					parameters: t.inputSchema,
+					execute: async (args: Record<string, unknown>) => {
+						const res = await t.execute(args ?? {});
+						return {
+							output: [{ type: "text", text: res.error ? `Error: ${res.error}` : (res.output ?? "") }],
+							...(res.error ? { isError: true } : {}),
+						};
+					},
+				}),
+			),
+		});
+		this.registry.install(ext);
 	}
 
 	override setThinkingLevel(level: string): void {
@@ -86,58 +170,138 @@ export class DurableAgentDriver extends BaseAgentDriver {
 	public async ensureInitialized(): Promise<void> {
 		if (this.initPromise) return this.initPromise;
 		this.initPromise = (async () => {
-			try {
-				const chordModule = await loadDurablePeerModule("@earendil-works/chord", "context").catch(() => null);
-				this.backgroundContext = chordModule?.BACKGROUND_CONTEXT ?? {};
+			if (this.disposed) return;
+			const key = sharedHarnessKey(this.dataDir, this.cwd);
+			let entry = sharedHarnesses.get(key);
+			if (!entry) {
+				entry = { key, refCount: 0 };
+				sharedHarnesses.set(key, entry);
+			}
+			entry.refCount++;
+			this.sharedEntry = entry;
 
-				this.durableModule = await loadDurableModule().catch(() => null);
+			if (!entry.initPromise) {
+				entry.initPromise = (async (): Promise<SharedHarnessState> => {
+					let backgroundContext: any = {};
+					let durableModule: any = null;
+					try {
+						const chordModule = await loadDurablePeerModule("@earendil-works/chord", "context").catch(() => null);
+						backgroundContext = chordModule?.BACKGROUND_CONTEXT ?? {};
 
-				if (!this.durableModule || typeof this.durableModule.Harness?.open !== "function") {
-					this.initError = "@earendil-works/pi-durable 尚未安装或入口未找到";
-					return;
-				}
+						durableModule = await loadDurableModule().catch(() => null);
 
-				const { storage } = await openDurableStorage(this.dataDir, this.cwd);
-				this.storage = storage;
+						if (!durableModule || typeof durableModule.Harness?.open !== "function") {
+							return {
+								harness: null,
+								storage: null,
+								registry: null,
+								models: null,
+								backgroundContext,
+								durableModule,
+								initError: "@earendil-works/pi-durable 尚未安装或入口未找到",
+							};
+						}
 
-				const { registry } = await setupDurableRegistry(this.cwd);
+						const { storage } = await openDurableStorage(this.dataDir, this.cwd);
+						const { registry } = await setupDurableRegistry(this.cwd);
+						const models = await setupDurableModels(this.agentDir);
 
-				const models = await setupDurableModels(this.agentDir);
-				this.models = models;
+						const envModule = await loadDurableModule("env/node").catch(() => null);
+						const envFactory = envModule?.NodeExecutionEnv
+							? ({ cwd: callCwd }: any) => new envModule.NodeExecutionEnv({ cwd: callCwd || this.cwd })
+							: undefined;
 
-				const envModule = await loadDurableModule("env/node").catch(() => null);
-				const envFactory = envModule?.NodeExecutionEnv
-					? ({ cwd: callCwd }: any) => new envModule.NodeExecutionEnv({ cwd: callCwd || this.cwd })
-					: undefined;
+						const harness = await durableModule.Harness.open(
+							storage,
+							{
+								models,
+								registry,
+								...(envFactory ? { env: envFactory } : {}),
+							},
+							backgroundContext,
+						);
 
-				this.harness = await this.durableModule.Harness.open(
-					storage,
-					{
-						models,
-						registry,
-						...(envFactory ? { env: envFactory } : {}),
-					},
-					this.backgroundContext,
-				);
+						if (typeof harness.resume === "function") {
+							harness.resume();
+						}
 
-				if (typeof this.harness.resume === "function") {
-					this.harness.resume();
-				}
-
-				if (this.cachedModels.length === 0) {
-					await this.listModels().catch(() => []);
-				}
-				if (!this.currentModelId) {
-					const defaultChoice = resolveDurableModelChoice(undefined, this.cachedModels, this.agentDir);
-					if (defaultChoice) {
-						this.currentModelId = `${defaultChoice.provider}/${defaultChoice.modelId}`;
+						return {
+							harness,
+							storage,
+							registry,
+							models,
+							backgroundContext,
+							durableModule,
+						};
+					} catch (err: any) {
+						return {
+							harness: null,
+							storage: null,
+							registry: null,
+							models: null,
+							backgroundContext,
+							durableModule,
+							initError: err?.message || String(err),
+						};
 					}
+				})();
+			}
+
+			const state = await entry.initPromise;
+			entry.state = state;
+
+			if (this.disposed) {
+				this.releaseSharedEntry();
+				return;
+			}
+
+			this.backgroundContext = state.backgroundContext;
+			this.durableModule = state.durableModule;
+			this.storage = state.storage;
+			this.registry = state.registry;
+			this.models = state.models;
+			this.harness = state.harness;
+			if (state.initError) {
+				this.initError = state.initError;
+				return;
+			}
+
+			this.syncInternalMcpTools();
+
+			if (this.cachedModels.length === 0) {
+				await this.listModels().catch(() => []);
+			}
+			if (!this.currentModelId) {
+				const defaultChoice = resolveDurableModelChoice(undefined, this.cachedModels, this.agentDir);
+				if (defaultChoice) {
+					this.currentModelId = `${defaultChoice.provider}/${defaultChoice.modelId}`;
 				}
-			} catch (err: any) {
-				this.initError = err?.message || String(err);
 			}
 		})();
 		return this.initPromise;
+	}
+
+	private releaseSharedEntry(): void {
+		const entry = this.sharedEntry;
+		if (!entry) return;
+		this.sharedEntry = null;
+		entry.refCount = Math.max(0, entry.refCount - 1);
+		if (entry.refCount === 0) {
+			if (sharedHarnesses.get(entry.key) === entry) {
+				sharedHarnesses.delete(entry.key);
+			}
+			const harness = entry.state?.harness ?? this.harness;
+			const ctx = entry.state?.backgroundContext ?? this.backgroundContext;
+			if (harness && typeof harness.close === "function") {
+				try {
+					harness.close(ctx);
+				} catch {}
+			}
+			if (entry.state) {
+				entry.state.harness = null;
+			}
+		}
+		this.harness = null;
 	}
 
 	async createSession(): Promise<string> {
@@ -228,6 +392,7 @@ export class DurableAgentDriver extends BaseAgentDriver {
 	async sendPrompt(prompt: string, _attachments: PromptAttachment[] | undefined, sink: AgentEventSink): Promise<void> {
 		this.aborted = false;
 		await this.ensureInitialized();
+		this.syncInternalMcpTools();
 
 		if (!this.harness || this.initError) {
 			sink.onTextDelta(
@@ -398,28 +563,34 @@ export class DurableAgentDriver extends BaseAgentDriver {
 	}
 
 	dispose(): void {
+		this.disposed = true;
 		this.aborted = true;
-		if (this.harness && typeof this.harness.close === "function") {
-			try {
-				this.harness.close(this.backgroundContext);
-			} catch {}
-			this.harness = null;
-		}
+		void this.haltActiveWatch();
+		this.releaseSharedEntry();
 	}
 
-	override async listModels(): Promise<Array<{ id: string; name: string }>> {
+	override async listModels(): Promise<DriverModelInfo[]> {
 		try {
 			this.cachedModels = await listGlobalAvailableModels(this.cwd, this.agentDir);
 			if (this.cachedModels.length > 0) {
 				return this.cachedModels.map((m) => ({
 					id: m.id,
 					name: m.name,
+					provider: m.provider,
+					vision: m.vision,
+					reasoning: m.reasoning,
 				}));
 			}
 		} catch {}
 		return [
-			{ id: "openai/gpt-4o", name: "GPT-4o" },
-			{ id: "anthropic/claude-3-7-sonnet", name: "Claude 3.7 Sonnet" },
+			{ id: "openai/gpt-4o", name: "GPT-4o", provider: "openai", vision: true, reasoning: false },
+			{
+				id: "anthropic/claude-3-7-sonnet",
+				name: "Claude 3.7 Sonnet",
+				provider: "anthropic",
+				vision: true,
+				reasoning: true,
+			},
 		];
 	}
 

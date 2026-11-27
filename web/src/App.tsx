@@ -193,7 +193,7 @@ import { registerImageLightboxHost, type ImageLightboxTarget } from "./image-lig
 import { ImageLightbox } from "./components/ImageLightbox";
 import { registerImageOcrInstaller, setImageOcrInstallState } from "./image-ocr-install";
 import { listImageOcrProviders, subscribeImageOcrProviders } from "./image-ocr-providers";
-import { projectNameFromCwd, useProjectTitle } from "./title-settings";
+import { resolveProjectDisplayName, useProjectTitle } from "./title-settings";
 import { useFaviconSettings, resolveInstanceName, syncServerFaviconConfig } from "./favicon-settings";
 import { notify, subscribeNotificationClicks } from "./notify";
 import {
@@ -445,10 +445,10 @@ export function App() {
 	}, []);
 
 	useEffect(() => {
-		const name = projectTitle ? projectNameFromCwd(cwd) : "";
+		const name = projectTitle ? resolveProjectDisplayName(cwd, chat.projects) : "";
 		const base = name ? `${name} — pi-web-ui` : t("docTitle");
 		document.title = instanceName ? `[${instanceName}] ${base}` : base;
-	}, [cwd, projectTitle, instanceName, t]);
+	}, [cwd, chat.projects, projectTitle, instanceName, t]);
 	const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
 	useEffect(() => {
 		registerAttachmentSink((items) => setAttachments((prev) => appendDraftAttachments(prev, items)));

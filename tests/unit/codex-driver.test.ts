@@ -257,4 +257,35 @@ describe("Codex CLI driver", () => {
 		await driver.dispose();
 		await expect(driver.sendPrompt("later", undefined, sink)).rejects.toThrow("disposed");
 	});
+	it("filters out openai-completions models and rejects them in sendPrompt instead of passing wire_api=chat", async () => {
+		const { sink } = setup();
+		const agentDir = emptyAgentDir();
+		writeFileSync(
+			join(agentDir, "models.json"),
+			JSON.stringify({
+				providers: {
+					magpie: {
+						api: "openai-completions",
+						baseUrl: "http://127.0.0.1:3425/v1",
+						apiKey: "local-key",
+						models: [{ id: "chat-only", name: "Chat Only" }],
+					},
+					resp: {
+						api: "openai-responses",
+						baseUrl: "https://api.example.com/v1",
+						apiKey: "resp-key",
+						models: [{ id: "resp-model", name: "Responses Model" }],
+					},
+				},
+			}),
+		);
+		const driver = new CodexDriver(process.cwd(), { executablePath: "codex-test", agentDir });
+		const ids = (await driver.listModels()).map((m) => m.id);
+		expect(ids).not.toContain("magpie/chat-only");
+		expect(ids).toContain("resp/resp-model");
+
+		await driver.setModel("magpie/chat-only");
+		await expect(driver.sendPrompt("hi", undefined, sink)).rejects.toThrow("only supports openai-responses");
+		expect(spawnMock).not.toHaveBeenCalled();
+	});
 });

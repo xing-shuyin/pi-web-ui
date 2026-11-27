@@ -61,7 +61,7 @@ import {
 	normalizeDisabledAgentTools,
 	normalizeToolOnDemandList,
 } from "./tool-manager.js";
-import { normalizeToolPromptOverrides } from "./tool-prompt-overrides.js";
+import { mergeSettingsPatch } from "./settings-patch.js";
 import { resolveServerLang, type ServerLang } from "./i18n.js";
 import {
 	exportPresetVia,
@@ -793,24 +793,13 @@ export class SettingsService {
 		if (partial.promptTemplate !== undefined) {
 			next.promptTemplate = partial.promptTemplate;
 		}
-		if (partial.promptOverrides !== undefined) {
-			const overrides = { ...next.promptOverrides };
-			for (const [k, v] of Object.entries(partial.promptOverrides)) {
-				if (v && v.trim()) overrides[k] = v;
-				else delete overrides[k];
-			}
-			next.promptOverrides = overrides;
-		}
+		const mapPatch = mergeSettingsPatch(next, partial);
+		if (partial.promptOverrides !== undefined)
+			next.promptOverrides = (mapPatch.promptOverrides as Record<string, string> | undefined) ?? {};
+		if (partial.toolPromptOverrides !== undefined)
+			next.toolPromptOverrides =
+				(mapPatch.toolPromptOverrides as Record<string, UiToolPromptOverride> | undefined) ?? {};
 		if (partial.promptDisabled !== undefined) next.promptDisabled = [...partial.promptDisabled];
-		if (partial.toolPromptOverrides !== undefined) {
-			const overrides = { ...next.toolPromptOverrides };
-			const normalized = normalizeToolPromptOverrides(partial.toolPromptOverrides);
-			for (const key of Object.keys(partial.toolPromptOverrides)) {
-				if (normalized[key]) overrides[key] = normalized[key];
-				else delete overrides[key];
-			}
-			next.toolPromptOverrides = normalizeToolPromptOverrides(overrides);
-		}
 		if (partial.disabledSkills !== undefined) {
 			next.disabledSkills = partial.disabledSkills;
 		}

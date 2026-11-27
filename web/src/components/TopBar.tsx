@@ -1589,7 +1589,12 @@ export function TopBar({
 						setUpdateOpen(false);
 					}}
 					onCheckNpm={() => appSend({ type: "check_update" })}
-					onCheckAll={() => appSend({ type: "check_updates_all", force: true })}
+					onCheckAll={() => {
+						appSend({ type: "check_updates_all", force: true });
+						if (inDesktopShell && desktopUpdater.state?.mode === "auto") {
+							void desktopUpdater.check({ manual: true });
+						}
+					}}
 				/>
 			)}
 			{browserPanelOpen &&

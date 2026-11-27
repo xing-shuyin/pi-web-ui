@@ -114,6 +114,7 @@ export const ENV_SPECS: readonly EnvSpec[] = [
 	{ name: "PI_WEB_DESKTOP_URL", scope: "internal" },
 	{ name: "PI_WEB_DEV_CACHE", scope: "internal", note: "开发期缓存开关，env-vars.md 里有记但只给开发用。" },
 	{ name: "PI_WEB_DSH_JSONRPC_ENTRY", scope: "internal" },
+	{ name: "PI_WEB_DSH_INVENTORY_SESSION_ID", scope: "internal" },
 	{ name: "PI_WEB_DSH_RUNTIME_BASE", scope: "internal" },
 	{ name: "PI_WEB_NATIVE_CLI_APPROVAL", scope: "internal" },
 	{ name: "PI_WEB_NATIVE_CLI_KEY", scope: "internal" },

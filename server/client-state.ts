@@ -395,14 +395,21 @@ export class ClientStateStore {
 	 * - `promote`（默认）= 真实对话活动，把 `lastUsed` 顶到当前时间；项目排序只认这个。
 	 * - `promote: false` = 浏览/切换/恢复，只记 `lastCwd`、清 tombstone、缺省登记（`lastUsed: 0`），
 	 *   不刷新时间，所以只是点开看看不会把项目顶到最新。
+	 * - `clearTombstone`（默认 `true`）= 用户显式打开/发消息时清除删除墓碑；
+	 *   连接/重启初始化恢复应传 `false`，若项目已在墓碑中则忽略，避免已删项目重启后复活。
 	 */
-	remember(clientId: string, cwd: string, opts?: { promote?: boolean }): void {
+	remember(clientId: string, cwd: string, opts?: { promote?: boolean; clearTombstone?: boolean }): void {
 		const all = this.load();
+		const targetKey = normalizePathKey(cwd);
+		const clearTombstone = opts?.clearTombstone !== false;
+		if (!clearTombstone) {
+			const removed = new Set(this.getRemovedProjects(clientId).map(normalizePathKey));
+			if (removed.has(targetKey)) return;
+		}
 		const state = (all[clientId] ??= { projects: [] });
 		this.touchClient(all, clientId);
 		state.lastCwd = cwd;
 		const now = Date.now();
-		const targetKey = normalizePathKey(cwd);
 		const promote = opts?.promote !== false;
 		// Also persist in global settings so new tabs and sessions inherit it immediately
 		const globalState = (all[ClientStateStore.GLOBAL_SETTINGS_KEY] ??= { projects: [] });
@@ -489,9 +496,10 @@ export class ClientStateStore {
 	 * fsPromises.access（调用链本就是 async），不再阻塞事件循环。代价是前 30 名
 	 * 里有失效路径时不再回补更旧的项目（列表可能短于 30），属可接受的取舍。
 	 */
-	async getRecentProjects(clientId: string): Promise<{ path: string; lastUsed: number }[]> {
+	async getRecentProjects(clientId: string): Promise<{ path: string; lastUsed: number; name?: string }[]> {
 		const all = this.load();
 		const removedKeys = new Set(this.getRemovedProjects(clientId).map(normalizePathKey));
+		const projectNames = all[ClientStateStore.GLOBAL_SETTINGS_KEY]?.projectNames;
 		const map = new Map<string, { path: string; lastUsed: number }>();
 
 		const merge = (list?: { path: string; lastUsed: number }[]) => {
@@ -518,10 +526,15 @@ export class ClientStateStore {
 
 		const candidates = [...map.values()].sort((a, b) => b.lastUsed - a.lastUsed).slice(0, RECENT_PROJECTS_MAX);
 		const probes = await Promise.allSettled(candidates.map((p) => this.pathExists(p.path)));
-		return candidates.filter((_, i) => {
-			const probe = probes[i];
-			return probe?.status === "fulfilled" && probe.value;
-		});
+		return candidates
+			.filter((_, i) => {
+				const probe = probes[i];
+				return probe?.status === "fulfilled" && probe.value;
+			})
+			.map((p) => {
+				const customName = projectNames?.[normalizePathKey(p.path)]?.trim();
+				return customName ? { ...p, name: customName } : p;
+			});
 	}
 
 	protected async pathExists(path: string): Promise<boolean> {
@@ -748,6 +761,7 @@ export class ClientStateStore {
 			thinkingWrap: stored?.thinkingWrap ?? false,
 			devNoCache: stored?.devNoCache,
 			autoReload: stored?.autoReload,
+			internalMcpEnabled: stored?.internalMcpEnabled,
 			toolsWrap: stored?.toolsWrap ?? (stored ? true : DEFAULT_CLIENT_SETTINGS.toolsWrap),
 			toolImagesEnabled: stored?.toolImagesEnabled ?? true,
 			keepRecentMessages: normalizeKeepRecentMessages(stored?.keepRecentMessages),
@@ -868,6 +882,7 @@ export class ClientStateStore {
 			thinkingWrap: settings.thinkingWrap ?? cur.thinkingWrap ?? false,
 			devNoCache: settings.devNoCache ?? cur.devNoCache,
 			autoReload: settings.autoReload ?? cur.autoReload,
+			internalMcpEnabled: settings.internalMcpEnabled ?? cur.internalMcpEnabled,
 			toolsWrap: settings.toolsWrap ?? cur.toolsWrap ?? true,
 			toolImagesEnabled: settings.toolImagesEnabled ?? cur.toolImagesEnabled ?? true,
 			keepRecentMessages: normalizeKeepRecentMessages(
@@ -1367,6 +1382,33 @@ export class ClientStateStore {
 		const state = (all[ClientStateStore.GLOBAL_SETTINGS_KEY] ??= { projects: [] });
 		state.defaultEngine = engine;
 		this.save();
+	}
+
+	saveProjectName(cwd: string, name: string): void {
+		const all = this.load();
+		const state = (all[ClientStateStore.GLOBAL_SETTINGS_KEY] ??= { projects: [] });
+		const key = normalizePathKey(cwd);
+		const trimmed = name.trim();
+		if (!trimmed) {
+			if (state.projectNames && key in state.projectNames) {
+				delete state.projectNames[key];
+				if (Object.keys(state.projectNames).length === 0) delete state.projectNames;
+				this.save();
+			}
+			return;
+		}
+		const map = (state.projectNames ??= {});
+		if (map[key] === trimmed) return;
+		map[key] = trimmed;
+		this.save();
+	}
+
+	getProjectName(cwd: string): string | undefined {
+		const all = this.load();
+		const map = all[ClientStateStore.GLOBAL_SETTINGS_KEY]?.projectNames;
+		if (!map) return undefined;
+		const val = map[normalizePathKey(cwd)]?.trim();
+		return val || undefined;
 	}
 
 	saveSessionTitle(cwd: string, sessionKey: string, title: string): void {

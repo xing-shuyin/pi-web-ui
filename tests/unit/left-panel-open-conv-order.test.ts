@@ -89,6 +89,13 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 		expect(toggle).toContain("var(--lp-title-pad,");
 		expect(toggle).toContain("var(--lp-title-gap,");
 	});
+	it("子代理只通过常显数量徽章折叠，不再有箭头或连接线", () => {
+		expect(CSS).not.toContain(".lp-tree-caret");
+		expect(CSS).not.toContain(".lp-row.lp-has-kids::before");
+		expect(CSS).not.toContain(".lp-row.lp-sub::before");
+		expect(CSS).toMatch(/\.subagents-toggle-badge\s*\{[^}]*cursor:\s*pointer/);
+	});
+
 	it("项目头激活态采用蓝色系背景且无边框线/无内阴影边框", () => {
 		const match = CSS.match(/\.lp-project-head-row\.active[\s\S]*?\{([^}]*)\}/);
 		expect(match).toBeTruthy();

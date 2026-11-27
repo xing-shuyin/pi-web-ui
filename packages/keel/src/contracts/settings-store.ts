@@ -44,10 +44,12 @@ export interface SettingsStorePort {
 
 	/** 项目最近列表的写回（扫盘发现的项目灌进 store，墓碑与排序规则在 store 里）。 */
 	mergeDiscoveredProjects(projects: { path: string; lastUsed: number }[]): void;
-	getRecentProjects(clientId: string): Promise<{ path: string; lastUsed: number }[]>;
+	getRecentProjects(clientId: string): Promise<{ path: string; lastUsed: number; name?: string }[]>;
 	/** 用户明确移除过的路径（墓碑）。 */
 	getRemovedProjects(clientId: string): string[];
 	removeProject(clientId: string, cwd: string): void;
+	saveProjectName?(cwd: string, name: string): void;
+	getProjectName?(cwd: string): string | undefined;
 
 	getProjectModel(clientId: string, cwd: string, engine?: string): string | undefined;
 	saveProjectModel(clientId: string, cwd: string, modelId: string, engine?: string): void;

@@ -154,6 +154,7 @@ export interface CoreBackgroundJobNotice {
 }
 
 export interface CoreBackgroundSinks {
+	clientId: string;
 	emit(msg: ServerMessage): void;
 	flushSnapshot(): void;
 	isDisposed(): boolean;
@@ -243,7 +244,7 @@ export interface HostFaceFactories {
 	sandbox?: (sinks: CoreSandboxSinks) => SandboxPort;
 	/**
 	 * 后台任务面工厂（宿主实现：`server/core-background-adapter.ts`）；缺省 = 能力未接。
-	 * 传进去的就是内核能回答的那几个值：帧出口、本对话的 cwd/id、清理阀值。
+	 * 传进去的就是内核能回答的那几个值：客户端 id、帧出口、本对话的 cwd/id、清理阀值。
 	 */
 	background?: (sinks: CoreBackgroundSinks) => BackgroundPort;
 	/** MCP / 技能 / 市场 / 插件更新面工厂（宿主实现：`server/core-plugin-adapter.ts`）；缺省 = 能力未接。 */
@@ -460,6 +461,7 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 	});
 	// 后台任务面：清理阀值读的也是设置，所以用一个不取快照的闭包（用户改了阈值立刻生效）。
 	const background = deps.background?.({
+		clientId,
 		emit: (msg) => transport.send(msg),
 		flushSnapshot: () => runtime.publisher.request(),
 		isDisposed: () => deps.isDisposed(),

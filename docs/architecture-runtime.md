@@ -137,6 +137,7 @@ events.jsonl    追加式生命周期流水（有字节上限，截断后只留�
 - **模型**：Claude 列表为 CLI 别名（`default` 不传 `--model`，跟随 CLI 配置；`opus`/`sonnet`/`haiku`）加 models.json 中兼容的自定义服务商；已下线的 `claude-3-*` 存档自动迁移为 `default`。会话构造时必须把当前模型同步给驱动。
 - **斜杠命令**：Claude 的命令清单取自 CLI `system/init` 事件的 `slash_commands`，原样透传给 CLI（含 `/compact`、技能）；pi 自管 UI 状态的命令（`/new`、`/model`、`/name` 等）保留在 pi。通用底座不得伪造压缩（只裁剪界面消息而 CLI 上下文不变）；不支持原生压缩的引擎只提示。
 - **会话 ID**：`createSession()` 不得返回占位 ID；真实 ID 来自 CLI 事件并经 `onSessionStarted` 回写，否则后续 `--resume` 会被 CLI 拒绝。
+- **主对话并发归属**：通用底座的每个普通对话各自持有一个驱动与活动回合（`conversationDrivers` / `activeTurns`）。切换对话或项目只改变当前视图，不中止后台回合；在新对话发送 prompt 会并行启动另一个 CLI。只有同一对话的插队/停止会中止该对话，停止期间禁止该对话重入。`ConversationSummary.isStreaming` 与快照都必须按实际回合归属投影，不能借用 `activeConvId`，否则切走的后台对话会被伪报完成并触发提示音/未读打勾。
 - **左栏归属与去重**（所有引擎）：左栏按 `ConversationSummary.sessionFile/sessionId` 与 `SessionSummary.path/sessionId` 认定「打开中的对话」与「历史会话」是同一条；按 `SessionSummary.cwd` 认定所属项目。通用底座的会话 `path` 是对话 ID（无项目 slug），因此对话摘要必须带 `sessionId`、历史行与 `sessions` 消息必须带 `cwd`，否则会重复显示且出现在每个项目下。`isSessionMatchingProject` 必须传会话对象（优先比 `cwd`），按路径判断时先看 `--slug--` 目录再看路径前缀——会话目录通常在家目录下，把 `~` 当项目时前缀规则会吞掉所有项目的会话。回归：`tests/unit/left-panel-engine-sessions.test.ts`、`universal-session-list.test.ts`、`list-sessions-dispatch.test.ts`。
 
 ## 其他桥接
@@ -199,7 +200,13 @@ events.jsonl    追加式生命周期流水（有字节上限，截断后只留�
 
 `question_pending` 是即时通道：只推给「提问那一刻在线」的连接，刷新页面 / WS 重连 / 新标签页都收不到那条历史消息，而服务端还在阻塞等人回答——面板会凭空消失（`QuestionDialog` 没有别的入口）。因此待答问卷同时挂在快照上（`UiState.pendingQuestion`，标准引擎按对话过滤：`pendingQuestionForSnapshot()` 只带当前对话的那张，切回原对话会重推快照；DSH 的提问桥是 runtime 级的，不分对话）。前端 `use-chat.ts` 收到 `snapshot` / `snapshot_delta` 时用纯函数 `web/src/pending-question.ts` 的 `resolvePendingQuestion` 决定面板去留：快照有待答问卷就恢复（已答过的 id 跳过——回答消息与在途快照会交错），但只有「由快照恢复出来的」面板才接受快照收起（避免一张回答之前的旧快照把刚由即时通道弹出的面板闪掉）。单测 `tests/unit/pending-question.test.ts`。
 
+### AI 生成 SCM 提交信息
+
+Git 上下文采集、提示词组装、60 秒超时、结果清洗与错误分类统一在 `server/scm-commitmsg.ts`；引擎只通过 `generateScmCommitMessageWithInference` 注入一次独立文本推断。Core 使用宿主 `ModelRuntime`，Universal/Codex/Agy/Durable 使用独立驱动实例，不借用当前对话会话；自定义 `scmCommitMsgPrompt*` 对两条路径都生效。DSH 尚未接独立推断器，分发层返回明确的当前引擎不支持，不再错误提示“请用 pi 引擎”。
+
 ### 后台任务列表
+
+**引擎无关的宿主任务面**：`server/background-task-service.ts` 按客户端持有一份 `JobRegistry`，负责解析 `package.json` scripts、启动 `npm run <script>`、日志、停止与重启。`project_scripts` / `start_bg_script` / `restart_bg_job` 以及 `job:` 行停止在 WS 分发层直接交给宿主，不再走各引擎的可选方法；pi / DSH / Claude / Codex / Antigravity / Pi Durable 共用同一任务面，切换引擎不会换掉任务注册表。各引擎的 `BgServerTracker` 只补充自己的端口行/插件行，并合并宿主的 job 行。回归：`tests/unit/background-task-service.test.ts`。
 
 bash 工具执行前后各拍一次监听快照（`snapshotListeningPorts`，Windows netstat / POSIX lsof），diff 出的新增 LISTENING 进程记入 `bgServers`（端口→pid→since→name，name 经 `lookupProcessName` tasklist/ps 尽力获取），启动后 notice 提示「可在顶栏「后台任务」里单独停止或全部关闭」；**列表按客户端持久**（ClientSession 字段，非对话级）——对话结束/切换/断线重连都不消失（attachSink 重推 `bg_servers`），只有任务被停或进程自行退出才移除（30s 定时器 `refreshBgServers` 重新对端口快照，port+pid 都匹配才算还活着，静默剔除死项）。
 

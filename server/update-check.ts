@@ -656,6 +656,7 @@ export function resolveNpmRegistry(agentDir: string): NpmRegistryConfig {
 interface RegistryDoc {
 	"dist-tags"?: { latest?: string };
 	time?: Record<string, string>;
+	modified?: string;
 }
 
 export async function fetchLatest(
@@ -664,16 +665,21 @@ export async function fetchLatest(
 	registry: string = NPM_DEFAULT_REGISTRY,
 	authHeader: string | null = null,
 ): Promise<{ latest: string | null; latestPublishedAt: string | null }> {
+	const headers: Record<string, string> = {
+		// 使用 npm 精简元数据（省略所有历史 versions 与 readme），大幅降低检查体积
+		accept: "application/vnd.npm.install-v1+json, application/json",
+	};
+	if (authHeader) headers.authorization = authHeader;
 	const res = await fetcher(`${registry}/${encodeURIComponent(name)}`, {
 		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-		...(authHeader ? { headers: { authorization: authHeader } } : {}),
+		headers,
 	});
 	if (!res.ok) throw new Error(`HTTP ${res.status}`);
 	const data = (await res.json()) as RegistryDoc;
 	const latest = data["dist-tags"]?.latest ?? null;
 	return {
 		latest,
-		latestPublishedAt: latest && data.time ? (data.time[latest] ?? null) : null,
+		latestPublishedAt: latest ? (data.time?.[latest] ?? data.modified ?? null) : null,
 	};
 }
 

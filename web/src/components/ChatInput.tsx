@@ -59,7 +59,7 @@ import { getPluginComposerProvider, listPluginComposerProviders } from "../plugi
 import { detectTouchFirstDevice } from "../touch-device";
 import { resolveEnterAction, useEffectiveSendKey } from "../composer-keys";
 import { resolveBackspaceMention } from "../chat-input-backspace";
-import { projectNameFromCwd } from "../title-settings";
+import { resolveProjectDisplayName } from "../title-settings";
 import { copyTextToClipboard } from "../use-copy-feedback";
 import { useImeCompositionGuard } from "../use-ime-composition-guard";
 import { groupByAlign } from "../ui-slots";
@@ -269,7 +269,8 @@ export const ChatInput = memo(function ChatInput({
 	const effectiveSendKey = useEffectiveSendKey(IS_TOUCH);
 	const isModEnter = effectiveSendKey === "mod-enter";
 	const cwd = useAppField("cwd");
-	const idleProjectName = projectNameFromCwd(cwd || "") || "pi";
+	const projects = useAppField("projects");
+	const idleProjectName = resolveProjectDisplayName(cwd || "", projects) || "pi";
 	const { openPicker, templates } = useTemplates();
 	const commandTemplates = availableTemplateCommands(templates, slashCommands);
 	const allSlashCommands: SlashCommandInfo[] = [
@@ -1346,6 +1347,7 @@ export const ChatInput = memo(function ChatInput({
 					text: promptText,
 					queue,
 					attachments: buildPromptAttachments(),
+					...(conversationId ? { targetConversationId: conversationId } : {}),
 				})
 			) {
 				pushPromptHistory(trimmed);
@@ -1369,6 +1371,7 @@ export const ChatInput = memo(function ChatInput({
 				text: expandTemplateCommand(trimmed, commandTemplates),
 				queue,
 				attachments: buildPromptAttachments(),
+				...(conversationId ? { targetConversationId: conversationId } : {}),
 			})
 		) {
 			if (trimmed) pushPromptHistory(trimmed);
@@ -1403,6 +1406,7 @@ export const ChatInput = memo(function ChatInput({
 				text: trimmed,
 				queue,
 				attachments: buildPromptAttachments(),
+				...(conversationId ? { targetConversationId: conversationId } : {}),
 			})
 		) {
 			if (trimmed) pushPromptHistory(trimmed);

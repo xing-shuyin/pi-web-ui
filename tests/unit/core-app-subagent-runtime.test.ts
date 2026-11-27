@@ -96,30 +96,62 @@ describe("app · 子代理运行装配", () => {
 
 describe("app · 子代理派发的运行态", () => {
 	/** 派发真的会走：假运行时带 `openChildConversation`、会话注册表、设置帧（模板）与帧出口。 */
-	function makeSpawn() {
+	function makeSpawn(opts?: { subagentDefaultModel?: string | null }) {
 		const registry = new ConversationRegistry<Conversation>();
 		let seq = 0;
-		const childSession = { thinkingLevel: "off", setThinkingLevel: vi.fn(), dispose: () => {} };
-		const parentSession = { thinkingLevel: "low", dispose: () => {} };
+		const callOrder: string[] = [];
+		const parentModel = { provider: "anthropic", id: "claude-sonnet-4" };
+		const templateModel = { provider: "openai", id: "gpt-5" };
+		const explicitModel = { provider: "google", id: "gemini-2.5-pro" };
+		const defaultSubagentModel = { provider: "dashscope", id: "qwen-max" };
+		const modelMap = new Map<string, unknown>([
+			["openai/gpt-5", templateModel],
+			["google/gemini-2.5-pro", explicitModel],
+			["dashscope/qwen-max", defaultSubagentModel],
+		]);
+		const childSession = {
+			model: undefined as unknown,
+			thinkingLevel: "off",
+			setModel: vi.fn(async (m: unknown) => {
+				callOrder.push("setModel");
+				childSession.model = m;
+			}),
+			setThinkingLevel: vi.fn((level: string) => {
+				callOrder.push("setThinkingLevel");
+				childSession.thinkingLevel = level;
+			}),
+			dispose: () => {},
+		};
+		const parentSession = { model: parentModel, thinkingLevel: "low", dispose: () => {} };
 		const sessions = {
-			get: vi.fn((id: string) => (id === "parent" ? { session: parentSession } : undefined)),
+			get: vi.fn((id: string) => {
+				if (id === "parent") return { session: parentSession };
+				if (id.startsWith("sa-")) return { session: childSession };
+				return undefined;
+			}),
 			ensure: vi.fn(async () => ({ session: childSession, sessionId: "s-child", dispose: () => {} })),
 			close: vi.fn(),
 		};
 		const turns = { start: vi.fn(async () => "done" as const), steer: vi.fn(async () => {}) };
 		const transport = { send: vi.fn(), isClosed: () => false };
 		const templates = [
-			{ name: "thinker", description: "固定高强度", enabled: true, model: "", thinkingLevel: "high" },
+			{ name: "thinker", description: "固定高强度", enabled: true, model: "openai/gpt-5", thinkingLevel: "high" },
 			{ name: "inheritor", description: "跟随主对话", enabled: true, model: "", thinkingLevel: "" },
 			{ name: "retired", description: "已停用", enabled: false, model: "", thinkingLevel: "max" },
 		];
 		const runtime = {
+			clientId: "client-1",
 			registry,
 			turns,
 			options: {
+				clientId: "client-1",
 				sessions,
 				transport,
 				settingsFrame: () => ({ subagentTemplates: () => templates }),
+				stateStore: () => ({
+					getSettingsSnapshot: () => ({ subagentDefaultModel: opts?.subagentDefaultModel ?? null }),
+				}),
+				resolveModel: async (provider: string, id: string) => modelMap.get(`${provider}/${id}`),
 			},
 			activeConversationId: () => "parent",
 			openChildConversation: (init: { parentId: string; title: string; cwd?: string }) => {
@@ -154,34 +186,63 @@ describe("app · 子代理派发的运行态", () => {
 		const tool = subagents.toolFor("parent") as {
 			execute: (id: string, params: unknown, a?: unknown, b?: unknown, ctx?: unknown) => Promise<unknown>;
 		};
-		return { subagents, tool, childSession, sessions };
+		return {
+			subagents,
+			tool,
+			childSession,
+			sessions,
+			callOrder,
+			parentModel,
+			templateModel,
+			explicitModel,
+			defaultSubagentModel,
+		};
 	}
 
 	it("模板档位落到子代理会话上", async () => {
-		const { tool, childSession } = makeSpawn();
+		const { tool, childSession, templateModel, callOrder } = makeSpawn();
 		await tool.execute("t1", { action: "spawn", prompt: "干活", type: "thinker" }, undefined, undefined, {
 			cwd: "/work",
 		});
+		expect(childSession.setModel).toHaveBeenCalledWith(templateModel);
 		expect(childSession.setThinkingLevel).toHaveBeenCalledWith("high");
+		expect(callOrder).toEqual(["setModel", "setThinkingLevel"]);
 	});
 
-	it("模板留空时跟随派发者当前档位（不是 SDK 默认）", async () => {
-		const { tool, childSession } = makeSpawn();
+	it("模板留空时跟随派发者当前模型与档位（不是 SDK 默认）", async () => {
+		const { subagents, tool, childSession, parentModel } = makeSpawn();
 		await tool.execute("t1", { action: "spawn", prompt: "干活", type: "inheritor" }, undefined, undefined, {
 			cwd: "/work",
 		});
+		expect(childSession.setModel).toHaveBeenCalledWith(parentModel);
 		expect(childSession.setThinkingLevel).toHaveBeenCalledWith("low");
+		expect(subagents.registry.list()).toHaveLength(1);
 	});
 
-	it("显式 thinking 优先于模板档位", async () => {
-		const { tool, childSession } = makeSpawn();
+	it("全局 subagentDefaultModel 优先于派发者模型，模板模型优先于全局默认", async () => {
+		const s1 = makeSpawn({ subagentDefaultModel: "dashscope/qwen-max" });
+		await s1.tool.execute("t1", { action: "spawn", prompt: "干活", type: "inheritor" }, undefined, undefined, {
+			cwd: "/work",
+		});
+		expect(s1.childSession.setModel).toHaveBeenCalledWith(s1.defaultSubagentModel);
+
+		const s2 = makeSpawn({ subagentDefaultModel: "dashscope/qwen-max" });
+		await s2.tool.execute("t2", { action: "spawn", prompt: "干活", type: "thinker" }, undefined, undefined, {
+			cwd: "/work",
+		});
+		expect(s2.childSession.setModel).toHaveBeenCalledWith(s2.templateModel);
+	});
+
+	it("显式 model 与 thinking 优先于模板", async () => {
+		const { tool, childSession, explicitModel } = makeSpawn({ subagentDefaultModel: "dashscope/qwen-max" });
 		await tool.execute(
 			"t1",
-			{ action: "spawn", prompt: "干活", type: "thinker", thinking: "minimal" },
+			{ action: "spawn", prompt: "干活", type: "thinker", model: "google/gemini-2.5-pro", thinking: "minimal" },
 			undefined,
 			undefined,
 			{ cwd: "/work" },
 		);
+		expect(childSession.setModel).toHaveBeenCalledWith(explicitModel);
 		expect(childSession.setThinkingLevel).toHaveBeenCalledWith("minimal");
 	});
 

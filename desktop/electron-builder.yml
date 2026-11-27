@@ -67,6 +67,7 @@ asar: true
 # 没有原生件可解包：node-pty 属于内核（全局 keel 运行时），壳不需要它
 asarUnpack: []
 npmRebuild: false
+afterPack: scripts/mac-after-sign.mjs
 publish:
   provider: github
   owner: xing-shuyin

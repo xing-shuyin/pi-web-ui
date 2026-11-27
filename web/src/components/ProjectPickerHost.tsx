@@ -26,8 +26,8 @@ export function ProjectPickerHost({ open, pathCompletions, onClose }: ProjectPic
 			pathCompletions={pathCompletions}
 			workspaceRoots={workspaceRoots}
 			onClose={onClose}
-			onSelectDirectory={(path) => appSend({ type: "set_cwd", path })}
-			onCreateProject={(path) => appSend({ type: "make_dir", path, setAsCwd: true })}
+			onSelectDirectory={(path, name) => appSend({ type: "set_cwd", path, ...(name ? { name } : {}) })}
+			onCreateProject={(path, name) => appSend({ type: "make_dir", path, setAsCwd: true, ...(name ? { name } : {}) })}
 		/>
 	);
 }

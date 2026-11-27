@@ -39,6 +39,7 @@ export const DISPATCH_SURFACE = [
 	"setSessionListLimit",
 	"pushProjects",
 	"removeProject",
+	"renameProject",
 	"createSandbox",
 	"resetSandbox",
 	"persistSandbox",

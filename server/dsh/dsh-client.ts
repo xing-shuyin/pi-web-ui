@@ -157,11 +157,14 @@ export class DshRuntime {
 	} {
 		let activeProvider = this.modelProvider;
 		let bareModelId = this.model;
-		if (this.model.includes("/")) {
-			const slashIdx = this.model.indexOf("/");
-			if (!activeProvider) {
-				activeProvider = this.model.slice(0, slashIdx);
+		if (activeProvider) {
+			const prefix = `${activeProvider}/`;
+			if (bareModelId.startsWith(prefix)) {
+				bareModelId = bareModelId.slice(prefix.length);
 			}
+		} else if (this.model.includes("/")) {
+			const slashIdx = this.model.indexOf("/");
+			activeProvider = this.model.slice(0, slashIdx);
 			bareModelId = this.model.slice(slashIdx + 1);
 		}
 		if (!activeProvider) {
@@ -224,6 +227,7 @@ export class DshRuntime {
 		const { env, bareModelId } = this.resolveRuntimeConfig();
 
 		this.closed = false;
+		this.initialized = false;
 		this.buffer = "";
 		this.pending.clear();
 		this.stderrTail = "";
@@ -238,19 +242,19 @@ export class DshRuntime {
 		const spawned = child.child;
 
 		spawned.stdout.setEncoding("utf8");
-		spawned.stdout.on("data", (chunk: string) => this._onData(chunk));
+		spawned.stdout.on("data", (chunk: string) => {
+			if (this.proc === spawned) this._onData(chunk);
+		});
 		spawned.stderr.setEncoding("utf8");
 		spawned.stderr.on("data", (chunk: string) => {
-			this.stderrTail = (this.stderrTail + chunk).slice(-4000);
+			if (this.proc === spawned) this.stderrTail = (this.stderrTail + chunk).slice(-4000);
 		});
-		spawned.on("error", (err) => {
-			this.failPending(
-				new DshTransportError(bilingual(`runtime failed to start: ${err.message}`, `runtime 启动失败: ${err.message}`)),
-			);
-		});
-		spawned.on("exit", (code, signal) => {
-			if (this.proc !== spawned) return;
+		let exitNotified = false;
+		const notifyExit = (code: number | null, signal: string | null) => {
+			if (exitNotified || this.proc !== spawned) return;
+			exitNotified = true;
 			const intentional = this.closed;
+			const notifyService = this.initialized;
 			this.debug("exit", { code, signal, intentional });
 			const stderrSnippet = this.stderrTail.trim().slice(-2000);
 			const err = new DshTransportError(
@@ -261,8 +265,20 @@ export class DshRuntime {
 			);
 			this.failPending(err);
 			this.initialized = false;
-			this.onExit?.(code, signal, intentional);
+			if (notifyService) this.onExit?.(code, signal, intentional);
+		};
+		spawned.on("error", (err) => {
+			if (this.proc !== spawned) return;
+			this.failPending(
+				new DshTransportError(bilingual(`runtime failed to start: ${err.message}`, `runtime 启动失败: ${err.message}`)),
+			);
+			if (this.initialized) notifyExit(null, null);
+			if (this.proc === spawned) {
+				this.proc = null;
+				this.stopProc = null;
+			}
 		});
+		spawned.on("exit", notifyExit);
 
 		try {
 			await this._request("initialize", {
@@ -370,6 +386,46 @@ export class DshRuntime {
 			);
 		}
 		return res.messageId;
+	}
+
+	async getWorkingDirectory(sessionId: string): Promise<string> {
+		await this.start();
+		const res = (await this._request("session/working-directory/get", { sessionId })) as { cwd?: unknown };
+		if (typeof res.cwd !== "string") {
+			throw new DshTransportError(
+				bilingual("working-directory/get did not return cwd", "working-directory/get 未返回 cwd"),
+			);
+		}
+		return res.cwd;
+	}
+
+	async setWorkingDirectory(sessionId: string, path: string): Promise<string> {
+		await this.start();
+		const res = (await this._request("session/working-directory/set", { sessionId, path })) as { cwd?: unknown };
+		if (typeof res.cwd !== "string") {
+			throw new DshTransportError(
+				bilingual("working-directory/set did not return cwd", "working-directory/set 未返回 cwd"),
+			);
+		}
+		return res.cwd;
+	}
+
+	async cancelSession(sessionId: string, keepInbox = true): Promise<{ ok: boolean; reason?: string }> {
+		await this.start();
+		const res = (await this._request("session/cancel", { sessionId, keepInbox })) as { ok?: unknown; reason?: unknown };
+		return {
+			ok: res.ok === true,
+			...(typeof res.reason === "string" ? { reason: res.reason } : {}),
+		};
+	}
+
+	async releaseSession(sessionId: string): Promise<{ ok: boolean; reason?: string }> {
+		if (!this.alive || !this.initialized) return { ok: false, reason: "not_started" };
+		const res = (await this._request("session/release", { sessionId })) as { ok?: unknown; reason?: unknown };
+		return {
+			ok: res.ok === true,
+			...(typeof res.reason === "string" ? { reason: res.reason } : {}),
+		};
 	}
 
 	onNotification(handler: (method: string, params: unknown) => void): void {

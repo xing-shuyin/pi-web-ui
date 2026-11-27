@@ -13,6 +13,7 @@ import type { Conversation } from "../kernel/conversation/index.js";
 import { projectSessionMessages, projectStreamingMessage } from "../adapters/sdk/view.js";
 import { statsOfSession } from "../adapters/sdk/session-stats.js";
 import { QuiesceRejectedError } from "../contracts/quiesce.js";
+import { PluginTurnTimer } from "../plugin-run-timing.js";
 
 export function modelChangeKey(snap: { clientId: string; conversationId: string; model?: string }): string {
 	return `${snap.clientId}\u0000${snap.conversationId}\u0000${snap.model ?? ""}`;
@@ -218,7 +219,12 @@ export function subscribePluginSessionEvents(options: {
 }): () => void {
 	if (!options.session?.subscribe) return () => {};
 	const toolStarts = new Map<string, number>();
-	return options.session.subscribe((event: any) => {
+	const turnTimer = new PluginTurnTimer((event) => options.onRunEvent?.(event), {
+		conversationId: options.conv.id,
+		clientId: options.clientId,
+		sessionId: options.sessionId,
+	});
+	const unsubscribe = options.session.subscribe((event: any) => {
 		try {
 			options.onChange();
 			if (!event || typeof event !== "object") return;
@@ -288,24 +294,17 @@ export function subscribePluginSessionEvents(options: {
 					});
 					break;
 				}
+				case "message_update": {
+					// SDK 的首个 assistant 增量就是首包；工具调用同样属于模型首包。
+					turnTimer.first(now);
+					break;
+				}
 				case "turn_start": {
-					options.onRunEvent?.({
-						type: "turn_start",
-						conversationId: options.conv.id,
-						clientId: options.clientId,
-						sessionId: options.sessionId,
-						at: now,
-					});
+					turnTimer.start(now);
 					break;
 				}
 				case "turn_end": {
-					options.onRunEvent?.({
-						type: "turn_end",
-						conversationId: options.conv.id,
-						clientId: options.clientId,
-						sessionId: options.sessionId,
-						at: now,
-					});
+					turnTimer.end(now);
 					break;
 				}
 			}
@@ -313,6 +312,10 @@ export function subscribePluginSessionEvents(options: {
 			console.error("[core-engine] subscribePluginSessionEvents failed:", err);
 		}
 	});
+	return () => {
+		turnTimer.clear();
+		unsubscribe?.();
+	};
 }
 
 export async function chatFromPlugin(

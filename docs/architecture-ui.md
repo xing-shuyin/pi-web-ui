@@ -87,7 +87,7 @@ React + Capacitor 手机客户端、Hub 账号隔离推送与设备切换见 [`m
 
 钉住 / 取消钉住后要按**会话自己的 cwd 推一次 `sessions` 摘要**：历史行上的 📌 来自摘要里的 `pinned`（`isSessionPinned()` 现算），`emitConversations()` 只刷新运行中与活动行、不动摘要——不推的话取消钉住后图标得等点一下项目重新拉列表才消失。`setConversationPinned()` 推 `conv.cwd`；`pinSession()` 在记账用的 `pinCwd` 与当前 `cwd` 不同时改推 `pushSessionsForCwd(pinCwd)`。验证：`tests/unit/pin-badge-refresh.test.ts`。项目的展开/收起状态持久化在 `pi-web-ui:lp-expanded-projects`：刷新时**完全按记录恢复**，只有「首次使用、没有任何记录」才展开当前项目，`currentCwd` 变化的 effect 在首帧不动作（否则收起来的项目一刷新又自动弹开），之后切换项目才自动展开。钉住的历史行在项目收起时仍然显示（`isPinnedRowVisible()`；刷新后一直是收起状态、从没展开过的项目也要挂载子节点，并且不受 `maxVisible` 截断），否则一收起项目它就从左栏消失，钉住等于没钉。历史行的右键菜单按**该行自己的 `pinned`** 判断显示「钉住」还是「取消钉住」：跨项目的历史行不在当前项目的 `sessions` 列表里，只查列表会永远显示「钉住」（点下去还会再钉一次）。验证：`tests/unit/pin-badge-refresh.test.ts` 与 `tests/unit/left-panel-actions.test.ts`（跨项目历史行用例）。
 
-侧栏子代理树从一级开始每层缩进 12px，有无子代理的行使用相同标题基线，层级仅通过缩进表达，不绘制连接线。折叠按钮使用细描边箭头并随深度同步右移；图标为 12×12px，独立点击区域为 18×24px，与标题保持 2px 间隔，提供悬停及键盘焦点反馈。运行中和其他客户端的对话树共用同一布局，按钮通过 `aria-expanded` 表达展开状态。层内样式与 `styles.css` 末尾结构复位规则保持一致，避免主题或选中态覆盖缩进。
+侧栏子代理树从一级开始每层缩进 12px，有无子代理的行使用相同标题基线；不绘制折叠箭头或连接线。有子代理的父行常显一个数量徽章，点击即可折叠/展开整棵子树，徽章在折叠后仍保留，并显示隐藏后代数量；后代存在运行中、待提问或错误时分别用绿、黄、红状态点提示。徽章支持鼠标、Enter 和空格操作，通过 `aria-expanded` 表达状态，折叠集合持久化在 `pi-web-ui:lp-collapse-subagents`。运行中、本地历史和“另一处”对话树共用同一布局。验证：`tests/unit/conv-groups.test.ts`、`tests/unit/left-panel-actions.test.ts` 与 `tests/unit/left-panel-open-conv-order.test.ts`。
 
 跨项目历史读取统一走 `pushSessionsForCwd`。UniversalSession（Claude/Codex）按请求项目读取存档并应用该项目的标题与分页限制，返回 `sessions.cwd` 和每行 `cwd`；读取不会切换当前工作区或覆盖活动对话列表。`use-session-list-requests.ts` 按项目跟踪回执，20 秒未返回时显示可重试状态；其他项目的回执不能结束本项目的加载。断线和引擎切换清理旧请求，重连后重新读取已展开项目，迟到的有效回执可恢复列表。验证见 `universal-session-list.test.ts`、`left-panel-session-loading.test.ts`。
 

@@ -766,6 +766,56 @@ describe("LeftPanel Tab 模式：一体化会话与拖动分割条 (Sash)", () =
 	});
 });
 
+describe("LeftPanel 子代理树", () => {
+	it("点击常显数量徽章折叠或展开子代理，并持久化状态", () => {
+		setAppGlobals({ cwd: "/test/p1", ready: true, status: "open", workspaceRoots: [] });
+		const parentConv = {
+			id: "parent-1",
+			title: "父会话",
+			cwd: "/test/p1",
+			messageCount: 2,
+			isStreaming: false,
+			isSubagent: false,
+		};
+		const subConv = {
+			id: "sub-1",
+			title: "子代理1",
+			cwd: "/test/p1",
+			parentId: "parent-1",
+			messageCount: 1,
+			isStreaming: false,
+			isSubagent: true,
+		};
+		const { container } = mountLeftPanel(
+			{
+				projects: [{ path: "/test/p1", lastUsed: Date.now() }],
+				conversations: [parentConv, subConv],
+				sessions: [],
+			},
+			{ "pi-web-ui:lp-collapse-subagents": JSON.stringify(["parent-1"]) },
+		);
+		const titles = () => Array.from(container.querySelectorAll(".conv-title-text"), (node) => node.textContent);
+		const parentRow = container.querySelector('.lp-row[data-session-key="parent-1"]');
+		const badge = parentRow?.querySelector<HTMLElement>(".subagents-toggle-badge");
+
+		expect(container.querySelector(".lp-tree-caret")).toBeNull();
+		expect(badge).not.toBeNull();
+		expect(badge?.textContent?.trim()).toBe("1");
+		expect(badge?.getAttribute("aria-expanded")).toBe("false");
+		expect(titles()).toEqual(["父会话"]);
+
+		act(() => badge!.click());
+		expect(badge?.getAttribute("aria-expanded")).toBe("true");
+		expect(titles()).toEqual(["父会话", "子代理1"]);
+		expect(localStorage.getItem("pi-web-ui:lp-collapse-subagents")).toBe("[]");
+
+		act(() => badge!.click());
+		expect(badge?.getAttribute("aria-expanded")).toBe("false");
+		expect(titles()).toEqual(["父会话"]);
+		expect(localStorage.getItem("pi-web-ui:lp-collapse-subagents")).toBe(JSON.stringify(["parent-1"]));
+	});
+});
+
 describe("LeftPanel 会话行删除确认与重命名按钮互斥", () => {
 	it("挂有子代理的对话点击关闭进入确认态时，重命名按钮卸载，绝不遮盖确认选项组", () => {
 		setAppGlobals({ cwd: "/test/p1", ready: true, status: "open", workspaceRoots: [] });

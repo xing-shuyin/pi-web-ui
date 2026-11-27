@@ -52,6 +52,8 @@ export function handleFileMessage(msg: ClientMessage, cs: DispatchSession): bool
 				void runWorkspaceCommand(cs, async () => {
 					try {
 						await cs.makeDir(msg.path, true);
+						const customName = msg.name?.trim();
+						if (customName) await cs.renameProject?.(msg.path, customName);
 					} catch (err) {
 						cs.emitNotice(
 							"error",
@@ -67,6 +69,8 @@ export function handleFileMessage(msg: ClientMessage, cs: DispatchSession): bool
 			void runWorkspaceCommand(cs, async () => {
 				try {
 					await cs.setCwd(msg.path);
+					const customName = msg.name?.trim();
+					if (customName) await cs.renameProject?.(msg.path, customName);
 				} catch (err) {
 					cs.emitNotice(
 						"error",
@@ -165,7 +169,7 @@ export function handleScmMessage(msg: ClientMessage, cs: DispatchSession, send: 
 					reqId: msg.reqId,
 					kind: "commitmsg",
 					ok: false,
-					error: "当前引擎不支持 AI 生成提交信息（请用 pi 引擎）/ AI commit messages need the pi engine",
+					error: "当前引擎不支持 AI 生成提交信息 / AI commit messages are unavailable on this engine",
 				});
 			}
 			return true;
@@ -757,6 +761,9 @@ export function handleSessionLifecycleMessage(
 			return true;
 		case "remove_project":
 			void cs.removeProject(msg.path);
+			return true;
+		case "rename_project":
+			void cs.renameProject?.(msg.path, msg.name);
 			return true;
 		case "delete_session":
 			void cs.deleteSession(msg.path);

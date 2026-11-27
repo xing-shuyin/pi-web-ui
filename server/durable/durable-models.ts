@@ -18,6 +18,11 @@ function mergeProviderHeaders(...sources: Array<Record<string, string> | undefin
 	return Object.fromEntries(headers.values());
 }
 
+function normalizeModelInput(model: any): ("text" | "image")[] {
+	if (Array.isArray(model?.input)) return model.input;
+	return model?.vision ? ["text", "image"] : ["text"];
+}
+
 export interface DurableModelInfo {
 	id: string;
 	name: string;
@@ -134,6 +139,7 @@ export async function setupDurableModels(agentDir?: string): Promise<any> {
 								.map((m: any) => ({
 									...m,
 									cost: m.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+									input: normalizeModelInput(m),
 								}));
 							return [...list, ...added];
 						};
@@ -147,6 +153,7 @@ export async function setupDurableModels(agentDir?: string): Promise<any> {
 								.map((m: any) => ({
 									...m,
 									cost: m.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+									input: normalizeModelInput(m),
 								}));
 							return [...list, ...added];
 						};
@@ -212,6 +219,7 @@ export async function setupDurableModels(agentDir?: string): Promise<any> {
 									model.id,
 								),
 					cost: model.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+					input: normalizeModelInput(model),
 					type: model.type ?? "chat",
 				}));
 			};
@@ -293,6 +301,7 @@ export async function setupDurableModels(agentDir?: string): Promise<any> {
 												),
 									baseUrl: override?.baseUrl ?? cred.baseUrl ?? model.baseUrl,
 									headers: mergeProviderHeaders(model.headers, cred.headers, override?.headers),
+									input: normalizeModelInput(override ?? model),
 								};
 							});
 					}

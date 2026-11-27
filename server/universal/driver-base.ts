@@ -9,6 +9,13 @@ export interface AgentCapabilities {
 	supportsThinkingLevels?: boolean;
 	supportsAskUser?: boolean;
 	supportsSubagents?: boolean;
+	mcpTransport?: "http" | "stdio" | "none";
+	systemPromptChannel?: "append-flag" | "turn-prefix" | "none";
+}
+
+export interface InternalMcpEndpoint {
+	url: string;
+	token: string;
 }
 
 export interface AgentTurnUsage {
@@ -72,6 +79,15 @@ export interface AgentEventSink {
 	): void;
 }
 
+export interface DriverModelInfo {
+	id: string;
+	name: string;
+	provider?: string;
+	reasoning?: boolean;
+	vision?: boolean;
+	input?: readonly string[];
+}
+
 export abstract class BaseAgentDriver {
 	abstract readonly id: string;
 	abstract readonly name: string;
@@ -101,13 +117,17 @@ export abstract class BaseAgentDriver {
 		return "";
 	}
 
-	async listModels?(): Promise<Array<{ id: string; name: string }>> {
+	async listModels?(): Promise<DriverModelInfo[]> {
 		return [];
 	}
 
 	async setModel?(_modelId: string): Promise<void> {}
 
 	setThinkingLevel?(_level: string): void {}
+
+	setSystemPromptAppendix?(_appendix: string): void {}
+
+	setInternalMcp?(_endpoint: InternalMcpEndpoint | null): void {}
 
 	getSupportedThinkingLevels?(_modelId?: string): string[] {
 		return ["off", "minimal", "low", "medium", "high", "xhigh", "max"];

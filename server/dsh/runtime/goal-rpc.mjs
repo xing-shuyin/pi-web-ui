@@ -338,7 +338,7 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 
 	pendingPresets = new Map();
 	minimalAgents = new Set();
-	inventorySessionId = "pi-webui-inventory";
+	inventorySessionId = process.env.PI_WEB_DSH_INVENTORY_SESSION_ID || "pi-webui-inventory";
 
 	presetRoster() {
 		try {
@@ -683,7 +683,7 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 			);
 		}
 		if (request?.signal?.aborted) throw new Error("ask_user_question aborted（提问已中止）");
-		return this.askUser(request ?? {});
+		return this.askUser({ ...request, sessionId: agent?.session?.id });
 	}
 
 	async ensureInventoryAgent() {
@@ -691,8 +691,45 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		return this.liveAgent(rec, this.inventorySessionId);
 	}
 
+	async sessionCancel(params) {
+		if (!this.initialized) throw new Error("SDK server is not initialized");
+		if (this.shuttingDown) throw new Error("SDK server is shutting down");
+		const sessionId = params?.sessionId;
+		if (typeof sessionId !== "string" || sessionId.length === 0) {
+			throw new TypeError("session/cancel requires a non-empty sessionId");
+		}
+		const rec = this.sessions.get(sessionId);
+		if (!rec) return { ok: false, reason: "unknown_session" };
+		this.assertLiveAgent(rec, sessionId);
+		rec.handle.agent.cancel({ kind: "user" }, { keepInbox: params?.keepInbox !== false });
+		return { ok: true };
+	}
+
+	async sessionRelease(params) {
+		if (!this.initialized) throw new Error("SDK server is not initialized");
+		const sessionId = params?.sessionId;
+		if (typeof sessionId !== "string" || sessionId.length === 0) {
+			throw new TypeError("session/release requires a non-empty sessionId");
+		}
+		const pending = this.sessionCreations.get(sessionId);
+		if (pending) {
+			try {
+				await pending;
+			} catch {}
+		}
+		const rec = this.sessions.get(sessionId);
+		if (!rec) return { ok: false, reason: "unknown_session" };
+		this.sessions.delete(sessionId);
+		await rec.handle.dispose();
+		return { ok: true };
+	}
+
 	async handleRequest(method, params) {
 		switch (method) {
+			case "session/cancel":
+				return this.sessionCancel(params);
+			case "session/release":
+				return this.sessionRelease(params);
 			case "goal/set":
 				return this.goalSet(params);
 			case "goal/get":
@@ -964,6 +1001,7 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		if (!next) return;
 		this.transport.notify("question.pending", {
 			id: next.qid,
+			sessionId: next.sessionId,
 			questions: next.questions,
 			deadline: next.deadline,
 		});
@@ -982,6 +1020,7 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		if (questions.length === 0) throw new Error("ask_user_question requires at least one question");
 		const qid = `q-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 		const deadline = Date.now() + QUESTION_TIMEOUT_MS;
+		const sessionId = typeof request?.sessionId === "string" ? request.sessionId : undefined;
 		return new Promise((resolve, reject) => {
 			const timer = setTimeout(() => {
 				const queued = this.questionBridge.queue.findIndex((q) => q.qid === qid);
@@ -999,6 +1038,7 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 			timer.unref?.();
 			const entry = {
 				qid,
+				sessionId,
 				questions,
 				deadline,
 				resolve: (answers) => {
@@ -1018,7 +1058,7 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 				}
 				this.questionBridge.queue.push(entry);
 			} else {
-				this.transport.notify("question.pending", { id: qid, questions, deadline });
+				this.transport.notify("question.pending", { id: qid, sessionId, questions, deadline });
 				this.questionBridge.pending = { qid, resolve: entry.resolve, reject: entry.reject };
 			}
 		});
@@ -1126,6 +1166,7 @@ function apply(ctx, config) {
 const name = "sdk-jsonrpc-server";
 const inject = [
 	"agents",
+	"workingDirectory",
 	"goals",
 	"attachments",
 	"userQuestions",

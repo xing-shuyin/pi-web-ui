@@ -16,6 +16,8 @@ export interface StreamingCueConversation {
 	title?: string;
 	isStreaming?: boolean;
 	completionPending?: boolean;
+	canceled?: boolean;
+	error?: string;
 	isSubagent?: boolean;
 }
 
@@ -57,6 +59,7 @@ export function diffStreamingCues(
 		if (!wasStreaming) continue;
 		if (currentMap.has(id) && !currentMap.get(id)) {
 			const c = conversations.find((item) => item.id === id);
+			if (c?.canceled || c?.error) continue;
 			finishedConvs.push({
 				id,
 				title: c?.title,

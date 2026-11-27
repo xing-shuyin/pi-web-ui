@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	exportableSessionPath,
 	findSessionsById,
@@ -122,5 +122,69 @@ describe("session jsonl 校验与导入（#887）", () => {
 		const parsed = parsePiSessionText(text);
 		expect(parsed.ok).toBe(true);
 		expect(parsed.bad).toBe(1);
+	});
+
+	it("scans and imports agy transcript.jsonl into pi v3 session", async () => {
+		const agyHome = mkdtempSync(join(tmpdir(), "agy-home-"));
+		const piAgentDir = mkdtempSync(join(tmpdir(), "pi-agent-"));
+		const prevAgy = process.env.AGY_HOME;
+		const prevPi = process.env.PI_CODING_AGENT_DIR;
+		try {
+			const convId = "conv-agy-001";
+			const logsDir = join(agyHome, "brain", convId, ".system_generated", "logs");
+			mkdirSync(logsDir, { recursive: true });
+			writeFileSync(
+				join(logsDir, "transcript.jsonl"),
+				[
+					JSON.stringify({
+						step_index: 0,
+						source: "USER_EXPLICIT",
+						type: "USER_INPUT",
+						created_at: "2026-11-27T05:00:00Z",
+						content: "<USER_REQUEST>\n帮我修一下更新报错\n</USER_REQUEST>\nActive Workspaces:\n- /tmp/demo-proj",
+					}),
+					JSON.stringify({
+						step_index: 1,
+						source: "MODEL",
+						type: "PLANNER_RESPONSE",
+						created_at: "2026-11-27T05:00:05Z",
+						content: "已经定位并修复。",
+					}),
+				].join("\n") + "\n",
+				"utf8",
+			);
+
+			process.env.AGY_HOME = agyHome;
+			process.env.PI_CODING_AGENT_DIR = piAgentDir;
+			vi.resetModules();
+			const mod = await import("../../plugins/session-migrate/index.mjs");
+			const scanned = mod.scanSources();
+			expect(scanned.agy.length).toBe(1);
+			expect(scanned.agy[0]).toMatchObject({
+				source: "agy",
+				id: convId,
+				cwd: "/tmp/demo-proj",
+				messages: 2,
+				preview: "帮我修一下更新报错",
+			});
+
+			const imported = mod.importSessions([scanned.agy[0].file]);
+			expect(imported[0].ok).toBe(true);
+			const lines = readFileSync(imported[0].dest, "utf8")
+				.trim()
+				.split("\n")
+				.map((l: string) => JSON.parse(l));
+			expect(lines[0]).toMatchObject({ type: "session", version: 3, cwd: "/tmp/demo-proj" });
+			expect(lines[1].message.content[0].text).toContain("[imported-from:agy]");
+			expect(lines[2].message.content[0].text).toBe("帮我修一下更新报错");
+			expect(lines[3].message.content[0].text).toBe("已经定位并修复。");
+		} finally {
+			if (prevAgy === undefined) delete process.env.AGY_HOME;
+			else process.env.AGY_HOME = prevAgy;
+			if (prevPi === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = prevPi;
+			rmSync(agyHome, { recursive: true, force: true });
+			rmSync(piAgentDir, { recursive: true, force: true });
+		}
 	});
 });

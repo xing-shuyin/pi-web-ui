@@ -43,10 +43,14 @@ void ipcRenderer
 	})
 	.catch(() => {});
 
+const agentClientIdArg = process.argv.find((arg) => arg.startsWith("--pi-agent-client-id="));
+const agentClientId = agentClientIdArg ? agentClientIdArg.slice("--pi-agent-client-id=".length).trim() : "";
+
 contextBridge.exposeInMainWorld("piDesktop", {
 	isDesktop: true as const,
 	embedded: process.argv.includes("--pi-browser-embedded"),
 	platform: process.platform,
+	...(agentClientId ? { agentClientId } : {}),
 	browser: {
 		setMode: (mode: "browser" | "agent" | "split"): Promise<boolean> =>
 			ipcRenderer.invoke("pi-desktop:browser-set-mode", mode),

@@ -1552,6 +1552,15 @@ let cachedClientId: string | null = null;
 
 function readStoredClientId(): string | null {
 	try {
+		if (typeof window !== "undefined") {
+			const desktopId = (window as { piDesktop?: { agentClientId?: unknown } }).piDesktop?.agentClientId;
+			if (typeof desktopId === "string" && desktopId.trim()) {
+				return desktopId.trim();
+			}
+		}
+	} catch {}
+
+	try {
 		if (typeof window !== "undefined" && typeof window.name === "string" && window.name) {
 			const name = window.name;
 			if (name.startsWith(WINDOW_NAME_PREFIX)) {
@@ -3094,6 +3103,7 @@ export function useChat() {
 					break;
 				case "new_chat_result":
 					resolveNewChatResult(msg);
+					if (!msg.ok) dispatch({ type: "transition_clear" });
 					break;
 				case "plugin_catalog_sync_result":
 					resolveCatalogSyncResult(msg);
@@ -3327,6 +3337,7 @@ export function useChat() {
 			ready: chat.ready,
 			status: chat.status,
 			cwd: chat.state?.cwd ?? "",
+			projects: chat.projects,
 			workspaceRoots: chat.state?.workspaceRoots ?? [],
 			pathCompletions: chat.pathCompletions,
 			homeDir: chat.state?.homeDir ?? "",
@@ -3340,6 +3351,7 @@ export function useChat() {
 		chat.ready,
 		chat.status,
 		chat.state?.cwd,
+		chat.projects,
 		chat.state?.workspaceRoots,
 		chat.pathCompletions,
 		chat.state?.homeDir,

@@ -517,6 +517,7 @@ interface SettingsPatch extends QuickAskPatch, BotDraftPatch {
 	toolWatchdogTimeoutMs?: number;
 	readDirEnabled?: boolean;
 	toolLazyLoading?: boolean;
+	internalMcpEnabled?: boolean;
 	codemodeMode?: "on" | "only";
 	codemodeInlineBudget?: number;
 	toolApprovalEnabled?: boolean;
@@ -1108,31 +1109,30 @@ function LoadedSettingsModal({
 					},
 				]
 			: []),
-		...(isDsh
-			? [{ id: "question" as const, icon: <FiHelpCircle />, label: t("settingsQuestionnaire") }]
-			: isPi
-				? [
-						{
-							id: "tools" as const,
-							icon: <FiTool />,
-							label: t("settingsTools"),
-							count: disabledToolsCount + (settings.disabledMarkers?.length ?? 0) || undefined,
-						},
-						{
-							id: "approval-rules" as const,
-							icon: <FiShield />,
-							label: t("settingsApprovalRules"),
-							count: (settings.approvalRules ?? []).length || undefined,
-						},
-					]
-				: []),
+		...(isDsh ? [{ id: "question" as const, icon: <FiHelpCircle />, label: t("settingsQuestionnaire") }] : []),
+		{
+			id: "tools" as const,
+			icon: <FiTool />,
+			label: t("settingsTools"),
+			count: disabledToolsCount + (settings.disabledMarkers?.length ?? 0) || undefined,
+		},
+		...(isPi
+			? [
+					{
+						id: "approval-rules" as const,
+						icon: <FiShield />,
+						label: t("settingsApprovalRules"),
+						count: (settings.approvalRules ?? []).length || undefined,
+					},
+				]
+			: []),
 		{ id: "display", icon: <FiMessageSquare />, label: t("settingsMessageDisplay") },
 		{ id: "sound", icon: <FiVolume2 />, label: t("settingsSoundVoice") },
 		{ id: "quick", icon: <FiSend />, label: t("quickPhrases"), count: settings.quickPhrases.length },
 		...(isPi
 			? [{ id: "skills" as const, icon: <FiCpu />, label: t("settingsSkills"), count: settings.skills.length }]
 			: []),
-		...(isPi
+		...(isPi || isDsh
 			? [
 					{
 						id: "mcp" as const,
@@ -3429,6 +3429,14 @@ function LoadedSettingsModal({
 									enabled={settings.readDirEnabled !== false}
 									onToggle={() => setPartial({ readDirEnabled: settings.readDirEnabled === false })}
 								/>
+								{(isClaude || isCodex || isDsh) && (
+									<ToggleRow
+										title={t("internalMcpEnabled")}
+										tip={t("internalMcpEnabledDesc")}
+										enabled={settings.internalMcpEnabled !== false}
+										onToggle={() => setPartial({ internalMcpEnabled: settings.internalMcpEnabled === false })}
+									/>
+								)}
 								{!isDsh && (
 									<ToggleRow
 										title={t("toolLazyLoading")}
@@ -3609,13 +3617,13 @@ function LoadedSettingsModal({
 									if (!active) return null;
 									const expanded = expandedToolConfigs.has("codemode");
 									return (
-										<div className="tool-sub-config-card">
-											<div className="tool-sub-config-row">
-												<label className="set-field-label">
-													{t("codemodeModeLabel")}
-													<HintTip text={t("codemodeModeHint")} />
-												</label>
-												<div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+										<>
+											<FieldRow
+												label={t("codemodeModeLabel")}
+												tip={t("codemodeModeHint")}
+												htmlFor="codemode-mode-select"
+											>
+												<div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
 													<button
 														type="button"
 														className={`set-icon-btn tool-sub-config-btn${expanded ? " active" : ""}`}
@@ -3627,6 +3635,7 @@ function LoadedSettingsModal({
 														<FiSliders />
 													</button>
 													<select
+														id="codemode-mode-select"
 														className="set-select"
 														style={{ width: "auto", minWidth: 140 }}
 														value={settings.codemodeMode ?? "on"}
@@ -3636,17 +3645,17 @@ function LoadedSettingsModal({
 														<option value="only">{t("codemodeModeOnly")}</option>
 													</select>
 												</div>
-											</div>
+											</FieldRow>
 											{expanded && (
-												<div className="tool-sub-config-row">
-													<label className="set-field-label">
-														{t("codemodeInlineBudgetLabel")}
-														<HintTip text={t("codemodeInlineBudgetHint")} />
-													</label>
+												<FieldRow
+													label={t("codemodeInlineBudgetLabel")}
+													tip={t("codemodeInlineBudgetHint")}
+													htmlFor="codemode-inline-budget"
+												>
 													<input
+														id="codemode-inline-budget"
 														type="number"
 														className="set-input"
-														style={{ width: 100, textAlign: "right" }}
 														min={500}
 														max={50000}
 														step={500}
@@ -3658,9 +3667,9 @@ function LoadedSettingsModal({
 															}
 														}}
 													/>
-												</div>
+												</FieldRow>
 											)}
-										</div>
+										</>
 									);
 								})()}
 

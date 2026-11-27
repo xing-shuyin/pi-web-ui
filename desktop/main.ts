@@ -17,6 +17,13 @@ import {
 	type KernelEnvironmentView,
 } from "../browser/contracts.js";
 import { createHubBrowser } from "./hub-browser.js";
+import {
+	createMacCancelToken,
+	createMacSelfUpdaterAdapter,
+	hasAppleDeveloperSignature,
+	readGithubRepoFromAppUpdate,
+	resolveMacAppBundlePath,
+} from "./mac-updater.js";
 import { setupPortableMode } from "./portable.js";
 import {
 	autoUpdaterAdapter,
@@ -36,6 +43,7 @@ import {
 	resolveHealthTimeoutMs,
 	waitForHealth,
 } from "./startup.js";
+import { resolveOrCreateAgentClientId } from "./agent-client-id.js";
 import {
 	isSameKernel,
 	planKernelBoot,
@@ -1327,6 +1335,7 @@ async function createWindow(): Promise<void> {
 		assetsDir,
 		browserPreload: join(here, "..", "browser", "preload.cjs"),
 		agentPreload: join(here, "preload.cjs"),
+		agentClientId: resolveOrCreateAgentClientId(app.getPath("userData")),
 		dataDir: join(app.getPath("userData"), "browser"),
 		// Agent 页就绪（含重新加载）后把疫情期间待打开的文件送进去
 		onAgentReady: () => flushOpenTargets(),
@@ -1383,6 +1392,7 @@ async function createWindow(): Promise<void> {
 if (!app.requestSingleInstanceLock()) {
 	// 已有实例在跑：second-instance 会把 argv（双击的文件/链接）转给主实例，那里负责打开。
 	// 第二个进程静默退出即可，不弹“已经在运行”——用户要的是直接打开，不是被对话框拦一道。
+	// 主启动回调只在拿到单实例锁的分支里注册，防止第二个进程在退出前闪出窗口或探测内核。
 	void app.whenReady().then(() => app.quit());
 } else {
 	app.on("second-instance", (_event, argv, workingDirectory) => {
@@ -1393,42 +1403,42 @@ if (!app.requestSingleInstanceLock()) {
 		// 双击关联文件 / 点链接会把目标放在新进程的 argv 里，单实例锁把参数转给这里
 		queueOpenTargets(collectOpenTargets(argv, { cwd: workingDirectory || process.cwd() }));
 	});
-}
 
-void app.whenReady().then(async () => {
-	console.log("[desktop] app ready");
-	try {
-		wireWindowControls();
-		wireSystemIntegration();
-		await createWindow();
-		// 不是从文件/链接启动时这两个数组为空，零成本
-		if (startupOpenTargets.files.length || startupOpenTargets.urls.length) queueOpenTargets(startupOpenTargets);
-		// second-instance 可能在窗口就绪前就把文件塞进队列了，这里补一次冲刷（队列为空时无成本）
-		flushOpenTargets();
-		void refreshSystemIntegrationOnStartup();
-		void startKernel().catch(async (error: unknown) => {
-			console.error("[desktop] Agent startup failed; browser remains available:", error);
-			// 运行时报废时本次启动立刻退回包内自带那份，别让用户只看到报错（文档 §十六 兜底原则）。
-			if (activeRuntimeVersion && !bypassRuntimeForThisBoot) {
-				bypassRuntimeForThisBoot = true;
-				try {
-					const url = await enqueueServerStep(() => startServerSidecar());
-					await syncAgentUrl(url);
-					await refreshKernelState(url, "local");
-					return;
-				} catch (fallbackError) {
-					console.error("[desktop] 退回安装包内运行时也失败了：", fallbackError);
+	void app.whenReady().then(async () => {
+		console.log("[desktop] app ready");
+		try {
+			wireWindowControls();
+			wireSystemIntegration();
+			await createWindow();
+			// 不是从文件/链接启动时这两个数组为空，零成本
+			if (startupOpenTargets.files.length || startupOpenTargets.urls.length) queueOpenTargets(startupOpenTargets);
+			// second-instance 可能在窗口就绪前就把文件塞进队列了，这里补一次冲刷（队列为空时无成本）
+			flushOpenTargets();
+			void refreshSystemIntegrationOnStartup();
+			void startKernel().catch(async (error: unknown) => {
+				console.error("[desktop] Agent startup failed; browser remains available:", error);
+				// 运行时报废时本次启动立刻退回包内自带那份，别让用户只看到报错（文档 §十六 兜底原则）。
+				if (activeRuntimeVersion && !bypassRuntimeForThisBoot) {
+					bypassRuntimeForThisBoot = true;
+					try {
+						const url = await enqueueServerStep(() => startServerSidecar());
+						await syncAgentUrl(url);
+						await refreshKernelState(url, "local");
+						return;
+					} catch (fallbackError) {
+						console.error("[desktop] 退回安装包内运行时也失败了：", fallbackError);
+					}
 				}
-			}
-			if (!browserHost?.browser.getSettings().agentUrl)
-				browserHost?.setAgentError(error instanceof Error ? error.message : String(error));
-		});
-		void wireAutoUpdater().catch((error: unknown) => console.warn("[desktop] updater unavailable:", error));
-	} catch (err) {
-		console.error("✖ 桌面版启动失败：", err);
-		exitOnStartupFailure(1);
-	}
-});
+				if (!browserHost?.browser.getSettings().agentUrl)
+					browserHost?.setAgentError(error instanceof Error ? error.message : String(error));
+			});
+			void wireAutoUpdater().catch((error: unknown) => console.warn("[desktop] updater unavailable:", error));
+		} catch (err) {
+			console.error("✖ 桌面版启动失败：", err);
+			exitOnStartupFailure(1);
+		}
+	});
+}
 
 app.on("window-all-closed", () => {
 	if (process.platform !== "darwin") app.quit();
@@ -1725,6 +1735,28 @@ async function wireAutoUpdater(): Promise<void> {
 		// 便携版 / 解压包 / dev：不碰 electron-updater，只把「为什么不能自更新」交给界面。
 		console.log(`[desktop] 不走应用内自动更新（${mode.reason}），界面给下载页入口`);
 		return;
+	}
+	if (process.platform === "darwin") {
+		const appBundle = resolveMacAppBundlePath(process.execPath);
+		const hasAppleDevSig = appBundle ? await hasAppleDeveloperSignature(appBundle) : false;
+		if (!hasAppleDevSig) {
+			// 无 Apple Developer ID 签名时，Squirrel.Mac (ShipIt) 会因签名校验失败拒绝更新；
+			// 改用自更新通道（下载 latest-mac.yml + zip → 校验 sha512 → ditto 解压 → 看门狗替换重启）。
+			console.log("[desktop] macOS 未检测到 Developer ID 签名，启用 macOS 原地自更新通道");
+			const githubRepo = readGithubRepoFromAppUpdate(process.resourcesPath);
+			controller.attach(
+				createMacSelfUpdaterAdapter({
+					currentVersion: app.getVersion(),
+					feedBaseUrl: feedOverride,
+					githubRepo,
+					quitApp: () => app.quit(),
+					log: (message) => console.warn(message),
+				}),
+			);
+			cancelTokenFactory = () => createMacCancelToken().token;
+			controller.start();
+			return;
+		}
 	}
 	const updaterModule = (await import("electron-updater")) as typeof import("electron-updater") & {
 		default?: { autoUpdater?: (typeof import("electron-updater"))["autoUpdater"] };

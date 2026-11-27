@@ -17,7 +17,7 @@ import {
 } from "../../model-resolver.js";
 import { discoverDiskSkills } from "../../skill-discovery.js";
 import { decodeInlineImage, describeCliAttachment } from "../universal-attachments.js";
-import { collectEnabledMcpServers, toClaudeMcpConfig } from "../engine-mcp.js";
+import { collectEnabledMcpServers, toClaudeMcpConfig, withInternalMcpServer } from "../engine-mcp.js";
 import { spawnChildPiped, type SpawnedChild } from "../../spawn-child.js";
 
 /** Legal values of Claude Code's `--permission-mode` (there is no "default"). */
@@ -158,6 +158,8 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 		supportsModelSwitch: true,
 		supportsThinkingLevels: true,
 		supportsAskUser: false,
+		mcpTransport: "http",
+		systemPromptChannel: "append-flag",
 	};
 
 	private readonly executablePath: string | undefined;
@@ -184,6 +186,8 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 	private activeStdin: Writable | null = null;
 	/** control_request id currently waiting for a human answer. */
 	private pendingRequestId: string | null = null;
+	private systemPromptAppendix = "";
+	private internalMcp: import("../driver-base.js").InternalMcpEndpoint | null = null;
 
 	constructor(cwd: string, opts?: ClaudeCodeDriverOptions) {
 		super(cwd);
@@ -333,6 +337,14 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 		this.currentThinkingLevel = level;
 	}
 
+	override setSystemPromptAppendix(appendix: string): void {
+		this.systemPromptAppendix = appendix.trim();
+	}
+
+	override setInternalMcp(endpoint: import("../driver-base.js").InternalMcpEndpoint | null): void {
+		this.internalMcp = endpoint;
+	}
+
 	override getSupportedThinkingLevels(): string[] {
 		return ["off", "low", "medium", "high", "xhigh", "max"];
 	}
@@ -398,6 +410,9 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 		if (this.activeSessionId) {
 			args.push("--resume", this.activeSessionId);
 		}
+		if (this.systemPromptAppendix) {
+			args.push("--append-system-prompt", this.systemPromptAppendix);
+		}
 
 		let mcpDir: string | undefined;
 		const cleanup = () => {
@@ -407,7 +422,10 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 
 		let proc: ChildProcessWithoutNullStreams;
 		try {
-			const servers = collectEnabledMcpServers({ cwd: this.cwd, agentDir: this.agentDir, dataDir: this.dataDir });
+			const servers = withInternalMcpServer(
+				collectEnabledMcpServers({ cwd: this.cwd, agentDir: this.agentDir, dataDir: this.dataDir }),
+				this.internalMcp,
+			);
 			if (Object.keys(servers).length > 0) {
 				// File (not an inline JSON arg) so env/headers secrets don't show up in the process list.
 				mcpDir = mkdtempSync(join(tmpdir(), "pi-claude-mcp-"));
@@ -671,16 +689,17 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 			const outputTokens = usage?.output_tokens ?? 0;
 			const cacheReadTokens = usage?.cache_read_input_tokens ?? 0;
 			const cacheWriteTokens = usage?.cache_creation_input_tokens ?? 0;
+			// In `-p` mode the CLI exits on stdin EOF; close it once the turn's result arrived
+			// (including error results, otherwise the CLI stays open waiting on stdin).
+			try {
+				this.activeStdin?.end();
+			} catch {}
+			this.activeStdin = null;
 			if (event.is_error) {
 				this.resultFailed = true; // reported once on close, with lastErrorHint
 				return;
 			}
 			this.turnCompleteEmitted = true;
-			// In `-p` mode the CLI exits on stdin EOF; close it once the turn's result arrived.
-			try {
-				this.activeStdin?.end();
-			} catch {}
-			this.activeStdin = null;
 			sink.onTurnComplete({
 				usage: usage ? { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costUSD } : undefined,
 				costUSD,

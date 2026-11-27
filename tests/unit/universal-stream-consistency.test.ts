@@ -196,8 +196,11 @@ describe("Universal multi-step stream / snapshot consistency (#801)", () => {
 			await session.switchConversation(owner);
 			expect(ui.messages.some((m) => m.toolCallId === "owned")).toBe(true);
 			await session.switchConversation(other);
-			if (ending === "cancel") await session.abort();
-			else if (ending === "error") sink.onError("provider failed");
+			if (ending === "cancel") {
+				await session.switchConversation(owner);
+				await session.abort();
+				await session.switchConversation(other);
+			} else if (ending === "error") sink.onError("provider failed");
 			else sink.onTurnComplete();
 			sink.onToolEnd("late", { output: "late output" });
 			sink.onThinkingDelta("late thinking");

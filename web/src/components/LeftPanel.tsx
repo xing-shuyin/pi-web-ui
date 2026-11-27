@@ -28,7 +28,6 @@ import {
 	FiCheck,
 	FiChevronDown,
 	FiChevronLeft,
-	FiChevronRight,
 	FiChevronUp,
 	FiEdit2,
 	FiFolder,
@@ -113,8 +112,9 @@ interface LeftPanelProps {
 			| { type: "list_projects" }
 			| { type: "switch_session"; path: string; engine?: EngineId }
 			| { type: "switch_conversation"; id: string; engine?: EngineId }
-			| { type: "set_cwd"; path: string }
+			| { type: "set_cwd"; path: string; name?: string }
 			| { type: "remove_project"; path: string }
+			| { type: "rename_project"; path: string; name: string }
 			| { type: "destroy_sandbox"; path: string }
 			| { type: "delete_session"; path: string }
 			| { type: "rename_session"; path: string; name: string }
@@ -127,7 +127,7 @@ interface LeftPanelProps {
 			| { type: "take_over_conversation"; owner: string; id: string }
 			| { type: "open_shared_conversation"; owner: string; id: string; readOnly?: boolean }
 			| { type: "peek_elsewhere_question"; owner: string; id: string }
-			| { type: "make_dir"; path: string; setAsCwd?: boolean },
+			| { type: "make_dir"; path: string; setAsCwd?: boolean; name?: string },
 	) => boolean;
 	active: boolean;
 	collapsible?: boolean;
@@ -174,6 +174,58 @@ function RowMain({
 		<button type="button" className={className} title={title} {...rest}>
 			{children}
 		</button>
+	);
+}
+
+function SubagentTreeBadge({
+	count,
+	isCollapsed,
+	hasStreaming,
+	hasQuestion,
+	hasError,
+	onToggle,
+}: {
+	count: number;
+	isCollapsed: boolean;
+	hasStreaming: boolean;
+	hasQuestion: boolean;
+	hasError: boolean;
+	onToggle: () => void;
+}) {
+	const t = useT();
+	const action = isCollapsed ? t("expandSubagents") : t("collapseSubagents");
+	const label = `${count} ${t("subagentBadge")} · ${action}`;
+	const statusClass = hasStreaming ? " has-streaming" : hasQuestion ? " has-question" : hasError ? " has-error" : "";
+	return (
+		<span
+			role="button"
+			tabIndex={0}
+			className={`subagents-toggle-badge${isCollapsed ? " is-collapsed" : ""}${statusClass}`}
+			title={label}
+			aria-label={label}
+			aria-expanded={!isCollapsed}
+			onClick={(e) => {
+				e.stopPropagation();
+				onToggle();
+			}}
+			onKeyDown={(e) => {
+				if (e.key !== "Enter" && e.key !== " ") return;
+				e.preventDefault();
+				e.stopPropagation();
+				onToggle();
+			}}
+		>
+			{hasStreaming ? (
+				<span className="subagent-dot streaming" aria-hidden="true" />
+			) : hasQuestion ? (
+				<span className="subagent-dot question" aria-hidden="true">
+					?
+				</span>
+			) : hasError ? (
+				<span className="subagent-dot error" aria-hidden="true" />
+			) : null}
+			<span className="subagents-count-text">{count}</span>
+		</span>
 	);
 }
 
@@ -631,7 +683,10 @@ export const LeftPanel = memo(function LeftPanel({
 	};
 	const commitRename = (
 		rowKey: string,
-		msg: { type: "rename_session"; path: string } | { type: "rename_conversation"; id: string },
+		msg:
+			| { type: "rename_session"; path: string }
+			| { type: "rename_conversation"; id: string }
+			| { type: "rename_project"; path: string },
 		overrideKey: string,
 		currentTitle: string,
 	) => {
@@ -639,7 +694,11 @@ export const LeftPanel = memo(function LeftPanel({
 		renameActiveRef.current = null;
 		setRenaming(null);
 		const name = renameDraft.trim();
-		if (!name || name === currentTitle) return;
+		if (msg.type !== "rename_project") {
+			if (!name || name === currentTitle) return;
+		} else if (name === currentTitle) {
+			return;
+		}
 		panelSend({ ...msg, name });
 		setRenameOverrides((prev) => ({ ...prev, [overrideKey]: name }));
 		setTimeout(() => {
@@ -667,14 +726,15 @@ export const LeftPanel = memo(function LeftPanel({
 			};
 			for (const k of keys) {
 				const conv = conversations.find((c) => c.id === k);
-				if ((conv && conv.title === prev[k]) || sessionName(k) === prev[k]) {
+				const proj = projects.find((p) => `proj:${p.path}` === k);
+				if ((conv && conv.title === prev[k]) || sessionName(k) === prev[k] || (proj && (proj.name ?? "") === prev[k])) {
 					delete next[k];
 					changed = true;
 				}
 			}
 			return changed ? next : prev;
 		});
-	}, [sessions, projectSessions, conversations]);
+	}, [sessions, projectSessions, conversations, projects]);
 	const [collapseProjects, toggleProjects] = useCollapsed(LS_COLLAPSE_PROJECTS, false);
 	const [collapseConvs] = useCollapsed(LS_COLLAPSE_CONVS, false);
 	const [collapseSessions] = useCollapsed(LS_COLLAPSE_SESSIONS, false);
@@ -1874,6 +1934,17 @@ export const LeftPanel = memo(function LeftPanel({
 	};
 
 	const projectName = (path: string): string => path.split(/[\\/]/).pop() || path;
+	const projectDisplayName = (project: { path: string; name?: string; sandbox?: { name: string } }): string => {
+		if (project.sandbox) return project.sandbox.name;
+		const override = renameOverrides[`proj:${project.path}`];
+		if (override !== undefined) return override || projectName(project.path);
+		return project.name?.trim() || projectName(project.path);
+	};
+	const lookupProjectName = (cwdPath: string): string => {
+		const norm = normalizeSessionPathKey(cwdPath);
+		const hit = effectiveProjects.find((p) => normalizeSessionPathKey(p.path) === norm);
+		return hit ? projectDisplayName(hit) : projectName(cwdPath);
+	};
 
 	/** 提炼远程 SSH 工作区名称（如 root_192.168.1.101_22_ → 192.168.1.101 + SSH 徽标），完整路径保留在 title 中。 */
 	const parseProjectEnv = (path: string, rawName: string): { label: string; isRemote: boolean; envTag?: string } => {
@@ -1970,7 +2041,7 @@ export const LeftPanel = memo(function LeftPanel({
 				x: e.clientX,
 				y: e.clientY,
 				slot: "contextmenu.project",
-				target: { id: project.path, kind: "project", label: projectName(project.path) },
+				target: { id: project.path, kind: "project", label: projectDisplayName(project) },
 				entries: uiContextProject ?? [],
 			});
 		},
@@ -2305,7 +2376,7 @@ export const LeftPanel = memo(function LeftPanel({
 	};
 
 	const renderSingleConvRow = (
-		{ c, depth, hasKids, isCollapsed, hasStreaming, hasQuestion }: ConvRowItem,
+		{ c, depth, hasKids, isCollapsed, descendantCount, hasStreaming, hasError, hasQuestion }: ConvRowItem,
 		projectPath?: string,
 	) => {
 		const convSessionKey = normalizeSessionPathKey(c.sessionFile || c.sessionId || c.id);
@@ -2384,21 +2455,6 @@ export const LeftPanel = memo(function LeftPanel({
 						})
 					}
 				>
-					{hasKids && (
-						<button
-							type="button"
-							className="lp-tree-caret"
-							title={isCollapsed ? t("expandSubagents") : t("collapseSubagents")}
-							aria-label={isCollapsed ? t("expandSubagents") : t("collapseSubagents")}
-							aria-expanded={!isCollapsed}
-							onClick={(e) => {
-								e.stopPropagation();
-								toggleSubagents(c.id);
-							}}
-						>
-							{isCollapsed ? <FiChevronRight aria-hidden="true" /> : <FiChevronDown aria-hidden="true" />}
-						</button>
-					)}
 					<button
 						type="button"
 						className={`session-item lp-tree-session-item elsewhere-item${active ? " active" : ""}${canClick ? "" : " elsewhere-static"}${confirming ? " confirm" : ""}${isActuallyRunning ? " is-running" : ""}${isUnread ? " is-unread" : ""}`}
@@ -2446,6 +2502,16 @@ export const LeftPanel = memo(function LeftPanel({
 
 						{}
 						<span className="conv-meta-zone">
+							{hasKids && (
+								<SubagentTreeBadge
+									count={descendantCount}
+									isCollapsed={isCollapsed}
+									hasStreaming={hasStreaming}
+									hasQuestion={hasQuestion}
+									hasError={hasError}
+									onToggle={() => toggleSubagents(c.id)}
+								/>
+							)}
 							{c.pinned && (
 								<span className="pin-badge" title={t("pinnedConversation")}>
 									📌
@@ -2599,21 +2665,6 @@ export const LeftPanel = memo(function LeftPanel({
 				onMouseLeave={() => setConfirmDel((k) => (k === convKey ? null : k))}
 				onContextMenu={(e) => openSessionMenu(e, { id: c.id, kind: "running", label: c.title })}
 			>
-				{hasKids && (
-					<button
-						type="button"
-						className="lp-tree-caret"
-						title={isCollapsed ? t("expandSubagents") : t("collapseSubagents")}
-						aria-label={isCollapsed ? t("expandSubagents") : t("collapseSubagents")}
-						aria-expanded={!isCollapsed}
-						onClick={(e) => {
-							e.stopPropagation();
-							toggleSubagents(c.id);
-						}}
-					>
-						{isCollapsed ? <FiChevronRight aria-hidden="true" /> : <FiChevronDown aria-hidden="true" />}
-					</button>
-				)}
 				<RowMain
 					editing={renaming === `conv:${c.id}`}
 					className={`session-item lp-tree-session-item ${active ? "active" : ""}${isActuallyRunning ? " is-running" : ""}${isUnread ? " is-unread" : ""}`}
@@ -2675,6 +2726,16 @@ export const LeftPanel = memo(function LeftPanel({
 							{c.nativeCli && <span className="lp-cli-badge">CLI</span>}
 
 							<span className="conv-meta-zone">
+								{hasKids && (
+									<SubagentTreeBadge
+										count={descendantCount}
+										isCollapsed={isCollapsed}
+										hasStreaming={hasStreaming}
+										hasQuestion={hasQuestion}
+										hasError={hasError}
+										onToggle={() => toggleSubagents(c.id)}
+									/>
+								)}
 								<ConversationRowIndicator time={convTime ? formatModified(convTime) : undefined}>
 									{hasQuestion || c.hasQuestion || isCliWaiting ? (
 										<span
@@ -2856,7 +2917,7 @@ export const LeftPanel = memo(function LeftPanel({
 								focusComposer();
 							}}
 						>
-							{projectName(g.cwd)}
+							{lookupProjectName(g.cwd)}
 						</div>
 					)}
 					{buildConversationRows(
@@ -3212,9 +3273,7 @@ export const LeftPanel = memo(function LeftPanel({
 									)}
 								</div>
 							)}
-							{effectiveProjects.some(
-								(p) => parseProjectEnv(p.path, p.sandbox?.name ?? projectName(p.path)).isRemote,
-							) && (
+							{effectiveProjects.some((p) => parseProjectEnv(p.path, projectDisplayName(p)).isRemote) && (
 								<div className="lp-env-pills" role="tablist" aria-label={t("lpProjectsTree")}>
 									{(["all", "local", "remote"] as const).map((mode) => (
 										<button
@@ -3235,7 +3294,7 @@ export const LeftPanel = memo(function LeftPanel({
 									transition?.kind === "cwd" ? normalizeSessionPathKey(transition.target) : null;
 								const q = filterText.trim().toLowerCase();
 								const views = projectTreeModel.map((m) => {
-									const rawName = m.p.sandbox?.name ?? projectName(m.p.path);
+									const rawName = projectDisplayName(m.p);
 									const envInfo = parseProjectEnv(m.p.path, rawName);
 									if (envFilter === "local" && envInfo.isRemote) return null;
 									if (envFilter === "remote" && !envInfo.isRemote) return null;
@@ -3300,7 +3359,7 @@ export const LeftPanel = memo(function LeftPanel({
 									} = m;
 									const switching = transitionCwdNorm !== null && transitionCwdNorm === pNorm;
 									const sbx = p.sandbox;
-									const dispName = sbx ? sbx.name : projectName(p.path);
+									const dispName = projectDisplayName(p);
 									const projectEnv = sbx
 										? { label: dispName, isRemote: false, envTag: undefined }
 										: parseProjectEnv(p.path, dispName);
@@ -3425,9 +3484,41 @@ export const LeftPanel = memo(function LeftPanel({
 														</svg>
 													</span>
 													{sbx && <LuFlaskConical className="project-icon sandbox-icon" />}
-													<span className="lp-project-name" title={dispName}>
-														{projectEnv.label}
-													</span>
+													{renaming === `proj:${p.path}` ? (
+														<input
+															autoFocus
+															className="session-rename-input"
+															value={renameDraft}
+															placeholder={t("renameProjectPlaceholder")}
+															onClick={(e) => e.stopPropagation()}
+															onChange={(e) => setRenameDraft(e.target.value)}
+															onKeyDown={(e) => {
+																e.stopPropagation();
+																if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+																	commitRename(
+																		`proj:${p.path}`,
+																		{ type: "rename_project", path: p.path },
+																		`proj:${p.path}`,
+																		p.name ?? "",
+																	);
+																} else if (e.key === "Escape") {
+																	cancelRename();
+																}
+															}}
+															onBlur={() =>
+																commitRename(
+																	`proj:${p.path}`,
+																	{ type: "rename_project", path: p.path },
+																	`proj:${p.path}`,
+																	p.name ?? "",
+																)
+															}
+														/>
+													) : (
+														<span className="lp-project-name" title={dispName}>
+															{projectEnv.label}
+														</span>
+													)}
 													<span className="lp-env-tag">{projectEnv.envTag ?? "LOCAL"}</span>
 													{sbx && (
 														<span className={`lp-sandbox-badge ${sbx.ephemeral ? "ephemeral" : "permanent"}`}>
@@ -3459,6 +3550,21 @@ export const LeftPanel = memo(function LeftPanel({
 												</button>
 
 												<div className="lp-project-actions">
+													{!sbx && confirmDel !== `proj:${p.path}` && (
+														<button
+															type="button"
+															className="lp-project-btn lp-project-rename-btn"
+															title={t("renameProject")}
+															onClick={(e) => {
+																e.stopPropagation();
+																setConfirmDel(null);
+																setRenameDraft(p.name ?? "");
+																setRenaming(`proj:${p.path}`);
+															}}
+														>
+															<FiEdit2 />
+														</button>
+													)}
 													<NativeCliCreateEntry cwd={p.path} onCreateCli={onCreateCli}>
 														<button
 															type="button"
@@ -3692,8 +3798,10 @@ export const LeftPanel = memo(function LeftPanel({
 				pathCompletions={pathCompletions ?? []}
 				workspaceRoots={workspaceRoots}
 				onClose={() => setProjectPickerOpen(false)}
-				onSelectDirectory={(path) => panelSend({ type: "set_cwd", path })}
-				onCreateProject={(path) => panelSend({ type: "make_dir", path, setAsCwd: true })}
+				onSelectDirectory={(path, name) => panelSend({ type: "set_cwd", path, ...(name ? { name } : {}) })}
+				onCreateProject={(path, name) =>
+					panelSend({ type: "make_dir", path, setAsCwd: true, ...(name ? { name } : {}) })
+				}
 			/>
 		</aside>
 	);

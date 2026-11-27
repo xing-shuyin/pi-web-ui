@@ -166,6 +166,21 @@ describe("diffStreamingCues", () => {
 		]);
 	});
 
+	it("does not report canceled or failed background runs as successful completions", () => {
+		const previous = new Map([
+			["canceled", true],
+			["failed", true],
+		]);
+		const result = diffStreamingCues(previous, "active", false, [
+			{ id: "canceled", isStreaming: false, canceled: true },
+			{ id: "failed", isStreaming: false, error: "runtime exited" },
+			{ id: "active", isStreaming: false },
+		]);
+		expect(result.finishedConvs).toEqual([]);
+		expect(result.nextMap.get("canceled")).toBe(false);
+		expect(result.nextMap.get("failed")).toBe(false);
+	});
+
 	it("从空闲会话切换到正在后台运行的会话 → 不误响 startCue，也不误响 done", () => {
 		const prev = new Map([
 			["c1", true],

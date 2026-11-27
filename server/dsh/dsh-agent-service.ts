@@ -11,6 +11,8 @@ import { basename, dirname, join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { BG_CLEANUP_FALLBACK_MIN, BgServerTracker } from "../bg-servers.js";
+import type { BackgroundTaskService } from "../background-task-service.js";
+import { mergeSettingsPatch } from "../settings-patch.js";
 import {
 	ClientStateStore,
 	DEFAULT_RETRY_MAX_ATTEMPTS,
@@ -40,6 +42,21 @@ import {
 	formatUnavailableCanvasReference,
 } from "../universal/universal-attachments.js";
 import type { EngineService, ProjectRunnerInfo, SessionOwnerInfo } from "../engine-service.js";
+import {
+	makeBrowserPageTool,
+	normalizePageCallTimeoutMs,
+	type PageCallRequest,
+	type PageCallResult,
+} from "../browser-page-tool.js";
+import { makeBrowserScriptTool } from "../browser-script-tool.js";
+import { makeBrowserDesignTool } from "../browser-design-tool.js";
+import type { McpBridge } from "../mcp-bridge.js";
+import {
+	deleteMcpServer as deleteMcpServerFile,
+	listAllMcpServers,
+	saveMcpServer as saveMcpServerFile,
+	toggleMcpServer as toggleMcpServerFile,
+} from "../mcp-manager.js";
 import { buildSnapshotProduct, SnapshotSinkSet } from "../snapshot-sinks.js";
 import type { SnapshotProduct } from "../snapshot-channel.js";
 import { bilingual, pick, resolveServerLang, type ServerLang } from "../i18n.js";
@@ -62,13 +79,16 @@ import type {
 	ElsewhereRunning,
 	GoalStatus,
 	ProjectSummary,
+	McpScope,
 	PromptAttachment,
 	ServerMessage,
 	SessionSearchResult,
 	SessionSummary,
+	UiMcpServer,
 	UiMessage,
 	UiServiceInfo,
 	UiSettingsState,
+	UiToolPromptOverride,
 	UiSkillInfo,
 	UiState,
 	UiLayoutPrefs,
@@ -117,7 +137,13 @@ import {
 } from "../preset-share.js";
 import { getAppVersion } from "../pkg-info.js";
 import { getMaxOpenConversations } from "../agent-formatters.js";
-import type { PluginChatRequest, PluginConversationQuery, PluginConversationSnapshot } from "../plugins.js";
+import type {
+	PluginChatRequest,
+	PluginConversationQuery,
+	PluginConversationSnapshot,
+	PluginRunEvent,
+} from "../plugins.js";
+import { PluginTurnTimer } from "../../packages/keel/src/plugin-run-timing.js";
 
 const SNAPSHOT_INTERVAL_MS = 60;
 const HOME_WIRE = homedir().replace(/\\/g, "/");
@@ -158,6 +184,23 @@ function estimateCost(t: { input: number; output: number; cacheRead: number; cac
 	);
 }
 
+interface DshRuntimeEntry {
+	key: string;
+	runtime: DshRuntime;
+	cwd: string;
+	provider: string;
+	modelProvider: string;
+	model: string;
+	generation: number;
+	conversationIds: Set<string>;
+	bridgeCancellation: AbortController;
+	restartCount: number;
+	restartWindowStart: number;
+	stopping: boolean;
+	personaDirty?: boolean;
+	synthetic?: boolean;
+}
+
 interface DshConversation {
 	id: string;
 	sessionId: string;
@@ -183,6 +226,11 @@ interface DshConversation {
 	};
 	title: string;
 	cwd: string;
+	model: string;
+	modelProvider: string;
+	modelDisplayName: string;
+	modelVision: boolean;
+	runtimeKey: string;
 	createdAt: number;
 	messages: UiMessage[];
 	messageIds: Set<string>;
@@ -201,6 +249,9 @@ interface DshConversation {
 	liveChunks: boolean;
 	streamAnchor: number;
 	streamTurn: number;
+	pluginTurnTimer?: PluginTurnTimer;
+	terminal?: "completed" | "canceled" | "error";
+	terminalError?: string;
 }
 
 interface DshSettings {
@@ -305,14 +356,22 @@ export class DshClientSession {
 	private readonly stateStore: ClientStateStore;
 	private readonly sessionRoot: string;
 	private readonly dataDir: string;
+	private readonly backgroundTasks?: BackgroundTaskService;
 	private readonly agentDir: string;
 	private userTerminals: TerminalManager;
 
 	private runtime!: DshRuntime;
+	private readonly runtimeEntries = new Map<string, DshRuntimeEntry>();
+	private fallbackRuntimeEntry: DshRuntimeEntry | null = null;
+	private pendingQuestionEntry: DshRuntimeEntry | null = null;
 	private convs = new Map<string, DshConversation>();
 	private activeId = "";
 	private convSeq = 0;
 	private pendingQuestion: NonNullable<UiState["pendingQuestion"]> | null = null;
+	private readonly pendingQuestionQueue: Array<{
+		entry: DshRuntimeEntry;
+		question: NonNullable<UiState["pendingQuestion"]>;
+	}> = [];
 
 	private goalPrefs = { reviewModel: null as string | null, maxRounds: 2, locked: false };
 
@@ -337,10 +396,6 @@ export class DshClientSession {
 	private modelVision = false;
 	thinkingLevel = "high";
 
-	private static readonly RUNTIME_RESTART_WINDOW_MS = 60_000;
-	private static readonly RUNTIME_MAX_RESTARTS = 2;
-	private runtimeRestart = { count: 0, windowStart: 0 };
-
 	private static readonly RECLAIM_INTERVAL_MS = 5 * 60_000;
 	private static readonly CONV_RECLAIM_IDLE_MS = 30 * 60_000;
 	private static readonly CONV_RECLAIM_LISTED_IDLE_MS = 24 * 3600_000;
@@ -353,7 +408,6 @@ export class DshClientSession {
 
 	private settings: DshSettings = { ...DEFAULT_SETTINGS };
 	private skillsCache: UiSkillInfo[] = [];
-	private runtimeGen = 0;
 	private agentPresets: DshAgentPreset[] = [];
 	private agentPresetDefault = PRESET_DEFAULT_ID;
 	private agentPresetsAvailable = false;
@@ -369,7 +423,38 @@ export class DshClientSession {
 	private readonly bg: BgServerTracker;
 	private readonly sandboxes: SandboxManager;
 	private bridgeCancellation = new AbortController();
-	private cancelBridgedTools(): void {
+	private readonly conversationBridgeCancellations = new Map<string, AbortController>();
+	private bridgeCancellationFor(runtime: DshRuntime, conversationId?: string): AbortController {
+		if (conversationId) {
+			let controller = this.conversationBridgeCancellations.get(conversationId);
+			if (!controller) {
+				controller = new AbortController();
+				this.conversationBridgeCancellations.set(conversationId, controller);
+			}
+			return controller;
+		}
+		const entry = this.runtimeEntryForRuntime(runtime);
+		return entry?.bridgeCancellation ?? this.bridgeCancellation;
+	}
+	private cancelConversationBridgedTools(conversationId: string): void {
+		const controller = this.conversationBridgeCancellations.get(conversationId);
+		if (!controller) return;
+		controller.abort();
+		this.conversationBridgeCancellations.set(conversationId, new AbortController());
+	}
+	private cancelBridgedTools(runtime: DshRuntime = this.runtime, conversationId?: string): void {
+		if (!runtime) return;
+		if (conversationId) {
+			this.cancelConversationBridgedTools(conversationId);
+			return;
+		}
+		const entry = this.runtimeEntryForRuntime(runtime);
+		if (entry) {
+			for (const id of entry.conversationIds) this.cancelConversationBridgedTools(id);
+			entry.bridgeCancellation.abort();
+			entry.bridgeCancellation = new AbortController();
+			return;
+		}
 		this.bridgeCancellation.abort();
 		this.bridgeCancellation = new AbortController();
 	}
@@ -385,7 +470,27 @@ export class DshClientSession {
 				isError?: boolean;
 		  }) => void)
 		| undefined;
+	onRunEvent?: (event: PluginRunEvent) => void;
+	onConversationChanged?: () => void;
+	private lastPluginConversationId = "";
 	pluginToolsProvider: ((cwd?: string) => unknown[]) | undefined;
+	mcpProjects:
+		| (() =>
+				| {
+						retain?(cwd: string): () => void;
+						prepare(cwd: string): Promise<unknown>;
+						peekBridge?(cwd: string): McpBridge | undefined;
+						reload?(cwd: string, scope?: "project" | "global"): Promise<void>;
+				  }
+				| undefined)
+		| undefined;
+	private mcpReleases = new Map<string, () => void>();
+	private toolSyncQueues = new WeakMap<DshRuntime, Promise<void>>();
+	private pageCallSeq = 0;
+	private pendingPageCalls = new Map<
+		string,
+		{ resolve: (r: PageCallResult) => void; timer: ReturnType<typeof setTimeout> }
+	>();
 	pluginCommandsProvider: (() => PluginCommandDef[]) | undefined;
 	pluginBgTasksProvider: (() => BgServer[]) | undefined;
 	pluginStopBgTask: ((taskId: string) => boolean) | undefined;
@@ -401,13 +506,21 @@ export class DshClientSession {
 	onRunningChanged: (() => void) | undefined = undefined;
 	private lastRunningSig = "";
 
-	private constructor(clientId: string, cwd: string, stateStore: ClientStateStore, dataDir: string, agentDir: string) {
+	private constructor(
+		clientId: string,
+		cwd: string,
+		stateStore: ClientStateStore,
+		dataDir: string,
+		agentDir: string,
+		backgroundTasks?: BackgroundTaskService,
+	) {
 		this.clientId = clientId;
 		this.cwd = cwd;
 		this.stateStore = stateStore;
 		this.roots = stateStore.getWorkspaceRoots(clientId, cwd);
 		this.dataDir = dataDir;
 		this.agentDir = agentDir;
+		this.backgroundTasks = backgroundTasks;
 		ensureCredentialFilePermissions(this.agentDir);
 		this.sessionRoot = dshSessionRoot(dataDir);
 		this.sandboxes = new SandboxManager(dataDir);
@@ -434,6 +547,8 @@ export class DshClientSession {
 			flushSnapshot: () => this.flushSnapshot(),
 			isDisposed: () => this.disposed,
 			pluginTasks: () => this.pluginBgTasksProvider?.() ?? [],
+			jobs: () => this.backgroundTasks?.rows(this.clientId) ?? [],
+			killAllJobs: () => this.backgroundTasks?.killAllJobs(this.clientId) ?? [],
 			cleanupMinutes: () => Number(this.settings.bgAutoCleanupMin ?? 0),
 			workspaceCwd: () => this.cwd,
 		});
@@ -473,8 +588,16 @@ export class DshClientSession {
 		stateStore: ClientStateStore,
 		dataDir: string,
 		agentDir?: string,
+		backgroundTasks?: BackgroundTaskService,
 	): DshClientSession {
-		const cs = new DshClientSession(clientId, cwd, stateStore, dataDir, agentDir ?? join(homedir(), ".pi", "agent"));
+		const cs = new DshClientSession(
+			clientId,
+			cwd,
+			stateStore,
+			dataDir,
+			agentDir ?? join(homedir(), ".pi", "agent"),
+			backgroundTasks,
+		);
 		const gPrefs = stateStore.getGoalPrefs(clientId);
 		if (gPrefs) {
 			cs.goalPrefs = {
@@ -528,7 +651,8 @@ export class DshClientSession {
 						: PERMISSION_DEFAULT_PRESET,
 			};
 		}
-		cs.makeRuntime();
+		const initialRuntime = cs.makeRuntime(cwd, cs.model, cs.modelProvider);
+		cs.runtime = initialRuntime.runtime;
 		const recentFiles = findSessionFilesForCwd(cs.sessionRoot, cwd).filter(
 			(f) => !basename(dirname(f)).startsWith("review-"),
 		);
@@ -554,29 +678,13 @@ export class DshClientSession {
 			}
 		}
 		if (resumedConv) {
-			cs.activeId = resumedConv.id;
+			cs.activateConversation(resumedConv);
 		} else {
 			const first = cs.addConversation(`web-${randomUUID().slice(0, 12)}`, cwd, false, cs.settings.defaultAgentPreset);
-			cs.activeId = first.id;
+			cs.activateConversation(first);
 		}
-		cs.attachRuntimeEvents();
-		cs.runtime.onStarted = () => {
-			if (cs.switchingWorkspace) return;
-			cs.runtimeGen += 1;
-			void cs.syncPluginTools();
-			void cs.pushDisabledSkillsToRuntime();
-			void cs.refreshSkillsFromRuntime();
-			void cs.refreshAgentPresets();
-			void cs.refreshPermissionOptions().catch(() => {});
-			void cs.refreshActivePermission().catch(() => {});
-			void cs.refreshPromptInfo().catch(() => {});
-		};
-		cs.runtime.onExit = (code, signal, intentional) => {
-			cs.cancelBridgedTools();
-			if (intentional) return;
-			cs.handleRuntimeExit(code, signal);
-		};
-		void cs.startWithRetry().catch((err) => {
+		cs.bindConversationRuntime(cs.conv, initialRuntime);
+		void cs.startWithRetry(initialRuntime).catch((err) => {
 			console.error(`[dsh] runtime.start 失败 (client=${clientId}): ${(err as Error).message}`);
 			const errMsg = (err as Error).message || "";
 			const isDepOrRuntimeIssue =
@@ -606,12 +714,176 @@ export class DshClientSession {
 		return cs;
 	}
 
-	private async startWithRetry(): Promise<void> {
+	private runtimeKeyFor(_cwd: string, modelProvider: string, model: string): string {
+		return JSON.stringify(["deepseek-official", modelProvider, model]);
+	}
+
+	private runtimeEntryForRuntime(runtime: DshRuntime): DshRuntimeEntry | undefined {
+		if (this.fallbackRuntimeEntry?.runtime === runtime) return this.fallbackRuntimeEntry;
+		for (const entry of this.runtimeEntries.values()) {
+			if (entry.runtime === runtime) return entry;
+		}
+		return undefined;
+	}
+
+	private fallbackRuntime(): DshRuntimeEntry {
+		if (this.fallbackRuntimeEntry) return this.fallbackRuntimeEntry;
+		const key = this.runtimeKeyFor(this.cwd, this.modelProvider, this.model);
+		this.fallbackRuntimeEntry = {
+			key,
+			runtime: this.runtime,
+			cwd: this.cwd,
+			provider: "deepseek-official",
+			modelProvider: this.modelProvider,
+			model: this.model,
+			generation: 0,
+			conversationIds: new Set(),
+			bridgeCancellation: this.bridgeCancellation,
+			restartCount: 0,
+			restartWindowStart: 0,
+			stopping: false,
+			synthetic: true,
+		};
+		return this.fallbackRuntimeEntry;
+	}
+
+	private bindConversationRuntime(conv: DshConversation, entry: DshRuntimeEntry): void {
+		const previousKey = conv.runtimeKey;
+		if (previousKey && previousKey !== entry.key) {
+			this.runtimeEntries.get(previousKey)?.conversationIds.delete(conv.id);
+		}
+		conv.runtimeKey = entry.key;
+		entry.conversationIds.add(conv.id);
+		if (conv.id === this.activeId) this.runtime = entry.runtime;
+	}
+
+	private runtimeForConversation(conv: DshConversation): DshRuntimeEntry {
+		const existing = conv.runtimeKey ? this.runtimeEntries?.get(conv.runtimeKey) : undefined;
+		if (existing) {
+			existing.conversationIds.add(conv.id);
+			return existing;
+		}
+		if (this.runtime && (!this.runtimeEntries || this.runtimeEntries.size === 0)) {
+			const fallback = this.fallbackRuntime();
+			this.bindConversationRuntime(conv, fallback);
+			return fallback;
+		}
+		const entry = this.makeRuntime(conv.cwd, conv.model, conv.modelProvider);
+		this.bindConversationRuntime(conv, entry);
+		return entry;
+	}
+
+	private async ensureConversationWorkspace(
+		conv: DshConversation,
+		entry = this.runtimeForConversation(conv),
+	): Promise<void> {
+		assertEngineWorkspaceSupported(this.sandboxes, conv.cwd, "dsh");
+		await this.startWithRetry(entry);
+		if (conv.fromDisk) {
+			await (entry.runtime as unknown as { _request(method: string, params: unknown): Promise<unknown> })._request(
+				"session/resume",
+				{ sessionId: conv.sessionId },
+			);
+			conv.fromDisk = false;
+		}
+		const cwd = await entry.runtime.setWorkingDirectory(conv.sessionId, conv.cwd);
+		if (normalizePathKey(cwd) !== normalizePathKey(conv.cwd)) {
+			throw new Error(`DSH working directory mismatch: expected ${conv.cwd}, got ${cwd}`);
+		}
+		await this.ensureMcpProject(conv.cwd);
+		await this.syncPluginTools(entry.runtime);
+	}
+
+	private async releaseRuntimeEntry(entry: DshRuntimeEntry): Promise<void> {
+		if (entry.synthetic || entry.conversationIds.size > 0 || this.runtimeEntries.get(entry.key) !== entry) return;
+		this.cancelBridgedTools(entry.runtime);
+		entry.stopping = true;
+		this.runtimeEntries.delete(entry.key);
+		try {
+			await entry.runtime.close();
+		} catch {}
+	}
+
+	private settleConversationRuntimeState(
+		conv: DshConversation,
+		entry: DshRuntimeEntry,
+		terminal: "canceled" | "error",
+		error?: string,
+		clearQueue = true,
+	): { goalChanged: boolean; questionChanged: boolean } {
+		this.settleConversation(conv, terminal, error, clearQueue);
+		conv.toolStartTimes.clear();
+		conv.turnWaiter?.reject(new Error(error ?? "DSH session stopped"));
+		conv.turnWaiter = undefined;
+		const goalChanged = conv.goal.reviewing;
+		if (goalChanged) {
+			conv.goal.reviewing = false;
+			conv.goal.status = terminal === "error" ? "运行异常，目标已中止" : "运行已停止，目标已中止";
+			conv.goal.statusEn = terminal === "error" ? "Runtime failed; goal aborted" : "Runtime stopped; goal aborted";
+		}
+		const questionChanged = this.pendingQuestionEntry === entry && this.pendingQuestion?.conversationId === conv.id;
+		if (questionChanged && this.pendingQuestion) {
+			const questionId = this.pendingQuestion.id;
+			this.pendingQuestion = null;
+			this.pendingQuestionEntry = null;
+			void entry.runtime.answerQuestion(questionId, [], true).catch(() => {});
+		}
+		return { goalChanged, questionChanged };
+	}
+
+	private settleRuntimeEntry(entry: DshRuntimeEntry, terminal: "canceled" | "error", error?: string): void {
+		let changed = false;
+		let goalChanged = false;
+		let questionChanged = false;
+		for (const id of entry.conversationIds) {
+			const conv = this.convs.get(id);
+			if (!conv) continue;
+			const ownsPendingQuestion =
+				this.pendingQuestionEntry === entry && this.pendingQuestion?.conversationId === conv.id;
+			if (
+				!conv.isStreaming &&
+				!conv.streaming &&
+				!conv.turnWaiter &&
+				!ownsPendingQuestion &&
+				conv.queue.steering.length === 0 &&
+				conv.queue.followUp.length === 0
+			)
+				continue;
+			const settled = this.settleConversationRuntimeState(conv, entry, terminal, error);
+			goalChanged ||= settled.goalChanged;
+			questionChanged ||= settled.questionChanged;
+			changed = true;
+		}
+		for (let i = this.pendingQuestionQueue.length - 1; i >= 0; i--) {
+			const queued = this.pendingQuestionQueue[i]!;
+			if (queued.entry !== entry) continue;
+			this.pendingQuestionQueue.splice(i, 1);
+			void entry.runtime.answerQuestion(queued.question.id, [], true).catch(() => {});
+		}
+		if (changed) {
+			if (!this.disposed && questionChanged) this.presentNextPendingQuestion();
+			if (goalChanged) this.emitGoalStatus();
+			this.emitConversations();
+			this.flushSnapshot();
+			this.scheduleSessionsRefresh();
+		}
+	}
+
+	private async restartRuntimeEntry(entry: DshRuntimeEntry): Promise<void> {
+		entry.generation += 1;
+		this.cancelBridgedTools(entry.runtime);
+		this.settleRuntimeEntry(entry, "canceled");
+		await entry.runtime.restart(entry.model);
+		entry.personaDirty = false;
+	}
+
+	private async startWithRetry(entry: DshRuntimeEntry): Promise<void> {
+		if (entry.synthetic && typeof entry.runtime.start !== "function") return;
 		const delays = [1000, 3000, 9000];
 		let lastErr: unknown;
 		for (let i = 0; i <= delays.length; i++) {
 			try {
-				await this.runtime.start();
+				await entry.runtime.start();
 				return;
 			} catch (err) {
 				lastErr = err;
@@ -622,25 +894,38 @@ export class DshClientSession {
 		throw lastErr;
 	}
 
-	private handleRuntimeExit(code: number | null, signal: string | null): void {
-		if (this.disposed) return;
+	private handleRuntimeStarted(entry: DshRuntimeEntry): void {
+		if (this.disposed || entry.stopping) return;
+		entry.generation += 1;
+		void this.syncPluginTools(entry.runtime);
+		void this.pushDisabledSkillsToRuntime(entry.runtime);
+		if (this.runtime !== entry.runtime) return;
+		void this.refreshSkillsFromRuntime(entry.runtime);
+		void this.refreshAgentPresets(entry.runtime);
+		void this.refreshPermissionOptions(entry.runtime).catch(() => {});
+		void this.refreshActivePermission().catch(() => {});
+		void this.refreshPromptInfo(entry.runtime).catch(() => {});
+	}
+
+	private handleRuntimeExit(entry: DshRuntimeEntry, code: number | null, signal: string | null): void {
+		if (this.disposed || entry.stopping) return;
 		console.error(`[dsh] runtime 意外退出 (client=${this.clientId}) code=${code} signal=${signal}`);
-		for (const conv of this.convs.values()) {
-			finishTurnTiming(conv);
-			conv.isStreaming = false;
-			conv.streaming = null;
-			conv.liveChunks = false;
-		}
-		this.emitConversations();
+		this.cancelBridgedTools(entry.runtime);
+		entry.generation += 1;
+		this.settleRuntimeEntry(
+			entry,
+			"error",
+			`DSH runtime exited (code ${code ?? "unknown"}, signal ${signal ?? "unknown"})`,
+		);
 		const now = Date.now();
-		if (now - this.runtimeRestart.windowStart > DshClientSession.RUNTIME_RESTART_WINDOW_MS) {
-			this.runtimeRestart.windowStart = now;
-			this.runtimeRestart.count = 0;
+		if (now - entry.restartWindowStart > 60_000) {
+			entry.restartWindowStart = now;
+			entry.restartCount = 0;
 		}
-		this.runtimeRestart.count += 1;
-		if (this.runtimeRestart.count > DshClientSession.RUNTIME_MAX_RESTARTS) {
+		entry.restartCount += 1;
+		if (entry.restartCount > 2) {
 			console.error(`[dsh] runtime 反复崩溃 (code=${code} signal=${signal})，停止自动重启`);
-			const tail = this.runtime.getStderrTail();
+			const tail = entry.runtime.getStderrTail();
 			const isDepOrRuntimeIssue = /找不到 DSH 运行时树|版本族不匹配|version mismatch|dsh-base|typert|codec/i.test(tail);
 			const hintZh = isDepOrRuntimeIssue
 				? "DSH 运行时反复崩溃，已停止自动重启。请检查 dsh 运行时依赖安装与版本匹配（详见 docs/dsh-engine.md）。"
@@ -663,7 +948,7 @@ export class DshClientSession {
 			text: "DSH 运行时意外退出，正在自动重启…",
 			textEn: "DSH runtime exited unexpectedly; restarting…",
 		});
-		void this.startWithRetry().catch((err) => {
+		void this.startWithRetry(entry).catch((err) => {
 			this.emit({
 				type: "notice",
 				level: "error",
@@ -749,7 +1034,10 @@ export class DshClientSession {
 		} catch {}
 	}
 
-	private makeRuntime(): void {
+	private makeRuntime(cwd: string, model: string, modelProvider: string): DshRuntimeEntry {
+		const key = this.runtimeKeyFor(cwd, modelProvider, model);
+		const existing = this.runtimeEntries.get(key);
+		if (existing) return existing;
 		let presetPatch: string | undefined;
 		try {
 			const clones = generatePresetClones(this.dataDir);
@@ -766,26 +1054,50 @@ export class DshClientSession {
 			console.error(`[dsh] preset clone 生成失败，回落 legacy: ${(err as Error).message}`);
 			this.presetCloneIds = [];
 		}
-		this.runtime = new DshRuntime({
-			beforeStart: (cwd) => assertEngineWorkspaceSupported(this.sandboxes, cwd, "dsh"),
-			onStopping: () => this.cancelBridgedTools(),
-			cwd: this.cwd,
+		let runtime!: DshRuntime;
+		runtime = new DshRuntime({
+			beforeStart: (targetCwd) => assertEngineWorkspaceSupported(this.sandboxes, targetCwd, "dsh"),
+			onStopping: () => this.cancelBridgedTools(runtime),
+			cwd,
 			provider: "deepseek-official",
-			model: this.model,
-			modelProvider: this.modelProvider,
+			model,
+			modelProvider,
 			sessionRoot: this.sessionRoot,
 			dataDir: this.dataDir,
 			agentDir: this.agentDir,
 			env: {
 				...(presetPatch ? { PI_WEB_DSH_PRESET_PATCH: presetPatch } : {}),
+				PI_WEB_DSH_INVENTORY_SESSION_ID: `pi-webui-inventory-${randomUUID().slice(0, 8)}`,
 				...this.buildPersonaEnv(),
 			},
 		});
+		const entry: DshRuntimeEntry = {
+			key,
+			runtime,
+			cwd: resolve(cwd),
+			provider: "deepseek-official",
+			modelProvider,
+			model,
+			generation: 0,
+			conversationIds: new Set(),
+			bridgeCancellation: new AbortController(),
+			restartCount: 0,
+			restartWindowStart: 0,
+			stopping: false,
+		};
+		this.runtimeEntries.set(key, entry);
+		this.attachRuntimeEvents(entry);
+		runtime.onStarted = () => this.handleRuntimeStarted(entry);
+		runtime.onExit = (code, signal, intentional) => {
+			this.cancelBridgedTools(runtime);
+			if (!intentional) this.handleRuntimeExit(entry, code, signal);
+		};
+		return entry;
 	}
 
-	private attachRuntimeEvents(): void {
-		this.runtime.onNotification((method, params) => {
-			if (this.disposed) return;
+	private attachRuntimeEvents(entry: DshRuntimeEntry): void {
+		entry.runtime.onNotification((method, params) => {
+			if (this.disposed || entry.stopping) return;
 			try {
 				if (method === "session.event") {
 					this.handleSessionEvent(
@@ -793,15 +1105,16 @@ export class DshClientSession {
 							sessionId: string;
 							event: { type: string; seq: number; time: number; data: Record<string, unknown> };
 						},
+						entry,
 					);
 				} else if (method === "assistant.stream") {
-					this.handleAssistantStream(params as { sessionId: string; frame: Record<string, unknown> });
+					this.handleAssistantStream(params as { sessionId: string; frame: Record<string, unknown> }, entry);
 				} else if (method === "session.status") {
-					this.handleSessionStatus(params as { sessionId: string; status: string });
+					this.handleSessionStatus(params as { sessionId: string; status: string }, entry);
 				} else if (method === "question.pending") {
-					const params0 = params as { id: string; questions?: unknown[]; deadline?: unknown };
+					const params0 = params as { id: string; sessionId?: string; questions?: unknown[]; deadline?: unknown };
 					if (this.settings.questionnaireEnabled === false) {
-						void this.answerQuestion(params0.id, [], true);
+						void entry.runtime.answerQuestion(params0.id, [], true).catch(() => {});
 						return;
 					}
 					const mapped = (params0.questions ?? []).map((q) => ({
@@ -826,31 +1139,55 @@ export class DshClientSession {
 							: {}),
 						...((q as { multiSelect?: unknown }).multiSelect ? { multiSelect: true } : {}),
 					}));
-					const dshConv = this.convs.get(this.activeId);
-					const conversationTitle = dshConv?.title;
-					this.pendingQuestion = {
+					const dshConv = params0.sessionId
+						? this.findConv(params0.sessionId, entry)
+						: ([...entry.conversationIds].map((id) => this.convs.get(id)).find((conv) => conv?.id === this.activeId) ??
+							[...entry.conversationIds].map((id) => this.convs.get(id)).find(Boolean));
+					if (!dshConv || dshConv.runtimeKey !== entry.key) return;
+					const conversationTitle = dshConv.title;
+					this.enqueuePendingQuestion(entry, {
 						id: params0.id,
 						...(typeof params0.deadline === "number" ? { deadline: params0.deadline } : {}),
 						questions: mapped,
-						...(this.activeId ? { conversationId: this.activeId } : {}),
-						...(conversationTitle ? { conversationTitle } : {}),
-					};
-					this.emit({
-						type: "question_pending",
-						id: params0.id,
-						...(typeof params0.deadline === "number" ? { deadline: params0.deadline } : {}),
-						questions: mapped,
-						...(this.activeId ? { conversationId: this.activeId } : {}),
+						...(dshConv.id ? { conversationId: dshConv.id } : {}),
 						...(conversationTitle ? { conversationTitle } : {}),
 					});
-					this.flushSnapshot();
 				} else if (method === "tools.call.request") {
-					void this.handleToolCallRequest(params as { id: string; name: string; args?: Record<string, unknown> });
+					void this.handleToolCallRequest(
+						params as { id: string; sessionId?: string; name: string; args?: Record<string, unknown> },
+						entry,
+					);
 				}
 			} catch (err) {
 				console.error("[dsh] event handler error:", err);
 			}
 		});
+	}
+
+	private presentPendingQuestion(entry: DshRuntimeEntry, question: NonNullable<UiState["pendingQuestion"]>): void {
+		this.pendingQuestionEntry = entry;
+		this.pendingQuestion = question;
+		this.emit({ type: "question_pending", ...question });
+		this.flushSnapshot();
+	}
+
+	private enqueuePendingQuestion(entry: DshRuntimeEntry, question: NonNullable<UiState["pendingQuestion"]>): void {
+		if (this.pendingQuestion) {
+			this.pendingQuestionQueue.push({ entry, question });
+			return;
+		}
+		this.presentPendingQuestion(entry, question);
+	}
+
+	private presentNextPendingQuestion(): void {
+		const next = this.pendingQuestionQueue.shift();
+		if (!next) {
+			this.pendingQuestion = null;
+			this.pendingQuestionEntry = null;
+			this.flushSnapshot();
+			return;
+		}
+		this.presentPendingQuestion(next.entry, next.question);
 	}
 
 	private pendingQuestionForSnapshot(): NonNullable<UiState["pendingQuestion"]> | null {
@@ -865,10 +1202,16 @@ export class DshClientSession {
 		answers: { id: string; selected: string[]; custom?: string }[],
 		cancelled?: boolean,
 	): Promise<void> {
-		if (this.pendingQuestion?.id === id) this.pendingQuestion = null;
+		const entry = this.pendingQuestion?.id === id ? this.pendingQuestionEntry : null;
+		const answeredCurrent = this.pendingQuestion?.id === id;
+		if (answeredCurrent) {
+			this.pendingQuestion = null;
+			this.pendingQuestionEntry = null;
+		}
 		this.flushSnapshot();
 		try {
-			await this.runtime.answerQuestion(id, answers, cancelled);
+			const runtime = entry?.runtime ?? this.runtime;
+			await runtime.answerQuestion(id, answers, cancelled);
 		} catch (err) {
 			this.emit({
 				type: "notice",
@@ -876,6 +1219,8 @@ export class DshClientSession {
 				text: `回答失败：${(err as Error).message}`,
 				textEn: `Answer failed: ${(err as Error).message}`,
 			});
+		} finally {
+			if (answeredCurrent) this.presentNextPendingQuestion();
 		}
 	}
 
@@ -919,22 +1264,198 @@ export class DshClientSession {
 		return [...new Set([this.cwd, ...[...this.convs.values()].map((conv) => conv.cwd)])];
 	}
 
-	async syncPluginTools(): Promise<void> {
-		if (!this.runtime.alive) return;
-		const provider = this.pluginToolsProvider;
-		if (!provider) return;
-		const tools = (provider(this.cwd) ?? [])
-			.map((t) => this.bridgedTool(t))
-			.filter((t): t is NonNullable<typeof t> => t !== undefined);
-		const defs = tools.map((t) => ({
-			name: t.name,
-			description: t.description,
-			...(t.parameters ? { parameters: t.parameters } : {}),
-		}));
+	private async ensureMcpProject(cwd: string): Promise<void> {
+		const projects = this.mcpProjects?.();
+		if (!projects || !cwd) return;
+		const key = normalizePathKey(cwd);
+		if (!this.mcpReleases.has(key) && projects.retain) {
+			try {
+				this.mcpReleases.set(key, projects.retain(cwd));
+			} catch {}
+		}
 		try {
-			await this.runtime.syncTools(defs);
+			await projects.prepare(cwd);
 		} catch (err) {
-			console.error(`[dsh] syncPluginTools 失败 (client=${this.clientId}):`, err);
+			console.warn(`[dsh] MCP project prepare failed (cwd=${cwd}):`, (err as Error)?.message ?? err);
+		}
+	}
+
+	pageCall(req: PageCallRequest, signal: { aborted?: boolean }, _conversationId?: string): Promise<PageCallResult> {
+		if (signal?.aborted) return Promise.resolve({ ok: false, error: "aborted" });
+		if (this.disposed || this.sinks.size === 0) return Promise.resolve({ ok: false, error: "no active client" });
+		return new Promise<PageCallResult>((resolve) => {
+			const timeoutMs = normalizePageCallTimeoutMs(req.timeoutMs);
+			const id = `dshpage-${++this.pageCallSeq}-${Date.now()}`;
+			const timer = setTimeout(() => {
+				if (this.pendingPageCalls.delete(id)) {
+					resolve({ ok: false, error: "page_request timed out" });
+				}
+			}, timeoutMs);
+			this.pendingPageCalls.set(id, { resolve, timer });
+			this.emit({ type: "page_request", id, op: req.op, args: req.args, target: req.target, timeoutMs });
+		});
+	}
+
+	resolvePageCall(id: string, ok: boolean, result?: unknown, error?: string): void {
+		const entry = this.pendingPageCalls.get(id);
+		if (!entry) return;
+		this.pendingPageCalls.delete(id);
+		clearTimeout(entry.timer);
+		entry.resolve(ok ? { ok: true, result } : { ok: false, error: error?.trim() || "page_request failed" });
+	}
+
+	private builtinBridgedTools(conversationId?: string): unknown[] {
+		const pageClient = {
+			pageCall: (req: PageCallRequest, sig: { aborted?: boolean }, convId?: string) =>
+				this.pageCall(req, sig, convId ?? conversationId),
+		};
+		return [
+			makeBrowserPageTool(pageClient, conversationId),
+			makeBrowserScriptTool(pageClient, conversationId),
+			makeBrowserDesignTool(pageClient, conversationId),
+		];
+	}
+
+	private isInternalMcpEnabled(): boolean {
+		return this.stateStore.getSettingsSnapshot(this.clientId).internalMcpEnabled !== false;
+	}
+
+	private listMcpServers(cwd = this.cwd) {
+		return listAllMcpServers({
+			agentDir: this.agentDir,
+			cwd,
+			dataDir: this.dataDir,
+			bridge: this.mcpProjects?.()?.peekBridge?.(cwd),
+		});
+	}
+
+	broadcastMcpServers(cwd = this.cwd): void {
+		const data = this.listMcpServers(cwd);
+		this.emit({
+			type: "mcp_servers",
+			servers: data.servers,
+			globalConfigPath: data.globalPath,
+			projectConfigPath: data.projectPath,
+		});
+		this.emit({ type: "extension_inventory_changed" });
+	}
+
+	async saveMcpServer(server: UiMcpServer, prevName?: string, prevScope?: McpScope): Promise<void> {
+		const res = await saveMcpServerFile({
+			agentDir: this.agentDir,
+			cwd: this.cwd,
+			dataDir: this.dataDir,
+			server,
+			prevName,
+			prevScope,
+		});
+		if (!res.ok) {
+			this.emitNotice("error", res.error || "保存 MCP 服务器失败", res.error || "Failed to save MCP server");
+			return;
+		}
+		await this.mcpProjects?.()?.reload?.(this.cwd, server.scope);
+		this.broadcastMcpServers(this.cwd);
+		await this.syncPluginTools();
+		this.pushSettings();
+	}
+
+	async deleteMcpServer(name: string, scope: McpScope): Promise<void> {
+		const res = await deleteMcpServerFile({
+			agentDir: this.agentDir,
+			cwd: this.cwd,
+			dataDir: this.dataDir,
+			name,
+			scope,
+		});
+		if (!res.ok) {
+			this.emitNotice("error", res.error || "删除 MCP 服务器失败", res.error || "Failed to delete MCP server");
+			return;
+		}
+		await this.mcpProjects?.()?.reload?.(this.cwd, scope);
+		this.broadcastMcpServers(this.cwd);
+		await this.syncPluginTools();
+		this.pushSettings();
+	}
+
+	async toggleMcpServer(name: string, scope: McpScope, enabled: boolean): Promise<void> {
+		const res = await toggleMcpServerFile({
+			agentDir: this.agentDir,
+			cwd: this.cwd,
+			dataDir: this.dataDir,
+			name,
+			scope,
+			enabled,
+		});
+		if (!res.ok) {
+			this.emitNotice("error", res.error || "切换 MCP 服务器状态失败", res.error || "Failed to toggle MCP server");
+			return;
+		}
+		await this.mcpProjects?.()?.reload?.(this.cwd, scope);
+		this.broadcastMcpServers(this.cwd);
+		await this.syncPluginTools();
+		this.pushSettings();
+	}
+
+	async reloadMcp(): Promise<void> {
+		await this.mcpProjects?.()?.reload?.(this.cwd, "global");
+		this.broadcastMcpServers(this.cwd);
+		await this.syncPluginTools();
+		this.pushSettings();
+		this.emitNotice("info", "已重新加载所有 MCP 服务器", "Reloaded all MCP servers");
+	}
+
+	async syncPluginTools(runtime?: DshRuntime): Promise<void> {
+		const provider = this.pluginToolsProvider;
+		const targets = runtime
+			? [runtime]
+			: [...new Set([this.runtime, ...[...this.runtimeEntries.values()].map((e) => e.runtime)])];
+		for (const target of targets) {
+			if (!target?.alive) continue;
+			const prev = this.toolSyncQueues.get(target) ?? Promise.resolve();
+			const next = prev
+				.catch(() => {})
+				.then(async () => {
+					if (!target.alive) return;
+					if (!this.isInternalMcpEnabled()) {
+						try {
+							await target.syncTools([]);
+						} catch (err) {
+							console.error(`[dsh] syncPluginTools 失败 (client=${this.clientId}):`, err);
+						}
+						return;
+					}
+					const entry = this.runtimeEntryForRuntime(target);
+					const cwds = new Set([
+						target.cwd,
+						...(entry ? [...entry.conversationIds].map((id) => this.convs.get(id)?.cwd).filter(Boolean) : []),
+					]);
+					const tools = new Map<string, NonNullable<ReturnType<DshClientSession["bridgedTool"]>>>();
+					for (const raw of this.builtinBridgedTools()) {
+						const tool = this.bridgedTool(raw);
+						if (tool && !tools.has(tool.name)) tools.set(tool.name, tool);
+					}
+					if (provider) {
+						for (const cwd of cwds) {
+							if (!cwd) continue;
+							for (const raw of provider(cwd) ?? []) {
+								const tool = this.bridgedTool(raw);
+								if (tool && !tools.has(tool.name)) tools.set(tool.name, tool);
+							}
+						}
+					}
+					const defs = [...tools.values()].map((t) => ({
+						name: t.name,
+						description: t.description,
+						...(t.parameters ? { parameters: t.parameters } : {}),
+					}));
+					try {
+						await target.syncTools(defs);
+					} catch (err) {
+						console.error(`[dsh] syncPluginTools 失败 (client=${this.clientId}):`, err);
+					}
+				});
+			this.toolSyncQueues.set(target, next);
+			await next;
 		}
 	}
 
@@ -953,10 +1474,10 @@ export class DshClientSession {
 		}
 	}
 
-	async refreshSkillsFromRuntime(): Promise<void> {
-		if (!this.runtime.alive) return;
+	async refreshSkillsFromRuntime(runtime = this.runtime): Promise<void> {
+		if (!runtime.alive) return;
 		try {
-			const res = await this.runtime.listSkills();
+			const res = await runtime.listSkills();
 			const disabled = new Set(this.settings.disabledSkills);
 			this.skillsCache = (res.skills ?? []).map((s) => ({
 				name: s.name,
@@ -972,40 +1493,57 @@ export class DshClientSession {
 		} catch {}
 	}
 
-	async pushDisabledSkillsToRuntime(): Promise<void> {
-		if (!this.runtime.alive) return;
-		try {
-			await this.runtime.setDisabledSkills(this.settings.disabledSkills);
-		} catch (err) {
-			console.error(`[dsh] setDisabledSkills 失败 (client=${this.clientId}):`, err);
+	async pushDisabledSkillsToRuntime(runtime?: DshRuntime): Promise<void> {
+		const targets = runtime
+			? [runtime]
+			: [...new Set([this.runtime, ...[...this.runtimeEntries.values()].map((e) => e.runtime)])];
+		for (const target of targets) {
+			if (!target?.alive) continue;
+			try {
+				await target.setDisabledSkills(this.settings.disabledSkills);
+			} catch (err) {
+				console.error(`[dsh] setDisabledSkills 失败 (client=${this.clientId}):`, err);
+			}
 		}
 	}
 
-	private async handleToolCallRequest(params: {
-		id: string;
-		name: string;
-		args?: Record<string, unknown>;
-	}): Promise<void> {
+	private async handleToolCallRequest(
+		params: {
+			id: string;
+			sessionId?: string;
+			name: string;
+			args?: Record<string, unknown>;
+		},
+		entry?: DshRuntimeEntry,
+	): Promise<void> {
 		const id = String(params?.id ?? "");
 		const name = String(params?.name ?? "");
 		const args = (params?.args && typeof params.args === "object" ? params.args : {}) as Record<string, unknown>;
 		if (!id) return;
 		const lang = this.getLang();
-		const runtime = this.runtime;
-		const cwd = runtime.cwd;
-		const signal = this.bridgeCancellation.signal;
+		const conv = params.sessionId ? this.findConv(params.sessionId, entry) : undefined;
+		const runtime = entry?.runtime ?? (conv ? this.runtimeForConversation(conv).runtime : this.runtime);
+		const cwd = conv?.cwd ?? runtime.cwd;
+		const signal = this.bridgeCancellationFor(runtime, conv?.id).signal;
 		if (!name) {
-			void this.runtime
+			void runtime
 				.toolsCallResult(id, pick(lang, "工具名缺失", "Missing tool name", "dsh.tool.missing.name"), true)
 				.catch(() => {});
 			return;
 		}
 		try {
-			const tool = this.bridgedTool(
-				(this.pluginToolsProvider?.(this.cwd) ?? []).find((t) => (t as { name?: unknown }).name === name),
-			);
+			if (!this.isInternalMcpEnabled()) {
+				await runtime.toolsCallResult(
+					id,
+					pick(lang, `未知插件工具：${name}`, `Unknown plugin tool: ${name}`, "dsh.tool.unknown.plugin", { name }),
+					true,
+				);
+				return;
+			}
+			const candidates = [...this.builtinBridgedTools(conv?.id), ...(this.pluginToolsProvider?.(cwd) ?? [])];
+			const tool = this.bridgedTool(candidates.find((t) => (t as { name?: unknown }).name === name));
 			if (!tool) {
-				await this.runtime.toolsCallResult(
+				await runtime.toolsCallResult(
 					id,
 					pick(lang, `未知插件工具：${name}`, `Unknown plugin tool: ${name}`, "dsh.tool.unknown.plugin", { name }),
 					true,
@@ -1079,6 +1617,11 @@ export class DshClientSession {
 			goal: this.makeGoalStatus(),
 			title: this.defaultTitle(),
 			cwd,
+			model: this.model,
+			modelProvider: this.modelProvider,
+			modelDisplayName: this.modelDisplayName,
+			modelVision: this.modelVision,
+			runtimeKey: this.runtimeKeyFor(cwd, this.modelProvider, this.model),
 			createdAt: Date.now(),
 			messages: [],
 			messageIds: new Set(),
@@ -1134,24 +1677,45 @@ export class DshClientSession {
 		return this.convs.get(this.activeId)!;
 	}
 
-	private findConv(sessionId: string): DshConversation | undefined {
-		for (const conv of this.convs.values()) {
-			if (conv.sessionId === sessionId) return conv;
+	private pluginTurnTimer(conv: DshConversation): PluginTurnTimer {
+		if (!conv.pluginTurnTimer) {
+			conv.pluginTurnTimer = new PluginTurnTimer((event) => this.onRunEvent?.(event), {
+				conversationId: conv.id,
+				clientId: this.clientId,
+				sessionId: conv.sessionId,
+			});
 		}
-		return undefined;
+		return conv.pluginTurnTimer;
 	}
 
-	private handleSessionEvent(params: {
-		sessionId: string;
-		event: { type: string; seq: number; time: number; data: Record<string, unknown> };
-	}): void {
-		const conv = this.findConv(params.sessionId);
-		if (!conv) return;
+	private activateConversation(conv: DshConversation): void {
+		this.activeId = conv.id;
+		if (this.runtime) this.runtime = this.runtimeForConversation(conv).runtime;
+	}
+
+	private findConv(sessionId: string, entry?: DshRuntimeEntry): DshConversation | undefined {
+		const matches = [...this.convs.values()].filter((conv) => conv.sessionId === sessionId);
+		if (entry) return matches.find((conv) => conv.runtimeKey === entry.key);
+		return matches.find((conv) => conv.id === this.activeId) ?? matches[0];
+	}
+
+	private handleSessionEvent(
+		params: {
+			sessionId: string;
+			event: { type: string; seq: number; time: number; data: Record<string, unknown> };
+		},
+		entry?: DshRuntimeEntry,
+	): void {
+		const conv = this.findConv(params.sessionId, entry);
+		if (!conv || (entry && conv.runtimeKey !== entry.key)) return;
 		conv.lastEventAt = Date.now();
 		const ev = params.event;
 		switch (ev.type) {
 			case "user/message": {
 				const srcKind = (ev.data as { source?: { kind?: string } }).source?.kind;
+				if (srcKind === "goal" || !isDshInternalUserMessage(ev.data as Record<string, unknown>)) {
+					this.pluginTurnTimer(conv).start(typeof ev.time === "number" ? ev.time : Date.now());
+				}
 				if (srcKind === "goal") {
 					const round = (ev.data as { source?: { round?: number } }).source?.round;
 					if (round && conv.goal.goal && conv.id === this.activeId) {
@@ -1257,6 +1821,10 @@ export class DshClientSession {
 					...(startedAt !== undefined ? { durationMs: Date.now() - startedAt } : {}),
 					isError: msg?.isError === true,
 				});
+				if (conv.toolStartTimes.size === 0) {
+					if (conv.pluginTurnTimer?.isActive) conv.pluginTurnTimer.end();
+					this.pluginTurnTimer(conv).start(typeof ev.time === "number" ? ev.time : Date.now());
+				}
 				if (msg) {
 					this.emit({
 						type: "tool_status",
@@ -1272,12 +1840,22 @@ export class DshClientSession {
 				if (conv.liveChunks) break;
 				const chunk = ev.data?.chunk as Record<string, unknown> | undefined;
 				if (!chunk) break;
-				this.applyStreamChunk(conv, chunk, ev.seq, (ev.data?.turn as number) ?? 0);
+				const timer = this.pluginTurnTimer(conv);
+				if (!timer.isActive)
+					timer.start(conv.turnTiming?.startedAt ?? (typeof ev.time === "number" ? ev.time : Date.now()));
+				this.applyStreamChunk(
+					conv,
+					chunk,
+					ev.seq,
+					(ev.data?.turn as number) ?? 0,
+					typeof ev.time === "number" ? ev.time : Date.now(),
+				);
 				break;
 			}
 			case "tool/call": {
 				const callId = ev.data?.callId as string;
 				const name = ev.data?.name as string;
+				this.pluginTurnTimer(conv).first(typeof ev.time === "number" ? ev.time : Date.now());
 				if (callId) conv.toolStartTimes.set(callId, Date.now());
 				if (name === "bash") this.bg.snapshotBefore();
 				this.onToolEvent?.({ phase: "start", toolName: name ?? "tool", conversationId: conv.id });
@@ -1288,9 +1866,40 @@ export class DshClientSession {
 				break;
 			}
 			case "turn/end": {
+				this.pluginTurnTimer(conv).end(typeof ev.time === "number" ? ev.time : Date.now());
 				conv.streaming = null;
 				const reason = (ev.data?.reason as { kind?: string; error?: { message?: string } }) ?? {};
-				if (reason.kind === "error" && /id collision/i.test(reason.error?.message ?? "") && !conv.fromDisk) {
+				const idCollision = reason.kind === "error" && /id collision/i.test(reason.error?.message ?? "");
+				if (reason.kind === "error" && !idCollision && conv.terminal !== "canceled") {
+					conv.terminal = "error";
+					const errMsg =
+						reason.error?.message ??
+						pick(
+							this.getLang(),
+							`本轮异常结束（${reason.kind}）`,
+							`Round ended abnormally (${reason.kind})`,
+							"dsh.round.ended.abnormally",
+							{ "reason.kind": reason.kind },
+						);
+					conv.terminalError = errMsg;
+					const lastMsg = conv.messages[conv.messages.length - 1];
+					if (!(lastMsg?.role === "assistant" && lastMsg.errorMessage)) {
+						this.appendMessage(conv, {
+							id: `dsh-err-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+							role: "assistant",
+							content: [{ type: "text", text: "" }],
+							errorMessage: errMsg,
+							timestamp: typeof ev.time === "number" ? ev.time : Date.now(),
+						});
+					}
+					this.emit({
+						type: "notice",
+						level: "error",
+						text: errMsg,
+						textEn: errMsg,
+					});
+				}
+				if (idCollision && !conv.fromDisk) {
 					this.forkAndReprompt(conv);
 				} else if (conv.turnWaiter) {
 					const w = conv.turnWaiter;
@@ -1343,16 +1952,20 @@ export class DshClientSession {
 		}
 	}
 
-	private handleAssistantStream(params: { sessionId: string; frame?: Record<string, unknown> }): void {
-		const conv = this.findConv(params.sessionId);
+	private handleAssistantStream(
+		params: { sessionId: string; frame?: Record<string, unknown> },
+		entry?: DshRuntimeEntry,
+	): void {
+		const conv = this.findConv(params.sessionId, entry);
 		const frame = params.frame;
-		if (!conv || !frame || typeof frame.type !== "string") return;
+		if (!conv || !frame || typeof frame.type !== "string" || (entry && conv.runtimeKey !== entry.key)) return;
 		conv.lastEventAt = Date.now();
 		if (frame.type === "start") {
 			conv.liveChunks = true;
 			conv.streaming = null;
 			conv.streamAnchor = typeof frame.time === "number" && Number.isFinite(frame.time) ? frame.time : Date.now();
 			conv.streamTurn = typeof frame.turn === "number" ? frame.turn : 0;
+			this.pluginTurnTimer(conv).start(conv.streamAnchor);
 			this.scheduleSnapshot();
 			return;
 		}
@@ -1364,7 +1977,13 @@ export class DshClientSession {
 			conv.streamAnchor = typeof frame.time === "number" && Number.isFinite(frame.time) ? frame.time : Date.now();
 			conv.streamTurn = typeof frame.turn === "number" ? frame.turn : 0;
 		}
-		this.applyStreamChunk(conv, chunk, conv.streamAnchor, conv.streamTurn);
+		this.applyStreamChunk(
+			conv,
+			chunk,
+			conv.streamAnchor,
+			conv.streamTurn,
+			typeof frame.time === "number" && Number.isFinite(frame.time) ? frame.time : Date.now(),
+		);
 		this.scheduleSnapshot();
 	}
 
@@ -1373,6 +1992,7 @@ export class DshClientSession {
 		chunk: Record<string, unknown>,
 		anchorId: number,
 		turn: number,
+		at = Date.now(),
 	): void {
 		if (chunk.type === "usage") {
 			this.applyUsage(conv, chunk.usage);
@@ -1380,6 +2000,13 @@ export class DshClientSession {
 		}
 		if (!conv.streaming) conv.streaming = new DshStreamAccumulator(anchorId, turn);
 		conv.streaming.apply(chunk);
+		if (
+			(chunk.type === "text-delta" || chunk.type === "reasoning-delta") &&
+			typeof chunk.text === "string" &&
+			chunk.text
+		) {
+			this.pluginTurnTimer(conv).first(at);
+		}
 		if (conv.id === this.conv.id && (chunk.type === "text-delta" || chunk.type === "reasoning-delta")) {
 			this.emit({
 				type: "message_delta",
@@ -1403,16 +2030,39 @@ export class DshClientSession {
 		conv.usageSeen = true;
 	}
 
-	private handleSessionStatus(params: { sessionId: string; status: string }): void {
-		const conv = this.findConv(params.sessionId);
-		if (!conv) return;
+	private settleConversation(
+		conv: DshConversation,
+		terminal: "completed" | "canceled" | "error",
+		error?: string,
+		clearQueue = false,
+	): void {
+		if (conv.pluginTurnTimer?.isActive) conv.pluginTurnTimer.end();
+		finishTurnTiming(conv);
+		conv.isStreaming = false;
+		conv.streaming = null;
+		conv.liveChunks = false;
+		conv.terminal = terminal;
+		conv.terminalError = error;
+		if (clearQueue) {
+			conv.queue.steering.length = 0;
+			conv.queue.followUp.length = 0;
+		}
+	}
+
+	private handleSessionStatus(params: { sessionId: string; status: string }, entry?: DshRuntimeEntry): void {
+		const conv = this.findConv(params.sessionId, entry);
+		if (!conv || (entry && conv.runtimeKey !== entry.key)) return;
 		const was = conv.isStreaming;
 		conv.isStreaming = params.status === "running";
-		if (conv.isStreaming) startTurnTiming(conv);
-		else finishTurnTiming(conv);
+		if (conv.isStreaming) {
+			conv.terminal = undefined;
+			conv.terminalError = undefined;
+			startTurnTiming(conv);
+		} else if (was) {
+			this.settleConversation(conv, conv.terminal ?? "completed", conv.terminalError);
+		}
 		conv.lastEventAt = Date.now();
 		if (was && !conv.isStreaming) {
-			conv.streaming = null;
 			this.refreshConversationTitle(conv);
 			this.scheduleSessionsRefresh();
 			this.emitConversations();
@@ -1518,15 +2168,15 @@ export class DshClientSession {
 			conversationId: this.activeId,
 			sandbox: this.sandboxes.getByCwd(this.cwd) ?? null,
 			rev,
-			streamingMessage: conv.streaming ? conv.streaming.toUiMessage(conv.lastEventAt, this.model, "deepseek") : null,
+			streamingMessage: conv.streaming ? conv.streaming.toUiMessage(conv.lastEventAt, conv.model, "deepseek") : null,
 			isStreaming: conv.isStreaming,
 			turnTiming: conv.turnTiming ?? null,
 			draft: this.sessionDrafts.get(conv.sessionId) ?? null,
 			model: {
-				id: this.model,
-				name: this.modelDisplayName || (DSH_MODELS.find((m) => m.id === this.model)?.name ?? this.model),
-				provider: this.modelProvider || "deepseek",
-				vision: this.modelVision,
+				id: conv.model,
+				name: conv.modelDisplayName || conv.model,
+				provider: conv.modelProvider || "deepseek",
+				vision: conv.modelVision,
 			},
 			thinkingLevel: this.thinkingLevel,
 			availableThinkingLevels: ["high"],
@@ -1697,8 +2347,8 @@ export class DshClientSession {
 			if (!conv.listed && !this.shownInRunningList(conv)) continue;
 			const sf = this.guessSessionFile(conv);
 			const isPinned = Boolean(
-				this.stateStore?.isSessionPinned(this.cwd, sf || "") ||
-				this.stateStore?.isSessionPinned(this.cwd, conv.sessionId),
+				this.stateStore?.isSessionPinned(conv.cwd, sf || "") ||
+				this.stateStore?.isSessionPinned(conv.cwd, conv.sessionId),
 			);
 			list.push({
 				id: conv.id,
@@ -1714,6 +2364,8 @@ export class DshClientSession {
 				cwd: conv.cwd,
 				messageCount: conv.messages.length,
 				isStreaming: conv.isStreaming,
+				...(conv.terminal === "canceled" ? { canceled: true as const } : {}),
+				...(conv.terminal === "error" && conv.terminalError ? { error: conv.terminalError } : {}),
 				isSubagent: false,
 				pinned: isPinned,
 				...(conv.terminals.countUserBlockingLive() > 0 ? { hasUserTerminals: true as const } : {}),
@@ -1738,6 +2390,10 @@ export class DshClientSession {
 			activeId: this.activeId,
 			...(elsewhere.length > 0 ? { elsewhere } : {}),
 		});
+		if (this.lastPluginConversationId !== this.activeId) {
+			this.lastPluginConversationId = this.activeId;
+			this.onConversationChanged?.();
+		}
 	}
 
 	private shouldRetainDshConversation(conv: DshConversation): boolean {
@@ -1760,6 +2416,7 @@ export class DshClientSession {
 				this.flushSnapshot();
 			}
 			this.emitConversations();
+			void this.ensureConversationWorkspace(active).catch(() => {});
 			onReady?.(active.id);
 			return true;
 		}
@@ -1767,7 +2424,7 @@ export class DshClientSession {
 			if (conv.id === this.activeId) continue;
 			if (conv.messages.length === 0) {
 				conv.listed = true;
-				this.switchConversation(conv.id);
+				await this.switchConversation(conv.id);
 				if (preset) await this.selectAgentPreset(preset);
 				else this.flushSnapshot();
 				this.emitConversations();
@@ -1790,13 +2447,14 @@ export class DshClientSession {
 		active.listed = this.shouldRetainDshConversation(active);
 		const conv = this.addConversation(`chat-${randomUUID().slice(0, 12)}`, this.cwd, false, preset);
 		conv.listed = true;
-		this.activeId = conv.id;
+		this.activateConversation(conv);
 		this.model = prevModel;
 		this.emitConversations();
 		this.emitGoalStatus();
 		this.pushTerminals();
 		this.pushSettings();
 		this.flushSnapshot();
+		void this.ensureConversationWorkspace(conv).catch(() => {});
 		void this.refreshActivePermission().catch(() => {});
 		onReady?.(conv.id);
 		return true;
@@ -1810,6 +2468,7 @@ export class DshClientSession {
 			this.flushSnapshot(true);
 			return;
 		}
+		let switchedTarget: DshConversation | null = null;
 		if (id !== this.activeId) {
 			const target = this.convs.get(id)!;
 			if (target.cwd !== this.cwd) {
@@ -1818,7 +2477,8 @@ export class DshClientSession {
 			}
 			const prev = this.conv;
 			prev.listed = this.shouldRetainDshConversation(prev);
-			this.activeId = id;
+			this.activateConversation(target);
+			switchedTarget = target;
 		}
 		this.emitConversations();
 		this.emitGoalStatus();
@@ -1827,6 +2487,7 @@ export class DshClientSession {
 		this.pushAgentPresets();
 		this.pushPermission();
 		this.flushSnapshot(true);
+		if (switchedTarget) void this.ensureConversationWorkspace(switchedTarget).catch(() => {});
 		void this.refreshActivePermission().catch(() => {});
 	}
 
@@ -1834,7 +2495,14 @@ export class DshClientSession {
 		const conv = this.convs.get(id);
 		if (!conv || id === this.activeId) return;
 		this.convs.delete(id);
+		this.cancelConversationBridgedTools(id);
+		this.conversationBridgeCancellations.delete(id);
 		conv.terminals.killAll();
+		const entry = this.runtimeEntries.get(conv.runtimeKey);
+		if (entry) {
+			entry.conversationIds.delete(id);
+			void this.releaseRuntimeEntry(entry);
+		}
 	}
 
 	async prompt(text: string, attachments?: PromptAttachment[], queue = false): Promise<void> {
@@ -1911,19 +2579,12 @@ export class DshClientSession {
 			}
 		}
 		if (conv.fromDisk) {
-			const runtime = this.runtime;
+			const entry = this.runtimeForConversation(conv);
+			const runtime = entry.runtime;
 			const sessionId = conv.sessionId;
-			const generation = this.workspaceGeneration;
-			await runtime.start();
-			if (
-				conv.sessionId !== sessionId ||
-				this.convs.get(conv.id) !== conv ||
-				this.disposed ||
-				this.switchingWorkspace ||
-				generation !== this.workspaceGeneration ||
-				this.runtime !== runtime
-			)
-				return;
+			await this.startWithRetry(entry);
+			const generation = entry.generation;
+			if (conv.sessionId !== sessionId || this.convs.get(conv.id) !== conv || this.disposed || entry.stopping) return;
 			await (runtime as unknown as { _request(method: string, params: unknown): Promise<unknown> })._request(
 				"session/resume",
 				{ sessionId },
@@ -1932,9 +2593,8 @@ export class DshClientSession {
 				conv.sessionId !== sessionId ||
 				this.convs.get(conv.id) !== conv ||
 				this.disposed ||
-				this.switchingWorkspace ||
-				generation !== this.workspaceGeneration ||
-				this.runtime !== runtime
+				entry.stopping ||
+				generation !== entry.generation
 			)
 				return;
 			conv.fromDisk = false;
@@ -1978,8 +2638,9 @@ export class DshClientSession {
 		if (this.disposed) return;
 		try {
 			const dataUrls: string[] = [];
+			const runtime = this.runtimeForConversation(conv).runtime;
 			for (const ref of refs) {
-				const r = await this.runtime.attachmentRead(ref);
+				const r = await runtime.attachmentRead(ref);
 				dataUrls.push(`data:${r.mediaType ?? "image/png"};base64,${r.data}`);
 			}
 			if (this.disposed) return;
@@ -2003,24 +2664,45 @@ export class DshClientSession {
 		sysPrefix = "",
 	): Promise<void> {
 		if (this.switchingWorkspace) return;
-		const generation = this.workspaceGeneration;
+		const entry = this.runtimeForConversation(conv);
+		const runtime = entry.runtime;
+		let generation = entry.generation;
 		let optimisticId: string | undefined;
 		let followUpAdded = false;
 		try {
 			assertEngineWorkspaceSupported(this.sandboxes, conv.cwd, "dsh");
 			if (this.quiesceBlocked()) return;
+			await this.startWithRetry(entry);
+			generation = entry.generation;
+			if (entry.personaDirty) {
+				const bucketStreaming = [...entry.conversationIds].some((id) => this.convs.get(id)?.isStreaming);
+				if (bucketStreaming) {
+					this.emit({
+						type: "notice",
+						level: "info",
+						text: "系统提示词已更新，将在当前运行结束后生效",
+						textEn: "System prompt updated; it will apply after the current run settles",
+					});
+					return;
+				}
+				await this.restartRuntimeEntry(entry);
+				generation = entry.generation;
+			}
+			if (this.disposed || entry.stopping || generation !== entry.generation) return;
+			await this.ensureConversationWorkspace(conv, entry);
+			if (this.disposed || entry.stopping || generation !== entry.generation) return;
 			startTurnTiming(conv);
 			conv.promptedSinceActive = true;
 			conv.lastEventAt = Date.now();
-			if (conv.assignedGen !== this.runtimeGen) {
+			if (conv.assignedGen !== entry.generation) {
 				try {
-					await this.runtime.assignPreset(conv.sessionId, conv.agentPreset);
-					conv.assignedGen = this.runtimeGen;
+					await runtime.assignPreset(conv.sessionId, conv.agentPreset);
+					conv.assignedGen = entry.generation;
 				} catch {}
 			}
-			if (this.switchingWorkspace || generation !== this.workspaceGeneration) return;
-			await this.ensurePermissionDefault(conv);
-			if (this.switchingWorkspace || generation !== this.workspaceGeneration) return;
+			if (this.disposed || entry.stopping || generation !== entry.generation) return;
+			await this.ensurePermissionDefault(conv, runtime);
+			if (this.disposed || entry.stopping || generation !== entry.generation) return;
 			this.flushSnapshot();
 			const allSkills = [
 				...this.skillsCache.map((s) => ({
@@ -2029,17 +2711,18 @@ export class DshClientSession {
 					filePath: "",
 					dirPath: "",
 				})),
-				...discoverDiskSkills({ cwd: this.cwd, agentDir: this.agentDir }),
+				...discoverDiskSkills({ cwd: conv.cwd, agentDir: this.agentDir }),
 			];
-			const scanResult = scanAtMentions(text, this.cwd, allSkills, attachments ?? []);
+			const scanResult = scanAtMentions(text, conv.cwd, allSkills, attachments ?? []);
 			const effectiveAttachments = [...(attachments ?? []), ...scanResult.detectedAttachments];
 			const promptText = formatPromptWithSkills(text, scanResult.detectedSkills);
 
 			const blocks = await this.buildContentBlocks(
 				sysPrefix ? `${sysPrefix}${promptText}` : promptText,
 				effectiveAttachments,
+				runtime,
 			);
-			if (this.switchingWorkspace || generation !== this.workspaceGeneration || conv.cwd !== this.cwd) return;
+			if (this.disposed || entry.stopping || generation !== entry.generation) return;
 			const optimistic: UiMessage = {
 				id: `u-pending-${Date.now()}-${conv.deltaSeq++}`,
 				role: "user",
@@ -2063,13 +2746,13 @@ export class DshClientSession {
 				conv.queue.followUp.push(text);
 				followUpAdded = true;
 				this.flushSnapshot();
-				await this.runtime.prompt(conv.sessionId, blocks);
+				await runtime.prompt(conv.sessionId, blocks);
 				const qIdx = conv.queue.followUp.indexOf(text);
 				if (qIdx !== -1) conv.queue.followUp.splice(qIdx, 1);
 				followUpAdded = false;
 			} else {
 				this.flushSnapshot();
-				await this.runtime.prompt(conv.sessionId, blocks);
+				await runtime.prompt(conv.sessionId, blocks);
 			}
 			if (!conv.presetLocked) {
 				conv.presetLocked = true;
@@ -2109,11 +2792,16 @@ export class DshClientSession {
 	}
 
 	private forkConversation(prev: DshConversation): DshConversation {
-		const fork = this.addConversation(`fork-${randomUUID().slice(0, 12)}`, this.cwd, false, prev.agentPreset);
+		const fork = this.addConversation(`fork-${randomUUID().slice(0, 12)}`, prev.cwd, false, prev.agentPreset);
 		fork.title = prev.title;
+		fork.model = prev.model;
+		fork.modelProvider = prev.modelProvider;
+		fork.modelDisplayName = prev.modelDisplayName;
+		fork.modelVision = prev.modelVision;
+		fork.runtimeKey = prev.runtimeKey;
 		fork.messages = [...prev.messages];
 		fork.messageIds = new Set(prev.messageIds);
-		this.activeId = fork.id;
+		this.activateConversation(fork);
 		const hadGoal = prev.goal.goal !== null && prev.goal.verdict === "pending";
 		this.emitConversations();
 		this.emit({
@@ -2162,7 +2850,11 @@ export class DshClientSession {
 		return { mediaType: "image/png", base64: data };
 	}
 
-	private async buildContentBlocks(text: string, attachments?: PromptAttachment[]): Promise<Record<string, unknown>[]> {
+	private async buildContentBlocks(
+		text: string,
+		attachments?: PromptAttachment[],
+		runtime = this.runtime,
+	): Promise<Record<string, unknown>[]> {
 		const blocks: Record<string, unknown>[] = [{ type: "text", text }];
 		const lang = this.getLang();
 		if (!Array.isArray(attachments)) return blocks;
@@ -2187,7 +2879,7 @@ export class DshClientSession {
 			if (a.imageData) {
 				try {
 					const { mediaType, base64 } = DshClientSession.splitImageDataUrl(a.imageData);
-					const saved = await this.runtime.attachmentSave(mediaType, base64, a.name);
+					const saved = await runtime.attachmentSave(mediaType, base64, a.name);
 					blocks.push({ type: "image", attachment: saved.ref });
 				} catch (err) {
 					blocks.push({
@@ -2256,7 +2948,7 @@ export class DshClientSession {
 									: ext === "gif"
 										? "image/gif"
 										: "image/png";
-						const saved = await this.runtime.attachmentSave(mediaType, buf.toString("base64"), resolved.rel);
+						const saved = await runtime.attachmentSave(mediaType, buf.toString("base64"), resolved.rel);
 						blocks.push({ type: "image", attachment: saved.ref });
 					} catch {
 						blocks.push({
@@ -2283,17 +2975,13 @@ export class DshClientSession {
 		return blocks;
 	}
 
-	async abort(): Promise<void> {
-		this.cancelBridgedTools();
-		if (!this.runtime.alive) return;
-		const conv = this.conv;
-		finishTurnTiming(conv);
-		conv.isStreaming = false;
-		conv.streaming = null;
-		this.emitConversations();
+	async abort(conversationId?: string, keepInbox = true): Promise<void> {
+		const conv = conversationId ? this.convs.get(conversationId) : this.conv;
+		if (!conv?.isStreaming) return;
+		const entry = this.runtimeForConversation(conv);
 		if (conv.dsGoal || conv.goal.goal) {
 			try {
-				await this.runtime.goalClear(conv.sessionId);
+				await entry.runtime.goalClear(conv.sessionId);
 			} catch {}
 			conv.dsGoal = null;
 			conv.goal.goal = null;
@@ -2308,19 +2996,51 @@ export class DshClientSession {
 		this.emit({
 			type: "notice",
 			level: "info",
-			text: "已停止（DSH 中止 = 重启运行时，进行中的其他对话也会停止）",
-			textEn: "Stopped (DSH abort restarts the runtime; other running conversations stop too)",
+			text: "已停止当前对话",
+			textEn: "Stopped the current conversation",
 		});
+		const previousTerminal = conv.terminal;
+		conv.terminal = "canceled";
+		conv.terminalError = undefined;
+		this.cancelBridgedTools(entry.runtime, conv.id);
+		let result: { ok: boolean; reason?: string };
 		try {
-			await this.runtime.restart(this.model);
+			result = await entry.runtime.cancelSession(conv.sessionId, keepInbox);
 		} catch (err) {
+			conv.terminal = previousTerminal;
 			this.emit({
 				type: "notice",
 				level: "error",
-				text: `中止后重启失败：${(err as Error).message}`,
-				textEn: `Failed to restart after abort: ${(err as Error).message}`,
+				text: `停止失败：${(err as Error).message}`,
+				textEn: `Failed to stop: ${(err as Error).message}`,
 			});
+			return;
 		}
+		if (!result.ok) {
+			conv.terminal = previousTerminal;
+			this.emit({
+				type: "notice",
+				level: "error",
+				text: `停止失败：${result.reason ?? "unknown_session"}`,
+				textEn: `Failed to stop: ${result.reason ?? "unknown_session"}`,
+			});
+			return;
+		}
+		if (conv.isStreaming) {
+			this.flushSnapshot(true);
+			return;
+		}
+		const settled = this.settleConversationRuntimeState(conv, entry, "canceled", undefined, !keepInbox);
+		for (let i = this.pendingQuestionQueue.length - 1; i >= 0; i--) {
+			const queued = this.pendingQuestionQueue[i]!;
+			if (queued.question.conversationId !== conv.id) continue;
+			this.pendingQuestionQueue.splice(i, 1);
+			void entry.runtime.answerQuestion(queued.question.id, [], true).catch(() => {});
+		}
+		if (settled.questionChanged) this.presentNextPendingQuestion();
+		if (settled.goalChanged) this.emitGoalStatus();
+		this.emitConversations();
+		this.scheduleSessionsRefresh();
 		this.flushSnapshot(true);
 	}
 
@@ -2346,12 +3066,14 @@ export class DshClientSession {
 				});
 				return;
 			}
-			let failed = false;
-			for (let i = conv.messages.length - 1; i >= 0; i--) {
-				const m = conv.messages[i]!;
-				if (m.role !== "assistant") continue;
-				failed = !!m.errorMessage;
-				break;
+			let failed = conv.terminal === "error";
+			if (!failed) {
+				for (let i = conv.messages.length - 1; i >= 0; i--) {
+					const m = conv.messages[i]!;
+					if (m.role !== "assistant") continue;
+					failed = !!m.errorMessage;
+					break;
+				}
 			}
 			if (!failed) {
 				this.emit({
@@ -2394,6 +3116,7 @@ export class DshClientSession {
 	}
 
 	async killBackgroundServer(port?: number, taskId?: string): Promise<boolean> {
+		if (taskId?.startsWith("job:")) return (await this.backgroundTasks?.killJob(this.clientId, taskId)) ?? false;
 		if (taskId && this.pluginStopBgTask) {
 			const ok = this.pluginStopBgTask(taskId);
 			if (ok) this.bg.push();
@@ -2760,7 +3483,7 @@ export class DshClientSession {
 			const conv = this.addConversation(sessionId, this.cwd, true, undefined, resolvedPath || undefined);
 			conv.fromDisk = true;
 			if (resolvedPath) conv.sessionFile = resolvedPath;
-			this.activeId = conv.id;
+			this.activateConversation(conv);
 			this.emitConversations();
 			this.pushTerminals();
 			this.pushSettings();
@@ -2828,7 +3551,7 @@ export class DshClientSession {
 	async rescanDshPatches(): Promise<void> {
 		try {
 			if (this.runtime.alive) {
-				await this.runtime.restart(this.model);
+				await this.restartRuntimeEntry(this.runtimeForConversation(this.conv));
 			}
 			this.emit({
 				type: "notice",
@@ -2990,68 +3713,96 @@ export class DshClientSession {
 	async pushProjects(): Promise<void> {
 		const recent = await this.stateStore.getRecentProjects(this.clientId);
 		const removedKeys = new Set(this.stateStore.getRemovedProjects(this.clientId).map(normalizePathKey));
-		const projects = new Map<string, number>();
+		const projects = new Map<string, { path: string; lastUsed: number }>();
 		for (const p of recent) {
-			if (!removedKeys.has(normalizePathKey(p.path))) {
-				projects.set(p.path, p.lastUsed);
+			const key = normalizePathKey(p.path);
+			if (!removedKeys.has(key)) {
+				projects.set(key, { path: p.path, lastUsed: p.lastUsed });
 			}
 		}
-		const cwdProjects = new Set<string>();
 		try {
-			const { readdirSync } = await import("node:fs");
+			const { readdirSync, statSync, existsSync } = await import("node:fs");
 			const entries = readdirSync(this.sessionRoot, { withFileTypes: true });
 			for (const e of entries) {
 				if (e.isDirectory()) {
-					const cwd = this.decodeProjectKey(e.name);
-					if (cwd && !projects.has(cwd) && !removedKeys.has(normalizePathKey(cwd))) cwdProjects.add(cwd);
+					const dirPath = join(this.sessionRoot, e.name);
+					const cwd = this.resolveProjectCwdFromSessionDir(dirPath, readdirSync, statSync, existsSync);
+					if (!cwd) continue;
+					const key = normalizePathKey(cwd);
+					if (projects.has(key) || removedKeys.has(key)) continue;
+					let mtime = 0;
+					try {
+						mtime = statSync(dirPath).mtimeMs;
+					} catch {}
+					projects.set(key, { path: cwd, lastUsed: mtime });
 				}
 			}
 		} catch {}
-		for (const cwd of cwdProjects) projects.set(cwd, Date.now());
-		if (!removedKeys.has(normalizePathKey(this.cwd))) {
-			projects.set(this.cwd, Date.now());
+		const currentKey = normalizePathKey(this.cwd);
+		if (!removedKeys.has(currentKey) && !projects.has(currentKey)) {
+			projects.set(currentKey, { path: this.cwd, lastUsed: 0 });
 		}
 		for (const sbx of this.sandboxes.list()) {
-			if (!removedKeys.has(normalizePathKey(sbx.path)) && !projects.has(sbx.path)) {
-				projects.set(sbx.path, sbx.createdAt);
+			const key = normalizePathKey(sbx.path);
+			if (!removedKeys.has(key) && !projects.has(key)) {
+				projects.set(key, { path: sbx.path, lastUsed: sbx.createdAt });
 			}
 		}
-		const list: ProjectSummary[] = [...projects.entries()]
-			.filter(([path]) => {
+		const list: ProjectSummary[] = [...projects.values()]
+			.filter(({ path }) => {
 				if (isSameOrSubpath(path, this.sandboxes.sandboxesRoot)) {
 					return Boolean(this.sandboxes.getByCwd(path));
 				}
 				return true;
 			})
-			.map(([path, lastUsed]) => {
+			.map(({ path, lastUsed }) => {
 				const sbx = this.sandboxes.getByCwd(path);
-				return sbx ? { path, lastUsed, sandbox: sbx } : { path, lastUsed };
+				const name = this.stateStore.getProjectName(path);
+				return {
+					path,
+					lastUsed,
+					...(name ? { name } : {}),
+					...(sbx ? { sandbox: sbx } : {}),
+				};
 			})
 			.sort((a, b) => b.lastUsed - a.lastUsed)
 			.slice(0, RECENT_PROJECTS_MAX);
 		this.emit({ type: "projects", projects: list });
 	}
 
-	private decodeProjectKey(key: string): string | null {
-		if (!key.startsWith("--") || !key.endsWith("--")) return null;
-		const inner = key.slice(2, -2);
-		let out = "";
-		for (let i = 0; i < inner.length; i++) {
-			if (inner[i] === "-") {
-				out += "/";
-			} else if (inner[i] === "~" && i + 4 < inner.length) {
-				const hex = inner.slice(i + 1, i + 5);
-				if (/^[0-9A-Fa-f]{4}$/.test(hex)) {
-					out += String.fromCharCode(parseInt(hex, 16));
-					i += 4;
-				} else {
-					out += "~";
-				}
-			} else {
-				out += inner[i];
+	/**
+	 * 从 DSH 会话目录中读取真实 `header.cwd`，避免 `projectKey()` 的有损编码
+	 * （丢失前导 `/`、把目录名里的 `-` 误解码成 `/`）产生不存在的幽灵项目或绕过墓碑。
+	 */
+	private resolveProjectCwdFromSessionDir(
+		dirPath: string,
+		readdirSyncFn: typeof import("node:fs").readdirSync,
+		statSyncFn: typeof import("node:fs").statSync,
+		existsSyncFn: typeof import("node:fs").existsSync,
+	): string | null {
+		try {
+			const files = (readdirSyncFn(dirPath) as string[])
+				.filter((f) => f.endsWith(".jsonl") || f.endsWith(".jsonl.zstd"))
+				.map((f) => {
+					const fp = join(dirPath, f);
+					try {
+						return { fp, mtime: statSyncFn(fp).mtimeMs };
+					} catch {
+						return null;
+					}
+				})
+				.filter((x): x is { fp: string; mtime: number } => x !== null)
+				.sort((a, b) => b.mtime - a.mtime);
+			for (const { fp } of files) {
+				try {
+					const cwd = readSessionLog(fp).header?.cwd;
+					if (typeof cwd === "string" && cwd.trim() && existsSyncFn(cwd)) {
+						return cwd;
+					}
+				} catch {}
 			}
-		}
-		return out || null;
+		} catch {}
+		return null;
 	}
 
 	async removeProject(path: string): Promise<void> {
@@ -3061,6 +3812,11 @@ export class DshClientSession {
 			return;
 		}
 		this.stateStore.removeProject(this.clientId, path);
+		await this.pushProjects();
+	}
+
+	async renameProject(path: string, name: string): Promise<void> {
+		this.stateStore.saveProjectName(path, name);
 		await this.pushProjects();
 	}
 
@@ -3602,8 +4358,6 @@ export class DshClientSession {
 			return;
 		}
 
-		if (bareModelId === this.model && targetProvider === this.modelProvider) return;
-
 		const cred = resolveProviderCredential(this.agentDir, targetProvider);
 		if (targetProvider !== "deepseek" && !cred.apiKey && !process.env.DEEPSEEK_API_KEY) {
 			this.emit({
@@ -3614,24 +4368,77 @@ export class DshClientSession {
 			});
 		}
 
-		if ([...this.convs.values()].some((c) => c.isStreaming)) {
+		const conv = this.convs?.get(this.activeId);
+		if (
+			(!conv && bareModelId === this.model && targetProvider === this.modelProvider) ||
+			(conv && bareModelId === conv.model && targetProvider === conv.modelProvider)
+		)
+			return;
+		if (!conv) {
+			this.model = bareModelId;
+			this.modelProvider = targetProvider;
+			this.modelDisplayName = meta?.name ?? bareModelId;
+			this.modelVision = meta?.vision ?? false;
+			this.stateStore?.saveProjectModel(this.clientId, this.cwd, modelId, "dsh");
+			try {
+				await this.runtime.restart(bareModelId, targetProvider);
+				this.emit({
+					type: "notice",
+					level: "info",
+					text: `已切换到 ${this.modelDisplayName}`,
+					textEn: `Switched to ${this.modelDisplayName}`,
+				});
+			} catch (err) {
+				this.emit({
+					type: "notice",
+					level: "error",
+					text: `切换模型失败：${(err as Error).message}`,
+					textEn: `Failed to switch model: ${(err as Error).message}`,
+				});
+			}
+			this.flushSnapshot(true);
+			return;
+		}
+		if (conv.isStreaming) {
 			this.emit({
 				type: "notice",
 				level: "warning",
-				text: "有对话正在运行，切换模型将中止当前所有运行（DSH 换模型 = 重启运行时）",
-				textEn:
-					"Conversations are running; switching models aborts all of them (DSH model switch restarts the runtime)",
+				text: "当前对话正在运行，请等本轮结束后再切换模型",
+				textEn: "The current conversation is running; wait for this turn to finish before switching models",
 			});
+			return;
 		}
 
+		const previousEntry = this.runtimeForConversation(conv);
+		const previousModel = conv.model;
+		const previousProvider = conv.modelProvider;
+		const previousDisplayName = conv.modelDisplayName;
+		const previousVision = conv.modelVision;
 		this.model = bareModelId;
 		this.modelProvider = targetProvider;
 		this.modelDisplayName = meta?.name ?? bareModelId;
 		this.modelVision = meta?.vision ?? false;
 		this.stateStore?.saveProjectModel(this.clientId, this.cwd, modelId, "dsh");
-
+		conv.model = bareModelId;
+		conv.modelProvider = targetProvider;
+		conv.modelDisplayName = this.modelDisplayName;
+		conv.modelVision = this.modelVision;
+		const entry = this.makeRuntime(conv.cwd, bareModelId, targetProvider);
+		this.bindConversationRuntime(conv, entry);
+		this.runtime = entry.runtime;
 		try {
-			await this.runtime.restart(bareModelId, targetProvider);
+			await this.startWithRetry(entry);
+			if (previousEntry !== entry) {
+				await (
+					previousEntry.runtime as unknown as {
+						releaseSession?: (sessionId: string) => Promise<unknown>;
+					}
+				)
+					.releaseSession?.(conv.sessionId)
+					.catch(() => {});
+			}
+			await this.ensureConversationWorkspace(conv, entry);
+			if (previousEntry !== entry) await this.releaseRuntimeEntry(previousEntry);
 			this.emit({
 				type: "notice",
 				level: "info",
@@ -3639,6 +4446,20 @@ export class DshClientSession {
 				textEn: `Switched to ${this.modelDisplayName}`,
 			});
 		} catch (err) {
+			this.bindConversationRuntime(conv, previousEntry);
+			conv.model = previousModel;
+			conv.modelProvider = previousProvider;
+			conv.modelDisplayName = previousDisplayName;
+			conv.modelVision = previousVision;
+			if (this.convs.get(this.activeId) === conv && normalizePathKey(this.cwd) === normalizePathKey(conv.cwd)) {
+				this.model = previousModel;
+				this.modelProvider = previousProvider;
+				this.modelDisplayName = previousDisplayName;
+				this.modelVision = previousVision;
+				this.runtime = previousEntry.runtime;
+			}
+			await this.releaseRuntimeEntry(entry);
+			this.stateStore?.saveProjectModel(this.clientId, this.cwd, `${previousProvider}/${previousModel}`, "dsh");
 			this.emit({
 				type: "notice",
 				level: "error",
@@ -3758,10 +4579,11 @@ export class DshClientSession {
 				: this.buildFallbackPromptSourceDefaults();
 		const promptSections =
 			this.cachedPromptSections.length > 0 ? this.cachedPromptSections : this.buildFallbackPromptSections();
+		const storedSettings = this.stateStore.getSettingsSnapshot(this.clientId);
 		const settings: UiSettingsState = {
-			nativeCliInheritModel: { ...this.stateStore.getSettingsSnapshot(this.clientId).nativeCliInheritModel },
-			...normalizeBotDraftSettings(this.stateStore.getSettingsSnapshot(this.clientId)),
-			...normalizeQuickAskSettings(this.stateStore.getSettingsSnapshot(this.clientId)),
+			nativeCliInheritModel: { ...storedSettings.nativeCliInheritModel },
+			...normalizeBotDraftSettings(storedSettings),
+			...normalizeQuickAskSettings(storedSettings),
 			steeringMode: "all",
 			followUpMode: "all",
 			promptMode: this.settings.promptMode,
@@ -3779,6 +4601,7 @@ export class DshClientSession {
 			readDirEnabled: true,
 			bgAutoCleanupMin: Number(this.settings.bgAutoCleanupMin ?? 0),
 			toolLazyLoading: false,
+			internalMcpEnabled: storedSettings.internalMcpEnabled !== false,
 			codemodeMode: "on",
 			codemodeInlineBudget: 3000,
 			retryMaxAttempts: DEFAULT_RETRY_MAX_ATTEMPTS,
@@ -3811,8 +4634,8 @@ export class DshClientSession {
 			visionBridgeModel: null,
 			visionBridgePromptMode: "append",
 			visionBridgePrompt: "",
-			scmCommitMsgPromptMode: "append",
-			scmCommitMsgPrompt: "",
+			scmCommitMsgPromptMode: storedSettings.scmCommitMsgPromptMode === "replace" ? "replace" : "append",
+			scmCommitMsgPrompt: storedSettings.scmCommitMsgPrompt ?? "",
 			planModePromptMode: "append",
 			planModePrompt: "",
 			planModeDefaultPrompt: PLAN_MODE_SYSTEM_PROMPT,
@@ -3833,6 +4656,7 @@ export class DshClientSession {
 			scmCommitMsgDefaultPrompt: "",
 			visionModels: [],
 			skills: this.skillsCache,
+			mcpServers: this.listMcpServers(this.cwd).servers,
 			reviewSkills: [],
 			extensions: [],
 			presets: this.stateStore.getPresets(this.clientId).map(settingsPresetToUi),
@@ -3880,6 +4704,7 @@ export class DshClientSession {
 		terminalBashIdleMs?: number;
 		terminalBashMaxForegroundMs?: number;
 		toolWatchdogTimeoutMs?: number;
+		internalMcpEnabled?: boolean;
 		bgAutoCleanupMin?: number;
 		questionnaireEnabled?: boolean;
 		toolApprovalEnabled?: boolean;
@@ -3900,6 +4725,8 @@ export class DshClientSession {
 		visionBridgePromptMode?: "append" | "replace";
 		visionBridgePrompt?: string;
 		reviewPrompt?: string;
+		scmCommitMsgPromptMode?: "append" | "replace";
+		scmCommitMsgPrompt?: string;
 		reviewDisabledSkills?: string[];
 		disabledMarkers?: string[];
 		quickPhrases?: string[];
@@ -3909,10 +4736,12 @@ export class DshClientSession {
 		quickPhrasesSeeded?: boolean;
 	}): Promise<void> {
 		if (partial.quickPhrasesSeeded) this.stateStore.markQuickPhrasesSeeded();
+		const settingsPatch = mergeSettingsPatch(this.stateStore.getSettingsSnapshot(this.clientId), partial);
 		if (partial.promptMode !== undefined) this.settings.promptMode = partial.promptMode;
 		if (partial.customSystemPrompt !== undefined) this.settings.customSystemPrompt = partial.customSystemPrompt;
 		if (partial.promptTemplate !== undefined) this.settings.promptTemplate = partial.promptTemplate;
-		if (partial.promptOverrides !== undefined) this.settings.promptOverrides = partial.promptOverrides;
+		if (partial.promptOverrides !== undefined)
+			this.settings.promptOverrides = (settingsPatch.promptOverrides as Record<string, string> | undefined) ?? {};
 		if (partial.promptDisabled !== undefined) this.settings.promptDisabled = [...partial.promptDisabled];
 		if (partial.disabledSkills !== undefined) this.settings.disabledSkills = partial.disabledSkills;
 		if (partial.disabledExtensions !== undefined) this.settings.disabledExtensions = partial.disabledExtensions;
@@ -3987,9 +4816,15 @@ export class DshClientSession {
 			showForkedParentSessions: this.settings.showForkedParentSessions ?? true,
 			retainFinishedConversations: this.settings.retainFinishedConversations ?? false,
 			openRecentSessionOnProjectSwitch: this.settings.openRecentSessionOnProjectSwitch ?? true,
+			...(partial.internalMcpEnabled !== undefined ? { internalMcpEnabled: partial.internalMcpEnabled } : {}),
 			disabledPlugins: this.settings.disabledPlugins,
 			uiLayout: normalizeUiLayout(this.settings.uiLayout),
 			reviewPrompt: this.settings.reviewPrompt,
+			scmCommitMsgPromptMode: partial.scmCommitMsgPromptMode,
+			scmCommitMsgPrompt: partial.scmCommitMsgPrompt,
+			...(settingsPatch.toolPromptOverrides !== undefined
+				? { toolPromptOverrides: settingsPatch.toolPromptOverrides as Record<string, UiToolPromptOverride> }
+				: {}),
 			quickPhrases: this.settings.quickPhrases,
 			quickPhrasesEnabled: this.settings.quickPhrasesEnabled,
 			minimalNewChat: this.settings.minimalNewChat,
@@ -4009,6 +4844,9 @@ export class DshClientSession {
 			void this.pushDisabledSkillsToRuntime();
 			void this.refreshSkillsFromRuntime();
 		}
+		if (partial.internalMcpEnabled !== undefined) {
+			await this.syncPluginTools();
+		}
 		this.pushSettings();
 		this.flushSnapshot();
 	}
@@ -4026,18 +4864,28 @@ export class DshClientSession {
 		return { DSH_PERSONA: persona, PI_WEB_DSH_CUSTOM_PROMPT: effectiveCustom };
 	}
 
-	private applyPersona(): Promise<void> {
-		this.runtime.env = { ...this.runtime.env, ...this.buildPersonaEnv() };
-		if (this.runtime.alive) {
-			return this.runtime.restart(this.model).catch(() => {});
+	private async applyPersona(): Promise<void> {
+		const personaEnv = this.buildPersonaEnv();
+		const entries = [...(this.runtimeEntries?.values() ?? [])];
+		if (entries.length === 0) {
+			const entry = this.runtimeForConversation(this.conv);
+			entry.runtime.env = { ...entry.runtime.env, ...personaEnv };
+			if (entry.runtime.alive) await this.restartRuntimeEntry(entry).catch(() => {});
+			return;
 		}
-		return Promise.resolve();
+		for (const entry of entries) {
+			entry.runtime.env = { ...entry.runtime.env, ...personaEnv };
+			entry.personaDirty = true;
+			const streaming = [...entry.conversationIds].some((id) => this.convs.get(id)?.isStreaming);
+			if (streaming) continue;
+			await this.restartRuntimeEntry(entry).catch(() => {});
+		}
 	}
 
-	async refreshPromptInfo(): Promise<void> {
+	async refreshPromptInfo(runtime = this.runtime): Promise<void> {
 		try {
-			if (!this.runtime.alive) return;
-			const res = await this.runtime.inspectPrompt();
+			if (!runtime.alive) return;
+			const res = await runtime.inspectPrompt();
 			if (res && !res.error) {
 				if (typeof res.prompt === "string" && res.prompt) {
 					this.cachedEffectiveSystemPrompt = res.prompt;
@@ -4067,9 +4915,9 @@ export class DshClientSession {
 		});
 	}
 
-	async refreshAgentPresets(): Promise<void> {
+	async refreshAgentPresets(runtime = this.runtime): Promise<void> {
 		try {
-			const res = await this.runtime.listPresets();
+			const res = await runtime.listPresets();
 			if (res.unavailable || !Array.isArray(res.presets) || res.presets.length === 0) {
 				this.agentPresets = [];
 				this.agentPresetsAvailable = false;
@@ -4149,6 +4997,7 @@ export class DshClientSession {
 			return;
 		}
 		try {
+			await this.ensureConversationWorkspace(conv);
 			const res = await this.runtime.selectPreset(conv.sessionId, target);
 			if (!res.ok) {
 				if (res.code === "agent-preset/locked") conv.presetLocked = true;
@@ -4195,9 +5044,9 @@ export class DshClientSession {
 		});
 	}
 
-	async refreshPermissionOptions(): Promise<void> {
+	async refreshPermissionOptions(runtime = this.runtime): Promise<void> {
 		try {
-			const res = await this.runtime.getPermission(this.conv.sessionId);
+			const res = await runtime.getPermission(this.conv.sessionId);
 			this.permissionOptions = Array.isArray(res.options) ? res.options : [];
 		} catch {
 			this.permissionOptions = [];
@@ -4207,6 +5056,7 @@ export class DshClientSession {
 
 	async refreshActivePermission(): Promise<void> {
 		const conv = this.conv;
+		await this.ensureConversationWorkspace(conv).catch(() => {});
 		try {
 			const res = await this.runtime.getPermission(conv.sessionId);
 			const cur = typeof res.currentValue === "string" ? res.currentValue : null;
@@ -4236,15 +5086,18 @@ export class DshClientSession {
 		this.flushSnapshot();
 	}
 
-	async ensurePermissionDefault(conv: DshConversation): Promise<void> {
+	async ensurePermissionDefault(
+		conv: DshConversation,
+		runtime = this.runtimeForConversation(conv).runtime,
+	): Promise<void> {
 		const target = this.resolvePermissionPreset();
 		try {
 			if (!conv.permissionPreset) {
-				const res = await this.runtime.getPermission(conv.sessionId);
+				const res = await runtime.getPermission(conv.sessionId);
 				if (typeof res.currentValue === "string" && res.currentValue) conv.permissionPreset = res.currentValue;
 			}
 			if (conv.permissionPreset && conv.permissionPreset !== target) {
-				const res = await this.runtime.setPermission(conv.sessionId, target);
+				const res = await runtime.setPermission(conv.sessionId, target);
 				if (res.ok) conv.permissionPreset = res.currentValue || target;
 			}
 		} catch {}
@@ -4262,6 +5115,7 @@ export class DshClientSession {
 			});
 		}
 		try {
+			await this.ensureConversationWorkspace(conv);
 			const res = await this.runtime.setPermission(conv.sessionId, target);
 			if (!res.ok) {
 				this.emit({
@@ -5096,7 +5950,7 @@ export class DshClientSession {
 	async setProviderApiKey(provider: string, apiKey: string): Promise<void> {
 		await this.modelAdmin.setProviderApiKey(provider, apiKey);
 		if (this.runtime.alive && (provider === "deepseek" || provider === "deepseek-official")) {
-			await this.runtime.restart(this.model);
+			await this.restartRuntimeEntry(this.runtimeForConversation(this.conv));
 		}
 		this.flushSnapshot();
 	}
@@ -5104,7 +5958,7 @@ export class DshClientSession {
 	async clearProviderApiKey(provider: string): Promise<void> {
 		await this.modelAdmin.clearProviderApiKey(provider);
 		if (this.runtime.alive && (provider === "deepseek" || provider === "deepseek-official")) {
-			await this.runtime.restart(this.model);
+			await this.restartRuntimeEntry(this.runtimeForConversation(this.conv));
 		}
 		this.flushSnapshot();
 	}
@@ -5140,14 +5994,14 @@ export class DshClientSession {
 	async saveModelConfig(providerId: string, config: unknown): Promise<void> {
 		await this.modelAdmin.saveModelConfig(providerId, config as any);
 		if (this.runtime.alive && (providerId === "deepseek" || providerId === "deepseek-official")) {
-			await this.runtime.restart(this.model);
+			await this.restartRuntimeEntry(this.runtimeForConversation(this.conv));
 		}
 	}
 
 	deleteModelConfig(providerId: string): Promise<void> {
 		return this.modelAdmin.deleteModelConfig(providerId).then(async () => {
 			if (this.runtime.alive && (providerId === "deepseek" || providerId === "deepseek-official")) {
-				await this.runtime.restart(this.model);
+				await this.restartRuntimeEntry(this.runtimeForConversation(this.conv));
 			}
 		});
 	}
@@ -5163,21 +6017,21 @@ export class DshClientSession {
 	async addProviderKey(provider: string, apiKey: string, name?: string): Promise<void> {
 		await this.modelAdmin.addProviderKey(provider, apiKey, name);
 		if (this.runtime.alive && (provider === "deepseek" || provider === "deepseek-official")) {
-			await this.runtime.restart(this.model);
+			await this.restartRuntimeEntry(this.runtimeForConversation(this.conv));
 		}
 	}
 
 	async activateProviderKey(provider: string, keyName: string): Promise<void> {
 		await this.modelAdmin.activateProviderKey(provider, keyName);
 		if (this.runtime.alive && (provider === "deepseek" || provider === "deepseek-official")) {
-			await this.runtime.restart(this.model);
+			await this.restartRuntimeEntry(this.runtimeForConversation(this.conv));
 		}
 	}
 
 	async removeProviderKey(provider: string, keyName: string): Promise<void> {
 		await this.modelAdmin.removeProviderKey(provider, keyName);
 		if (this.runtime.alive && (provider === "deepseek" || provider === "deepseek-official")) {
-			await this.runtime.restart(this.model);
+			await this.restartRuntimeEntry(this.runtimeForConversation(this.conv));
 		}
 	}
 
@@ -5272,11 +6126,15 @@ export class DshClientSession {
 			const log = readSessionLog(file);
 			const eventIndex = log.events.findIndex((e) => e.type === "user/message" && `u-${e.data.id}` === messageId);
 			if (!log.header || eventIndex < 0) throw new Error("Question not found in persisted DSH history");
-			const saved =
-				[{ ...log.header, type: "session" }, ...log.events.slice(0, eventIndex)]
-					.map((e) => JSON.stringify(e))
-					.join("\n") + "\n";
-			await writeAtomic(file, file.endsWith(".zstd") ? zstdCompressSync(Buffer.from(saved)) : saved, { fsync: true });
+			const headerLine = JSON.stringify({ ...log.header, type: "session" }) + "\n";
+			const eventLines = log.events.slice(0, eventIndex).map((e) => JSON.stringify(e));
+			const payload = file.endsWith(".zstd")
+				? Buffer.concat([
+						zstdCompressSync(Buffer.from(headerLine)),
+						...(eventLines.length > 0 ? [zstdCompressSync(Buffer.from(eventLines.join("\n") + "\n"))] : []),
+					])
+				: headerLine + (eventLines.length > 0 ? eventLines.join("\n") + "\n" : "");
+			await writeAtomic(file, payload, { fsync: true });
 			let cutIdx = idx;
 			while (
 				cutIdx > 0 &&
@@ -5291,6 +6149,10 @@ export class DshClientSession {
 			conv.queue.followUp.length = 0;
 			this.flushSnapshot(true);
 			await runtime.start();
+			if (!current()) return;
+			await (runtime as unknown as { releaseSession?: (sessionId: string) => Promise<unknown> })
+				.releaseSession?.(sessionId)
+				.catch(() => {});
 			if (!current()) return;
 			await (runtime as unknown as { _request(method: string, params: unknown): Promise<unknown> })._request(
 				"session/resume",
@@ -5384,36 +6246,77 @@ export class DshClientSession {
 				target: abs,
 				phase: "runtime",
 				progress: 45,
-				text: `正在切换工作目录并重启运行环境：${abs}`,
-				textEn: `Switching workspace & restarting runtime: ${abs}`,
+				text: `正在准备工作目录：${abs}`,
+				textEn: `Preparing workspace: ${abs}`,
 			});
 			await new Promise<void>((r) => setImmediate(r));
 			const savedModel =
 				this.stateStore.getProjectModel(this.clientId, abs, "dsh") ?? this.stateStore.getDefaultModel("dsh");
-			const previousModel = this.model;
-			const previousProvider = this.modelProvider;
-			if (savedModel) this.applySavedModel(savedModel);
+			const resolved = savedModel
+				? this.resolveModelMeta(savedModel)
+				: {
+						meta: undefined,
+						targetProvider: this.modelProvider,
+						bareModelId: this.model,
+						known: true,
+					};
+			const targetModel = resolved.known || resolved.meta ? resolved.bareModelId : this.model;
+			const targetProvider = resolved.known || resolved.meta ? resolved.targetProvider : this.modelProvider;
+
+			if (!this.runtimeEntries || this.runtimeEntries.size === 0) {
+				const previousModel = this.model;
+				const previousProvider = this.modelProvider;
+				this.model = targetModel;
+				this.modelProvider = targetProvider;
+				try {
+					await this.runtime.restart(targetModel, targetProvider, abs);
+					this.cwd = abs;
+					this.modelDisplayName = resolved.meta?.name ?? targetModel;
+					this.modelVision = resolved.meta?.vision ?? false;
+					this.roots = this.stateStore.getWorkspaceRoots?.(this.clientId, abs) ?? [];
+					this.stateStore.remember(this.clientId, abs, { promote: false });
+					this.flushSnapshot(true);
+					return;
+				} catch (err) {
+					this.model = previousModel;
+					this.modelProvider = previousProvider;
+					await this.runtime.kill();
+					this.runtime.cwd = this.cwd;
+					this.runtime.model = previousModel;
+					this.runtime.modelProvider = previousProvider;
+					throw err;
+				}
+			}
+
+			const prev = this.convs.get(this.activeId);
+			if (prev) prev.listed = this.shouldRetainDshConversation(prev) || prev.messages.length > 0;
+			const entry = this.makeRuntime(abs, targetModel, targetProvider);
 			try {
-				await this.runtime.restart(this.model, this.modelProvider, abs);
+				await this.startWithRetry(entry);
 			} catch (err) {
-				this.model = previousModel;
-				this.modelProvider = previousProvider;
-				await this.runtime.kill();
-				this.runtime.cwd = this.cwd;
-				this.runtime.model = previousModel;
-				this.runtime.modelProvider = previousProvider;
+				await this.releaseRuntimeEntry(entry);
 				throw err;
 			}
+			this.runtime = entry.runtime;
+
 			this.cwd = abs;
+			this.model = targetModel;
+			this.modelProvider = targetProvider;
+			this.modelDisplayName = resolved.meta?.name ?? targetModel;
+			this.modelVision = resolved.meta?.vision ?? false;
 			this.roots = this.stateStore.getWorkspaceRoots(this.clientId, abs);
 			this.stateStore.remember(this.clientId, abs, { promote: false });
-			const prev = this.conv;
-			prev.listed = this.shouldRetainDshConversation(prev) || prev.messages.length > 0;
+			let resumedConv =
+				prev && normalizePathKey(prev.cwd) === normalizePathKey(abs)
+					? prev
+					: ([...this.convs.values()]
+							.filter((conv) => normalizePathKey(conv.cwd) === normalizePathKey(abs))
+							.sort((a, b) => b.lastEventAt - a.lastEventAt)[0] ?? null);
 			const openRecent = this.settings.openRecentSessionOnProjectSwitch ?? true;
-			const recentFiles = openRecent
-				? findSessionFilesForCwd(this.sessionRoot, abs).filter((f) => !basename(dirname(f)).startsWith("review-"))
-				: [];
-			let resumedConv: DshConversation | null = null;
+			const recentFiles =
+				!resumedConv && openRecent
+					? findSessionFilesForCwd(this.sessionRoot, abs).filter((f) => !basename(dirname(f)).startsWith("review-"))
+					: [];
 			for (const file of recentFiles) {
 				try {
 					const { events } = readSessionLog(file);
@@ -5424,6 +6327,14 @@ export class DshClientSession {
 					);
 					if (hasRealMessages) {
 						const sid = basename(dirname(file));
+						const existing = [...this.convs.values()].find(
+							(conv) => conv.sessionId === sid && normalizePathKey(conv.cwd) === normalizePathKey(abs),
+						);
+						if (existing) {
+							if (!existing.sessionFile) existing.sessionFile = file;
+							resumedConv = existing;
+							break;
+						}
 						const conv = this.addConversation(sid, abs, true, undefined, file);
 						conv.fromDisk = true;
 						conv.sessionFile = file;
@@ -5434,7 +6345,8 @@ export class DshClientSession {
 					continue;
 				}
 			}
-			this.activeId = (resumedConv ?? this.addConversation(`web-${randomUUID().slice(0, 12)}`, abs, false)).id;
+			this.activateConversation(resumedConv ?? this.addConversation(`web-${randomUUID().slice(0, 12)}`, abs, false));
+			await this.ensureConversationWorkspace(this.conv).catch(() => {});
 			// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: handlers may unsubscribe mid-emit
 			for (const [id, c] of [...this.convs]) {
 				if (id === this.activeId) continue;
@@ -5478,13 +6390,23 @@ export class DshClientSession {
 			});
 		} finally {
 			this.switchingWorkspace = false;
-			if (this.runtime.cwd === this.cwd && this.runtime.alive) this.runtime.onStarted?.();
 		}
 	}
 
 	async dispose(): Promise<void> {
 		if (this.disposed) return;
 		this.disposed = true;
+		for (const [id, pending] of this.pendingPageCalls) {
+			clearTimeout(pending.timer);
+			pending.resolve({ ok: false, error: "session disposed" });
+			this.pendingPageCalls.delete(id);
+		}
+		for (const release of this.mcpReleases.values()) {
+			try {
+				release();
+			} catch {}
+		}
+		this.mcpReleases.clear();
 		this.cancelBridgedTools();
 		if (this.snapshotTimer) clearTimeout(this.snapshotTimer);
 		if (this.sessionsTimer) clearTimeout(this.sessionsTimer);
@@ -5504,9 +6426,32 @@ export class DshClientSession {
 		this.modelAdmin.dispose();
 		for (const conv of this.convs.values()) conv.terminals.killAll();
 		this.userTerminals?.killAll();
-		try {
-			await this.runtime.close();
-		} catch {}
+		for (const entry of this.runtimeEntries.values()) {
+			entry.stopping = true;
+			entry.generation += 1;
+			this.cancelBridgedTools(entry.runtime);
+			this.settleRuntimeEntry(entry, "canceled");
+		}
+		this.conversationBridgeCancellations.clear();
+		const entries = [...this.runtimeEntries.values()];
+		await Promise.allSettled(
+			entries.map(async (entry) => {
+				try {
+					await entry.runtime.close();
+				} catch {}
+			}),
+		);
+		this.runtimeEntries.clear();
+		if (this.fallbackRuntimeEntry) {
+			try {
+				await this.fallbackRuntimeEntry.runtime.close();
+			} catch {}
+			this.fallbackRuntimeEntry = null;
+		} else if (entries.length === 0) {
+			try {
+				await this.runtime.close();
+			} catch {}
+		}
 	}
 
 	async readQuickAskConversation(
@@ -5648,7 +6593,7 @@ export class DshClientSession {
 			const conv = this.convs.get(id);
 			if (!conv) return { ok: false, error: `未知对话：${id}` };
 			if (conv.isStreaming) {
-				await this.abort();
+				await this.abort(id);
 			}
 			return { ok: true };
 		} catch (err) {
@@ -5669,7 +6614,8 @@ export class DshClientSession {
 	}
 
 	async listModelsForPlugins(): Promise<{ id: string; provider: string; vision: boolean }[]> {
-		return [{ id: `${this.modelProvider}/${this.model}`, provider: this.modelProvider, vision: this.modelVision }];
+		const conv = this.conv;
+		return [{ id: `${conv.modelProvider}/${conv.model}`, provider: conv.modelProvider, vision: conv.modelVision }];
 	}
 }
 
@@ -5681,6 +6627,9 @@ export class DshAgentService implements EngineService {
 	private pending = new Map<string, Promise<DshClientSession>>();
 	private stateStore: ClientStateStore;
 	private dataDir: string;
+	private readonly backgroundTasks?: BackgroundTaskService;
+	private readonly mcpProjects?: () =>
+		{ retain?(cwd: string): () => void; prepare(cwd: string): Promise<unknown> } | undefined;
 
 	onQuit: (() => boolean) | undefined;
 	onClientCwdChanged: ((cwd: string) => void) | undefined;
@@ -5693,6 +6642,8 @@ export class DshAgentService implements EngineService {
 				isError?: boolean;
 		  }) => void)
 		| undefined;
+	onRunEvent?: (event: PluginRunEvent) => void;
+	onConversationChanged?: () => void;
 	pluginToolsProvider: ((cwd?: string) => unknown[]) | undefined;
 	pluginCommandsProvider: (() => PluginCommandDef[]) | undefined;
 	pluginBgTasksProvider: (() => BgServer[]) | undefined;
@@ -5703,9 +6654,20 @@ export class DshAgentService implements EngineService {
 		stateFile: string | ClientStateStore,
 		dataDir: string,
 		private agentDir?: string,
+		backgroundTasks?: BackgroundTaskService,
+		mcpProjects?: () =>
+			| {
+					retain?(cwd: string): () => void;
+					prepare(cwd: string): Promise<unknown>;
+					peekBridge?(cwd: string): McpBridge | undefined;
+					reload?(cwd: string, scope?: "project" | "global"): Promise<void>;
+			  }
+			| undefined,
 	) {
 		this.stateStore = typeof stateFile === "string" ? new ClientStateStore(stateFile) : stateFile;
 		this.dataDir = dataDir;
+		this.backgroundTasks = backgroundTasks;
+		this.mcpProjects = mcpProjects;
 	}
 
 	isQuiesced(): boolean {
@@ -5840,9 +6802,9 @@ export class DshAgentService implements EngineService {
 					if (statSync(saved.lastCwd).isDirectory()) cwd = saved.lastCwd;
 				} catch {}
 			}
-			cs = DshClientSession.create(clientId, cwd, this.stateStore, this.dataDir, this.agentDir);
+			cs = DshClientSession.create(clientId, cwd, this.stateStore, this.dataDir, this.agentDir, this.backgroundTasks);
 			this.clients.set(clientId, cs);
-			this.stateStore.remember(clientId, cwd, { promote: false });
+			this.stateStore.remember(clientId, cwd, { promote: false, clearTombstone: false });
 			if (cwd !== this.cwd) {
 				send({
 					type: "notice",
@@ -5855,7 +6817,10 @@ export class DshAgentService implements EngineService {
 		cs.attachSink(send);
 		cs.onQuit = this.onQuit;
 		cs.onToolEvent = this.onToolEvent;
+		cs.onRunEvent = this.onRunEvent;
+		cs.onConversationChanged = this.onConversationChanged;
 		cs.pluginToolsProvider = this.pluginToolsProvider;
+		cs.mcpProjects = this.mcpProjects;
 		cs.pluginCommandsProvider = this.pluginCommandsProvider;
 		cs.pluginBgTasksProvider = this.pluginBgTasksProvider;
 		cs.pluginStopBgTask = this.pluginStopBgTask;
@@ -5877,6 +6842,17 @@ export class DshAgentService implements EngineService {
 
 	mcpProjectCwds(): string[] {
 		return [...new Set([...this.clients.values()].flatMap((cs) => cs.mcpProjectCwds()))];
+	}
+
+	refreshMcpProject(cwd: string): void {
+		const target = normalizePathKey(cwd);
+		for (const cs of this.clients.values()) {
+			if (cs.mcpProjectCwds().some((project) => normalizePathKey(project) === target)) {
+				void cs.syncPluginTools();
+				cs.broadcastMcpServers(cwd);
+				cs.pushSettings();
+			}
+		}
 	}
 
 	applyPluginAgentTools(): void {

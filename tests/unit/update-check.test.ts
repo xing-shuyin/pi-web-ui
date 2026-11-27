@@ -423,7 +423,10 @@ describe("checkAll", () => {
 			authHeader: "Bearer sekrit",
 		});
 		expect(seen[0]!.url).toBe("https://registry.npmmirror.com/foo");
-		expect(seen[0]!.init?.headers).toEqual({ authorization: "Bearer sekrit" });
+		expect(seen[0]!.init?.headers).toMatchObject({
+			authorization: "Bearer sekrit",
+			accept: expect.stringContaining("application/vnd.npm.install-v1+json"),
+		});
 	});
 });
 

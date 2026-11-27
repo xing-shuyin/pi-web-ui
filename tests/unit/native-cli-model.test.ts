@@ -137,12 +137,9 @@ describe("native CLI model connection", () => {
 		await expect(resolveNativeCliModelConnection(config("codex"), models)).rejects.toThrow("not supported by codex");
 	});
 
-	it("maps chat-completions-only models to the Codex chat wire API", async () => {
+	it("rejects chat-completions-only models for Codex since Codex CLI removed wire_api=chat", async () => {
 		const models = runtime({ provider: "deepseek", api: "openai-completions", baseUrl: "https://api.deepseek.com/v1" });
-		const connection = await resolveNativeCliModelConnection(config("codex"), models);
-		expect(connection).toMatchObject({ wireApi: "chat" });
-		const launched = nativeCliModelLaunch(config("codex"), connection!, {});
-		expect(launched.args).toContain('model_providers.pi_web_ui.wire_api="chat"');
+		await expect(resolveNativeCliModelConnection(config("codex"), models)).rejects.toThrow("not supported by codex");
 	});
 
 	it("leaves agy on its own login and model names", async () => {

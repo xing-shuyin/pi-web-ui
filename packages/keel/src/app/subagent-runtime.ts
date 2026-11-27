@@ -7,6 +7,7 @@ import {
 	type SubagentTemplateInfo,
 } from "../domains/subagents/host.js";
 import { createSubagentTool } from "../adapters/tools/subagent.js";
+import { modelKeyOf, parseModelId } from "../domains/models/project-memory.js";
 import type { Conversation } from "../kernel/conversation/index.js";
 import type { TurnCapableSession } from "../contracts/session.js";
 import type { ClientRuntime } from "./client-runtime.js";
@@ -67,6 +68,65 @@ export function createSubagentRuntime(options: SubagentRuntimeOptions): Subagent
 				...(template.thinkingLevel ? { thinkingLevel: template.thinkingLevel } : {}),
 			}));
 
+	const sendWarning = (text: string, textEn: string): void => {
+		if (runtime.options.transport.isClosed()) return;
+		runtime.options.transport.send({ type: "notice", level: "warning", text, textEn });
+	};
+
+	/**
+	 * 子代理的模型：`显式请求 → 模板模型 → 全局子代理默认模型 → 派发者当前模型`。
+	 * 必须在 `applyThinkingLevel` 之前落到 SDK 会话上，这样思考强度能按新模型能力收敛。
+	 */
+	const applyModel = async (
+		session: TurnCapableSession,
+		ownerRuntime: ClientRuntime,
+		parentId: string,
+		spec: SubagentSpawnSpec,
+	): Promise<void> => {
+		if (!session.setModel) return;
+		const template = spec.templateName ? templateRows().find((row) => row.name === spec.templateName) : undefined;
+		const defaultModel =
+			ownerRuntime.options.stateStore?.()?.getSettingsSnapshot(ownerRuntime.clientId)?.subagentDefaultModel?.trim() ||
+			runtime.options.stateStore?.()?.getSettingsSnapshot(runtime.clientId)?.subagentDefaultModel?.trim() ||
+			"";
+		const wantedId = spec.model?.trim() || template?.model?.trim() || defaultModel;
+		const parentSession = (ownerRuntime.options.sessions ?? sessions).get(parentId)?.session;
+
+		if (wantedId) {
+			const parsed = parseModelId(wantedId);
+			const resolve = ownerRuntime.options.resolveModel ?? runtime.options.resolveModel;
+			const resolved = parsed && resolve ? await resolve(parsed.provider, parsed.id) : undefined;
+			if (resolved) {
+				try {
+					await session.setModel(resolved);
+					return;
+				} catch (error) {
+					const reason = error instanceof Error ? error.message : String(error);
+					sendWarning(
+						`子代理模型设置失败（将尝试跟随主对话）：${wantedId}（${reason}）`,
+						`Failed to set subagent model, falling back to parent: ${wantedId} (${reason})`,
+					);
+				}
+			} else {
+				sendWarning(
+					`子代理模型不可用（将尝试跟随主对话）：${wantedId}`,
+					`Subagent model unavailable, falling back to parent: ${wantedId}`,
+				);
+			}
+		}
+
+		if (!parentSession?.model) return;
+		try {
+			await session.setModel(parentSession.model);
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			sendWarning(
+				`子代理继承主对话模型失败（将按默认模型运行）：${reason}`,
+				`Failed to inherit parent model for subagent, keeping default: ${reason}`,
+			);
+		}
+	};
+
 	/**
 	 * 子代理的思考强度：`显式请求 → 模板档位 → 派发者当前档位`（老实现 `agent-service.ts:2038` 同序）。
 	 * 超出模型能力的档位由 SDK 自己收敛（`setThinkingLevel` 自带 clamp），收敛不算失败、不得发告警。
@@ -79,19 +139,19 @@ export function createSubagentRuntime(options: SubagentRuntimeOptions): Subagent
 		try {
 			session.setThinkingLevel?.(wanted);
 		} catch (error) {
-			if (runtime.options.transport.isClosed()) return;
 			const reason = error instanceof Error ? error.message : String(error);
-			runtime.options.transport.send({
-				type: "notice",
-				level: "warning",
-				text: `子代理思考强度设置失败（将按当前档位运行）：${wanted}（${reason}）`,
-				textEn: `Failed to set subagent thinking level, keeping the current one: ${wanted} (${reason})`,
-			});
+			sendWarning(
+				`子代理思考强度设置失败（将按当前档位运行）：${wanted}（${reason}）`,
+				`Failed to set subagent thinking level, keeping the current one: ${wanted} (${reason})`,
+			);
 		}
 	};
 	const snapshotOf = (conv: Conversation, owner: ClientRuntime = runtime): SubagentSnapshot => {
 		const record = registry.get(conv.id);
 		const opened = owner.options.sessions?.get(conv.id);
+		const modelKey = modelKeyOf(opened?.session.model);
+		const model = modelKey ? `${modelKey.provider}/${modelKey.id}` : undefined;
+		const thinkingLevel = opened?.session.thinkingLevel;
 		return {
 			convId: conv.id,
 			type: record?.type ?? "general",
@@ -102,6 +162,8 @@ export function createSubagentRuntime(options: SubagentRuntimeOptions): Subagent
 			messageCount: opened?.session.messages?.length ?? 0,
 			output: opened?.session.getLastAssistantText?.() ?? "",
 			parentId: record?.parentId || conv.meta.parentId || undefined,
+			...(model ? { model } : {}),
+			...(thinkingLevel ? { thinkingLevel } : {}),
 			...(record?.error ? { error: record.error } : {}),
 		};
 	};
@@ -167,7 +229,8 @@ export function createSubagentRuntime(options: SubagentRuntimeOptions): Subagent
 			try {
 				const sessionRegistry = ownerRuntime.options.sessions ?? sessions;
 				const opened = await sessionRegistry.ensure(child);
-				// 子代理会话的档位必须在第一轮之前落到 SDK 会话上：否则跑的是 SDK 默认档（不是模板、也不是派发者）。
+				// 子代理会话的模型与档位必须在第一轮之前落到 SDK 会话上：先设模型再设档位，否则跑的是 SDK 默认配置。
+				await applyModel(opened.session, ownerRuntime, parentId, spec);
 				applyThinkingLevel(opened.session, parentId, spec);
 				void ownerRuntime.turns.start(child, opened.session, spec.prompt).then(
 					() => {

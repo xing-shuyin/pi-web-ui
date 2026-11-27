@@ -52,6 +52,7 @@ export interface ExtraFrames {
 export interface ExtraHandlers {
 	setSessionListLimit(cwd: string, limit?: number): number;
 	removeProject(path: string): Promise<void>;
+	renameProject(path: string, name: string): Promise<void>;
 	searchSessions(query: string, reqId: number): Promise<void>;
 	refreshAgentPresets(): Promise<void>;
 	setDefaultAgentPreset(preset: string): Promise<void>;
@@ -209,6 +210,10 @@ export function createExtraHandlers(runtime: ExtraHandlerRuntime, frames: () => 
 		// 纯内存态：这次要多少条记在每项目一张表里，帧出口下一次扫盘就按它截断（`hasMore` 由它判）。
 		setSessionListLimit: (cwd, limit) => applySessionListLimit(runtime.sessionLimits, cwd, limit),
 		removeProject: (path) => removeProject({ store: store("removeProject"), sandbox: sandbox() }, path),
+		renameProject: async (path, name) => {
+			store("renameProject").saveProjectName?.(path, name);
+			await frames().pushProjects();
+		},
 		searchSessions: (query, reqId) => search(store("searchSessions"), query, reqId),
 		refreshAgentPresets: () => refreshAgentPresets(store("refreshAgentPresets")),
 		setDefaultAgentPreset: (preset) => setDefaultAgentPreset(store("setDefaultAgentPreset"), preset),

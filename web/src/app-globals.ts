@@ -1,7 +1,14 @@
 /// <reference lib="dom" />
 
 import { useSyncExternalStore } from "react";
-import type { ClientMessage, ConnStatus, UiServiceInfo, AgentEngineCapabilities, EngineStatus } from "./types";
+import type {
+	ClientMessage,
+	ConnStatus,
+	UiServiceInfo,
+	AgentEngineCapabilities,
+	EngineStatus,
+	ProjectSummary,
+} from "./types";
 
 export const DEFAULT_ENGINE_CAPABILITIES: AgentEngineCapabilities = {
 	remoteSsh: true,
@@ -32,6 +39,7 @@ export interface AppGlobals {
 	status: ConnStatus;
 	ready: boolean;
 	cwd: string;
+	projects: ProjectSummary[];
 	workspaceRoots: string[];
 	pathCompletions: { name: string; path: string; type: "dir" | "file" }[];
 	homeDir: string;
@@ -49,6 +57,7 @@ export const DEFAULT_APP_GLOBALS: AppGlobals = {
 	status: "connecting",
 	ready: false,
 	cwd: "",
+	projects: [],
 	workspaceRoots: [],
 	pathCompletions: [],
 	homeDir: "",
@@ -93,6 +102,7 @@ function same(a: AppGlobals, b: AppGlobals): boolean {
 		a.status === b.status &&
 		a.ready === b.ready &&
 		a.cwd === b.cwd &&
+		a.projects === b.projects &&
 		sameArray(a.workspaceRoots, b.workspaceRoots) &&
 		a.pathCompletions === b.pathCompletions &&
 		a.homeDir === b.homeDir &&

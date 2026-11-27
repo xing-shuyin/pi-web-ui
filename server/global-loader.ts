@@ -341,10 +341,7 @@ export function probeGlobalPackage(
 	}
 }
 
-export function resolvePackageEntryFile(packageName: string, subpath = ""): string | null {
-	const root = resolvePackageRoot(packageName);
-	if (!root) return null;
-
+export function resolvePackageEntryFileFromRoot(root: string, subpath = ""): string | null {
 	try {
 		const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
 			exports?: Record<string, any>;
@@ -388,6 +385,12 @@ export function resolvePackageEntryFile(packageName: string, subpath = ""): stri
 	} catch {}
 
 	return null;
+}
+
+export function resolvePackageEntryFile(packageName: string, subpath = ""): string | null {
+	const root = resolvePackageRoot(packageName);
+	if (!root) return null;
+	return resolvePackageEntryFileFromRoot(root, subpath);
 }
 
 export async function dynamicImportGlobalPackage<T = any>(packageName: string, subpath = ""): Promise<T> {

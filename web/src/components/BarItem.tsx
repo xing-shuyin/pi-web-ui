@@ -51,6 +51,7 @@ import { EnginePicker } from "./EnginePicker";
 import { NativeCliCreateEntry } from "./NativeCliCreateModal";
 import { ContextUsage } from "./ContextUsage";
 import { formatTokens } from "../format-tokens";
+import { resolveProjectDisplayName } from "../title-settings";
 
 export type ViewName =
 	"chat" | "native-cli" | "terminal" | "git" | "canvas" | "devices" | "worktrees" | `plugin:${string}`;
@@ -1053,7 +1054,9 @@ export function BarItem({
 			break;
 		case "host:cwd":
 			iconNode = <FiFolder className="bar-item-icon" />;
-			labelText = withName(state?.cwd ? state.cwd.split(/[/\\]/).pop() || state.cwd : t("openProject"));
+			labelText = withName(
+				state?.cwd ? resolveProjectDisplayName(state.cwd, chat.projects) || state.cwd : t("openProject"),
+			);
 			extraClasses = "status-item status-cwd";
 			isActive = Boolean(isProjectPickerOpen);
 			onClick = () => {

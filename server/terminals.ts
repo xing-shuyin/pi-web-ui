@@ -31,6 +31,7 @@ import {
 	loadCommands as keelLoadCommands,
 	saveCommandsFile as keelSaveCommandsFile,
 } from "../packages/keel/src/commands-file.js";
+import { isInsideRoots, realPathOrNearest } from "../packages/keel/src/path-boundary.js";
 import { armDelay } from "./plugin-schedule.js";
 import {
 	getGlobalRemoteSshService,
@@ -852,7 +853,11 @@ export class TerminalManager {
 				const config = validateNativeCliConfig(opts.nativeCli);
 				if (config.keepAlive && !remote) throw new Error("CLI keep-alive requires an SSH workspace");
 				const safeCwd = this.safeCwd(cwd || fallbackCwd);
-				if (!safeCwd) throw new Error("Terminal cwd must be inside the current workspace");
+				if (!safeCwd) {
+					throw new Error(
+						`Terminal cwd must be inside the current workspace (cwd=${cwd || fallbackCwd}, root=${this.workspaceRoot})`,
+					);
+				}
 				const remoteService = remote ? getGlobalRemoteSshService() : null;
 				const persistentRef = config.keepAlive ? this.nativeCliRuntime?.reference?.(id) : void 0;
 				let observeOnly = false;
@@ -1627,12 +1632,19 @@ export class TerminalManager {
 			return `ssh://${root.username}@${root.host}:${root.port}${joined}`;
 		}
 		try {
-			const root = realpathSync(resolve(this.workspaceRoot));
-			const candidate = realpathSync(isAbsolute(raw) ? resolve(raw) : resolve(root, raw));
-			const rel = relative(root, candidate);
-			if (rel === "" || (!rel.startsWith(".." + sep) && rel !== ".." && !isAbsolute(rel))) {
-				return candidate;
+			const rootRaw = String(this.workspaceRoot ?? "").trim();
+			if (!rootRaw) return null;
+			const root = realpathSync(resolve(rootRaw));
+			const targetRaw = String(raw ?? "").trim();
+			const target = targetRaw ? (isAbsolute(targetRaw) ? resolve(targetRaw) : resolve(root, targetRaw)) : root;
+			if (isInsideRoots(target, [root], root)) {
+				try {
+					return realpathSync(target);
+				} catch {
+					return realPathOrNearest(target);
+				}
 			}
+			console.warn(`[terminals] safeCwd rejected: cwd=${targetRaw || "(empty)"}, root=${this.workspaceRoot}`);
 		} catch {}
 		return null;
 	}

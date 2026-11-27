@@ -71,6 +71,8 @@ import { createCorePlugins } from "./core-plugin-adapter.js";
 import { createCorePluginToolSync } from "./core-plugin-tool-sync-adapter.js";
 import { createCoreWorktree } from "./core-worktree-adapter.js";
 import { createCoreBackground } from "./core-background-adapter.js";
+import { BackgroundTaskService, handleHostBackgroundTaskMessage } from "./background-task-service.js";
+import { pickLatestClientSnapshot } from "./plugin-conversation-view.js";
 import { asCoreNativeCliTerminals, createCoreNativeCli } from "./core-native-cli-adapter.js";
 import { createCoreBotChat } from "./core-bot-adapter.js";
 import { createCoreChatModePort } from "./core-chat-mode-adapter.js";
@@ -570,6 +572,22 @@ app.use((req, res, next) => {
 	pluginMgr.handleHttp("superagent", "POST", `/webhooks/${provider}`, req, res);
 });
 
+app.all("/__pi/internal-mcp", express.json({ limit: "2mb" }), (req, res) => {
+	if (!isLoopbackAddress(req.socket?.remoteAddress)) {
+		res.status(403).end();
+		return;
+	}
+	if (req.method === "POST") {
+		void internalMcpRegistry.handleHttp(req, res);
+		return;
+	}
+	if (req.method === "DELETE") {
+		res.status(204).end();
+		return;
+	}
+	res.status(405).end();
+});
+
 // 口令登录表单：原生 POST → 303 → GET，浏览器密码管理器才愿意询问「是否保存密码」
 // （JS preventDefault + `?token=` 跳转不满足条件）。安全约束见 server/auth-login.ts。
 // 必须注册在下面的鉴权中间件之前。
@@ -774,6 +792,10 @@ mobilePush.registerRoutes(app);
 registerTtsRoutes(app);
 
 const sharedStateStore = new ClientStateStore(join(DATA_DIR, "client-state.json"));
+const backgroundTasks = new BackgroundTaskService({
+	dataDir: DATA_DIR,
+	getSession: (clientId) => service.get(clientId),
+});
 registerPromptTemplateRoutes(app, DATA_DIR);
 registerGlobalPromptRoutes(app, { dataDir: DATA_DIR, agentDir: getAgentDir() });
 registerSystemScreenshotRoutes(app);
@@ -1718,7 +1740,14 @@ const heartbeatTimer = setInterval(() => {
 heartbeatTimer.unref?.();
 
 import { DshAgentService } from "./dsh/dsh-agent-service.js";
-import { UniversalAgentService, ClaudeCodeDriver, probeClaudeCode, CodexDriver, AgyDriver } from "./universal/index.js";
+import {
+	UniversalAgentService,
+	ClaudeCodeDriver,
+	probeClaudeCode,
+	CodexDriver,
+	AgyDriver,
+	internalMcpRegistry,
+} from "./universal/index.js";
 import { MultiEngineBroker } from "./multi-engine.js";
 import { DurableAgentService } from "./durable/index.js";
 import {
@@ -1747,6 +1776,12 @@ let dshServiceInstance: DshAgentService | null = null;
 let claudeServiceInstance: UniversalAgentService | null = null;
 let codexServiceInstance: UniversalAgentService | null = null;
 let agyServiceInstance: UniversalAgentService | null = null;
+
+function getInternalMcpUrl(): string | null {
+	const addr = httpServer.address();
+	const port = typeof addr === "object" && addr ? addr.port : PORT;
+	return port > 0 ? `http://127.0.0.1:${port}/__pi/internal-mcp` : null;
+}
 let durableServiceInstance: DurableAgentService | null = null;
 let wireEngineHooks: ((svc: EngineService) => void) | null = null;
 let sharedSocketCount = 0;
@@ -1790,6 +1825,7 @@ function ensureEngine(engine: EngineId): EngineService {
 				agentDir: getAgentDir(),
 				stateStore: sharedStateStore,
 				engine: "agy",
+				backgroundTasks,
 				driverFactory: (cwd) => new AgyDriver(cwd, { agentDir: getAgentDir(), dataDir: DATA_DIR }),
 			});
 			for (let i = 0; i < sharedSocketCount; i++) agyServiceInstance.noteSocketOpen();
@@ -1806,6 +1842,8 @@ function ensureEngine(engine: EngineId): EngineService {
 				agentDir: getAgentDir(),
 				stateStore: sharedStateStore,
 				engine: "codex",
+				backgroundTasks,
+				internalMcpUrl: getInternalMcpUrl,
 				driverFactory: (cwd) => new CodexDriver(cwd, { agentDir: getAgentDir(), dataDir: DATA_DIR }),
 			});
 			for (let i = 0; i < sharedSocketCount; i++) codexServiceInstance.noteSocketOpen();
@@ -1821,6 +1859,8 @@ function ensureEngine(engine: EngineId): EngineService {
 				dataDir: DATA_DIR,
 				agentDir: getAgentDir(),
 				stateStore: sharedStateStore,
+				backgroundTasks,
+				internalMcpUrl: getInternalMcpUrl,
 			});
 			for (let i = 0; i < sharedSocketCount; i++) durableServiceInstance.noteSocketOpen();
 			if (sharedQuiesced) durableServiceInstance.quiesce();
@@ -1835,6 +1875,8 @@ function ensureEngine(engine: EngineId): EngineService {
 				dataDir: DATA_DIR,
 				agentDir: getAgentDir(),
 				stateStore: sharedStateStore,
+				backgroundTasks,
+				internalMcpUrl: getInternalMcpUrl,
 				driverFactory: (cwd) => new ClaudeCodeDriver(cwd, { agentDir: getAgentDir(), dataDir: DATA_DIR }),
 			});
 			for (let i = 0; i < sharedSocketCount; i++) claudeServiceInstance.noteSocketOpen();
@@ -1845,7 +1887,14 @@ function ensureEngine(engine: EngineId): EngineService {
 	}
 	if (engine === "dsh") {
 		if (!dshServiceInstance) {
-			dshServiceInstance = new DshAgentService(CWD, sharedStateStore, DATA_DIR, getAgentDir());
+			dshServiceInstance = new DshAgentService(
+				CWD,
+				sharedStateStore,
+				DATA_DIR,
+				getAgentDir(),
+				backgroundTasks,
+				() => mcpProjects,
+			);
 			for (let i = 0; i < sharedSocketCount; i++) dshServiceInstance.noteSocketOpen();
 			if (sharedQuiesced) dshServiceInstance.quiesce();
 			wireEngineHooks?.(dshServiceInstance);
@@ -1888,8 +1937,13 @@ function ensureEngine(engine: EngineId): EngineService {
 			// 模型运行时 / 凭证 / 提示词口径全归宿主；内核只转发并回一帧。
 			scmCommitMessage: (sinks) =>
 				createCoreScmCommitMessage({ agentDir: getAgentDir(), stateStore: sharedStateStore, ...sinks }),
-			// 后台任务面：`BgServerTracker` + `JobRegistry` 都是进程级叶子，这里只把本客户端的帧出口接上。
-			background: (sinks) => createCoreBackground({ dataDir: DATA_DIR, ...sinks }),
+			// 后台任务面：端口/插件行归本引擎 tracker，job 注册表归宿主共享服务，切引擎不丢任务。
+			background: (sinks) =>
+				createCoreBackground({
+					dataDir: DATA_DIR,
+					...sinks,
+					jobs: backgroundTasks.registryFor(sinks.clientId),
+				}),
 			plugins: (sinks) =>
 				createCorePlugins({
 					...sinks,
@@ -2002,6 +2056,7 @@ const service: EngineService = {
 	},
 	async disposeAll() {
 		await Promise.all(activeEngines().map((s) => s.disposeAll()));
+		backgroundTasks.disposeAll();
 	},
 	recordInterruptedRuns() {
 		for (const s of activeEngines()) s.recordInterruptedRuns();
@@ -2495,7 +2550,24 @@ wireEngineHooks = (svc: EngineService) => {
 };
 for (const s of activeEngines()) wireEngineHooks(s);
 
-pluginMgr.conversationProvider = (opts) => service.readConversationForPlugins?.(opts) ?? null;
+pluginMgr.conversationProvider = (opts) => {
+	const targetId = opts?.clientId?.trim();
+	if (targetId) {
+		try {
+			return ensureEngine(resolveClientEngine(targetId)).readConversationForPlugins?.(opts) ?? null;
+		} catch {
+			return null;
+		}
+	}
+	const snapshots = activeEngines().map((svc) => {
+		try {
+			return svc.readConversationForPlugins?.() ?? null;
+		} catch {
+			return null;
+		}
+	});
+	return pickLatestClientSnapshot(snapshots);
+};
 pluginMgr.workItemsProvider = (pluginId, method, args) =>
 	deviceCenter.workItems(method, { ...args, connectorId: pluginId });
 pluginMgr.chatProvider = (pluginId, req) =>
@@ -3324,7 +3396,8 @@ wss.on("connection", (ws) => {
 				msg.type === "pin_session" ||
 				msg.type === "list_sessions" ||
 				msg.type === "set_cwd" ||
-				msg.type === "remove_project")
+				msg.type === "remove_project" ||
+				msg.type === "rename_project")
 		) {
 			void broker.routeMessage(msg).then(({ handled, targetCs, targetService }) => {
 				if (!handled && targetCs && !closed) dispatchToSession(msg, targetCs, targetService);
@@ -3342,6 +3415,7 @@ wss.on("connection", (ws) => {
 			if (handleInteractiveResponseMessage(msg, cs, effectiveService, clientId, send)) return;
 			if (handleFileMessage(msg, cs)) return;
 			if (handleScmMessage(msg, cs, send)) return;
+			if (handleHostBackgroundTaskMessage(msg, clientId, send, backgroundTasks)) return;
 			if (handleBgServerMessage(msg, cs)) return;
 			if (handlePresetAndDshMessage(msg, cs)) return;
 			if (handleModelAndProviderMessage(msg, cs)) return;

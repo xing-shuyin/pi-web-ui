@@ -12,8 +12,8 @@ export interface NativeCliModelConnection {
 	headers?: Record<string, string>;
 	/** The key is a short-lived subscription OAuth access token, not a long-lived API key. */
 	isOAuth?: boolean;
-	/** Codex custom-provider wire format, derived from the inherited model's protocol. */
-	wireApi?: "responses" | "chat";
+	/** Codex custom-provider wire format (modern Codex CLI only supports "responses"). */
+	wireApi?: "responses";
 }
 
 /** ChatGPT account id carried inside a Codex/ChatGPT OAuth JWT (`https://api.openai.com/auth`). */
@@ -57,9 +57,15 @@ export async function resolveNativeCliModelConnection(
 		}
 		if (usingOAuth && model.provider !== "anthropic")
 			throw new Error(`Inherited OAuth login is not supported by claude: ${model.provider}`);
-	} else if (usingOAuth && model.provider !== "openai-codex") {
-		// Codex subscription tokens only work against the ChatGPT backend; other OAuth logins stay with the CLI.
-		throw new Error(`Inherited OAuth login is not supported by codex: ${model.provider}`);
+	} else {
+		if (!isProtocolSupportedByEngine("codex", model.api, model.provider, model.id))
+			throw new Error(
+				`Inherited model protocol is not supported by codex: ${model.api} (Codex CLI requires openai-responses)`,
+			);
+		if (usingOAuth && model.provider !== "openai-codex") {
+			// Codex subscription tokens only work against the ChatGPT backend; other OAuth logins stay with the CLI.
+			throw new Error(`Inherited OAuth login is not supported by codex: ${model.provider}`);
+		}
 	}
 	const result = await runtime.getAuth(model);
 	const fallback = runtime.getCompatibilityRequestConfig(model);
@@ -83,9 +89,7 @@ export async function resolveNativeCliModelConnection(
 		apiKey,
 		headers,
 		isOAuth: usingOAuth,
-		...(config.preset === "codex"
-			? { wireApi: (model.api === "openai-completions" ? "chat" : "responses") as "responses" | "chat" }
-			: {}),
+		...(config.preset === "codex" ? { wireApi: "responses" as const } : {}),
 	};
 }
 
@@ -258,7 +262,7 @@ export function nativeCliModelLaunch(
 		[`model_providers.${provider}.name`]: "pi-web-ui",
 		[`model_providers.${provider}.base_url`]: connection.baseUrl,
 		[`model_providers.${provider}.env_key`]: "PI_WEB_CLI_API_KEY",
-		// Chat-completions-only endpoints (e.g. DeepSeek) have no Responses API; Codex also speaks `chat`.
+		// Modern Codex CLI removed `wire_api = "chat"` and only accepts `"responses"`.
 		[`model_providers.${provider}.wire_api`]: connection.wireApi ?? "responses",
 		[`model_providers.${provider}.requires_openai_auth`]: false,
 	};

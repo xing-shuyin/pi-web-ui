@@ -110,7 +110,8 @@ export function assembleClient(ctx: ClientAssemblyContext): {
 
 	const terminalHost = createTerminalHost({
 		transport,
-		cwdOf: (conversationId) => runtime.registry.get(conversationId)?.meta.cwd ?? cwd,
+		// 对话尚未登记时返回空串，让 managerFor(conversationId, cliCwd ?? cwd) 的显式 cwd 生效
+		cwdOf: (conversationId) => runtime.registry.get(conversationId)?.meta.cwd ?? "",
 		lang: () => ctx.langOf(clientId),
 		createManager: (input) => {
 			const factory = options.terminalManager;

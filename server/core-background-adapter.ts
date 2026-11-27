@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { BackgroundPort } from "../packages/keel/src/contracts/background.js";
+import { backgroundJobRow } from "./background-task-service.js";
 import { BG_CLEANUP_FALLBACK_MIN, BgServerTracker } from "./bg-servers.js";
 import { JOB_TASK_PREFIX, JobRegistry, type JobSnapshot } from "./job-runner.js";
 import { resolveProjectScripts } from "./project-scripts.js";
@@ -7,6 +8,8 @@ import type { BgServer, ServerMessage } from "./protocol.js";
 
 /** 宿主实现 `BackgroundPort` 时要拼的几块现成东西：本客户端的帧出口 + 老实现里现取的那几个值。 */
 export interface CoreBackgroundSinks {
+	/** 本客户端 id：共享 job 注册表按客户端隔离。 */
+	clientId: string;
 	/** 本客户端帧出口（`bg_servers` 帧与每条 notice 都从这里发）。 */
 	emit(msg: ServerMessage): void;
 	flushSnapshot(): void;
@@ -25,20 +28,8 @@ export interface CoreBackgroundSinks {
 	onJobExit?(job: JobSnapshot): void;
 	/** 任务运行满 `notificationTimeoutSec` 仍未结束时触发进度通知。 */
 	onJobNotify?(job: JobSnapshot): void;
-}
-
-/** job 行的面板形状：`taskId` 前缀与 `killBackgroundServer` 的解析必须同源（`JOB_TASK_PREFIX`）。 */
-function jobRow(job: JobSnapshot): BgServer {
-	return {
-		taskId: `${JOB_TASK_PREFIX}${job.id}`,
-		pid: job.pid,
-		since: job.since,
-		name: job.label,
-		command: job.command,
-		status: "running",
-		...(job.origin ? { origin: job.origin } : {}),
-		logPath: job.logPath,
-	};
+	/** 宿主级共享注册表；缺省时才在本适配器内创建（便于独立测试与旧调用方）。 */
+	jobs?: JobRegistry;
 }
 
 const SCRIPT_NAME_OK = /^[A-Za-z0-9 _.:-]+$/;
@@ -65,19 +56,22 @@ export function createCoreBackground(options: { dataDir: string } & CoreBackgrou
 	const notice = (level: "info" | "warning" | "error", text: string, textEn?: string): void => {
 		options.emit({ type: "notice", level, text, ...(textEn ? { textEn } : {}) });
 	};
-	const jobs = new JobRegistry({
-		// 日志落 `<dataDir>/jobs`：老实现 `stateStore.dataDir` 同口径。
-		logDir: () => join(options.dataDir, "jobs"),
-		onChange: () => bg.push(),
-		...(options.onJobExit ? { onExit: (job: JobSnapshot) => options.onJobExit?.(job) } : {}),
-		...(options.onJobNotify ? { onNotify: (job: JobSnapshot) => options.onJobNotify?.(job) } : {}),
-	});
+	const ownsJobs = !options.jobs;
+	const jobs =
+		options.jobs ??
+		new JobRegistry({
+			// 日志落 `<dataDir>/jobs`：老实现 `stateStore.dataDir` 同口径。
+			logDir: () => join(options.dataDir, "jobs"),
+			onChange: () => bg.push(),
+			...(options.onJobExit ? { onExit: (job: JobSnapshot) => options.onJobExit?.(job) } : {}),
+			...(options.onJobNotify ? { onNotify: (job: JobSnapshot) => options.onJobNotify?.(job) } : {}),
+		});
 	const bg = new BgServerTracker({
 		emit: (msg) => options.emit(msg),
 		flushSnapshot: () => options.flushSnapshot(),
 		isDisposed: () => options.isDisposed(),
 		...(options.pluginTasks ? { pluginTasks: () => options.pluginTasks?.() ?? [] } : {}),
-		jobs: () => jobs.list().map((job) => jobRow(job)),
+		jobs: () => jobs.list().map((job) => backgroundJobRow(job)),
 		killAllJobs: () => jobs.killAll(),
 		// 通道已关就不再跑自动清理（`refresh()` 自己已按 `isDisposed` 早退，这里同理，免得留一个 30s tick 去扫端口）。
 		cleanupMinutes: () => (options.isDisposed() ? 0 : options.cleanupMinutes()),
@@ -233,7 +227,7 @@ export function createCoreBackground(options: { dataDir: string } & CoreBackgrou
 
 		dispose(): void {
 			bg.stop();
-			jobs.dispose();
+			if (ownsJobs) jobs.dispose();
 		},
 	};
 }

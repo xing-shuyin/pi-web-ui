@@ -27,6 +27,24 @@ export function collectEnabledMcpServers(opts: {
 	return out;
 }
 
+export const INTERNAL_MCP_SERVER_NAME = "pi_host";
+
+/** Merges the host's session-scoped internal MCP endpoint into enabled servers without mutating config files. */
+export function withInternalMcpServer(
+	servers: Record<string, McpServerSpec>,
+	internal?: { url: string; token: string } | null,
+): Record<string, McpServerSpec> {
+	if (!internal?.url || !internal?.token) return servers;
+	return {
+		...servers,
+		[INTERNAL_MCP_SERVER_NAME]: {
+			type: "http",
+			url: internal.url,
+			headers: { Authorization: `Bearer ${internal.token}` },
+		},
+	};
+}
+
 function isRemoteSpec(spec: McpServerSpec): boolean {
 	return Boolean(spec.url) && spec.type !== "stdio";
 }

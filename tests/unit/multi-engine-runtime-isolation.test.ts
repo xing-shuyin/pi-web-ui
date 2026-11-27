@@ -10,6 +10,7 @@ import { UniversalSession } from "../../server/universal/universal-session.js";
 import { MockAgentDriver } from "../../server/universal/drivers/mock-driver.js";
 import { DshRuntime } from "../../server/dsh/dsh-client.js";
 import { DshClientSession } from "../../server/dsh/dsh-agent-service.js";
+import { MultiEngineBroker } from "../../server/multi-engine.js";
 import { SandboxManager } from "../../server/sandbox-service.js";
 import type { AgentEventSink } from "../../server/universal/driver-base.js";
 
@@ -81,7 +82,7 @@ function universal() {
 }
 
 describe("Universal stable turn ownership", () => {
-	it("ignores stale callbacks and completion after switching projects", async () => {
+	it("keeps callbacks owned by the original conversation across project switches", async () => {
 		const { root, driver, store, session } = universal();
 		let sink!: AgentEventSink;
 		vi.spyOn(driver, "sendPrompt").mockImplementation(async (_p, _a, s) => {
@@ -93,27 +94,28 @@ describe("Universal stable turn ownership", () => {
 		const next = temp();
 		await session.setCwd(next);
 		const before = JSON.stringify(store.listConversations(next));
-		sink.onTextDelta("late");
+		sink.onTextDelta(" late");
 		sink.onTurnComplete({ usage: { inputTokens: 50 } } as any);
 		sink.onError("late error");
 		expect(JSON.stringify(store.listConversations(next))).toBe(before);
 		await vi.waitFor(() => {
 			expect(store.loadConversation(root, oldId)?.messages.at(-1)?.content).toEqual([
-				{ type: "text", text: "old response" },
+				{ type: "text", text: "old response late" },
 			]);
 		});
 	});
-	it("does not send an old prompt when createSession resumes after a project switch", async () => {
-		const { driver, session } = universal();
+	it("finishes an old prompt on its original driver after a project switch", async () => {
+		const { root, driver, session } = universal();
 		const pending = deferred<string>();
 		vi.spyOn(driver, "createSession").mockReturnValue(pending.promise);
-		const send = vi.spyOn(driver, "sendPrompt");
+		const send = vi.spyOn(driver, "sendPrompt").mockResolvedValue(undefined);
 		const running = session.prompt("old");
 		await vi.waitFor(() => expect(driver.createSession).toHaveBeenCalled());
 		await session.setCwd(temp());
 		pending.resolve("old-session");
 		await running;
-		expect(send).not.toHaveBeenCalled();
+		expect(send).toHaveBeenCalledOnce();
+		expect((driver as any).cwd).toBe(root);
 	});
 	it("completes once and ignores late errors while a new turn runs", async () => {
 		const { driver, session } = universal();
@@ -228,5 +230,66 @@ describe("DSH workspace transaction", () => {
 		expect(remember).not.toHaveBeenCalled();
 		expect(emit.mock.calls.some(([m]) => m.type === "transition_progress" && m.phase === "done")).toBe(false);
 		expect(session.switchingWorkspace).toBe(false);
+	});
+
+	it("forces a full snapshot when switching engines via new_chat and the target emits snapshot_delta", async () => {
+		const sent: any[] = [];
+		const sinks = new Map<string, (msg: any) => void>();
+		const dshCs: any = {
+			cwd: "/workspace",
+			pushProjects: vi.fn(async () => {}),
+			refreshSessions: vi.fn(),
+			pushSettings: vi.fn(),
+			listModels: vi.fn(async () => {}),
+			flushSnapshot: vi.fn((force?: boolean) => {
+				const sink = sinks.get("dsh");
+				sink?.(
+					force
+						? { type: "snapshot", state: { conversationId: "dsh-1", rev: 2, messages: [] } }
+						: { type: "snapshot_delta", conversationId: "dsh-1", baseRev: 1, rev: 2, ops: [] },
+				);
+			}),
+		};
+		const codexCs: any = {
+			cwd: "/workspace",
+			pushProjects: vi.fn(async () => {}),
+			refreshSessions: vi.fn(),
+			pushSettings: vi.fn(),
+			listModels: vi.fn(async () => {}),
+			flushSnapshot: vi.fn(),
+		};
+		const makeService = (id: "codex" | "dsh", cs: any): any => ({
+			attach: vi.fn(async (_cid: string, sink: (msg: any) => void) => {
+				sinks.set(id, sink);
+				return cs;
+			}),
+			detach: vi.fn(),
+		});
+		const services = { codex: makeService("codex", codexCs), dsh: makeService("dsh", dshCs) };
+		const broker = new MultiEngineBroker({
+			clientId: "c1",
+			initialEngine: "codex",
+			allEngines: ["codex", "dsh"],
+			ensureEngine: (engine) => services[engine as "codex" | "dsh"],
+			probeEngine: async () => ({ installed: true }),
+			send: (msg) => sent.push(msg),
+			sendShared: () => {},
+			buildReady: (engine) => ({ type: "ready", engine }) as any,
+			onEngineChanged: () => {},
+		});
+
+		await broker.attachInitial();
+		await broker.ensureAttached("dsh");
+		sent.length = 0;
+
+		const routed = await broker.routeMessage({ type: "new_chat", engine: "dsh" });
+		expect(routed.handled).toBe(false);
+		expect(routed.targetCs).toBe(dshCs);
+
+		// Simulate target engine reusing its background-mounted empty conversation and emitting a delta
+		dshCs.flushSnapshot(false);
+		expect(sent.some((m) => m.type === "snapshot_delta")).toBe(false);
+		expect(sent.some((m) => m.type === "snapshot" && m.state?.conversationId === "dsh-1")).toBe(true);
+		broker.dispose();
 	});
 });

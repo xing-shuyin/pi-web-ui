@@ -495,4 +495,20 @@ describe("Claude Code session fork", () => {
 		const { driver } = setup();
 		await expect(driver.forkSession("")).resolves.toBe("");
 	});
+
+	it("closes stdin on error result so the CLI exits instead of hanging", async () => {
+		const { child, sink, driver } = setup();
+		const done = driver.sendPrompt("hello", undefined, sink);
+
+		child.stdout.write(
+			`${JSON.stringify({ type: "result", is_error: true, result: "API Error: Request rejected (429)" })}\n`,
+		);
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(child.stdin.writableEnded).toBe(true);
+
+		child.emit("close", 0);
+		await done;
+		expect(sink.onError).toHaveBeenCalledWith(expect.stringContaining("429"));
+		expect(sink.onTurnComplete).not.toHaveBeenCalled();
+	});
 });
