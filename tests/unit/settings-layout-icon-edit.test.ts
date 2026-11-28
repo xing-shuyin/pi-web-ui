@@ -3,6 +3,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const SETTINGS_SRC = readFileSync(join(__dirname, "..", "..", "web", "src", "components", "SettingsModal.tsx"), "utf8");
+const LAYOUT_TAB_SRC = readFileSync(
+	join(__dirname, "..", "..", "web", "src", "components", "settings", "LayoutTab.tsx"),
+	"utf8",
+);
 const STYLES_SRC = readFileSync(join(__dirname, "..", "..", "web", "src", "styles.css"), "utf8");
 const APP_SRC = readFileSync(join(__dirname, "..", "..", "web", "src", "App.tsx"), "utf8");
 
@@ -16,11 +20,13 @@ describe("设置面板「界面布局」编辑图标入口", () => {
 	});
 
 	it("界面布局 tab 包含编辑图标按钮，配置了图标、文案与点击事件", () => {
-		expect(SETTINGS_SRC).toContain("onOpenIconEdit &&");
-		expect(SETTINGS_SRC).toContain("<FiEdit2 />");
-		expect(SETTINGS_SRC).toContain('t("uiIconEdit")');
-		expect(SETTINGS_SRC).toContain('title={t("uiIconEditHint")}');
-		expect(SETTINGS_SRC).toContain("onClick={onOpenIconEdit}");
+		expect(SETTINGS_SRC).toContain("<LayoutTab");
+		expect(SETTINGS_SRC).toContain("onOpenIconEdit={onOpenIconEdit}");
+		expect(LAYOUT_TAB_SRC).toContain("onOpenIconEdit &&");
+		expect(LAYOUT_TAB_SRC).toContain("<FiEdit2 />");
+		expect(LAYOUT_TAB_SRC).toContain('t("uiIconEdit")');
+		expect(LAYOUT_TAB_SRC).toContain('title={t("uiIconEditHint")}');
+		expect(LAYOUT_TAB_SRC).toContain("onClick={onOpenIconEdit}");
 	});
 
 	it("App.tsx 将 setIconEditOpen 传递给 SettingsModal", () => {

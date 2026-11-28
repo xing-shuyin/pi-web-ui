@@ -3,6 +3,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const SETTINGS_SRC = readFileSync(join(__dirname, "..", "..", "web", "src", "components", "SettingsModal.tsx"), "utf8");
+const MODELS_TAB_SRC = readFileSync(
+	join(__dirname, "..", "..", "web", "src", "components", "settings", "ModelsTab.tsx"),
+	"utf8",
+);
 const APP_SRC = readFileSync(join(__dirname, "..", "..", "web", "src", "App.tsx"), "utf8");
 
 describe("设置面板多引擎动态自适应（分区条件隐藏与模型中枢集成）", () => {
@@ -64,8 +68,9 @@ describe("设置面板多引擎动态自适应（分区条件隐藏与模型中�
 		expect(SETTINGS_SRC).toContain('label: t("settingsModelsAndProviders")');
 
 		expect(SETTINGS_SRC).toContain('{tab === "models" && (');
-		expect(SETTINGS_SRC).toContain('t("manageModelsAndProviders")');
-		expect(SETTINGS_SRC).toContain("onClick={onOpenManageModels}");
+		expect(SETTINGS_SRC).toContain("<ModelsTab");
+		expect(MODELS_TAB_SRC).toContain('t("manageModelsAndProviders")');
+		expect(MODELS_TAB_SRC).toContain("onClick={onOpenManageModels}");
 	});
 
 	it("群组协作与执行设置（device-collab）集成到统一设置弹窗", () => {
@@ -78,6 +83,6 @@ describe("设置面板多引擎动态自适应（分区条件隐藏与模型中�
 	});
 
 	it("设置面板引擎卡片不渲染冗余的「可更新」文字标签（已有更新按钮，避免挤压重叠）", () => {
-		expect(SETTINGS_SRC).not.toContain('t("engineUpdateAvailable")');
+		expect(MODELS_TAB_SRC).not.toContain('t("engineUpdateAvailable")');
 	});
 });
