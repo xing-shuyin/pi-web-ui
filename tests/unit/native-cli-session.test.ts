@@ -662,7 +662,7 @@ describe("native CLI event observation", () => {
 			: (["C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Program Files\\Git\\usr\\bin\\bash.exe"].find((p) =>
 					existsSync(p),
 				) ?? null);
-	it.skipIf(process.platform === "win32" || !BASH_BIN)(
+	it.skipIf(!BASH_BIN)(
 		"runs remote preparation and bounded polling with POSIX tools and retains its scripts",
 		async () => {
 			const execute = vi.fn(
@@ -688,7 +688,7 @@ describe("native CLI event observation", () => {
 			ctx.service = { execInWorkspace: execute } as any;
 			ctx.cwd = "ssh://fixture/work";
 			const launch = await prepare("pi");
-			const directory = join(os.home, ".pi-web", "native-cli", key);
+			const directory = join(os.home, ".keel", "native-cli", key);
 			await writeFile(join(directory, "events", "100.json"), '{"eventId":"100","type":"done"}');
 			launch.start();
 			await vi.waitFor(() => expect(received).toEqual([{ type: "done", eventId: "100" }]));
