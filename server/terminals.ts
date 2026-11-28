@@ -501,8 +501,8 @@ export function queryTerminalOutput(
 
 export function stripAnsi(s: string): string {
 	return s
-		.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
-		.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "")
+		.replace(/\x1b[\]PX^_][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
+		.replace(/\x1b\[[0-9:;<=>?]*[ -/]*[@-~]/g, "")
 		.replace(/\x1b[@-_]/g, "")
 		.replace(/\r(?!\n)/g, "");
 }

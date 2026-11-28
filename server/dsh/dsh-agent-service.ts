@@ -373,6 +373,7 @@ export class DshClientSession {
 	private pendingQuestionEntry: DshRuntimeEntry | null = null;
 	private convs = new Map<string, DshConversation>();
 	private activeId = "";
+	private engineActive = true;
 	private convSeq = 0;
 	private pendingQuestion: NonNullable<UiState["pendingQuestion"]> | null = null;
 	private readonly pendingQuestionQueue: Array<{
@@ -2276,23 +2277,9 @@ export class DshClientSession {
 	}
 
 	private pushTerminals(): void {
-		const userList = this.userTerminals ? this.userTerminals.list() : [];
 		const activeConv = this.convs.get(this.activeId) ?? this.conv;
 		const convList = activeConv ? activeConv.terminals.list() : [];
-		const allTerminals = [...userList, ...convList];
-		this.emit({ type: "terminal_list", conversationId: activeConv?.id, terminals: allTerminals });
-		if (this.userTerminals) {
-			for (const output of this.userTerminals.replay()) {
-				this.emit({
-					type: "terminal_output",
-					conversationId: activeConv?.id,
-					ownerKind: "client",
-					terminalId: output.terminalId,
-					data: output.data,
-					reset: true,
-				});
-			}
-		}
+		this.emit({ type: "terminal_list", scope: "conversation", conversationId: activeConv?.id, terminals: convList });
 		if (activeConv) {
 			for (const output of activeConv.terminals.replay()) {
 				this.emit({
@@ -3399,6 +3386,21 @@ export class DshClientSession {
 		}
 	}
 
+	setEngineActive(active: boolean): void {
+		this.engineActive = active;
+		if (!active) {
+			let changed = false;
+			for (const conv of this.convs.values()) {
+				const next = this.shouldRetainDshConversation(conv);
+				if (conv.listed !== next) {
+					conv.listed = next;
+					changed = true;
+				}
+			}
+			if (changed) this.emitConversations();
+		}
+	}
+
 	async dismissConversation(id: string, _withFinishedSubagents?: boolean, force?: boolean): Promise<void> {
 		const conv = this.convs.get(id);
 		if (!conv) {
@@ -3410,7 +3412,7 @@ export class DshClientSession {
 			});
 			return;
 		}
-		if (id === this.activeId && !force) {
+		if (id === this.activeId && this.engineActive !== false && !force) {
 			this.emit({
 				type: "notice",
 				level: "warning",
@@ -3443,8 +3445,15 @@ export class DshClientSession {
 		}
 		if (id === this.activeId) {
 			const other = [...this.convs.values()].find((c) => c.id !== id);
-			if (other) await this.switchConversation(other.id);
-			else await this.newChat();
+			if (other) {
+				await this.switchConversation(other.id);
+			} else if (this.engineActive === false) {
+				const placeholder = this.addConversation(`chat-${randomUUID().slice(0, 12)}`, this.cwd, false);
+				placeholder.listed = false;
+				this.activateConversation(placeholder);
+			} else {
+				await this.newChat();
+			}
 			if (id === this.activeId) {
 				this.emit({
 					type: "notice",

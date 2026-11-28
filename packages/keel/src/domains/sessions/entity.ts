@@ -109,6 +109,13 @@ export function createSessionEntityHandlers(options: SessionEntityOptions): Sess
 				"只能打开会话目录中的对话记录",
 				"Only transcripts inside the session directory can be opened",
 			);
+			progress?.(
+				"session",
+				target,
+				"error",
+				"只能打开会话目录中的对话记录",
+				"Only transcripts inside the session directory can be opened",
+			);
 			options.frames.flush(false);
 			return Promise.resolve();
 		}
@@ -160,6 +167,13 @@ export function createSessionEntityHandlers(options: SessionEntityOptions): Sess
 					wanted ? `未找到会话：${wanted}` : "缺少会话路径",
 					wanted ? `Session not found: ${wanted}` : "Session path is missing",
 				);
+				progress?.(
+					"session",
+					wanted,
+					"error",
+					wanted ? `未找到会话：${wanted}` : "缺少会话路径",
+					wanted ? `Session not found: ${wanted}` : "Session path is missing",
+				);
 				options.frames.flush(false);
 				return Promise.resolve();
 			}
@@ -172,6 +186,13 @@ export function createSessionEntityHandlers(options: SessionEntityOptions): Sess
 					`该对话正在另一处运行中（「${owner.title}」），为避免两个 agent 同时写同一份记录，已停止打开。请等它结束后再试，或回到原窗口继续。`,
 					`This conversation is running in another window ("${owner.title}"). Opening it here would create a second writer for the same transcript, so it was blocked. Wait for it to finish, or continue in the original window.`,
 				);
+				progress?.(
+					"session",
+					target,
+					"error",
+					`该对话正在另一处运行中（「${owner.title}」）`,
+					`This conversation is running in another window ("${owner.title}")`,
+				);
 				options.frames.flush(false);
 				return Promise.resolve();
 			}
@@ -179,15 +200,22 @@ export function createSessionEntityHandlers(options: SessionEntityOptions): Sess
 				// 别处开着、没在跑：先过户（跨客户端单一写者），过完这条对话已经在本页的注册表里了。
 				// 不用 `async` 包：端口缺失的抛错必须是同步的（见函数头注释）。
 				const takeOver = options.takeOverElsewhere;
-				return takeOver({ clientId: owner.clientId, conversationId: owner.conversationId }).then(() => {
-					const moved = options.registry.bySessionFile(target);
-					if (moved) {
-						reuse(moved, target);
-						return;
-					}
-					// 过户没把对话带过来（失败/对方已关）：落回正常打开，别让动作静默消失。
-					return openTarget(target, rebind);
-				});
+				return takeOver({ clientId: owner.clientId, conversationId: owner.conversationId }).then(
+					() => {
+						const moved = options.registry.bySessionFile(target);
+						if (moved) {
+							reuse(moved, target);
+							return;
+						}
+						// 过户没把对话带过来（失败/对方已关）：落回正常打开，别让动作静默消失。
+						return openTarget(target, rebind);
+					},
+					(error) => {
+						const message = error instanceof Error ? error.message : String(error);
+						progress?.("session", target, "error", `会话加载失败：${message}`, `Failed to load session: ${message}`);
+						options.notice("error", `打开会话失败：${message}`, `Failed to open session: ${message}`);
+					},
+				);
 			}
 			if (owner && !owner.isStreaming) {
 				options.notice(

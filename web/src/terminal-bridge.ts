@@ -81,15 +81,34 @@ export function makeTerminalBridge() {
 				if (!current?.size) writers.delete(writerKey);
 			};
 		},
-		reconcile(conversationId: string, terminals: { id: string; ownerKind?: TerminalOwnerKind }[]): void {
+		reconcile(
+			conversationId: string,
+			terminals: { id: string; ownerKind?: TerminalOwnerKind }[],
+			scope?: TerminalOwnerKind,
+		): void {
 			const retained = new Set(terminals.map((t) => key(conversationId, t.id, t.ownerKind ?? "client")));
 			for (const k of buffers.keys()) {
 				const [owner, conversation] = JSON.parse(k);
-				if ((owner === "client" || conversation === conversationId) && !retained.has(k)) buffers.delete(k);
+				if (scope === "client") {
+					if (owner === "client" && !retained.has(k)) buffers.delete(k);
+				} else if (scope === "conversation") {
+					if (owner === "conversation" && conversation === conversationId && !retained.has(k)) buffers.delete(k);
+				} else if ((owner === "client" || conversation === conversationId) && !retained.has(k)) {
+					buffers.delete(k);
+				}
 			}
 		},
-		clear(): void {
-			buffers.clear();
+		clear(scope?: TerminalOwnerKind): void {
+			if (!scope) {
+				buffers.clear();
+				return;
+			}
+			for (const k of buffers.keys()) {
+				const [owner] = JSON.parse(k);
+				if (scope === "client" ? owner === "client" : owner !== "client") {
+					buffers.delete(k);
+				}
+			}
 		},
 	};
 }

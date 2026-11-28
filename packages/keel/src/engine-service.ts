@@ -136,6 +136,8 @@ export interface DispatchSession {
 	renameSession(path: string, name: string): Promise<void>;
 	renameConversation(id: string, name: string): Promise<void>;
 	dismissConversation(id: string, withFinishedSubagents?: boolean, force?: boolean): Promise<void>;
+	/** 通知引擎当前是否为连接的主激活引擎；切走时非激活引擎可清理未保留的空白对话。 */
+	setEngineActive?(active: boolean): void;
 	dismissFinishedSubagents(parentId?: string): Promise<void>;
 	persistConversation?(id: string): Promise<void>;
 	setConversationPinned?(id: string, pinned: boolean): Promise<void>;

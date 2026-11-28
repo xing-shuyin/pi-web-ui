@@ -730,18 +730,7 @@ export class UniversalSession implements DispatchSession {
 		if (defModel) {
 			send({ type: "default_model", modelId: defModel });
 		}
-		const terminals = this.terminals.list();
-		this.send({ type: "terminal_list", conversationId: this.activeConvId, terminals });
-		for (const output of this.terminals.replay()) {
-			this.send({
-				type: "terminal_output",
-				conversationId: this.activeConvId,
-				ownerKind: "client",
-				terminalId: output.terminalId,
-				data: output.data,
-				reset: true,
-			});
-		}
+		this.send({ type: "terminal_list", scope: "conversation", conversationId: this.activeConvId, terminals: [] });
 		this.bg.push();
 		void this.refreshSessions();
 		void this.pushProjects();

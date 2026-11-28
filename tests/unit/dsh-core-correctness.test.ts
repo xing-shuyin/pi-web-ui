@@ -126,4 +126,105 @@ describe("DshClientSession 核心正确性测试 (Issue #741)", () => {
 			} catch {}
 		}
 	});
+
+	it("setEngineActive(false) 会隐藏空白的 DSH 对话，切到其他引擎后不再滞留左栏", () => {
+		const emitted: any[] = [];
+		const conv = {
+			id: "dsh-empty-1",
+			sessionId: "s-empty-1",
+			title: "新对话",
+			cwd: "/work",
+			messages: [],
+			isStreaming: false,
+			listed: true,
+			promptedSinceActive: false,
+			terminals: { countBlockingLive: () => 0, countUserBlockingLive: () => 0 },
+			agentPreset: "standard",
+			presetLocked: false,
+		};
+		const session: any = Object.assign(Object.create(DshClientSession.prototype), {
+			convs: new Map([[conv.id, conv]]),
+			activeId: conv.id,
+			engineActive: true,
+			settings: {},
+			lastRunningSig: "",
+			lastPluginConversationId: conv.id,
+			emit: (msg: unknown) => emitted.push(msg),
+			guessSessionFile: () => undefined,
+			emitConversations: (DshClientSession.prototype as any).emitConversations,
+			shouldRetainDshConversation: (DshClientSession.prototype as any).shouldRetainDshConversation,
+			shownInRunningList: (DshClientSession.prototype as any).shownInRunningList,
+		});
+
+		session.setEngineActive(false);
+
+		expect(conv.listed).toBe(false);
+		const convsFrames = emitted.filter((m) => m.type === "conversations");
+		expect(convsFrames).toHaveLength(1);
+		expect(convsFrames[0].conversations).toEqual([]);
+	});
+
+	it("非激活引擎下 dismissConversation 可直接移出唯一的 DSH 对话，且不会新建 listed 对话", async () => {
+		const emitted: any[] = [];
+		const conv = {
+			id: "dsh-only-1",
+			sessionId: "s-only-1",
+			title: "新对话",
+			cwd: "/work",
+			messages: [],
+			isStreaming: false,
+			listed: true,
+			promptedSinceActive: false,
+			runtimeKey: "rk-1",
+			terminals: {
+				countBlockingLive: () => 0,
+				countUserBlockingLive: () => 0,
+				killAll: vi.fn(),
+			},
+			agentPreset: "standard",
+			presetLocked: false,
+		};
+		const placeholder = {
+			...conv,
+			id: "dsh-placeholder",
+			sessionId: "s-placeholder",
+			listed: false,
+			terminals: { countBlockingLive: () => 0, countUserBlockingLive: () => 0, killAll: vi.fn() },
+		};
+		const session: any = Object.assign(Object.create(DshClientSession.prototype), {
+			convs: new Map([[conv.id, conv]]),
+			activeId: conv.id,
+			engineActive: false,
+			cwd: "/work",
+			settings: {},
+			lastRunningSig: "",
+			lastPluginConversationId: conv.id,
+			runtimeEntries: new Map(),
+			conversationBridgeCancellations: new Map(),
+			cancelConversationBridgedTools: vi.fn(),
+			addConversation: vi.fn(() => {
+				session.convs.set(placeholder.id, placeholder);
+				return placeholder;
+			}),
+			activateConversation: (c: any) => {
+				session.activeId = c.id;
+			},
+			flushSnapshot: vi.fn(),
+			emit: (msg: unknown) => emitted.push(msg),
+			guessSessionFile: () => undefined,
+			emitConversations: (DshClientSession.prototype as any).emitConversations,
+			shouldRetainDshConversation: (DshClientSession.prototype as any).shouldRetainDshConversation,
+			shownInRunningList: (DshClientSession.prototype as any).shownInRunningList,
+			removeConversation: (DshClientSession.prototype as any).removeConversation,
+		});
+
+		await session.dismissConversation(conv.id);
+
+		expect(session.convs.has(conv.id)).toBe(false);
+		expect(session.activeId).toBe(placeholder.id);
+		expect(placeholder.listed).toBe(false);
+		const convsFrames = emitted.filter((m) => m.type === "conversations");
+		expect(convsFrames).toHaveLength(1);
+		expect(convsFrames[0].conversations).toEqual([]);
+	});
 });

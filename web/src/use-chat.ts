@@ -665,7 +665,7 @@ type Action =
 			exitCode: number | null;
 	  }
 	| { type: "terminal_restart"; terminalId: string; ownerKind?: TerminalOwnerKind; conversationId?: string }
-	| { type: "terminal_list"; conversationId?: string; terminals: TerminalInfo[] }
+	| { type: "terminal_list"; conversationId?: string; scope?: "client" | "conversation"; terminals: TerminalInfo[] }
 	| { type: "terminal_active"; id: string }
 	| { type: "terminal_cli_paste_result"; result: Extract<ServerMessage, { type: "terminal_cli_paste_result" }> }
 	| {
@@ -1480,6 +1480,28 @@ export function reducer(state: ChatState, action: Action): ChatState {
 		case "terminal_list": {
 			const activeId = state.activeConversationId || state.state?.conversationId || "";
 			const listConversationId = action.conversationId ?? activeId;
+			if (action.scope === "client") {
+				const nextClient: TerminalMeta[] = action.terminals.map((t) => ({
+					...t,
+					ownerKind: "client",
+					conversationId: "",
+				}));
+				const preservedConv = state.terminals.filter((t) => t.ownerKind === "conversation");
+				return { ...state, terminals: [...nextClient, ...preservedConv] };
+			}
+			if (action.scope === "conversation") {
+				const nextConv: TerminalMeta[] = action.terminals.map((t) => ({
+					...t,
+					ownerKind: "conversation",
+					conversationId: listConversationId,
+				}));
+				const preserved = state.terminals.filter(
+					(t) =>
+						(t.ownerKind ?? "client") === "client" ||
+						(listConversationId !== activeId && t.ownerKind === "conversation" && t.conversationId === activeId),
+				);
+				return { ...state, terminals: [...preserved, ...nextConv] };
+			}
 			const terminals: TerminalMeta[] = action.terminals.map((t) => ({
 				...t,
 				ownerKind: t.ownerKind ?? "client",
@@ -2434,7 +2456,7 @@ export function useChat() {
 					}
 					const prevEngine = chatApi.current.chat.engine;
 					if (prevEngine && msg.engine && prevEngine !== msg.engine) {
-						bridgeRef.current.clear();
+						bridgeRef.current.clear("conversation");
 					}
 					setAppGlobals({
 						engine: msg.engine ?? "pi",
@@ -3030,10 +3052,15 @@ export function useChat() {
 					});
 					break;
 				case "terminal_list":
-					bridgeRef.current.reconcile(msg.conversationId ?? chatApi.current.chat.activeConversationId, msg.terminals);
+					bridgeRef.current.reconcile(
+						msg.conversationId ?? chatApi.current.chat.activeConversationId,
+						msg.terminals,
+						msg.scope,
+					);
 					dispatch({
 						type: "terminal_list",
 						conversationId: msg.conversationId,
+						scope: msg.scope,
 						terminals: msg.terminals,
 					});
 					break;

@@ -3503,7 +3503,7 @@ export type ServerMessage =
 			exitCode: number | null;
 			ownerKind?: "client" | "conversation";
 	  }
-	| { type: "terminal_list"; conversationId?: string; terminals: TerminalInfo[] }
+	| { type: "terminal_list"; conversationId?: string; scope?: "client" | "conversation"; terminals: TerminalInfo[] }
 	| { type: "terminal_cli_paste_result"; requestId: string; terminalId: string; ok: boolean; error?: string }
 	| {
 			type: "native_cli_prompt_submitted";
@@ -4125,5 +4125,9 @@ export interface DeviceFileTransferProgress {
 }
 
 export interface DeviceFileTransferPreviewItem {
-	path: string; size: number; sha256: string; baseline: string | null; status: "create" | "identical" | "conflict";
+	path: string;
+	size: number;
+	sha256: string;
+	baseline: string | null;
+	status: "create" | "identical" | "conflict";
 }

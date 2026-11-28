@@ -210,6 +210,7 @@ import { CanvasOrchestrator } from "./canvas/canvas-orchestrator.js";
 import { executeScheduledCanvas, validateScheduledCanvas } from "./canvas/canvas-scheduled-task.js";
 import { setCanvasBroadcaster, setCanvasRuntime } from "./canvas/canvas-agent-tool.js";
 import { handleCanvasMessage } from "./canvas/canvas-dispatch.js";
+import { ClientTerminalRegistry } from "./client-terminals.js";
 import type { ClientMessage, ServerMessage } from "./protocol.js";
 
 for (const k of Object.keys(process.env)) {
@@ -2417,6 +2418,7 @@ interface SchedulerWakeEngine {
 	}) => Promise<{ ok: boolean; conversationId?: string; sessionFile?: string; error?: string }>;
 }
 
+const clientTerminals = new ClientTerminalRegistry(CWD);
 const scheduler = new SchedulerStore(DATA_DIR, {
 	validateTask: (task) => validateScheduledCanvas(DATA_DIR, task),
 	executor: async (task) => {
@@ -2840,6 +2842,7 @@ wss.on("connection", (ws) => {
 	let broker: MultiEngineBroker | null = null;
 	let attachGen = 0;
 	let snapshotRetryTimer: ReturnType<typeof setTimeout> | null = null;
+	let clientCwd = CWD;
 	/**
 	 * attach 收尾已经对新 sink 整包推过一次（新 sink 没有基线 → 必然全量），
 	 * 所以握手期间排队进来的裸 `get_state` 其答案已经在同一条有序 socket 上，
@@ -2907,6 +2910,12 @@ wss.on("connection", (ws) => {
 				msg.type === "terminal_exit")
 		)
 			return false;
+		if (msg.type === "terminal_list" && !msg.scope) {
+			msg = { ...msg, scope: "conversation" };
+		}
+		if (msg.type === "snapshot" && msg.state?.cwd) {
+			clientCwd = msg.state.cwd;
+		}
 		if (msg.type === "snapshot" || msg.type === "snapshot_delta") windowTap.setScope(`local:${clientId}`);
 		return windowTap.accept(msg);
 	};
@@ -3398,6 +3407,10 @@ wss.on("connection", (ws) => {
 			refuse(msg, { text: refusal, textEn: refusal, error: refusal }, send);
 			return;
 		}
+		if (!cid.startsWith("device-task-") && clientTerminals.handleMessage(cid, msg)) return;
+		if (msg.type === "set_cwd" && msg.path) {
+			clientCwd = msg.path;
+		}
 		if (
 			broker &&
 			(msg.type === "new_chat" ||
@@ -3416,9 +3429,42 @@ wss.on("connection", (ws) => {
 				msg.type === "remove_project" ||
 				msg.type === "rename_project")
 		) {
-			void broker.routeMessage(msg).then(({ handled, targetCs, targetService }) => {
-				if (!handled && targetCs && !closed) dispatchToSession(msg, targetCs, targetService);
-			});
+			void broker
+				.routeMessage(msg)
+				.then(({ handled, targetCs, targetService }) => {
+					if (!handled && targetCs && !closed) dispatchToSession(msg, targetCs, targetService);
+				})
+				.catch((err) => {
+					if (closed) return;
+					const message = err instanceof Error ? err.message : String(err);
+					send({
+						type: "notice",
+						level: "error",
+						text: `操作失败：${message}`,
+						textEn: `Operation failed: ${message}`,
+					});
+					if (msg.type === "switch_session" && (msg.path || msg.sessionId)) {
+						send({
+							type: "transition_progress",
+							kind: "session",
+							target: msg.path || msg.sessionId || "",
+							phase: "error",
+							progress: 100,
+							text: `会话加载失败：${message}`,
+							textEn: `Failed to load session: ${message}`,
+						});
+					} else if (msg.type === "set_cwd" && msg.path) {
+						send({
+							type: "transition_progress",
+							kind: "cwd",
+							target: msg.path,
+							phase: "error",
+							progress: 100,
+							text: `切换工作区失败：${message}`,
+							textEn: `Failed to switch workspace: ${message}`,
+						});
+					}
+				});
 			return;
 		}
 		dispatchToSession(msg, cs);
@@ -3792,6 +3838,10 @@ wss.on("connection", (ws) => {
 				});
 			}, ATTACH_SLOW_NOTICE_MS);
 			if (!cid.startsWith("device-task-")) {
+				clientTerminals.attach(cid, send, {
+					getCwd: () => clientCwd,
+					getLang: () => (broker?.getActiveSession() ?? service.get(cid))?.getLang() ?? "en",
+				});
 				broker = new MultiEngineBroker({
 					clientId: cid,
 					initialEngine: resolveClientEngine(cid),
@@ -3913,6 +3963,9 @@ wss.on("connection", (ws) => {
 		if (snapshotRetryTimer) {
 			clearTimeout(snapshotRetryTimer);
 			snapshotRetryTimer = null;
+		}
+		if (clientId) {
+			clientTerminals.detach(clientId, send);
 		}
 		if (broker) {
 			broker.dispose();
@@ -4109,6 +4162,7 @@ async function shutdown(signal: "SIGINT" | "SIGTERM" = "SIGINT"): Promise<void> 
 		pluginInstaller.dispose();
 		await mcpProjects.dispose();
 		await globalLspPool.shutdownAll();
+		clientTerminals.disposeAll();
 		await service.disposeAll();
 		await mobilePush.dispose();
 		for (const ws of wss.clients) {

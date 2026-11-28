@@ -171,6 +171,7 @@ export class MultiEngineBroker {
 					return cs;
 				}
 				entry.cs = cs;
+				cs.setEngineActive?.(engine === this.activeEngine);
 				return cs;
 			}),
 		};
@@ -378,11 +379,14 @@ export class MultiEngineBroker {
 			}
 		}
 		const seq = ++this.switchSeq;
+		const prevEngine = this.activeEngine;
 		this.activeEngine = targetEngine;
+		this.attached.get(prevEngine)?.cs?.setEngineActive?.(false);
 		this.needsFullSnapshot.add(targetEngine);
 		this.options.onEngineChanged(targetEngine);
 		const cs = await this.ensureAttached(targetEngine);
 		if (this.disposed || seq !== this.switchSeq) return null;
+		cs.setEngineActive?.(true);
 		this.options.send(this.options.buildReady(targetEngine));
 		if (!opts?.skipSnapshot) {
 			this.options.onAfterActiveAttach?.(targetEngine, cs);

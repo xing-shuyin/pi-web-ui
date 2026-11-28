@@ -163,4 +163,38 @@ describe("terminal frontend lifecycle", () => {
 		bridge.register("a", "same", replay, "conversation");
 		expect(replay.write).toHaveBeenCalledExactlyOnceWith("a");
 	});
+
+	it("scope=client 与 scope=conversation 的 terminal_list 互不覆盖，切引擎只清对话缓冲", () => {
+		const withBoth = state([
+			meta("user-1", { ownerKind: "client", conversationId: "" }),
+			meta("conv-1", { ownerKind: "conversation", conversationId: "a" }),
+		]);
+		const afterConvUpdate = reduce(withBoth, {
+			type: "terminal_list",
+			scope: "conversation",
+			conversationId: "a",
+			terminals: [],
+		});
+		expect(afterConvUpdate.terminals.map((t) => t.id)).toEqual(["user-1"]);
+
+		const afterClientUpdate = reduce(withBoth, {
+			type: "terminal_list",
+			scope: "client",
+			terminals: [meta("user-2", { ownerKind: "client" })],
+		});
+		expect(afterClientUpdate.terminals.map((t) => t.id)).toEqual(["user-2", "conv-1"]);
+
+		const bridge = makeTerminalBridge();
+		const display = () => ({ write: vi.fn(), reset: vi.fn(), dispose() {} });
+		bridge.write("", "user-1", "keep-me", true, "client");
+		bridge.write("a", "conv-1", "drop-me", true, "conversation");
+		bridge.clear("conversation");
+
+		const clientReplay = display();
+		const convReplay = display();
+		bridge.register("", "user-1", clientReplay, "client");
+		bridge.register("a", "conv-1", convReplay, "conversation");
+		expect(clientReplay.write).toHaveBeenCalledExactlyOnceWith("keep-me");
+		expect(convReplay.write).not.toHaveBeenCalled();
+	});
 });
