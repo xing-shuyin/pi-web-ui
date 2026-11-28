@@ -2,7 +2,7 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="./assets/readme/hero-dark.svg" />
     <source media="(prefers-color-scheme: light)" srcset="./assets/readme/hero.svg" />
-    <img src="./assets/readme/hero.svg" alt="pi-web-ui — Make room for better work." width="1200" />
+    <img src="./assets/readme/hero.svg" alt="keel — Make room for better work." width="1200" />
   </picture>
 </p>
 
@@ -10,9 +10,9 @@
 
 <p align="center">Conversations, tools, and collaboration in one browser or desktop workspace.</p>
 
-**English** · [简体中文](./README.zh-CN.md) · [繁體中文](./README.zh-TW.md) · [Website](https://xing-shuyin.github.io/pi-web-ui-site/) · [Docs](https://xing-shuyin.github.io/pi-web-ui-site/docs.html) · [Downloads](https://github.com/xing-shuyin/pi-web-ui/releases)
+**English** · [简体中文](./README.zh-CN.md) · [繁體中文](./README.zh-TW.md) · [Website](https://xing-shuyin.github.io/pi-web-ui-site/) · [Docs](https://xing-shuyin.github.io/pi-web-ui-site/docs.html) · [Downloads](https://github.com/xing-shuyin/keel/releases)
 
-![The pi-web-ui workspace in action](./assets/readme/workspace.gif)
+![The keel workspace in action](./assets/readme/workspace.gif)
 
 [Watch the walkthrough · MP4](./assets/readme/showcase.mp4)
 
@@ -38,7 +38,7 @@ keel .
 Open `http://127.0.0.1:8787` if the browser does not open automatically.
 In workspace settings, configure a model provider and its credentials, select a model, and send your first task.
 
-Prefer a packaged app? Choose an [Electron desktop build or Windows portable package](https://github.com/xing-shuyin/pi-web-ui/releases).
+Prefer a packaged app? Choose an [Electron desktop build or Windows portable package](https://github.com/xing-shuyin/keel/releases).
 
 [Installation guide](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#installation) · [Workspace documentation](https://xing-shuyin.github.io/pi-web-ui-site/docs.html)
 
@@ -97,8 +97,8 @@ For remote access, use the deployment guide to configure authentication and your
 To run from source:
 
 ```bash
-git clone https://github.com/xing-shuyin/pi-web-ui.git
-cd pi-web-ui
+git clone https://github.com/xing-shuyin/keel.git
+cd keel
 npm ci
 npm run dev
 ```
@@ -109,9 +109,9 @@ See the [development guide](./docs/development.md) for checks, builds, and contr
 ## Community
 
 - **QQ group:** 1126050727
-- **Bugs and feature requests:** [GitHub Issues](https://github.com/xing-shuyin/pi-web-ui/issues)
-- **Questions and ideas:** [GitHub Discussions](https://github.com/xing-shuyin/pi-web-ui/discussions)
-- **Releases:** [Downloads and release notes](https://github.com/xing-shuyin/pi-web-ui/releases)
+- **Bugs and feature requests:** [GitHub Issues](https://github.com/xing-shuyin/keel/issues)
+- **Questions and ideas:** [GitHub Discussions](https://github.com/xing-shuyin/keel/discussions)
+- **Releases:** [Downloads and release notes](https://github.com/xing-shuyin/keel/releases)
 
 Thanks to [pi](https://github.com/badlogic/pi-mono) and its contributors for the upstream coding-agent foundation.
 

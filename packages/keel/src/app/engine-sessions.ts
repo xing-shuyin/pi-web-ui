@@ -89,6 +89,11 @@ export function createEngineSessionRegistry(deps: EngineSessionDeps): SessionReg
 			] as const
 		).some((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
 
+	const pluginKeysChanged = (before: Partial<ClientSettings>, after: Partial<ClientSettings>): boolean =>
+		(["disabledPluginTools", "disabledPlugins"] as const).some(
+			(key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]),
+		);
+
 	const compactionKeysChanged = (before: Partial<ClientSettings>, after: Partial<ClientSettings>): boolean =>
 		before.softCapTokens !== after.softCapTokens ||
 		JSON.stringify(before.softCapByModel) !== JSON.stringify(after.softCapByModel);
@@ -236,9 +241,13 @@ export function createEngineSessionRegistry(deps: EngineSessionDeps): SessionReg
 				}
 			}
 			if (!gatingKeysChanged(change.before, change.settings)) return;
+			const syncPlugins = pluginKeysChanged(change.before, change.settings);
 			for (const conv of deps.getRuntime().registry.list()) {
 				const session = opened.get(conv.id)?.session;
 				if (!session || botFaceOf(conv)) continue;
+				if (syncPlugins) {
+					deps.pluginTools.syncInto(deps.clientId, conv.id, session, deps.pluginToolFilter(deps.clientId, conv));
+				}
 				gating.replay(conv, session);
 			}
 			deps.getRuntime().publisher.request();

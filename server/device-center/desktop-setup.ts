@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { writeAtomic } from "../atomic-file.js";
+import { resolveDefaultDataDir } from "../../shared/data-dir.js";
 
 export function createDesktopSetup(options: { dataDir?: string; environmentEnabled: boolean }) {
-	const settingsFile = join(resolve(options.dataDir ?? join(homedir(), ".pi-web")), "desktop-settings.json");
+	const settingsFile = join(resolveDefaultDataDir({ explicit: options.dataDir }), "desktop-settings.json");
 	const environmentEnabled = options.environmentEnabled;
 	let storedEnabled = false;
 	try {

@@ -285,6 +285,25 @@ export function subscribePluginSessionEvents(options: {
 					break;
 				}
 				case "agent_end": {
+					const lastText =
+						typeof options.session?.getLastAssistantText === "function"
+							? String(options.session.getLastAssistantText() ?? "")
+							: "";
+					if (lastText.trim()) {
+						options.onRunEvent?.({
+							type: "message",
+							conversationId: options.conv.id,
+							clientId: options.clientId,
+							sessionId: options.sessionId,
+							message: {
+								id: `${options.conv.id}:assistant:${now}`,
+								role: "assistant",
+								content: [{ type: "text", text: lastText }],
+								timestamp: now,
+							},
+							at: now,
+						});
+					}
 					options.onRunEvent?.({
 						type: "run_end",
 						conversationId: options.conv.id,

@@ -10,6 +10,34 @@
 
 ## [Unreleased]
 
+## [0.126.0] - 2026-11-28
+
+### Added
+
+- **多引擎设置工具同步与内部 MCP 桥接开关（`internalMcpEnabled`）**：Claude / Codex / Pi Durable / DSH 引擎统一支持从设置中启用或禁用宿主工具与插件工具，并支持开关内部 MCP 桥接（`pi_host`）。
+- **全局智能体指令文件管理（#1028）**：支持在设置中查看、原子化编辑与自定义管理全局智能体指令文件。
+- **项目级会话批量删除与重命名**：左栏项目右键菜单支持重命名项目与清空该项目下全部历史会话。
+- **VS Code 编辑器路径守卫与图片预览工具栏**：新增路径越界拦截及 10MB 上限的图片预览工具栏。
+
+### Changed
+
+- **默认数据目录统一与停靠终端/提问弹窗优化**：通过 `shared/data-dir.ts` 统一默认数据目录并兼容旧 `.pi-web` 目录迁移；优化底部停靠终端（`BottomDock`）与 `QuestionDialog` 交互体验。
+- **插件本地化 SDK 统一**：`plugin-sdk/client-utils.mjs` 补齐 `localStorage` 与 `<html lang>` 语言回退链；`plugins/run-trace` 升级至 `0.1.7`。
+
+### Fixed
+
+- **全引擎「设置启用工具对 AI 可见性」修复**：修复 Pi 已开会话开启插件工具未即时同步、DSH 未按设置过滤/回传 `disabledAgentTools` 与 `disabledPluginTools` 及缺少宿主桥接工具、Universal/Durable `pushSettings` 硬编码空 `disabledPluginTools` 及缺少 `bg_task` 等问题。
+- **跨引擎插件对话归属与回合收尾推送（#1032）**：修复 `pluginMgr.conversationProvider` 未按客户端当前活跃引擎过滤导致后台待命引擎覆盖快照的问题，以及回合收尾补推历史列表避免对话消失。
+
+<!-- auto-i18n:start -->
+### i18n
+
+- 前端新增 key（50）：`renameProject`、`renameProjectPlaceholder`、`projectNamePlaceholder`、`deleteAllProjectSessions`、`deleteAllProjectSessionsConfirm`、`modelQuestionOther`、`modelQuestionSubmitShort`、`globalPromptFilesTitle`、`globalPromptFilesDesc`、`globalPromptFilesHint`、`globalPromptRefresh`、`globalPromptLoading`、`globalPromptEmpty`、`globalPromptExists`、`globalPromptMissing`、`globalPromptPiHint`、`globalPromptOtherAgentHint`、`globalPromptEditorPlaceholder`、`globalPromptSave`、`globalPromptSaving`、`globalPromptSaved`、`globalPromptRevisionHint`、`globalPromptTruncated`、`globalPromptRulesDir`、`globalPromptRuleCount`、`globalPromptDirUnavailable`、`globalPromptCustomAdd`、`globalPromptCustomAddHint`、`globalPromptCustomPath`、`globalPromptCustomLabel`、`globalPromptAdd`、`globalPromptAdding`、`globalPromptRemove`、`globalPromptRemoveConfirm`、`globalPromptCustomStorageBlocked`、`globalPromptAgent_pi`、`globalPromptAgent_claude`、`globalPromptAgent_codex`、`globalPromptAgent_cursor`、`globalPromptAgent_windsurf`、`globalPromptAgent_gemini`、`globalPromptAgent_opencode`、`globalPromptAgent_qwen`、`globalPromptAgent_custom`、`globalPromptKind_system`、`globalPromptKind_append`、`globalPromptKind_context`、`globalPromptKind_rules`、`internalMcpEnabled`、`internalMcpEnabledDesc`
+- 前端删除 key（1）：`questionStep`
+- 前端中文变更（19）：`docTitle`、`hostResourcesTip`、`updateTabTitle`、`piSdkSplitNote`、`piSdkBundledNote`、`updatesAxisRuntimeNote`、`restartServiceTip`、`notifyWindowsHint`、`ttsPreviewLine`、`setupDesc`、`goalBarStaleBackend`、`deviceSetupCurrentHint`、`deviceHubLocalOnly`、`browserControlInstallStep4`、`projectTitleDesc`、`instanceNameDesc`、`pluginInspectNotPlugin`、`connectingServer`、`browserControlNoHostBridge`
+- 前端英文变更（19）：`docTitle`、`hostResourcesTip`、`updateTabTitle`、`piSdkSplitNote`、`piSdkBundledNote`、`updatesAxisRuntimeNote`、`restartServiceTip`、`notifyWindowsHint`、`ttsPreviewLine`、`setupDesc`、`goalBarStaleBackend`、`deviceSetupCurrentHint`、`deviceHubLocalOnly`、`browserControlInstallStep4`、`projectTitleDesc`、`instanceNameDesc`、`pluginInspectNotPlugin`、`connectingServer`、`browserControlNoHostBridge`
+<!-- auto-i18n:end -->
+
 ## [0.125.0] - 2026-11-27
 
 ### Added

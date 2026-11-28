@@ -255,7 +255,11 @@ export const DICT = {
 
 /** 当前界面语言（词典里存在的那一个）；解析与回退由 SDK 统一实现。 */
 export function detectLang() {
-	return createPluginI18n(DICT).locale;
+	const raw = createPluginI18n(DICT).locale.trim();
+	if (raw in DICT) return raw;
+	const lower = raw.toLowerCase();
+	if (lower === "zh" || lower.startsWith("zh-") || lower.startsWith("zh_")) return "zh";
+	return "en";
 }
 
 /** 取文案函数；语言可以是字符串、undefined（跟随界面）或惰性 getter，每次调用时按当前语言解析。 */

@@ -1,5 +1,5 @@
 /**
- * pi-web-ui server entry.
+ * keel server entry.
  *
  * - Serves the built frontend (web/dist) in production; in dev, Vite serves it
  *   on :5173 and proxies /ws to this server.
@@ -19,6 +19,7 @@
 // 必须排在所有 import 之前：先装上「Windows 不弹控制台」进程级开关，后面求值的模块
 // （含 module 作用域里的 `promisify(execFile)` 捕获、插件里的 spawn）才都吃到它。
 import "../shared/hide-console-windows.js";
+import { resolveDefaultDataDir } from "../shared/data-dir.js";
 import { sleep } from "./async-utils.js";
 import { botExecutionMessageAllowed } from "./device-center/bot-execution.js";
 import { createBotDraftStore, normalizeBotDraft } from "./device-center/bot-drafts.js";
@@ -233,7 +234,7 @@ function cliFlag(name: string): string | undefined {
 }
 
 const CWD = resolve(cliFlag("--cwd") ?? process.env.PI_WEB_CWD ?? process.cwd());
-const DATA_DIR = resolve(cliFlag("--data-dir") ?? process.env.PI_WEB_DATA_DIR ?? join(homedir(), ".pi-web"));
+const DATA_DIR = resolveDefaultDataDir({ explicit: cliFlag("--data-dir") });
 try {
 	mkdirSync(DATA_DIR, { recursive: true });
 } catch (err) {
@@ -255,7 +256,7 @@ try {
 	if (resolve(CWD) === resolve(homedir())) {
 		console.warn(
 			`[ws] 工作区为用户主目录 ${CWD}：目录扫描可能因外部卷/同步盘挂载而长时间阻塞，` +
-				`建议用 \`pi-web-ui server install --cwd <项目目录>\` 重装迁移。`,
+				`建议用 \`keel server install --cwd <项目目录>\` 重装迁移。`,
 		);
 	}
 } catch {}
@@ -1909,7 +1910,13 @@ function ensureEngine(engine: EngineId): EngineService {
 			agentDir: getAgentDir(),
 			// 设置/项目/模型记忆的唯一写者：进程里共用这一份（两套实例写同一个文件会互相覆盖）。
 			stateStore: sharedStateStore,
-			modelAdmin: (sinks) => createCoreModelAdmin({ agentDir: getAgentDir(), ...sinks }),
+			modelAdmin: (sinks) =>
+				createCoreModelAdmin({
+					agentDir: getAgentDir(),
+					...sinks,
+					extraProviderIds: () =>
+						(piServiceInstance as { registeredProviderIds?: () => string[] } | null)?.registeredProviderIds?.() ?? [],
+				}),
 			// 远程工作区里的内置写/编辑工具要用 SFTP：只有宿主知道怎么建这些操作。
 			terminalManager: ({ emit, cwd, lang }) => new TerminalManager(emit, cwd, lang),
 			remoteOpsOf: (cwd) => (isRemoteWorkspaceUri(cwd) ? createRemoteSdkOperations(cwd) : undefined),
@@ -2559,9 +2566,18 @@ pluginMgr.conversationProvider = (opts) => {
 			return null;
 		}
 	}
-	const snapshots = activeEngines().map((svc) => {
+	const entries: Array<[EngineId, EngineService]> = [
+		...(piServiceInstance ? ([["pi", piServiceInstance]] as Array<[EngineId, EngineService]>) : []),
+		...(dshServiceInstance ? ([["dsh", dshServiceInstance]] as Array<[EngineId, EngineService]>) : []),
+		...(claudeServiceInstance ? ([["claude", claudeServiceInstance]] as Array<[EngineId, EngineService]>) : []),
+		...(codexServiceInstance ? ([["codex", codexServiceInstance]] as Array<[EngineId, EngineService]>) : []),
+		...(agyServiceInstance ? ([["agy", agyServiceInstance]] as Array<[EngineId, EngineService]>) : []),
+		...(durableServiceInstance ? ([["durable", durableServiceInstance]] as Array<[EngineId, EngineService]>) : []),
+	];
+	const snapshots = entries.map(([id, svc]) => {
 		try {
-			return svc.readConversationForPlugins?.() ?? null;
+			const snap = svc.readConversationForPlugins?.() ?? null;
+			return snap && resolveClientEngine(snap.clientId) === id ? snap : null;
 		} catch {
 			return null;
 		}
@@ -2751,14 +2767,14 @@ function scheduleQuit(): boolean {
 	const inDocker = existsSync("/.dockerenv");
 	if (isLaunchd || isSystemd || isWinWatchdog || inDocker) {
 		setTimeout(() => {
-			console.log("pi-web-ui:quit — shutting down (supervisor will restart)…");
+			console.log("keel:quit — shutting down (supervisor will restart)…");
 			if (isSystemd) process.exit(3);
 			void shutdown();
 		}, 300);
 		return true;
 	}
 	setTimeout(() => {
-		console.log("pi-web-ui:quit — shutting down (restart to reload)…");
+		console.log("keel:quit — shutting down (restart to reload)…");
 		void shutdown();
 	}, 300);
 	return true;
@@ -3392,6 +3408,7 @@ wss.on("connection", (ws) => {
 				msg.type === "rename_conversation" ||
 				msg.type === "pin_conversation" ||
 				msg.type === "delete_session" ||
+				msg.type === "delete_project_sessions" ||
 				msg.type === "rename_session" ||
 				msg.type === "pin_session" ||
 				msg.type === "list_sessions" ||
@@ -3645,9 +3662,9 @@ wss.on("connection", (ws) => {
 						send({
 							type: "notice",
 							level: "error",
-							text: "当前实例不是由 pi-web-ui 服务启动的（前台运行），无法自动重启；请在终端里重启，或先用 pi-web-ui server install 安装服务。",
+							text: "当前实例不是由 keel 服务启动的（前台运行），无法自动重启；请在终端里重启，或先用 keel server install 安装服务。",
 							textEn:
-								"This instance runs in the foreground, not as a pi-web-ui service — nothing would bring it back. Restart it in its terminal, or install the service with `pi-web-ui server install`.",
+								"This instance runs in the foreground, not as a keel service — nothing would bring it back. Restart it in its terminal, or install the service with `keel server install`.",
 						});
 						break;
 					}
@@ -4114,8 +4131,8 @@ async function shutdown(signal: "SIGINT" | "SIGTERM" = "SIGINT"): Promise<void> 
 process.on("SIGINT", () => void shutdown("SIGINT"));
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 process.on("unhandledRejection", (reason: unknown) => {
-	console.error("[pi-web-ui] Unhandled Promise Rejection:", reason);
+	console.error("[keel] Unhandled Promise Rejection:", reason);
 });
 process.on("uncaughtException", (err: Error) => {
-	console.error("[pi-web-ui] Uncaught Exception:", err);
+	console.error("[keel] Uncaught Exception:", err);
 });

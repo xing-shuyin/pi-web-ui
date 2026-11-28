@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { sleep } from "./async-utils.js";
+import { resolveDefaultDataDir } from "../shared/data-dir.js";
 import { chmodSync, existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
@@ -46,7 +47,7 @@ export interface CommandsFile {
 
 export function commandsFilePath(workspaceRoot: string): string {
 	if (isRemoteWorkspaceUri(workspaceRoot)) {
-		const dataDir = process.env.PI_WEB_DATA_DIR || join(homedir(), ".pi-web");
+		const dataDir = resolveDefaultDataDir();
 		return join(resolveWorkspaceSessionDir(dataDir, workspaceRoot), ".pi", "commands.json");
 	}
 	return join(workspaceRoot, ".pi", "commands.json");
@@ -531,7 +532,7 @@ function resolveShell(): { shell: string; args: string[] } {
 		]) {
 			if (cand && existsSync(cand)) return { shell: cand, args: ["-i"] };
 		}
-		const busybox = join(homedir(), ".pi-web", "bin", "bash.exe");
+		const busybox = join(resolveDefaultDataDir(), "bin", "bash.exe");
 		if (existsSync(busybox)) return { shell: busybox, args: ["-i"] };
 		return { shell: process.env.COMSPEC || "powershell.exe", args: [] };
 	}
@@ -552,7 +553,7 @@ function resolveBashShell(): { shell: string; args: string[] } {
 		]) {
 			if (cand && existsSync(cand)) return { shell: cand, args: ["-i"] };
 		}
-		const busybox = join(homedir(), ".pi-web", "bin", "bash.exe");
+		const busybox = join(resolveDefaultDataDir(), "bin", "bash.exe");
 		if (existsSync(busybox)) return { shell: busybox, args: ["-i"] };
 	}
 	const she = process.env.SHELL;

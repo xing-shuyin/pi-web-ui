@@ -1,5 +1,5 @@
 <!-- prettier-ignore-start -->
-# AGENTS.md — pi-web-ui 关键功能 → 事实源 → 文档
+# AGENTS.md — keel 关键功能 → 事实源 → 文档
 
 > **本文件只做映射与索引，不写细则**：想知道某块能力怎么改、有哪些禁令，按下表去读 `docs/` 对应文档。
 > 新规则请写进对应 `docs/`（红线细则执行 [`docs/agent-rules.md`](docs/agent-rules.md)），**不要再往本文件堆段落**——体积与死链由 `tests/unit/agents-md.test.ts` 守卫。
@@ -67,7 +67,7 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | 开发工作流 / CI | [`development.md`](docs/development.md) | `npm run dev` · `npm run typecheck` · `npm run lint` · `npm test` · `npm run test:smoke` · `npm run ci:local`（本地复刻 CI 门禁） |
 | 测试规范 | [`development.md`](docs/development.md) | 端口 ≥8900、data-dir `mkdtemp`、禁 `pkill -f`、冒烟禁用 `ensure-build.mjs` |
 | 发布 | [`release.md`](docs/release.md) | `npm run changelog:i18n` → commit → tag `vX.Y.Z`（自动出说明/桌面/扩展/手机 APK）→ `npm run release:npm` → `npm run release:check` |
-| 部署 | [`deployment.md`](docs/deployment.md) | `pi-web-ui server install` · `docker compose up -d` |
+| 部署 | [`deployment.md`](docs/deployment.md) | `keel server install` · `docker compose up -d` |
 | 环境变量全表 | [`env-vars.md`](docs/env-vars.md) | `PI_WEB_PORT` · `PI_WEB_HOST` · `PI_WEB_CWD` · `PI_WEB_DATA_DIR` · `PI_WEB_TOKEN` · `PI_WEB_SDK` |
 
 ## 3. 红线（细则见 `docs/agent-rules.md`，守卫均对应 `tests/unit/<守卫>.test.ts`）

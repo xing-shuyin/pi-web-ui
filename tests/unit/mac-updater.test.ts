@@ -38,7 +38,7 @@ afterEach(() => {
 });
 
 describe("desktop/mac-updater", () => {
-	it("resolveMacAppBundlePath parses .app bundle from execPath", () => {
+	it.skipIf(process.platform === "win32")("resolveMacAppBundlePath parses .app bundle from execPath", () => {
 		expect(resolveMacAppBundlePath("/Applications/keel.app/Contents/MacOS/keel")).toBe("/Applications/keel.app");
 		expect(
 			resolveMacAppBundlePath("/Applications/My App.app/Contents/Frameworks/Helper.app/Contents/MacOS/Helper"),
@@ -46,23 +46,26 @@ describe("desktop/mac-updater", () => {
 		expect(resolveMacAppBundlePath("/usr/local/bin/node")).toBeNull();
 	});
 
-	it("validateMacSelfUpdateTarget rejects AppTranslocation and unwritable dirs", () => {
-		expect(() => validateMacSelfUpdateTarget("/private/var/folders/xx/AppTranslocation/abc/d/keel.app")).toThrow(
-			/App Translocation/i,
-		);
+	it.skipIf(process.platform === "win32")(
+		"validateMacSelfUpdateTarget rejects AppTranslocation and unwritable dirs",
+		() => {
+			expect(() => validateMacSelfUpdateTarget("/private/var/folders/xx/AppTranslocation/abc/d/keel.app")).toThrow(
+				/App Translocation/i,
+			);
 
-		const dir = makeTempDir("mac-updater-perm-");
-		const appDir = join(dir, "keel.app");
-		mkdirSync(appDir);
-		validateMacSelfUpdateTarget(appDir);
+			const dir = makeTempDir("mac-updater-perm-");
+			const appDir = join(dir, "keel.app");
+			mkdirSync(appDir);
+			validateMacSelfUpdateTarget(appDir);
 
-		chmodSync(dir, 0o555);
-		try {
-			expect(() => validateMacSelfUpdateTarget(appDir)).toThrow(/permission denied/i);
-		} finally {
-			chmodSync(dir, 0o755);
-		}
-	});
+			chmodSync(dir, 0o555);
+			try {
+				expect(() => validateMacSelfUpdateTarget(appDir)).toThrow(/permission denied/i);
+			} finally {
+				chmodSync(dir, 0o755);
+			}
+		},
+	);
 
 	it("parseLatestMacYml selects matching arch zip", () => {
 		const yml = [

@@ -208,7 +208,10 @@ function reconcile(weights: Weights, usedTokens: number): ContextCategoryUsage[]
  *   总量上（分类之和 = `contextUsage.tokens`）；
  * - `softCap` 是宿主设置语义（软上限来自设置层）：内核不写。视图里宿主给了 `stats` 就以宿主为准。
  */
-export function statsOfSession(session: unknown): UiState["stats"] | undefined {
+export function statsOfSession(
+	session: unknown,
+	softCapSettings?: { softCapTokens?: number; softCapByModel?: Record<string, number> },
+): UiState["stats"] | undefined {
 	const source = session as SessionStatsSource | undefined;
 	if (!source) return undefined;
 	const stats = rawStats(source) ?? tolerantStats(source.messages);
@@ -236,6 +239,16 @@ export function statsOfSession(session: unknown): UiState["stats"] | undefined {
 			: contextTokens !== null && contextWindow > 0
 				? (contextTokens / contextWindow) * 100
 				: null;
+	let softCapField: { softCap: number | null } | undefined;
+	if (softCapSettings) {
+		const m = (source as { model?: { provider?: unknown; id?: unknown } }).model;
+		const modelId =
+			m && typeof m.provider === "string" && typeof m.id === "string" ? `${m.provider}/${m.id}` : undefined;
+		const per = modelId ? softCapSettings.softCapByModel?.[modelId.trim()] : undefined;
+		const globalCap = softCapSettings.softCapTokens ?? 0;
+		const cap = per !== undefined && per > 0 ? per : globalCap > 0 ? globalCap : 0;
+		softCapField = { softCap: cap > 0 ? cap : null };
+	}
 	return {
 		totalMessages: count(stats.totalMessages),
 		tokens: {
@@ -250,6 +263,7 @@ export function statsOfSession(session: unknown): UiState["stats"] | undefined {
 			tokens: contextTokens,
 			contextWindow,
 			percent,
+			...softCapField,
 			...(estimated ? { estimated: true } : {}),
 			...(categories && categories.length > 0 ? { categories } : {}),
 		},

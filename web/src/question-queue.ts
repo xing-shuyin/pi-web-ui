@@ -12,7 +12,10 @@ export function questionNavigation(question: QueueQuestion): ClientMessage | und
 
 export function questionWaitTime(createdAt: number, now: number): string | undefined {
 	if (!Number.isFinite(createdAt) || createdAt <= 0) return undefined;
-	const seconds = Math.max(0, Math.floor((now - createdAt) / 1000));
+	const ts = now > 1e12 && createdAt > 1e9 && createdAt < 1e11 ? createdAt * 1000 : createdAt;
+	const diffMs = Math.max(0, now - ts);
+	if (diffMs > 30 * 24 * 3600 * 1000) return undefined;
+	const seconds = Math.floor(diffMs / 1000);
 	const minutes = Math.floor(seconds / 60);
 	const tail = String(seconds % 60).padStart(2, "0");
 	return minutes < 60

@@ -26,6 +26,10 @@ export function QuestionQueue({ questions, activeConversationId, currentCwd, mod
 		const message = questionNavigation(q);
 		if (message) appSend(message);
 	};
+	const canNav = (q: QueueQuestion) =>
+		!!(q.rootConversationId || q.conversationId) &&
+		(!!q.owner ||
+			(q.conversationId ? q.conversationId !== activeConversationId : !isCurrentQuestion(q, activeConversationId)));
 	return (
 		<PendingQueue
 			items={presentablePending(
@@ -48,22 +52,22 @@ export function QuestionQueue({ questions, activeConversationId, currentCwd, mod
 				(q.global || mode === "all" || q.conversationId === activeConversationId || !q.conversationId)
 			}
 			onNavigate={navigate}
-			canNavigate={(q) =>
-				!!(q.rootConversationId || q.conversationId) &&
-				(!!q.owner ||
-					(q.conversationId ? q.conversationId !== activeConversationId : !isCurrentQuestion(q, activeConversationId)))
-			}
+			canNavigate={canNav}
 		>
-			{(selected, defer) => (
-				<QuestionDialog
-					key={questionQueueKey(selected)}
-					question={selected}
-					owner={selected.owner}
-					project={projectOf(selected)}
-					onDefer={defer}
-					onNavigate={selected.rootConversationId || selected.conversationId ? () => navigate(selected) : undefined}
-				/>
-			)}
+			{(selected, defer) => {
+				const showSource = canNav(selected) || Boolean(projectOf(selected));
+				const dialogQuestion = showSource ? selected : { ...selected, conversationTitle: undefined };
+				return (
+					<QuestionDialog
+						key={questionQueueKey(selected)}
+						question={dialogQuestion}
+						owner={selected.owner}
+						project={projectOf(selected)}
+						onDefer={defer}
+						onNavigate={canNav(selected) ? () => navigate(selected) : undefined}
+					/>
+				);
+			}}
 		</PendingQueue>
 	);
 }

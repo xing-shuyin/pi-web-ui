@@ -187,11 +187,20 @@ export async function openTurnSession(opts: OpenSessionOptions): Promise<OpenedS
 				? { resourceLoaderOptions: { extensionFactories: [createPromptRenderExtension(opts.promptRender)] } }
 				: {}),
 		});
+		const extensionToolNames = [...(services?.resourceLoader?.getExtensions?.()?.extensions ?? [])].flatMap((ext) =>
+			ext.tools instanceof Map ? [...ext.tools.keys()] : [],
+		);
+		const customToolNames = (opts.customTools ?? [])
+			.map((t) => (t && typeof t === "object" && "name" in t && typeof t.name === "string" ? t.name : ""))
+			.filter(Boolean);
+		const allowedTools = opts.tools
+			? [...new Set([...opts.tools, ...extensionToolNames, ...customToolNames])]
+			: undefined;
 		session = (
 			await createAgentSessionFromServices({
 				services,
 				sessionManager: manager,
-				...(opts.tools ? { tools: [...opts.tools] } : {}),
+				...(allowedTools ? { tools: allowedTools } : {}),
 				...(opts.customTools ? { customTools: [...opts.customTools] as ToolDefinition[] } : {}),
 			})
 		).session;

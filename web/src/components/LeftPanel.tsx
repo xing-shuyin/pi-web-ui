@@ -23,7 +23,6 @@ import {
 } from "../project-order-settings";
 import { DeviceGroupSection } from "./DeviceGroupSection";
 import { AgentBotsSection } from "./AgentBotsSection";
-import { NativeCliCreateEntry } from "./NativeCliCreateModal";
 import {
 	FiCheck,
 	FiChevronDown,
@@ -41,7 +40,7 @@ import {
 	FiTerminal,
 	FiX,
 } from "react-icons/fi";
-import { LuFlaskConical } from "react-icons/lu";
+import { LuFlaskConical, LuFolder, LuFolderOpen } from "react-icons/lu";
 import type {
 	ConversationSummary,
 	ElsewhereRunning,
@@ -78,7 +77,6 @@ import { buildSessionDeepLink, extractSessionIdFromPath } from "../session-url";
 import { SessionIdentityIndex, sessionLookupKeys } from "../session-identity";
 import {
 	clearCachedProject,
-	clearCachedSession,
 	clearLastCwdIfMatches,
 	isProjectPendingRemoval,
 	isSessionMatchingProject,
@@ -116,7 +114,8 @@ interface LeftPanelProps {
 			| { type: "remove_project"; path: string }
 			| { type: "rename_project"; path: string; name: string }
 			| { type: "destroy_sandbox"; path: string }
-			| { type: "delete_session"; path: string }
+			| { type: "delete_session"; path: string; engine?: EngineId }
+			| { type: "delete_project_sessions"; path: string }
 			| { type: "rename_session"; path: string; name: string }
 			| { type: "rename_conversation"; id: string; name: string }
 			| { type: "dismiss_conversation"; id: string; withFinishedSubagents?: boolean; force?: boolean; owner?: string }
@@ -2030,22 +2029,66 @@ export const LeftPanel = memo(function LeftPanel({
 		}
 	};
 
+	const projDelArmedRef = useRef<string | null>(null);
 	const projectMenuAvailable = contextMenuItems(uiContextProject ?? []).length > 0;
+	const openProjectMenuAt = useCallback(
+		(x: number, y: number, project: ProjectSummary) => {
+			const sbx = Boolean(project.sandbox);
+			const armed = projDelArmedRef.current === project.path;
+			const entries = (uiContextProject ?? []).map((entry) => {
+				if (entry.source !== "host") return entry;
+				if (entry.id === "host:proj-rename" && sbx) return { ...entry, hidden: true };
+				if (entry.id === "host:proj-delete-all-sessions" && armed) {
+					return { ...entry, label: t("deleteAllProjectSessionsConfirm") };
+				}
+				return entry;
+			});
+			if (contextMenuItems(entries).length === 0) return;
+			openContextMenu({
+				x,
+				y,
+				slot: "contextmenu.project",
+				target: { id: project.path, kind: "project", label: projectDisplayName(project) },
+				entries,
+				onHostAction: (entry, tgt) => {
+					if (entry.id === "host:proj-new-chat") {
+						projDelArmedRef.current = null;
+						panelSend({ type: "new_chat", cwd: tgt.id });
+						focusComposer();
+						return;
+					}
+					if (entry.id === "host:proj-rename") {
+						projDelArmedRef.current = null;
+						setConfirmDel(null);
+						setRenameDraft(project.name ?? "");
+						setRenaming(`proj:${tgt.id}`);
+						return;
+					}
+					if (entry.id === "host:proj-delete-all-sessions") {
+						if (projDelArmedRef.current !== tgt.id) {
+							projDelArmedRef.current = tgt.id;
+							openProjectMenuAt(x, y, project);
+							return true;
+						}
+						projDelArmedRef.current = null;
+						panelSend({ type: "delete_project_sessions", path: tgt.id });
+						return;
+					}
+				},
+			});
+		},
+		[uiContextProject, panelSend, focusComposer, t],
+	);
 	const openProjectMenu = useCallback(
 		(e: React.MouseEvent, project: ProjectSummary) => {
 			if (isEditableTarget(e.target)) return;
 			if (!projectMenuAvailable) return;
+			projDelArmedRef.current = null;
 			e.preventDefault();
 			e.stopPropagation();
-			openContextMenu({
-				x: e.clientX,
-				y: e.clientY,
-				slot: "contextmenu.project",
-				target: { id: project.path, kind: "project", label: projectDisplayName(project) },
-				entries: uiContextProject ?? [],
-			});
+			openProjectMenuAt(e.clientX, e.clientY, project);
 		},
-		[projectMenuAvailable, uiContextProject],
+		[projectMenuAvailable, openProjectMenuAt],
 	);
 
 	const delButton = (
@@ -2332,8 +2375,11 @@ export const LeftPanel = memo(function LeftPanel({
 				)}
 				{!isStreaming &&
 					delButton(`sess:${s.path}`, t("deleteSession"), t("deleteSessionConfirm"), () => {
-						clearCachedSession(s.path, currentCwd);
-						panelSend({ type: "delete_session", path: s.path });
+						panelSend({
+							type: "delete_session",
+							path: s.path,
+							...(s.engine ? { engine: s.engine } : {}),
+						});
 					})}
 				{renderInlineEntries(historyRowEntries, "lp-slot-sessions")}
 			</div>
@@ -2999,6 +3045,7 @@ export const LeftPanel = memo(function LeftPanel({
 							>
 								<FiPlus aria-hidden="true" />
 								<span>{t("newChatAction")}</span>
+								<EngineGlyph engine={engine} className="lp-new-chat-engine-glyph" />
 							</button>
 							<button
 								type="button"
@@ -3473,15 +3520,7 @@ export const LeftPanel = memo(function LeftPanel({
 														}}
 														title={isCollapsed ? t("expandSection") : t("collapseSection")}
 													>
-														<svg
-															width="11"
-															height="11"
-															viewBox="0 0 12 12"
-															fill="currentColor"
-															style={{ display: "block" }}
-														>
-															<path d="M2.5 4h7l-3.5 5z" />
-														</svg>
+														{isCollapsed ? <LuFolder size={14} /> : <LuFolderOpen size={14} />}
 													</span>
 													{sbx && <LuFlaskConical className="project-icon sandbox-icon" />}
 													{renaming === `proj:${p.path}` ? (
@@ -3515,7 +3554,7 @@ export const LeftPanel = memo(function LeftPanel({
 															}
 														/>
 													) : (
-														<span className="lp-project-name" title={dispName}>
+														<span className="lp-project-name" title={p.path}>
 															{projectEnv.label}
 														</span>
 													)}
@@ -3565,20 +3604,18 @@ export const LeftPanel = memo(function LeftPanel({
 															<FiEdit2 />
 														</button>
 													)}
-													<NativeCliCreateEntry cwd={p.path} onCreateCli={onCreateCli}>
-														<button
-															type="button"
-															className="lp-project-btn lp-project-new-chat-btn"
-															title={t("newChat")}
-															onClick={(e) => {
-																e.stopPropagation();
-																panelSend({ type: "new_chat", cwd: p.path });
-																focusComposer();
-															}}
-														>
-															<FiPlus />
-														</button>
-													</NativeCliCreateEntry>
+													<button
+														type="button"
+														className="lp-project-btn lp-project-new-chat-btn"
+														title={t("newChat")}
+														onClick={(e) => {
+															e.stopPropagation();
+															panelSend({ type: "new_chat", cwd: p.path });
+															focusComposer();
+														}}
+													>
+														<FiPlus />
+													</button>
 													<button
 														type="button"
 														className={`lp-project-btn lp-project-del-btn ${confirmDel === `proj:${p.path}` ? "confirm danger" : ""}`}

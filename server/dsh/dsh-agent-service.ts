@@ -63,6 +63,13 @@ import { bilingual, pick, resolveServerLang, type ServerLang } from "../i18n.js"
 import { ModelAdminService } from "../model-admin.js";
 import { normalizeToolInfo, unsupportedToolInfo } from "../tool-info.js";
 import { TerminalManager, loadCommands, saveCommandsFile } from "../terminals.js";
+import { makePresentFilesTool } from "../present-files-tool.js";
+import { makeLspTool } from "../lsp-tool.js";
+import { makePatchTool } from "../patch-tool.js";
+import { makeAgentBotTool } from "../device-center/bot-creation-tool.js";
+import { makeBgTaskTool } from "../../packages/keel/src/adapters/tools/bg-task.js";
+import { effectiveDisabledAgentTools, normalizeDisabledAgentTools } from "../../packages/keel/src/tool-catalog.js";
+import { normalizeDisabledPluginTools } from "../../packages/keel/src/settings-normalize.js";
 import { saveUpload } from "../uploads.js";
 import type { PluginCommandDef } from "../plugins.js";
 import { checkAll as checkAllUpdates, collectTargets, resolveNpmRegistry } from "../update-check.js";
@@ -720,14 +727,17 @@ export class DshClientSession {
 
 	private runtimeEntryForRuntime(runtime: DshRuntime): DshRuntimeEntry | undefined {
 		if (this.fallbackRuntimeEntry?.runtime === runtime) return this.fallbackRuntimeEntry;
-		for (const entry of this.runtimeEntries.values()) {
+		for (const entry of this.runtimeEntries?.values() ?? []) {
 			if (entry.runtime === runtime) return entry;
 		}
 		return undefined;
 	}
 
 	private fallbackRuntime(): DshRuntimeEntry {
-		if (this.fallbackRuntimeEntry) return this.fallbackRuntimeEntry;
+		if (this.fallbackRuntimeEntry) {
+			this.fallbackRuntimeEntry.runtime = this.runtime;
+			return this.fallbackRuntimeEntry;
+		}
 		const key = this.runtimeKeyFor(this.cwd, this.modelProvider, this.model);
 		this.fallbackRuntimeEntry = {
 			key,
@@ -1095,7 +1105,7 @@ export class DshClientSession {
 		return entry;
 	}
 
-	private attachRuntimeEvents(entry: DshRuntimeEntry): void {
+	private attachRuntimeEvents(entry: DshRuntimeEntry = this.fallbackRuntime()): void {
 		entry.runtime.onNotification((method, params) => {
 			if (this.disposed || entry.stopping) return;
 			try {
@@ -1304,7 +1314,8 @@ export class DshClientSession {
 		entry.resolve(ok ? { ok: true, result } : { ok: false, error: error?.trim() || "page_request failed" });
 	}
 
-	private builtinBridgedTools(conversationId?: string): unknown[] {
+	private builtinBridgedTools(conversationId?: string, cwd = this.cwd): unknown[] {
+		const lang = (): ServerLang => this.getLang();
 		const pageClient = {
 			pageCall: (req: PageCallRequest, sig: { aborted?: boolean }, convId?: string) =>
 				this.pageCall(req, sig, convId ?? conversationId),
@@ -1313,11 +1324,31 @@ export class DshClientSession {
 			makeBrowserPageTool(pageClient, conversationId),
 			makeBrowserScriptTool(pageClient, conversationId),
 			makeBrowserDesignTool(pageClient, conversationId),
+			makePresentFilesTool(cwd, { getLang: lang }),
+			makeLspTool({ cwd, ownerId: this.clientId, lang }),
+			makePatchTool({ cwd, ownerId: this.clientId, lang }),
+			makeAgentBotTool(),
+			makeBgTaskTool({
+				background: () =>
+					this.backgroundTasks
+						? ({
+								listJobs: () =>
+									this.backgroundTasks!.rows(this.clientId).map((r) => ({
+										id: r.taskId ?? String(r.pid ?? ""),
+										pid: r.pid ?? 0,
+										command: r.command ?? r.name ?? r.taskId ?? "",
+										since: r.since,
+										logPath: r.logPath ?? "",
+									})),
+								killJob: (id: string) => ({ ok: Boolean(this.backgroundTasks!.killJob(this.clientId, id)) }),
+							} as unknown as import("../../packages/keel/src/contracts/background.js").BackgroundPort)
+						: undefined,
+			}),
 		];
 	}
 
 	private isInternalMcpEnabled(): boolean {
-		return this.stateStore.getSettingsSnapshot(this.clientId).internalMcpEnabled !== false;
+		return this.stateStore?.getSettingsSnapshot?.(this.clientId)?.internalMcpEnabled !== false;
 	}
 
 	private listMcpServers(cwd = this.cwd) {
@@ -1411,7 +1442,8 @@ export class DshClientSession {
 			: [...new Set([this.runtime, ...[...this.runtimeEntries.values()].map((e) => e.runtime)])];
 		for (const target of targets) {
 			if (!target?.alive) continue;
-			const prev = this.toolSyncQueues.get(target) ?? Promise.resolve();
+			const queues = (this.toolSyncQueues ??= new Map());
+			const prev = queues.get(target) ?? Promise.resolve();
 			const next = prev
 				.catch(() => {})
 				.then(async () => {
@@ -1429,17 +1461,20 @@ export class DshClientSession {
 						target.cwd,
 						...(entry ? [...entry.conversationIds].map((id) => this.convs.get(id)?.cwd).filter(Boolean) : []),
 					]);
+					const snap = this.stateStore?.getSettingsSnapshot?.(this.clientId);
+					const disabledAgent = new Set(snap ? effectiveDisabledAgentTools(snap) : []);
+					const disabledPlugin = new Set(normalizeDisabledPluginTools(snap?.disabledPluginTools));
 					const tools = new Map<string, NonNullable<ReturnType<DshClientSession["bridgedTool"]>>>();
-					for (const raw of this.builtinBridgedTools()) {
+					for (const raw of this.builtinBridgedTools(undefined, target.cwd)) {
 						const tool = this.bridgedTool(raw);
-						if (tool && !tools.has(tool.name)) tools.set(tool.name, tool);
+						if (tool && !disabledAgent.has(tool.name) && !tools.has(tool.name)) tools.set(tool.name, tool);
 					}
 					if (provider) {
 						for (const cwd of cwds) {
 							if (!cwd) continue;
 							for (const raw of provider(cwd) ?? []) {
 								const tool = this.bridgedTool(raw);
-								if (tool && !tools.has(tool.name)) tools.set(tool.name, tool);
+								if (tool && !disabledPlugin.has(tool.name) && !tools.has(tool.name)) tools.set(tool.name, tool);
 							}
 						}
 					}
@@ -1454,7 +1489,7 @@ export class DshClientSession {
 						console.error(`[dsh] syncPluginTools 失败 (client=${this.clientId}):`, err);
 					}
 				});
-			this.toolSyncQueues.set(target, next);
+			queues.set(target, next);
 			await next;
 		}
 	}
@@ -1540,7 +1575,18 @@ export class DshClientSession {
 				);
 				return;
 			}
-			const candidates = [...this.builtinBridgedTools(conv?.id), ...(this.pluginToolsProvider?.(cwd) ?? [])];
+			const snap = this.stateStore?.getSettingsSnapshot?.(this.clientId);
+			const disabledAgent = new Set(snap ? effectiveDisabledAgentTools(snap) : []);
+			const disabledPlugin = new Set(normalizeDisabledPluginTools(snap?.disabledPluginTools));
+			const builtins = this.builtinBridgedTools(conv?.id, cwd).filter((t) => {
+				const n = (t as { name?: unknown })?.name;
+				return typeof n === "string" && !disabledAgent.has(n);
+			});
+			const plugins = (this.pluginToolsProvider?.(cwd) ?? []).filter((t) => {
+				const n = (t as { name?: unknown })?.name;
+				return typeof n === "string" && !disabledPlugin.has(n);
+			});
+			const candidates = [...builtins, ...plugins];
 			const tool = this.bridgedTool(candidates.find((t) => (t as { name?: unknown }).name === name));
 			if (!tool) {
 				await runtime.toolsCallResult(
@@ -4590,9 +4636,9 @@ export class DshClientSession {
 			customSystemPrompt: this.settings.customSystemPrompt,
 			disabledSkills: this.settings.disabledSkills,
 			disabledExtensions: this.settings.disabledExtensions,
-			disabledAgentTools: [],
+			disabledAgentTools: [...normalizeDisabledAgentTools(storedSettings.disabledAgentTools)],
 			toolOnDemandTools: [],
-			disabledPluginTools: [],
+			disabledPluginTools: [...normalizeDisabledPluginTools(storedSettings.disabledPluginTools)],
 			terminalToolsEnabled: this.settings.terminalToolsEnabled,
 			terminalBash: this.settings.terminalBash,
 			terminalBashIdleMs: this.settings.terminalBashIdleMs,
@@ -4705,6 +4751,8 @@ export class DshClientSession {
 		terminalBashMaxForegroundMs?: number;
 		toolWatchdogTimeoutMs?: number;
 		internalMcpEnabled?: boolean;
+		disabledAgentTools?: string[];
+		disabledPluginTools?: string[];
 		bgAutoCleanupMin?: number;
 		questionnaireEnabled?: boolean;
 		toolApprovalEnabled?: boolean;
@@ -4817,6 +4865,12 @@ export class DshClientSession {
 			retainFinishedConversations: this.settings.retainFinishedConversations ?? false,
 			openRecentSessionOnProjectSwitch: this.settings.openRecentSessionOnProjectSwitch ?? true,
 			...(partial.internalMcpEnabled !== undefined ? { internalMcpEnabled: partial.internalMcpEnabled } : {}),
+			...(partial.disabledAgentTools !== undefined
+				? { disabledAgentTools: normalizeDisabledAgentTools(partial.disabledAgentTools) }
+				: {}),
+			...(partial.disabledPluginTools !== undefined
+				? { disabledPluginTools: normalizeDisabledPluginTools(partial.disabledPluginTools) }
+				: {}),
 			disabledPlugins: this.settings.disabledPlugins,
 			uiLayout: normalizeUiLayout(this.settings.uiLayout),
 			reviewPrompt: this.settings.reviewPrompt,
@@ -4844,7 +4898,12 @@ export class DshClientSession {
 			void this.pushDisabledSkillsToRuntime();
 			void this.refreshSkillsFromRuntime();
 		}
-		if (partial.internalMcpEnabled !== undefined) {
+		if (
+			partial.internalMcpEnabled !== undefined ||
+			partial.disabledAgentTools !== undefined ||
+			partial.disabledPluginTools !== undefined ||
+			partial.terminalToolsEnabled !== undefined
+		) {
 			await this.syncPluginTools();
 		}
 		this.pushSettings();
@@ -6401,12 +6460,12 @@ export class DshClientSession {
 			pending.resolve({ ok: false, error: "session disposed" });
 			this.pendingPageCalls.delete(id);
 		}
-		for (const release of this.mcpReleases.values()) {
+		for (const release of this.mcpReleases?.values() ?? []) {
 			try {
 				release();
 			} catch {}
 		}
-		this.mcpReleases.clear();
+		this.mcpReleases?.clear();
 		this.cancelBridgedTools();
 		if (this.snapshotTimer) clearTimeout(this.snapshotTimer);
 		if (this.sessionsTimer) clearTimeout(this.sessionsTimer);

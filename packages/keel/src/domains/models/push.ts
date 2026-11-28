@@ -6,6 +6,8 @@ export interface ModelPusherOptions {
 	transport: TransportPort;
 	agentDir: string;
 	runtimeFactory: ModelRuntimeFactory;
+	/** 已开会话的运行时（含扩展注册的 provider，如 CLIProxyAPI，#1030）。 */
+	sessionRuntime?: () => ModelCatalogRuntime | undefined;
 	/** 缺省开网刷新（老实现固定 `allowNetwork: true`）。 */
 	allowNetwork?: boolean;
 	/**
@@ -67,7 +69,7 @@ export function createModelPusher(options: ModelPusherOptions): ModelPusher {
 		async push(): Promise<ModelInfo[]> {
 			let models: ModelInfo[];
 			try {
-				const runtime = await runtimeOf();
+				const runtime = options.sessionRuntime?.() ?? (await runtimeOf());
 				models = await readModelCatalog(runtime, allowNetwork);
 				models = await withEnabledScope(runtime, models, options.enabledPatterns);
 			} catch {

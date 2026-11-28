@@ -16,9 +16,7 @@ afterEach(() => {
 describe("终端停靠偏好", () => {
 	it("损坏数据回退默认值", () => {
 		expect(normalizeTerminalDockPrefs(null)).toEqual(DEFAULT_TERMINAL_DOCK_PREFS);
-		expect(normalizeTerminalDockPrefs({ side: "middle", sizes: { bottom: -1 } })).toEqual(
-			DEFAULT_TERMINAL_DOCK_PREFS,
-		);
+		expect(normalizeTerminalDockPrefs({ side: "middle", sizes: { bottom: -1 } })).toEqual(DEFAULT_TERMINAL_DOCK_PREFS);
 	});
 
 	it("迁移旧底部高度并夹取三种停靠尺寸", () => {

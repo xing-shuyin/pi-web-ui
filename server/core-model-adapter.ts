@@ -77,13 +77,16 @@ function warmGate<T extends object>(port: T, warmup: ModelRuntimeWarmup): T {
  * OAuth 需要 SDK 的 `ModelRuntime`，且流程管理器是**同步取用**的：端口整体套 `warmGate`，
  * 第一个早到的 `save_model_config` 会等预热完成，而不是拿到「模型运行时尚未就绪」。
  */
-export function createCoreModelAdmin(options: { agentDir: string } & CoreModelAdminSinks): ModelAdminPort {
+export function createCoreModelAdmin(
+	options: { agentDir: string; extraProviderIds?: () => readonly string[] } & CoreModelAdminSinks,
+): ModelAdminPort {
 	const warmup = warmupModelRuntime(options.agentDir);
 	const service = new ModelAdminService({
 		agentDir: options.agentDir,
 		emit: (msg) => options.emit(msg),
 		flushSnapshot: () => options.flushSnapshot(),
 		isDisposed: () => options.isDisposed(),
+		...(options.extraProviderIds ? { extraProviderIds: options.extraProviderIds } : {}),
 		modelRuntime: () => {
 			const runtime = warmup.current();
 			// 预热失败（auth / models 读不了）：仍然如实说清，不拿半个运行时去跑 OAuth。

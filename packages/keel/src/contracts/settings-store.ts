@@ -63,6 +63,7 @@ export interface SettingsStorePort {
 	/** 会话钉住（历史行 📌）：按会话自己 header 的 cwd 记账，跨项目不串台。 */
 	setSessionPinned(cwd: string, sessionPath: string, pinned: boolean): void;
 	isSessionPinned(cwd: string, sessionPath: string): boolean;
+	getPinnedSessions?(cwd: string): string[];
 	/**
 	 * 会话文件没了之后清掉它的钉子（按文件路径清，不需要知道它归属哪个项目）：
 	 * 可选——没实现就不清，代价只是磁盘里留一条指向不存在文件的钉住。

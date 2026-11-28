@@ -157,7 +157,7 @@ describe("session jsonl 校验与导入（#887）", () => {
 			process.env.AGY_HOME = agyHome;
 			process.env.PI_CODING_AGENT_DIR = piAgentDir;
 			vi.resetModules();
-			const mod = await import("../../plugins/session-migrate/index.mjs");
+			const mod = (await import("../../plugins/session-migrate/index.mjs")) as any;
 			const scanned = mod.scanSources();
 			expect(scanned.agy.length).toBe(1);
 			expect(scanned.agy[0]).toMatchObject({

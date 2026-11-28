@@ -121,8 +121,8 @@ export function renderUnauthorizedHtml(options: UnauthorizedPageOptions): string
 				"auth.page.descStale",
 			)
 		: tx(
-				"当前 pi-web-ui 实例已配置安全口令鉴权 (PI_WEB_TOKEN)。请输入口令以访问工作区。",
-				"this pi-web-ui instance requires an access token (PI_WEB_TOKEN). Enter it to open the workspace.",
+				"当前 keel 实例已配置安全口令鉴权 (PI_WEB_TOKEN)。请输入口令以访问工作区。",
+				"this keel instance requires an access token (PI_WEB_TOKEN). Enter it to open the workspace.",
 				"auth.page.desc",
 			);
 	const langOptions = langs
@@ -140,7 +140,7 @@ export function renderUnauthorizedHtml(options: UnauthorizedPageOptions): string
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${title} — pi-web-ui</title>
+<title>${title} — keel</title>
 <style>
 :root {
 	--bg: #090a0f;
@@ -387,7 +387,7 @@ body {
 		</div>
 		<div class="title-group">
 			<h1>${title}</h1>
-			<div class="sub">${tx("pi-web-ui 安全访问控制", "pi-web-ui secure access", "auth.page.subtitle")}</div>
+			<div class="sub">${tx("keel 安全访问控制", "keel secure access", "auth.page.subtitle")}</div>
 		</div>
 		<form class="lang-switch" method="get">
 			<select name="lang" aria-label="${escapeAttr(

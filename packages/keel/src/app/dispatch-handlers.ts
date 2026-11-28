@@ -34,7 +34,7 @@ import { createGoalHandlersFor } from "./goal-handlers.js";
 import { createNativeCliHandlersFor } from "./native-cli-handlers.js";
 import { createBotChatHandlersFor } from "./bot-chat-handlers.js";
 import { createConversationDispatchHandlers } from "./conversation-handlers.js";
-import { deleteSession } from "./session-delete.js";
+import { deleteProjectSessions, deleteSession } from "./session-delete.js";
 import { createExtraHandlers } from "./extra-handlers.js";
 import { createToolInfoHandlersFor } from "./tool-info-handlers.js";
 import { createPresetHandlers } from "./preset-handlers.js";
@@ -77,6 +77,7 @@ export interface DispatchRuntime {
 	openChildConversation(init: { parentId: string; title: string; cwd?: string }): Conversation;
 	activeConversationId(): string | undefined;
 	historyRoot(): string | undefined;
+	historyRootFor(cwd: string): string | undefined;
 	historyState(): ReadonlyMap<string, SessionListScanState>;
 	/** 重绑 / 钉住 / 编辑面共用的帧出口：全量刷一帧 + 会话帧 + 项目帧。 */
 	rebindFrames(): {
@@ -434,6 +435,14 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 		},
 	});
 
+	const sessionDeleteBase = {
+		registry: runtime.registry, transport: () => runtime.options.transport, historyState: () => runtime.historyState(),
+		createBlankConversation: () => void runtime.createConversation(), now: () => runtime.options.clock.now(),
+		...(runtime.options.sessions ? { closeSession: (id: string) => runtime.options.sessions?.close(id as never) } : {}),
+		...(runtime.options.isAllowedPath ? { isAllowedPath: runtime.options.isAllowedPath } : {}),
+		refreshSessions: async (cwd?: string) => { const f = runtime.optionalFrames(); await (cwd && f?.refreshSessionsFor ? f.refreshSessionsFor(cwd) : f?.refreshSessions()); },
+		...(runtime.options.stateStore ? { clearPinnedSession: (t: string) => runtime.options.stateStore?.()?.clearPinnedSession?.(t) } : {}),
+	};
 	const handlers: DispatchHandlers = {
 		cwd: runtime.cwd,
 		workspaceRoots: runtime.roots,
@@ -558,21 +567,17 @@ export function createDispatchHandlers(runtime: DispatchRuntime): DispatchAssemb
 		deleteSession: (path: string) =>
 			deleteSession(
 				{
-					registry: runtime.registry,
-					transport: () => runtime.options.transport,
+					...sessionDeleteBase,
 					historyRoot: () => runtime.historyRoot(),
-					historyState: () => runtime.historyState(),
 					switchSessionTo: (target) => surface.entity().switchSession(target),
-					createBlankConversation: () => void runtime.createConversation(),
-					...(runtime.options.sessions
-						? { closeSession: (id: string) => runtime.options.sessions?.close(id as never) }
-						: {}),
-					...(runtime.options.isAllowedPath ? { isAllowedPath: runtime.options.isAllowedPath } : {}),
-					now: () => runtime.options.clock.now(),
-					refreshSessions: () => void runtime.optionalFrames()?.refreshSessions(),
-					...(runtime.options.stateStore
-						? { clearPinnedSession: (target: string) => runtime.options.stateStore?.()?.clearPinnedSession?.(target) }
-						: {}),
+				},
+				path,
+			),
+		deleteProjectSessions: (path: string) =>
+			deleteProjectSessions(
+				{
+					...sessionDeleteBase,
+					historyRootFor: (cwd) => runtime.historyRootFor(cwd),
 				},
 				path,
 			),

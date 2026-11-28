@@ -105,14 +105,9 @@ describe("macOS screenshot helper", () => {
 		expect(spawn.mock.calls.filter(([command]) => command === MAC_OSASCRIPT)).toHaveLength(1);
 	});
 	it("hides the host app even without the nonce when the frontmost app is our own ancestor", async () => {
-		// 桌面端内嵌浏览器窗口的标题是固定的（"pi Browser"），nonce 永远进不了窗口标题：
+		// 桌面端内嵌浏览器窗口的标题是固定的（"keel"），nonce 永远进不了窗口标题：
 		// 此时靠「前台应用是承载服务端的宿主进程」来确认，而不是误判为焦点变化。
-		reply(
-			MAC_OSASCRIPT,
-			{ code: 0, stdout: `pi-web-ui-desktop\n${process.ppid}\npi Browser\n` },
-			{ code: 0 },
-			{ code: 0 },
-		);
+		reply(MAC_OSASCRIPT, { code: 0, stdout: `pi-web-ui-desktop\n${process.ppid}\nkeel\n` }, { code: 0 }, { code: 0 });
 		reply(MAC_PS, { code: 0, stdout: `${process.ppid} ${process.ppid}\n${process.pid} ${process.ppid}\n` });
 		const result = await captureMacScreenshot(token, "zh", new AbortController().signal, true);
 		expect(result).toContain("data:image/png;base64,");

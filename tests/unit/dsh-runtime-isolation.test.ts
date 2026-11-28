@@ -59,7 +59,7 @@ function makeFakeRuntime(cwd: string, model: string, modelProvider: string) {
 			return pending.promise;
 		}),
 		cancelSession: vi.fn(async (): Promise<{ ok: boolean; reason?: string }> => ({ ok: true })),
-		releaseSession: vi.fn(async (): Promise<{ ok: boolean; reason?: string }> => ({ ok: true })),
+		releaseSession: vi.fn(async (_sessionId?: string): Promise<{ ok: boolean; reason?: string }> => ({ ok: true })),
 		assignPreset: vi.fn(async () => ({ ok: true })),
 		getWorkingDirectory: vi.fn(async () => cwd),
 		setWorkingDirectory: vi.fn(async (_sessionId: string, path: string) => path),
@@ -134,6 +134,7 @@ describe("DSH runtime isolation", () => {
 			pendingQuestion: null,
 			pendingQuestionEntry: null,
 			pendingQuestionQueue: [],
+			pendingPageCalls: new Map(),
 			conversationBridgeCancellations: new Map<string, AbortController>(),
 			workspaceGeneration: 0,
 			switchingWorkspace: false,
@@ -590,7 +591,7 @@ describe("DSH runtime isolation", () => {
 		session.activateConversation(conv);
 
 		const events: string[] = [];
-		prevEntry.runtime.releaseSession.mockImplementation(async (sid: string) => {
+		prevEntry.runtime.releaseSession.mockImplementation(async (sid?: string) => {
 			events.push(`release:${sid}`);
 			return { ok: true };
 		});

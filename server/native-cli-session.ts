@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { chmod, glob, lstat, mkdir, open, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { DEFAULT_DATA_DIR_NAME } from "../shared/data-dir.js";
 import { writeAtomic } from "./atomic-file.js";
 import {
 	claudeHookSettings,
@@ -159,7 +160,7 @@ export async function prepareNativeCliSessionLaunch(
 	if (!home || /[\x00-\x1f\x7f]/.test(home)) throw new Error("Invalid native CLI session home directory");
 	const join = remote ? path.posix.join : path.join;
 	const directory = remote
-		? join(home, ".pi-web", "native-cli", ref.key)
+		? join(home, DEFAULT_DATA_DIR_NAME, "native-cli", ref.key)
 		: path.resolve(ctx.dataDir, "native-cli", ref.key);
 	let eventsDirectory = join(directory, "events");
 	if (!ctx.observeOnly && remote) {

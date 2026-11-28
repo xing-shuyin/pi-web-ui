@@ -10,6 +10,8 @@ export interface SlotTab {
 	label: string;
 	icon?: string;
 	iconSvg?: string;
+	iconNode?: ReactNode;
+	iconOnly?: boolean;
 	element?: ReactNode;
 	hint?: string;
 	pluginPage?: { plugin: UiPluginInfo; entry: UiSlotEntry };
@@ -136,14 +138,16 @@ export function SlotTabs({
 				<div className="slot-tabs-bar" role="tablist">
 					{tabs.map((tab, i) => {
 						const selected = i === activeIndex;
+						const tabLabel = labelOf(tab);
 						return (
 							<button
 								key={tab.id}
 								type="button"
 								role="tab"
 								id={`${baseId}-tab-${i}`}
-								className={selected ? "slot-tab active" : "slot-tab"}
-								title={tab.hint ?? labelOf(tab)}
+								className={`slot-tab${selected ? " active" : ""}${tab.iconOnly ? " slot-tab-icon-only" : ""}`}
+								title={tab.hint ?? tabLabel}
+								aria-label={tab.iconOnly ? tabLabel : undefined}
 								aria-selected={selected}
 								aria-controls={`${baseId}-panel-${i}`}
 								tabIndex={selected ? 0 : -1}
@@ -153,12 +157,16 @@ export function SlotTabs({
 								onClick={() => selectTab(tab)}
 								onKeyDown={(e) => onKeyDown(e, i)}
 							>
-								{tab.iconSvg ? (
+								{tab.iconNode ? (
+									<span className="slot-tab-icon" aria-hidden="true">
+										{tab.iconNode}
+									</span>
+								) : tab.iconSvg ? (
 									<PluginIcon iconSvg={tab.iconSvg} className="slot-tab-icon" />
 								) : tab.icon && isGlyphIcon(tab.icon) ? (
 									<span className="slot-tab-icon">{tab.icon}</span>
 								) : null}
-								<span className="slot-tab-label">{labelOf(tab)}</span>
+								{!tab.iconOnly && <span className="slot-tab-label">{tabLabel}</span>}
 							</button>
 						);
 					})}

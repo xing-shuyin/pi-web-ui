@@ -97,15 +97,20 @@ function connect(url = URL) {
 				const existing = inbox.findIndex(pred);
 				if (existing >= 0) return inbox.splice(existing, 1)[0];
 				return new Promise((res, rej) => {
-					const t = setTimeout(() => rej(new Error(`timeout waiting for ${what}`)), ms);
-					waiters.push((m) => {
+					const waiter = (m) => {
 						if (pred(m)) {
 							clearTimeout(t);
 							res(m);
 							return true;
 						}
 						return false;
-					});
+					};
+					const t = setTimeout(() => {
+						const idx = waiters.indexOf(waiter);
+						if (idx >= 0) waiters.splice(idx, 1);
+						rej(new Error(`timeout waiting for ${what}`));
+					}, ms);
+					waiters.push(waiter);
 				});
 			},
 			send(m) {
@@ -123,13 +128,13 @@ function connect(url = URL) {
 			} catch {
 				return;
 			}
-			inbox.push(msg);
 			for (let i = 0; i < waiters.length; i++) {
 				if (waiters[i](msg)) {
 					waiters.splice(i, 1);
-					i--;
+					return;
 				}
 			}
+			inbox.push(msg);
 		};
 		ws.onerror = reject;
 	});
@@ -154,6 +159,51 @@ async function run() {
 	check("删除后文件从磁盘消失", !existsSync(sess1), sess1);
 	check("删除后列表不再包含该会话", !paths2.includes(sess1), paths2.join(","));
 	check("另一条会话仍在", paths2.includes(sess2));
+
+	c.send({ type: "list_sessions", path: otherDir });
+	const sOther1 = await c.next(
+		(m) => m.type === "sessions" && (m.sessions ?? []).some((x) => x.path === sessOther),
+		"otherDir sessions #1",
+	);
+	check(
+		"跨项目 list_sessions 命中 otherDir 会话",
+		(sOther1.sessions ?? []).some((x) => x.path === sessOther),
+	);
+
+	c.send({ type: "delete_session", path: sessOther });
+	const sOther2 = await c.next(
+		(m) => m.type === "sessions" && !(m.sessions ?? []).some((x) => x.path === sessOther) && m.cwd === otherDir,
+		"otherDir sessions #2（不含被删项）",
+	);
+	check("跨项目删除后文件从磁盘消失", !existsSync(sessOther), sessOther);
+	check(
+		"跨项目删除后推送目标项目 sessions 帧",
+		sOther2.cwd === otherDir && !(sOther2.sessions ?? []).some((x) => x.path === sessOther),
+		sOther2.cwd,
+	);
+
+	c.send({ type: "delete_session", path: sess1 });
+	const nMissing = await c.next((m) => m.type === "notice" && m.level === "error", "missing notice");
+	check(
+		"重复删除已不存在文件返回提示",
+		typeof nMissing.text === "string" && nMissing.text.includes("已不存在"),
+		nMissing.text,
+	);
+	const sAfterMissing = await c.next(
+		(m) => m.type === "sessions" && !(m.sessions ?? []).some((x) => x.path === sess1),
+		"missing 后仍刷新 sessions",
+	);
+	check("文件已不存在时仍刷新列表清理幽灵行", !(sAfterMissing.sessions ?? []).some((x) => x.path === sess1));
+
+	const bulk1 = seedSession(null, "bulk-1", otherDir, "批量删1", 1722700805000);
+	const bulk2 = seedSession(null, "bulk-2", otherDir, "批量删2", 1722700806000);
+	c.send({ type: "delete_project_sessions", path: otherDir });
+	const sBulk = await c.next(
+		(m) => m.type === "sessions" && m.cwd === otherDir && (m.sessions ?? []).length === 0,
+		"批量删除 otherDir 后 sessions 清空",
+	);
+	check("批量删除项目对话后文件全部从磁盘消失", !existsSync(bulk1) && !existsSync(bulk2));
+	check("批量删除项目对话后下发空 sessions 帧", (sBulk.sessions ?? []).length === 0 && sBulk.cwd === otherDir);
 
 	c.send({ type: "delete_session", path: join(workDir, "a.txt") });
 	const n1 = await c.next((m) => m.type === "notice" && m.level === "error", "error notice");

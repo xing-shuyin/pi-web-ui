@@ -25,7 +25,7 @@ export function formatStartupBannerLines(params: StartupBannerParams): string[] 
 	const mainUrl = buildMainUrl(params.port, params.host);
 	const lines = [
 		"",
-		"  ⚡ pi-web-ui — web chat for the pi coding agent",
+		"  ⚡ keel — web chat for the pi coding agent",
 		`    ${mainUrl}`,
 		`    workspace   : ${params.cwd}`,
 		`    session dir : ${params.sessionDir}`,

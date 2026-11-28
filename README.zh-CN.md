@@ -2,7 +2,7 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="./assets/readme/hero-dark.svg" />
     <source media="(prefers-color-scheme: light)" srcset="./assets/readme/hero.svg" />
-    <img src="./assets/readme/hero.svg" alt="pi-web-ui — 为好工作留出空间" width="1200" />
+    <img src="./assets/readme/hero.svg" alt="keel — 为好工作留出空间" width="1200" />
   </picture>
 </p>
 
@@ -10,9 +10,9 @@
 
 <p align="center">在浏览器或桌面里，串起对话、工具与协作。</p>
 
-[English](./README.md) · **简体中文** · [繁體中文](./README.zh-TW.md) · [官网](https://xing-shuyin.github.io/pi-web-ui-site/) · [使用文档](https://xing-shuyin.github.io/pi-web-ui-site/docs.html) · [下载](https://github.com/xing-shuyin/pi-web-ui/releases)
+[English](./README.md) · **简体中文** · [繁體中文](./README.zh-TW.md) · [官网](https://xing-shuyin.github.io/pi-web-ui-site/) · [使用文档](https://xing-shuyin.github.io/pi-web-ui-site/docs.html) · [下载](https://github.com/xing-shuyin/keel/releases)
 
-![pi-web-ui 工作区实录](./assets/readme/workspace.gif)
+![keel 工作区实录](./assets/readme/workspace.gif)
 
 [观看演示 · MP4](./assets/readme/showcase.mp4)
 
@@ -38,7 +38,7 @@ keel .
 默认打开浏览器，地址为 `http://127.0.0.1:8787`。
 首次使用，在设置中配置模型提供商、凭据与模型，即可开始对话。
 
-偏好安装包？可以选择 [Electron 桌面版或 Windows 便携包](https://github.com/xing-shuyin/pi-web-ui/releases)。
+偏好安装包？可以选择 [Electron 桌面版或 Windows 便携包](https://github.com/xing-shuyin/keel/releases)。
 
 [安装指南](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#installation) · [工作台文档](https://xing-shuyin.github.io/pi-web-ui-site/docs.html)
 
@@ -97,8 +97,8 @@ Bot 群组把设备上的代理带入共享对话，用于协调与任务派发�
 从源码运行：
 
 ```bash
-git clone https://github.com/xing-shuyin/pi-web-ui.git
-cd pi-web-ui
+git clone https://github.com/xing-shuyin/keel.git
+cd keel
 npm ci
 npm run dev
 ```
@@ -109,9 +109,9 @@ npm run dev
 ## 交流与反馈
 
 - **QQ 交流群：**1126050727
-- **Bug 与功能建议：**[GitHub Issues](https://github.com/xing-shuyin/pi-web-ui/issues)
-- **问题与想法：**[GitHub Discussions](https://github.com/xing-shuyin/pi-web-ui/discussions)
-- **版本更新：**[下载与发布说明](https://github.com/xing-shuyin/pi-web-ui/releases)
+- **Bug 与功能建议：**[GitHub Issues](https://github.com/xing-shuyin/keel/issues)
+- **问题与想法：**[GitHub Discussions](https://github.com/xing-shuyin/keel/discussions)
+- **版本更新：**[下载与发布说明](https://github.com/xing-shuyin/keel/releases)
 
 感谢上游 [pi](https://github.com/badlogic/pi-mono) 及其贡献者提供编码智能体基础。
 

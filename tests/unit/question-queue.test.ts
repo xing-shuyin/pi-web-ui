@@ -239,6 +239,7 @@ describe("question queue compatibility and modes", () => {
 		act(() => vi.advanceTimersByTime(2000));
 		expect(container.querySelector(".question-queue-wait")?.textContent).toContain("1:32");
 		expect(questionWaitTime(0, Date.now())).toBeUndefined();
+		expect(questionWaitTime(1, 1_700_000_000_000)).toBeUndefined();
 		expect(questionWaitTime(200_000, 100_000)).toBe("0:00");
 		expect(questionWaitTime(1000, 3_662_000)).toBe("1:01:01");
 

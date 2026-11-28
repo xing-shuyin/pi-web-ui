@@ -97,7 +97,9 @@ describe("global agent prompt files", () => {
 		});
 		expect(saved.content).toBe("after");
 		expect(readFileSync(systemPath, "utf8")).toBe("after");
-		expect(statSync(systemPath).mode & 0o777).toBe(0o640);
+		if (process.platform !== "win32") {
+			expect(statSync(systemPath).mode & 0o777).toBe(0o640);
+		}
 
 		await expect(
 			writeGlobalPromptFile(env, { id: file.id, content: "stale", expectedRevision: file.revision }),

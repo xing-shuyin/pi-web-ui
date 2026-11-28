@@ -111,13 +111,18 @@ describe("LeftPanel 标题栏操作与项目管理", () => {
 		expect(container.querySelector(".projects-scroll")).toBeNull();
 	});
 
-	it("项目行渲染新对话加号按钮，点击后带目标项目发 new_chat", () => {
+	it("项目行渲染新对话加号按钮，点击后带目标项目发 new_chat，且不再挂载悬浮 CLI 入口", () => {
 		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
-		const { container, sent } = mountLeftPanel();
+		const { container, sent } = mountLeftPanel({ onCreateCli: vi.fn(), engine: "claude" });
+
+		const primaryGlyph = container.querySelector<HTMLElement>(".lp-new-chat-primary .lp-new-chat-engine-glyph");
+		expect(primaryGlyph?.dataset.engine).toBe("claude");
 
 		const newChatBtn = container.querySelector<HTMLButtonElement>(".lp-project-new-chat-btn");
 		expect(newChatBtn).toBeTruthy();
 		expect(newChatBtn?.title).toBeTruthy();
+		expect(newChatBtn?.closest(".native-cli-create-entry")).toBeNull();
+		expect(container.querySelector(".native-cli-create-hover")).toBeNull();
 
 		sent.length = 0;
 		act(() => newChatBtn!.click());
@@ -454,6 +459,84 @@ describe("LeftPanel P1：分区标题栏 / 项目行 / 项目右键插件位", (
 			row!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
 		});
 		expect(getContextMenu()).toBeNull();
+	});
+
+	it("项目行右键宿主条目：支持新建对话、重命名、二次确认删除所有对话", () => {
+		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
+		const hostProjectEntries = [
+			{
+				id: "host:proj-new-chat",
+				source: "host" as const,
+				slot: "contextmenu.project" as const,
+				label: "新建对话",
+				kind: "action" as const,
+				order: 1,
+				hidden: false,
+				userOverrides: [],
+				arrangedBy: [],
+			},
+			{
+				id: "host:proj-rename",
+				source: "host" as const,
+				slot: "contextmenu.project" as const,
+				label: "重命名项目",
+				kind: "action" as const,
+				order: 2,
+				hidden: false,
+				userOverrides: [],
+				arrangedBy: [],
+			},
+			{
+				id: "host:proj-delete-all-sessions",
+				source: "host" as const,
+				slot: "contextmenu.project" as const,
+				label: "删除所有对话",
+				kind: "action" as const,
+				order: 3,
+				hidden: false,
+				userOverrides: [],
+				arrangedBy: [],
+			},
+		];
+		const { container, sent } = mountLeftPanel({
+			projects: oneProject,
+			uiContextProject: hostProjectEntries,
+		});
+		const row = container.querySelector('[data-project-path="/test/p1"]')?.closest<HTMLElement>(".lp-row");
+		act(() => {
+			row!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 20 }));
+		});
+		const menu1 = getContextMenu();
+		expect(menu1?.entries.map((e) => e.id)).toEqual([
+			"host:proj-new-chat",
+			"host:proj-rename",
+			"host:proj-delete-all-sessions",
+		]);
+
+		// 新建对话
+		act(() => {
+			menu1!.onHostAction!(menu1!.entries[0]!, menu1!.target!);
+		});
+		expect(sent).toContainEqual({ type: "new_chat", cwd: "/test/p1" });
+
+		// 重命名进入输入态
+		act(() => {
+			menu1!.onHostAction!(menu1!.entries[1]!, menu1!.target!);
+		});
+		expect(container.querySelector(".session-rename-input")).not.toBeNull();
+
+		// 删除所有对话：首次点击进入确认态，不发消息；二次点击才发送 delete_project_sessions
+		act(() => {
+			const keepOpen = menu1!.onHostAction!(menu1!.entries[2]!, menu1!.target!);
+			expect(keepOpen).toBe(true);
+		});
+		expect(sent.some((m: any) => m.type === "delete_project_sessions")).toBe(false);
+		const menu2 = getContextMenu();
+		expect(menu2?.entries[2]?.label).toContain("确认");
+		act(() => {
+			menu2!.onHostAction!(menu2!.entries[2]!, menu2!.target!);
+		});
+		expect(sent).toContainEqual({ type: "delete_project_sessions", path: "/test/p1" });
 	});
 });
 

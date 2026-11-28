@@ -613,3 +613,37 @@ describe("QuestionDialog 输入法上屏回车不提交（issue #560）", () => 
 		expect(msg.answers[0]?.custom).toBe("hello");
 	});
 });
+
+describe("QuestionDialog AJY 交互优化", () => {
+	it("单题点击 Skip 直接以空选择提交", () => {
+		const { container, sent } = mount(baseQuestion);
+		click(container, ".question-option");
+		click(container, ".question-skip");
+		expect(sent).toHaveLength(1);
+		const msg = sent[0] as { cancelled?: boolean; answers: unknown[] };
+		expect(msg.cancelled ?? false).toBe(false);
+		expect(msg.answers).toEqual([{ id: "c1", selected: [] }]);
+	});
+
+	it("多题点击 Skip 跳过当前题并进入下一题，头部箭头可前后切换", () => {
+		const { container, sent } = mount(wizardQuestion);
+		click(container, ".question-skip");
+		expect(sent).toHaveLength(0);
+		expect(container.textContent).toContain("Q2");
+		expect(container.querySelector(".question-progress")?.textContent).toBe("2 / 2");
+
+		click(container, ".dialog-prev");
+		expect(container.textContent).toContain("Q1");
+		expect(container.querySelector(".question-progress")?.textContent).toBe("1 / 2");
+	});
+
+	it("按 Other 行对应的数字键聚焦内联自定义输入框", () => {
+		const { container } = mount(baseQuestion);
+		const input = container.querySelector(".question-other-input") as HTMLInputElement;
+		expect(document.activeElement).not.toBe(input);
+		act(() => {
+			window.dispatchEvent(new KeyboardEvent("keydown", { key: "3", bubbles: true }));
+		});
+		expect(document.activeElement).toBe(input);
+	});
+});

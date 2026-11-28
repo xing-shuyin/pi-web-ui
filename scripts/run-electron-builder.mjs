@@ -9,10 +9,83 @@
  *
  * 用法：`node scripts/run-electron-builder.mjs <electron-builder 参数>`，参数原样透传。
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { withElectronMirror } from "./lib/electron-mirror.mjs";
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+/**
+ * 解析本次 electron-builder 的输出目录（优先读取 CLI 参数与配置文件中的 `directories.output`，默认 `<repo>/release`）。
+ * @param {string[]} args
+ * @param {string} [cwd]
+ */
+export function resolveElectronBuilderOutputDir(args, cwd = repoRoot) {
+	let cliOutput = null;
+	let configFile = null;
+	for (let i = 0; i < args.length; i++) {
+		const arg = args[i];
+		if (arg.startsWith("--config.directories.output=")) {
+			cliOutput = arg.slice("--config.directories.output=".length);
+		} else if (arg === "-c" || arg === "--config") {
+			configFile = args[i + 1] ?? null;
+			i++;
+		} else if (arg.startsWith("--config=")) {
+			configFile = arg.slice("--config=".length);
+		}
+	}
+	if (cliOutput) {
+		return resolve(cwd, cliOutput);
+	}
+	if (configFile) {
+		const configPath = resolve(cwd, configFile);
+		if (existsSync(configPath)) {
+			try {
+				const raw = readFileSync(configPath, "utf8");
+				const match = raw.match(
+					/^directories:\s*(?:\r?\n[ \t]+[^\r\n]*)*?\r?\n[ \t]+output:[ \t]*["']?([^"'\r\n#]+)["']?/m,
+				);
+				if (match?.[1]?.trim()) {
+					return resolve(cwd, match[1].trim());
+				}
+			} catch {
+				// 配置读取失败时回退到默认 release 目录
+			}
+		}
+	}
+	return resolve(cwd, "release");
+}
+
+/**
+ * Windows 下若输出目录继承了 Low Mandatory Level，NSIS 生成的临时桩程序在执行提取卸载器时会因
+ * 强制完整性控制报错 3221225794 (0xC0000142)；打包前自动将输出目录及已有产物提升为 Medium 完整性。
+ * @param {string} outputDir
+ */
+function ensureMediumIntegrityOnWindows(outputDir) {
+	if (process.platform !== "win32") return;
+	try {
+		mkdirSync(outputDir, { recursive: true });
+		const probe = spawnSync("icacls", [outputDir], { encoding: "utf8", windowsHide: true });
+		const stdout = probe.stdout ?? "";
+		if (!/Low Mandatory Level|S-1-16-4096/i.test(stdout)) return;
+		console.log(`ℹ 检测到输出目录为 Low 完整性，正在提升为 Medium 完整性: ${outputDir}`);
+		const res = spawnSync("icacls", [outputDir, "/setintegritylevel", "(OI)(CI)M", "/T", "/C", "/Q"], {
+			encoding: "utf8",
+			windowsHide: true,
+		});
+		if (res.status !== 0) {
+			console.warn(`⚠ 自动提升输出目录完整性失败 (exit=${res.status}): ${(res.stderr || res.stdout || "").trim()}`);
+		}
+	} catch (err) {
+		console.warn(`⚠ 检查/提升输出目录完整性时出错: ${err instanceof Error ? err.message : String(err)}`);
+	}
+}
+
+const builderArgs = process.argv.slice(2);
+ensureMediumIntegrityOnWindows(resolveElectronBuilderOutputDir(builderArgs));
 
 const require = createRequire(import.meta.url);
 const pkgPath = require.resolve("electron-builder/package.json");
@@ -24,7 +97,7 @@ if (!binEntry) {
 }
 
 const cliPath = join(dirname(pkgPath), binEntry);
-const child = spawn(process.execPath, [cliPath, ...process.argv.slice(2)], {
+const child = spawn(process.execPath, [cliPath, ...builderArgs], {
 	stdio: "inherit",
 	env: withElectronMirror(),
 });

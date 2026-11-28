@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode, type MouseEvent as ReactMo
 import {
 	FiActivity,
 	FiBox,
+	FiCommand,
 	FiCpu,
 	FiDatabase,
 	FiDownload,
@@ -48,7 +49,6 @@ import { BrowserControl } from "./BrowserControl";
 import { isDesktopShell } from "../desktop";
 import { BROWSER_PAGE_TOOL_NAME } from "../../../server/tool-manager.js";
 import { EnginePicker } from "./EnginePicker";
-import { NativeCliCreateEntry } from "./NativeCliCreateModal";
 import { ContextUsage } from "./ContextUsage";
 import { formatTokens } from "../format-tokens";
 import { resolveProjectDisplayName } from "../title-settings";
@@ -157,7 +157,7 @@ export function BarItem({
 }: BarItemProps) {
 	const t = useT();
 	const { locale, packs, setLocale } = useI18n();
-	const { engine } = useAppGlobals();
+	const { engine, tabs } = useAppGlobals();
 	const isDsh = engine === "dsh";
 	// 安静模式的快捷开关（issue #956）：偏好单源在 quiet-mode.ts，这里只订阅 + 翻转。
 	const quietMode = useQuietMode();
@@ -953,6 +953,14 @@ export function BarItem({
 				focusComposer();
 			};
 			break;
+		case "host:new-cli":
+			if (!onCreateCli || (tabs && !tabs.includes("terminal"))) return null;
+			iconNode = <FiCommand className="bar-item-icon" />;
+			labelText = named(t("nativeCli"));
+			extraClasses = "chip native-cli-inline-button";
+			tipOverride = t("nativeCliCreate");
+			onClick = () => onCreateCli();
+			break;
 		case "host:new-ephemeral-chat":
 			if (isDsh) return null;
 			iconNode = <LuMessageSquareDashed className="bar-item-icon" />;
@@ -1153,12 +1161,5 @@ export function BarItem({
 			{badgeNode}
 		</button>
 	);
-	// 顶栏的「新对话」带文字，CLI 是它右侧的独立 chip；其余栏沿用展开式 CLI 快捷区。
-	return id === "host:new-chat" ? (
-		<NativeCliCreateEntry variant={bar === "top" ? "inline" : "hover"} onCreateCli={onCreateCli}>
-			{button}
-		</NativeCliCreateEntry>
-	) : (
-		button
-	);
+	return button;
 }

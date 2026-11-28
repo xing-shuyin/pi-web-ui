@@ -4,6 +4,7 @@ import type { TransportPort } from "../contracts/ports.js";
 import type { Conversation, ConversationRegistry } from "../kernel/conversation/index.js";
 import { scanHistory } from "../domains/history/index.js";
 import { canDeleteSessionPath, deleteSessionFile, dismissConversation } from "../domains/sessions/index.js";
+import { readCwdFromSessionHeader } from "../session-search.js";
 
 /** 删转录要用到的运行时事实（都是 thunk：判定发生在调用时，不在装配时快照）。 */
 export interface DeleteSessionDeps {
@@ -22,9 +23,23 @@ export interface DeleteSessionDeps {
 	/** 允许删哪些路径（缺省 fail-closed）。 */
 	isAllowedPath?(path: string): boolean;
 	now(): number;
-	/** 删成功后重扫历史列表（左栏那一行要立刻消失）。 */
-	refreshSessions(): void | Promise<void>;
+	/** 删成功后重扫历史列表（传 targetCwd 时刷新对应项目，否则刷新当前项目）。 */
+	refreshSessions(targetCwd?: string): void | Promise<void>;
 	clearPinnedSession?(path: string): void;
+}
+
+function normalizeForCompare(p: string): string {
+	let resolved: string;
+	try {
+		resolved = resolve(p);
+	} catch {
+		resolved = p;
+	}
+	return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+function samefile(a: string, b: string): boolean {
+	return normalizeForCompare(a) === normalizeForCompare(b);
 }
 
 /**
@@ -37,26 +52,11 @@ async function nextSessionAfterDeleting(deps: DeleteSessionDeps, deleted: string
 	if (!root) return undefined;
 	try {
 		const scanned = await scanHistory({ root, state: deps.historyState() });
-		const same = (a: string, b: string): boolean => {
-			try {
-				return resolve(a) === b;
-			} catch {
-				return a === b;
-			}
-		};
 		return scanned.entries
-			.filter((entry) => !same(entry.sessionFile, deleted))
+			.filter((entry) => !samefile(entry.sessionFile, deleted))
 			.sort((a, b) => b.updatedAt - a.updatedAt)[0]?.sessionFile;
 	} catch {
 		return undefined;
-	}
-}
-
-function samefile(a: string, b: string): boolean {
-	try {
-		return resolve(a) === b;
-	} catch {
-		return a === b;
 	}
 }
 
@@ -79,6 +79,7 @@ export async function deleteSession(deps: DeleteSessionDeps, path: string): Prom
 			text: "只能删除会话目录中的对话记录",
 			textEn: "Only transcripts inside the session directory can be deleted",
 		});
+		await deps.refreshSessions();
 		return;
 	}
 	const abs = (() => {
@@ -93,6 +94,7 @@ export async function deleteSession(deps: DeleteSessionDeps, path: string): Prom
 		return file !== undefined && samefile(file, abs);
 	});
 	const activeId = deps.registry.activeId();
+	const targetCwd = holder?.meta.cwd ?? (await readCwdFromSessionHeader(abs)) ?? undefined;
 
 	if (holder && holder.id !== activeId) {
 		notice({
@@ -101,6 +103,7 @@ export async function deleteSession(deps: DeleteSessionDeps, path: string): Prom
 			text: "该对话正在后台运行，请先停止或关闭该对话再删除",
 			textEn: "This conversation is still running — stop or close it before deleting",
 		});
+		await deps.refreshSessions(targetCwd);
 		return;
 	}
 	if (holder) {
@@ -127,6 +130,11 @@ export async function deleteSession(deps: DeleteSessionDeps, path: string): Prom
 	if (!result.deleted) {
 		// 失败必须回话（fetch 成功 ≠ 删了）：越界 / 文件已不在两种原因分开说（老实现同口径）。
 		const notAllowed = result.reason === "not-allowed";
+		if (!notAllowed) {
+			// 文件已不在磁盘时也清理钉子并刷新列表，避免前端残留幽灵行反复报“已不存在”。
+			deps.clearPinnedSession?.(path);
+		}
+		await deps.refreshSessions(targetCwd);
 		notice({
 			type: "notice",
 			level: "error",
@@ -140,5 +148,83 @@ export async function deleteSession(deps: DeleteSessionDeps, path: string): Prom
 	// 钉子落在已不存在的文件上：不清掉就是「永远点不亮的历史行」。
 	deps.clearPinnedSession?.(path);
 	// 历史列表是扫盘得到的：不重扫一拍，左栏就还顶着已删的那一行（老实现 `invalidateSessionInfos` + `refreshSessions`）。
-	await deps.refreshSessions();
+	await deps.refreshSessions(targetCwd);
+}
+
+export interface DeleteProjectSessionsDeps extends Omit<DeleteSessionDeps, "historyRoot" | "switchSessionTo"> {
+	historyRootFor(cwd: string): string | undefined;
+}
+
+/**
+ * 批量删除指定项目下的全部历史对话记录（跳过仍在后台运行的会话转录）。
+ */
+export async function deleteProjectSessions(deps: DeleteProjectSessionsDeps, projectCwd: string): Promise<void> {
+	const notice = (message: ServerMessage): void => {
+		if (!deps.transport().isClosed()) deps.transport().send(message);
+	};
+	const activeId = deps.registry.activeId();
+	const protectedFiles = new Set<string>();
+	let activeInProject: Conversation | undefined;
+
+	for (const conv of deps.registry.list()) {
+		if (!samefile(conv.meta.cwd, projectCwd)) continue;
+		if (conv.id === activeId) {
+			activeInProject = conv;
+		} else if (conv.meta.sessionFile) {
+			protectedFiles.add(normalizeForCompare(conv.meta.sessionFile));
+		}
+	}
+
+	if (activeInProject) {
+		deps.createBlankConversation();
+		if (deps.registry.has(activeInProject.id)) {
+			await dismissConversation({
+				registry: deps.registry,
+				conversationId: activeInProject.id,
+				now: deps.now,
+				...(deps.closeSession ? { closeSession: deps.closeSession } : {}),
+			});
+		}
+	}
+
+	const root = deps.historyRootFor(projectCwd);
+	let deletedCount = 0;
+	if (root) {
+		try {
+			const scanned = await scanHistory({ root, state: deps.historyState() });
+			for (const entry of scanned.entries) {
+				if (protectedFiles.has(normalizeForCompare(entry.sessionFile))) continue;
+				const result = await deleteSessionFile({
+					registry: deps.registry,
+					sessionFile: entry.sessionFile,
+					now: deps.now,
+					...(deps.isAllowedPath ? { isAllowedPath: deps.isAllowedPath } : {}),
+				});
+				if (result.deleted) {
+					deps.clearPinnedSession?.(entry.sessionFile);
+					deletedCount++;
+				}
+			}
+		} catch {
+			// 扫盘失败时仍刷新列表以保持状态一致
+		}
+	}
+
+	await deps.refreshSessions(projectCwd);
+
+	if (protectedFiles.size > 0) {
+		notice({
+			type: "notice",
+			level: "warning",
+			text: `已删除 ${deletedCount} 条对话记录，另有 ${protectedFiles.size} 条正在后台运行的对话未删除`,
+			textEn: `Deleted ${deletedCount} transcript(s); ${protectedFiles.size} running in background were kept`,
+		});
+	} else if (deletedCount > 0) {
+		notice({
+			type: "notice",
+			level: "info",
+			text: `已删除 ${deletedCount} 条对话记录`,
+			textEn: `Deleted ${deletedCount} transcript(s)`,
+		});
+	}
 }

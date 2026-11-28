@@ -772,7 +772,9 @@ type Action =
 	| { type: "optimistic_queue_add"; text: string; attachments?: PromptAttachment[]; queue?: boolean }
 	| { type: "optimistic_prompt_echo"; text: string; attachments?: PromptAttachment[] }
 	| { type: "prompt_queued"; conversationId: string; text: string }
-	| { type: "optimistic_queue_remove"; kind: "steer" | "followUp"; text: string; index?: number };
+	| { type: "optimistic_queue_remove"; kind: "steer" | "followUp"; text: string; index?: number }
+	| { type: "optimistic_delete_session"; path: string }
+	| { type: "optimistic_delete_project_sessions"; cwd: string };
 
 const MAX_LIVE_OUTPUT = 200_000;
 const LIVE_OMIT_MARK = "LIVE_OMIT";
@@ -1088,6 +1090,45 @@ export function reducer(state: ChatState, action: Action): ChatState {
 			};
 		case "engines_status":
 			return { ...state, engines: action.engines };
+		case "optimistic_delete_session": {
+			const target = normalizeSessionPathKey(action.path);
+			if (!target) return state;
+			clearCachedSession(action.path, state.state?.cwd, "all");
+			const nextSessions = state.sessions.filter((s) => normalizeSessionPathKey(s.path) !== target);
+			let nextProjectSessions = state.projectSessions;
+			if (state.projectSessions) {
+				let changed = false;
+				const updated: Record<string, SessionSummary[]> = {};
+				for (const [projKey, list] of Object.entries(state.projectSessions)) {
+					const filtered = list.filter((s) => normalizeSessionPathKey(s.path) !== target);
+					if (filtered.length !== list.length) {
+						changed = true;
+						clearCachedSession(action.path, projKey, "all");
+					}
+					updated[projKey] = filtered;
+				}
+				if (changed) nextProjectSessions = updated;
+			}
+			return {
+				...state,
+				sessions: nextSessions,
+				projectSessions: nextProjectSessions,
+			};
+		}
+		case "optimistic_delete_project_sessions": {
+			const normTarget = normalizeSessionPathKey(action.cwd);
+			if (!normTarget) return state;
+			clearCachedSessionsForProject(action.cwd);
+			const isCurrent = normalizeSessionPathKey(state.state?.cwd) === normTarget;
+			return {
+				...state,
+				...(isCurrent ? { sessions: [] } : {}),
+				projectSessions: {
+					...state.projectSessions,
+					[normTarget]: [],
+				},
+			};
+		}
 		case "sessions": {
 			const targetCwd = action.cwd ?? (action as any).targetCwd;
 			const isCurrent = !targetCwd || normalizeSessionPathKey(targetCwd) === normalizeSessionPathKey(state.state?.cwd);
@@ -1865,15 +1906,44 @@ function writeCachedSessions(cwd: string | undefined | null, sessions: SessionSu
 
 export function clearCachedSession(path: string, cwd?: string | null, engine?: string): void {
 	try {
-		const current = readCachedSessions(cwd, engine);
-		const norm = (s: string) =>
-			s
-				.trim()
-				.replace(/[\\/]+$/, "")
-				.toLowerCase();
-		const target = norm(path);
-		const filtered = current.filter((s) => norm(s.path) !== target);
-		writeCachedSessions(cwd, filtered, engine);
+		const target = normalizeSessionPathKey(path);
+		if (!target) return;
+		const pruneKey = (key: string): void => {
+			const raw = localStorage.getItem(key);
+			if (!raw) return;
+			const parsed = JSON.parse(raw);
+			if (!Array.isArray(parsed)) return;
+			const filtered = parsed.filter((s: SessionSummary) => normalizeSessionPathKey(s?.path) !== target);
+			if (filtered.length !== parsed.length) {
+				localStorage.setItem(key, JSON.stringify(filtered.slice(0, 50)));
+			}
+		};
+		if (engine && engine !== "all") {
+			pruneKey(sessionsStorageKey(cwd ?? readLastCwd(), engine));
+			return;
+		}
+		const targetCwd = cwd ?? readLastCwd();
+		const normCwd = targetCwd ? normalizeSessionPathKey(targetCwd) : "";
+		const suffix = normCwd ? `:${normCwd}` : "";
+		for (let i = 0; i < localStorage.length; i++) {
+			const k = localStorage.key(i);
+			if (!k || !k.startsWith(RECENT_SESSIONS_PREFIX)) continue;
+			if (!suffix || k.endsWith(suffix)) pruneKey(k);
+		}
+	} catch {}
+}
+
+function clearCachedSessionsForProject(cwd: string): void {
+	try {
+		const normCwd = normalizeSessionPathKey(cwd);
+		if (!normCwd) return;
+		const suffix = `:${normCwd}`;
+		for (let i = localStorage.length - 1; i >= 0; i--) {
+			const k = localStorage.key(i);
+			if (k && k.startsWith(RECENT_SESSIONS_PREFIX) && k.endsWith(suffix)) {
+				localStorage.removeItem(k);
+			}
+		}
 	} catch {}
 }
 
@@ -2118,6 +2188,12 @@ export function useChat() {
 			msg.type === "open_scheduled_conversation"
 		) {
 			notifySessionSwitch();
+		}
+		if (msg.type === "delete_session" && msg.path) {
+			dispatch({ type: "optimistic_delete_session", path: msg.path });
+		}
+		if (msg.type === "delete_project_sessions" && msg.path) {
+			dispatch({ type: "optimistic_delete_project_sessions", cwd: msg.path });
 		}
 		if (msg.type === "remove_project" || msg.type === "destroy_sandbox") {
 			if ("path" in msg && typeof msg.path === "string" && msg.path) {

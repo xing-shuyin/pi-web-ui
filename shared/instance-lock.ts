@@ -13,6 +13,7 @@
  * 超过 `STALE_AFTER_MS` 的记录一律按陈旧处理（拿不到 owner 的时间戳时按存活处理，
  * 宁可拒绝启动也不双写）。
  */
+import { spawnSync } from "node:child_process";
 import { closeSync, openSync, readFileSync, unlinkSync, writeSync } from "node:fs";
 import { join } from "node:path";
 
@@ -42,6 +43,56 @@ export interface AcquireKernelLockOptions {
 
 /** 陈旧兜底：超过这么久没被任何活进程认领的锁一律可接管。 */
 export const STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
+const WIN_KERNEL_IMAGE_RE = /^(node|pwsh|powershell)\.exe$/i;
+const WIN_PORT_GRACE_MS = 60 * 1000;
+
+function winProcessImage(pid: number): string | null {
+	try {
+		const res = spawnSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+			windowsHide: true,
+			encoding: "utf8",
+			timeout: 2000,
+		});
+		if (res.status !== 0) return null;
+		const line = (res.stdout ?? "").split(/\r?\n/).find((l) => l.trim());
+		if (!line) return null;
+		return (line.match(/^"([^"]+)"/) ?? [])[1] ?? null;
+	} catch {
+		return null;
+	}
+}
+
+function winPortListening(port: number): boolean | null {
+	try {
+		const res = spawnSync("netstat", ["-ano", "-p", "TCP"], {
+			windowsHide: true,
+			encoding: "utf8",
+			timeout: 2000,
+		});
+		if (res.status !== 0) return null;
+		const re = new RegExp(`:${port}\\s+.*LISTENING`, "i");
+		return (res.stdout ?? "").split(/\r?\n/).some((line) => re.test(line));
+	} catch {
+		return null;
+	}
+}
+
+function holderStillAlive(
+	holder: KernelLockHolder | null,
+	isAlive: (pid: number) => boolean,
+	now: number,
+	customProbe: boolean,
+): boolean {
+	if (!holder || !isAlive(holder.pid)) return false;
+	if (holder.startedAt > 0 && now - holder.startedAt > STALE_AFTER_MS) return false;
+	if (customProbe || process.platform !== "win32") return true;
+	const image = winProcessImage(holder.pid);
+	if (image && !WIN_KERNEL_IMAGE_RE.test(image)) return false;
+	if (holder.port && holder.port > 0 && holder.startedAt > 0 && now - holder.startedAt > WIN_PORT_GRACE_MS) {
+		if (winPortListening(holder.port) === false) return false;
+	}
+	return true;
+}
 
 export function kernelLockPath(dataDir: string): string {
 	return join(dataDir, "kernel.lock");
@@ -118,9 +169,9 @@ export function acquireKernelLock(options: AcquireKernelLockOptions): KernelLock
 
 	if (tryCreate(path, payload)) return { state: "held", path };
 
-	// 已存在：判断是不是陈旧残留（进程已死 / 无主的坏文件 / 超龄）。
+	// 已存在：判断是不是陈旧残留（进程已死 / 无主的坏文件 / 超龄 / Windows PID 复用）。
 	const holder = readKernelLock(options.dataDir);
-	const stale = !holder || !isAlive(holder.pid) || (holder.startedAt > 0 && now - holder.startedAt > STALE_AFTER_MS);
+	const stale = !holderStillAlive(holder, isAlive, now, options.isAlive !== undefined);
 	if (!stale) return { state: "denied", path, holder };
 	try {
 		unlinkSync(path);

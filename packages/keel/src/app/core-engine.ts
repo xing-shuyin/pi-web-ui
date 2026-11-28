@@ -446,6 +446,25 @@ export class CoreEngine implements EngineService {
 	refreshMcpProject(cwd: string): void {
 		refreshMcpProject(this.runtimes, cwd);
 	}
+	/** 已开会话里通过扩展注册的供应商 ID（供 ModelAdmin 面板合并，#1030）。 */
+	registeredProviderIds(): string[] {
+		const ids = new Set<string>();
+		for (const runtime of this.runtimes.values()) {
+			for (const conv of runtime.registry.list()) {
+				const mr = (
+					runtime.sessions?.get(conv.id)?.session as
+						{ modelRuntime?: { getProviders?: () => { id: string }[] } } | undefined
+				)?.modelRuntime;
+				if (!mr?.getProviders) continue;
+				try {
+					for (const p of mr.getProviders()) {
+						if (p?.id) ids.add(p.id);
+					}
+				} catch {}
+			}
+		}
+		return [...ids];
+	}
 	private get elsewhereDeps() {
 		return {
 			runtimes: this.runtimes,

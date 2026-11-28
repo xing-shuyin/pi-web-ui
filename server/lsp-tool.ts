@@ -9,6 +9,7 @@ import { pick, type ServerLang } from "./i18n.js";
 import { runProcess } from "./run-process.js";
 import { spawnChildPiped, type SpawnedChild } from "./spawn-child.js";
 import { sleep } from "./async-utils.js";
+import { resolveDefaultDataDir } from "../shared/data-dir.js";
 
 export const LSP_TOOL_NAME = "lsp";
 
@@ -191,6 +192,7 @@ function resolveBinaryUncached(cmd: string, cwd: string): string | null {
 	const home = homedir();
 	const sharedDirs = [
 		join(home, ".pi-lens", "tools", "node_modules", ".bin"),
+		join(resolveDefaultDataDir(), "lsp-servers", "node_modules", ".bin"),
 		join(home, ".pi-web", "lsp-servers", "node_modules", ".bin"),
 		join(home, ".pi", "agent", "tools", "node_modules", ".bin"),
 	];
@@ -228,7 +230,7 @@ export async function autoInstallLanguageServer(pkg: string): Promise<boolean> {
 
 	const task = (async () => {
 		try {
-			const userLspDir = join(homedir(), ".pi-web", "lsp-servers");
+			const userLspDir = join(resolveDefaultDataDir(), "lsp-servers");
 			console.warn(`[LSP] Installing language server [${pkg}] into ${userLspDir} (user-space, no sudo)…`);
 			mkdirSync(userLspDir, { recursive: true });
 			const pkgJson = join(userLspDir, "package.json");
@@ -622,7 +624,7 @@ class LspServerPool {
 
 			if (!resolvedBin) {
 				const installGateHint = autoPkg
-					? `\nOr retry this tool call with { "allowInstall": true } to install \`${autoPkg}\` into ~/.pi-web/lsp-servers (user-space, no sudo) automatically.`
+					? `\nOr retry this tool call with { "allowInstall": true } to install \`${autoPkg}\` into ~/.keel/lsp-servers (user-space, no sudo) automatically.`
 					: "";
 				return {
 					error: `Language server for ${langInfo.config.languageId} not found.\nPlease install it: \`${hint}\`${installGateHint}`,

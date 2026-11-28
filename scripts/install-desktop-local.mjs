@@ -98,7 +98,12 @@ export function buildOpenInstallerCommand(installerPath, platform = process.plat
 		return { command: "open", argv: [installerPath], detached: false };
 	}
 	if (platform === "win32") {
-		return { command: "cmd", argv: ["/c", "start", "", installerPath], detached: true };
+		const escaped = installerPath.replace(/'/g, "''");
+		return {
+			command: "powershell.exe",
+			argv: ["-NoProfile", "-NonInteractive", "-Command", `Start-Process -FilePath '${escaped}'`],
+			detached: false,
+		};
 	}
 	if (platform === "linux") {
 		return { command: installerPath, argv: [], detached: true, chmodExecutable: true };

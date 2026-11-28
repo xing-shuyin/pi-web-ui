@@ -5,6 +5,7 @@ import "./lib/hide-console-windows.mjs";
 import { spawn, spawnSync } from "node:child_process";
 // shell / PowerShell 引号单源在 server/shell-quote.ts（生成件 bin/lib/shell-quote.mjs）。
 import { shellQuotePowerShell as psQuote, shellQuotePosix as shQuote } from "./lib/shell-quote.mjs";
+import { defaultDataDir, legacyDataDir, resolveDefaultDataDir } from "./lib/data-dir.mjs";
 import { createConnection } from "node:net";
 import { get as httpGet } from "node:http";
 import { createInterface } from "node:readline/promises";
@@ -432,7 +433,7 @@ function loadStoredFileToken(dataDir) {
 function resolveCliAuthToken(opts) {
 	const envToken = (process.env.PI_WEB_TOKEN || "").trim();
 	if (envToken) return envToken;
-	const dataDir = resolve(opts?.dataDir ?? process.env.PI_WEB_DATA_DIR ?? join(homedir(), ".pi-web"));
+	const dataDir = resolveDefaultDataDir({ explicit: opts?.dataDir });
 	return loadStoredFileToken(dataDir);
 }
 
@@ -751,7 +752,7 @@ function buildWinShortcutPs1(env, cwd, taskName, url, logPath, pidPath) {
 		"  }",
 		"} -ArgumentList $url",
 		`& ${psQuote(node)} ${HAS_SDK_HOOK ? `--import ${psQuote(pathToFileURL(SDK_HOOK).href)} ` : ""}${psQuote(SERVER_ENTRY)} *>> $log`,
-		"Remove-Item $pidFile -ErrorAction SilentlyContinue",
+		'if ((Get-Content $pidFile -ErrorAction SilentlyContinue) -eq "$PID") { Remove-Item $pidFile -ErrorAction SilentlyContinue }',
 		"",
 	].join("\r\n");
 }
@@ -1132,36 +1133,65 @@ function stopStrayWindowsWatchdogs(name) {
 	}
 }
 
-function stopWinInstance(name) {
+function winListeningPidsOnPort(port) {
+	if (!Number.isInteger(port) || port <= 0) return [];
+	const res = spawnSync("netstat", ["-ano", "-p", "TCP"], {
+		windowsHide: true,
+		encoding: "utf8",
+	});
+	if (res.status !== 0) return [];
+	const re = new RegExp(`:${port}\\s+\\S+\\s+LISTENING\\s+(\\d+)`, "i");
+	const pids = new Set();
+	for (const line of String(res.stdout ?? "").split(/\r?\n/)) {
+		const m = line.match(re);
+		if (!m) continue;
+		const pid = Number(m[1]);
+		if (Number.isInteger(pid) && pid > 0) pids.add(pid);
+	}
+	return [...pids];
+}
+
+function killWinServicePid(pid) {
+	if (!pidAlive(pid)) return true;
+	const image = winPidImageName(pid);
+	if (image === null) {
+		console.warn(
+			ZH
+				? `⚠ 无法核实 PID ${pid} 的进程映像名（tasklist 不可用或进程已消失），跳过强制结束以防误杀`
+				: `⚠ Cannot verify the image name of PID ${pid} (tasklist unavailable or process gone), skipping force-kill to avoid killing an unrelated process`,
+		);
+		return false;
+	}
+	if (!WIN_SERVICE_IMAGE_RE.test(image)) {
+		console.warn(
+			ZH
+				? `⚠ PID ${pid} 现在是 ${image}，不是本服务的进程（PID 可能已被复用），跳过强制结束`
+				: `⚠ PID ${pid} is now ${image}, not a pi-web-ui process (PID may have been reused), skipping force-kill`,
+		);
+		return false;
+	}
+	run("taskkill", ["/PID", String(pid), "/T", "/F"], {
+		ignoreError: true,
+		silent: true,
+	});
+	const deadline = Date.now() + 5000;
+	while (Date.now() < deadline && pidAlive(pid)) {
+		spawnSync("ping", ["-n", "2", "127.0.0.1"], { windowsHide: true, stdio: "ignore" });
+	}
+	return !pidAlive(pid);
+}
+
+function stopWinInstance(name, port = Number(process.env.PI_WEB_PORT || 8787)) {
 	const pid = winReadPid(name);
 	if (pid) {
-		if (pidAlive(pid)) {
-			const image = winPidImageName(pid);
-			if (image === null) {
-				console.warn(
-					ZH
-						? `⚠ 无法核实 PID ${pid} 的进程映像名（tasklist 不可用或进程已消失），跳过强制结束以防误杀`
-						: `⚠ Cannot verify the image name of PID ${pid} (tasklist unavailable or process gone), skipping force-kill to avoid killing an unrelated process`,
-				);
-			} else if (!WIN_SERVICE_IMAGE_RE.test(image)) {
-				console.warn(
-					ZH
-						? `⚠ PID ${pid} 现在是 ${image}，不是本服务的进程（PID 可能已被复用），跳过强制结束`
-						: `⚠ PID ${pid} is now ${image}, not a pi-web-ui process (PID may have been reused), skipping force-kill`,
-				);
-			} else {
-				run("taskkill", ["/PID", String(pid), "/T", "/F"], {
-					ignoreError: true,
-					silent: true,
-				});
-				const deadline = Date.now() + 5000;
-				while (Date.now() < deadline && pidAlive(pid)) {
-					spawnSync("ping", ["-n", "2", "127.0.0.1"], { windowsHide: true, stdio: "ignore" });
-				}
-			}
-		}
-		rmSync(winPidFilePath(name), { force: true });
+		const gone = killWinServicePid(pid);
+		if (gone) rmSync(winPidFilePath(name), { force: true });
 	}
+	for (const lpid of winListeningPidsOnPort(port)) {
+		killWinServicePid(lpid);
+	}
+	const remainingPids = winListeningPidsOnPort(port);
+	return { stopped: remainingPids.length === 0, remainingPids };
 }
 
 function buildPlist(label, cwd, env) {
@@ -1470,7 +1500,8 @@ function installWindows(opts) {
 	// 幂等：先停掉**这份数据目录的持有者**（本地 sidecar / 旧内核）与遗留看门狗，再写配置并拉起。
 	// 不停就会留下两个看门狗抢同一份数据目录：被拒的那个每 10s 空转一次，
 	// 而且它退出时会顺手删掉活着的那个的 pid 文件（实机 2026-11-21）。
-	stopKernelHoldingDataDir(dataDir ?? join(homedir(), ".pi-web"));
+	if (!dataDir) stopKernelHoldingDataDir(legacyDataDir());
+	stopKernelHoldingDataDir(dataDir ?? resolveDefaultDataDir());
 	stopWinInstance(name);
 	stopStrayWindowsWatchdogs(name);
 	writeFileSync(ps1Path, "\uFEFF" + ps1, "utf8");
@@ -1535,11 +1566,7 @@ function uninstallWindows(opts) {
 }
 
 function controlPath(opts) {
-	const dir = opts.dataDir
-		? resolve(opts.dataDir)
-		: process.env.PI_WEB_DATA_DIR
-			? resolve(process.env.PI_WEB_DATA_DIR)
-			: join(homedir(), ".pi-web");
+	const dir = resolveDefaultDataDir({ explicit: opts.dataDir });
 	return isWin ? `\\\\.\\pipe\\pi-web-ui-${effectivePort(opts)}` : join(dir, "pi-web-ui.sock");
 }
 
@@ -1920,12 +1947,20 @@ function controlService(action, opts) {
 		}
 
 		if (action === "stop") {
+			const stopPort = Number(opts.port ?? process.env.PI_WEB_PORT ?? 8787);
 			if (legacy) {
 				run("schtasks", ["/End", "/TN", name], {
 					ignoreError: true,
 					silent: true,
 				});
-				stopWinInstance(name);
+				const res = stopWinInstance(name, stopPort);
+				if (!res.stopped) {
+					fail(
+						ZH
+							? `未能停止 ${name}：端口 ${stopPort} 仍被占用（PID: ${res.remainingPids.join(", ")}）`
+							: `Failed to stop ${name}: port ${stopPort} still listening (PID: ${res.remainingPids.join(", ")})`,
+					);
+				}
 				console.log(
 					ZH
 						? `⏹  已停止 ${name}（旧版计划任务；重新 server install 可迁移到登录自启）`
@@ -1933,7 +1968,14 @@ function controlService(action, opts) {
 				);
 				return;
 			}
-			stopWinInstance(name);
+			const res = stopWinInstance(name, stopPort);
+			if (!res.stopped) {
+				fail(
+					ZH
+						? `未能停止 ${name}：端口 ${stopPort} 仍被占用（PID: ${res.remainingPids.join(", ")}）`
+						: `Failed to stop ${name}: port ${stopPort} still listening (PID: ${res.remainingPids.join(", ")})`,
+				);
+			}
 			console.log(
 				ZH
 					? `⏹  已停止 ${name}（自启保留；uninstall 移除）`
@@ -2047,7 +2089,7 @@ plugins options:
 `;
 
 function pluginDataDir(opts) {
-	return resolve(opts.dataDir ?? process.env.PI_WEB_DATA_DIR ?? join(homedir(), ".pi-web"));
+	return resolveDefaultDataDir({ explicit: opts.dataDir });
 }
 
 function parsePluginSource(rawSpec) {

@@ -297,7 +297,8 @@ function pluginI18nTables(dicts, options) {
 	if (Object.keys(tables).length === 0)
 		throw new Error("[sdk] createPluginI18n 至少需要一个 { zh: {...} } 或 { en: {...} } 字典");
 	const extra = looksPositional ? {} : isTable(options) ? options : {};
-	return { tables, locale: typeof extra.locale === "string" ? extra.locale.trim() : "" };
+	const available = Object.keys(source);
+	return { tables, locale: typeof extra.locale === "string" ? extra.locale.trim() : "", available };
 }
 
 /**
@@ -316,6 +317,18 @@ function pluginI18nHostLocale(override, lastSeen) {
 	} catch {}
 	const remembered = lastSeen?.();
 	if (remembered) return remembered;
+	try {
+		if (typeof localStorage !== "undefined") {
+			const stored = localStorage.getItem("pi-web-ui:lang");
+			if (typeof stored === "string" && stored.trim()) return stored.trim();
+		}
+	} catch {}
+	try {
+		if (typeof document !== "undefined") {
+			const htmlLang = document?.documentElement?.lang;
+			if (typeof htmlLang === "string" && htmlLang.trim()) return htmlLang.trim();
+		}
+	} catch {}
 	try {
 		if (typeof navigator !== "undefined") {
 			const raw = navigator.languages?.[0] ?? navigator.language;
@@ -362,6 +375,7 @@ function pluginI18nPickTable(tables, tag) {
  * @returns {{
  *   readonly lang: "zh" | "en",
  *   readonly locale: string,
+ *   available: string[],
  *   current(): string,
  *   t(key: string, vars?: Record<string, string | number>): string,
  *   onChange(handler: (locale: string, lang: "zh" | "en") => void): () => void,
@@ -369,7 +383,7 @@ function pluginI18nPickTable(tables, tag) {
  * }}
  */
 export function createPluginI18n(dicts, options) {
-	const { tables, locale: override } = pluginI18nTables(dicts, options);
+	const { tables, locale: override, available } = pluginI18nTables(dicts, options);
 	const listeners = new Set();
 	let detach;
 	// 宿主没提供 `locale.current()`（旧宿主 / 同页事件）时，切语言只靠事件，得自己记住最后收到的 tag。
@@ -382,8 +396,11 @@ export function createPluginI18n(dicts, options) {
 
 	const t = (key, vars) => {
 		const name = String(key ?? "");
+		const currentTag = localeNow().trim().toLowerCase();
+		const baseTag = currentTag.split(/[-_]/)[0] ?? "";
 		const table = tableOf();
-		const raw = table[name] ?? tables.en?.[name] ?? tables.zh?.[name];
+		const raw =
+			table[name] ?? (baseTag ? tables[baseTag]?.[name] : undefined) ?? tables.en?.[name] ?? tables.zh?.[name];
 		if (raw === undefined) return name;
 		const text = String(raw);
 		if (!vars) return text;
@@ -437,6 +454,7 @@ export function createPluginI18n(dicts, options) {
 		get locale() {
 			return localeNow();
 		},
+		available,
 		current() {
 			return localeNow();
 		},

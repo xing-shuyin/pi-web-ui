@@ -181,6 +181,14 @@ export class MultiEngineBroker {
 	private handleEngineFrame(engine: EngineId, msg: ServerMessage): void {
 		if (this.disposed) return;
 		if (msg.type === "conversations") {
+			if (
+				engine !== this.activeEngine &&
+				msg.conversations.length === 0 &&
+				!(msg.elsewhere && msg.elsewhere.length > 0) &&
+				!this.conversationsByEngine.has(engine)
+			) {
+				return;
+			}
 			const tagged: ConversationSummary[] = msg.conversations.map((c) => ({ ...c, engine }));
 			this.conversationsByEngine.set(engine, {
 				conversations: tagged,
@@ -203,7 +211,13 @@ export class MultiEngineBroker {
 			return;
 		}
 		if (msg.type === "projects") {
+			if (engine !== this.activeEngine && msg.projects.length === 0 && !this.projectsByEngine.has(engine)) {
+				return;
+			}
 			this.projectsByEngine.set(engine, msg.projects);
+			if (engine !== this.activeEngine && !this.projectsByEngine.has(this.activeEngine)) {
+				return;
+			}
 			this.emitMergedProjects();
 			return;
 		}
@@ -211,8 +225,11 @@ export class MultiEngineBroker {
 			const activeCs = this.getActiveSession();
 			const rawCwd = msg.cwd ?? this.attached.get(engine)?.cs?.cwd ?? activeCs?.cwd;
 			const cwdKey = normalizePathKey(rawCwd);
-			const tagged: SessionSummary[] = msg.sessions.map((s) => ({ ...s, engine }));
 			const key = `${engine}:${cwdKey}`;
+			if (engine !== this.activeEngine && msg.sessions.length === 0 && !this.sessionsByKey.has(key)) {
+				return;
+			}
+			const tagged: SessionSummary[] = msg.sessions.map((s) => ({ ...s, engine }));
 			this.sessionsByKey.set(key, {
 				engine,
 				cwdKey,
@@ -233,6 +250,9 @@ export class MultiEngineBroker {
 						if (s.sessionId) this.nativeCliSessionKeys.delete(s.sessionId);
 					}
 				}
+			}
+			if (engine !== this.activeEngine && !this.sessionsByKey.has(`${this.activeEngine}:${cwdKey}`)) {
+				return;
 			}
 			this.emitMergedSessions(cwdKey, rawCwd);
 			return;
@@ -461,7 +481,8 @@ export class MultiEngineBroker {
 			}
 		}
 		if (msg.type === "delete_session" || msg.type === "rename_session" || msg.type === "pin_session") {
-			const owner = this.sessionEngineMap.get(normalizePathKey(msg.path));
+			const explicitEngine = msg.type === "delete_session" ? msg.engine : undefined;
+			const owner = explicitEngine ?? this.sessionEngineMap.get(normalizePathKey(msg.path));
 			if (owner && owner !== this.activeEngine) {
 				const cs = await this.ensureAttached(owner);
 				return withService(owner, cs);
@@ -496,6 +517,15 @@ export class MultiEngineBroker {
 			for (const entry of this.attached.values()) {
 				if (entry.engine !== this.activeEngine && entry.cs) {
 					void entry.cs.removeProject(msg.path).catch(() => {});
+				}
+			}
+			return { handled: false, targetCs: activeCs };
+		}
+		if (msg.type === "delete_project_sessions") {
+			const activeCs = await this.ensureAttached(this.activeEngine);
+			for (const entry of this.attached.values()) {
+				if (entry.engine !== this.activeEngine && entry.cs?.deleteProjectSessions) {
+					void entry.cs.deleteProjectSessions(msg.path).catch(() => {});
 				}
 			}
 			return { handled: false, targetCs: activeCs };

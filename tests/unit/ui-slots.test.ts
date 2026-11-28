@@ -155,6 +155,7 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 			"host:theme",
 			"host:update",
 			"host:new-chat",
+			"host:new-cli",
 			"host:new-ephemeral-chat",
 			"host:new-sandbox",
 			"host:files",
@@ -207,14 +208,17 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 		expect(slots["modal.dialog"]).toEqual([]);
 	});
 
-	it("缺省收进「⋯」的 5 条 + 常驻的 19 条", () => {
+	it("缺省收进「⋯」的 8 条 + 常驻的 17 条", () => {
 		const slots = build([]);
 		const top = slots["topbar.primary"];
 		expect(top.filter((e) => e.hidden).map((e) => e.id)).toEqual([
+			"host:git",
 			"host:browser",
 			"host:language",
 			"host:theme",
 			"host:update",
+			"host:new-chat",
+			"host:new-cli",
 			"host:github",
 		]);
 		expect(top.filter((e) => !e.hidden).map((e) => e.id)).toEqual([
@@ -224,7 +228,6 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 			"host:worktrees",
 			"host:chat",
 			"host:terminal",
-			"host:git",
 			"host:canvas",
 			"host:plugins",
 			"host:search",
@@ -233,7 +236,6 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 			"host:quiet-mode",
 			"host:device-center",
 			"host:settings",
-			"host:new-chat",
 			"host:new-ephemeral-chat",
 			"host:new-sandbox",
 			"host:files",

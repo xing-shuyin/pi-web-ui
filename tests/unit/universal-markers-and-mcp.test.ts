@@ -245,7 +245,11 @@ describe("通用底座 Marker 注入与内置 MCP Bridge", () => {
 
 		class HttpMcpMockDriver extends MockAgentDriver {
 			override readonly capabilities = {
-				...super.capabilities,
+				supportsTreeFork: false,
+				supportsHistoryEdit: false,
+				supportsToolPromptOverride: false,
+				supportsModelSwitch: true,
+				supportsThinkingLevels: true,
 				mcpTransport: "http" as const,
 			};
 			override setInternalMcp(endpoint: InternalMcpEndpoint | null): void {

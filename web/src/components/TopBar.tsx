@@ -13,6 +13,7 @@ import { createPortal } from "react-dom";
 import { BrandDeviceMenu } from "./BrandDeviceMenu";
 import {
 	FiBox,
+	FiCommand,
 	FiDownload,
 	FiEdit2,
 	FiEye,
@@ -77,7 +78,6 @@ import { resolveUpdateCenter } from "../update-verdict";
 import { BarItem } from "./BarItem";
 import { EnginePicker } from "./EnginePicker";
 import { WindowControls } from "./WindowControls";
-import { NativeCliCreateEntry } from "./NativeCliCreateModal";
 
 function TopbarOverflowMenu({
 	anchorRef,
@@ -296,6 +296,7 @@ export function TopBar({
 		"host:update",
 		"host:github",
 		"host:new-chat",
+		"host:new-cli",
 		"host:new-ephemeral-chat",
 		"host:new-sandbox",
 		"host:files",
@@ -335,6 +336,9 @@ export function TopBar({
 				onViewChange("chat");
 				appSend({ type: "new_chat" });
 				focusComposer();
+				return true;
+			case "host:new-cli":
+				onCreateCli?.();
 				return true;
 			case "host:new-ephemeral-chat":
 				onViewChange("chat");
@@ -633,22 +637,33 @@ export function TopBar({
 				</button>
 			) : null,
 		"host:new-chat": tabOn("new-chat") ? (
-			<NativeCliCreateEntry variant="inline" onCreateCli={onCreateCli}>
+			<button
+				type="button"
+				className="chip newchat"
+				data-tip={t("newChatTip")}
+				onClick={() => {
+					onViewChange("chat");
+					appSend({ type: "new_chat" });
+					focusComposer();
+				}}
+			>
+				<FiPlus />
+				<span>{t("newChat")}</span>
+			</button>
+		) : null,
+		"host:new-cli":
+			onCreateCli && tabOn("terminal") ? (
 				<button
 					type="button"
-					className="chip newchat"
-					data-tip={t("newChatTip")}
-					onClick={() => {
-						onViewChange("chat");
-						appSend({ type: "new_chat" });
-						focusComposer();
-					}}
+					className="chip native-cli-inline-button"
+					data-tip={t("nativeCliCreate")}
+					aria-label={t("nativeCliCreate")}
+					onClick={() => onCreateCli()}
 				>
-					<FiPlus />
-					<span>{t("newChat")}</span>
+					<FiCommand />
+					<span>{t("nativeCli")}</span>
 				</button>
-			</NativeCliCreateEntry>
-		) : null,
+			) : null,
 		"host:new-ephemeral-chat": !supportsEphemeral ? null : (
 			<button
 				type="button"

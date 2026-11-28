@@ -22,6 +22,7 @@ export interface ModelAdminHost {
 	flushSnapshot: () => void;
 	isDisposed: () => boolean;
 	modelRuntime?: () => ModelRuntime;
+	extraProviderIds?: () => readonly string[];
 	invalidatePiConfig?: () => void;
 	pushModels: () => Promise<void>;
 	onOAuthActivated?: (provider: string) => void;
@@ -630,6 +631,9 @@ export class ModelAdminService {
 			if (mr) {
 				for (const p of mr.getProviders()) ids.add(p.id);
 			}
+		} catch {}
+		try {
+			for (const id of this.host.extraProviderIds?.() ?? []) ids.add(id);
 		} catch {}
 		for (const id of [
 			"anthropic",

@@ -662,7 +662,7 @@ describe("native CLI event observation", () => {
 			: (["C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Program Files\\Git\\usr\\bin\\bash.exe"].find((p) =>
 					existsSync(p),
 				) ?? null);
-	it.skipIf(!BASH_BIN)(
+	it.skipIf(process.platform === "win32" || !BASH_BIN)(
 		"runs remote preparation and bounded polling with POSIX tools and retains its scripts",
 		async () => {
 			const execute = vi.fn(

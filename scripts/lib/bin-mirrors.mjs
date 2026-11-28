@@ -14,4 +14,10 @@ export const MIRRORS = [
 		source: "server/shell-quote.ts",
 		guard: "tests/unit/bin-mirror.test.ts",
 	},
+	{
+		distPath: "dist/shared/data-dir.js",
+		targetPath: "bin/lib/data-dir.mjs",
+		source: "shared/data-dir.ts",
+		guard: "tests/unit/bin-mirror.test.ts",
+	},
 ];

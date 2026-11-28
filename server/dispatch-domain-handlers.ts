@@ -768,6 +768,9 @@ export function handleSessionLifecycleMessage(
 		case "delete_session":
 			void cs.deleteSession(msg.path);
 			return true;
+		case "delete_project_sessions":
+			void cs.deleteProjectSessions?.(msg.path);
+			return true;
 		case "rename_session":
 			void cs.renameSession(msg.path, msg.name);
 			return true;

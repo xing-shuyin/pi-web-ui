@@ -440,6 +440,15 @@ export class ClientRuntime {
 		return conv;
 	}
 
+	/** 预开钉住的会话（连接期恢复运行列表用）：建对话并入列，但不抢走当前激活对话的焦点。 */
+	openBackgroundConversation(init: Partial<ConversationInit>): Conversation {
+		const conv = this.newConversation(init);
+		const convs = this.surface().conversations();
+		convs.markListed(conv.id);
+		convs.markPrompted(conv.id);
+		return conv;
+	}
+
 	openChildConversation(init: { parentId: string; title: string; cwd?: string; id?: string }): Conversation {
 		const conv = this.newConversation({
 			id: init.id ?? `sa-${this.registry.nextSeq()}`,
@@ -503,7 +512,9 @@ export class ClientRuntime {
 
 	private sessionStatsOf(conv: Conversation): SnapshotConversationView["stats"] {
 		const opened = this.options.sessions?.get(conv.id);
-		return opened ? statsOfSession(opened.session) : undefined;
+		return opened
+			? statsOfSession(opened.session, this.options.stateStore?.()?.getSettingsSnapshot(this.clientId))
+			: undefined;
 	}
 
 	handlers(): DispatchSession {

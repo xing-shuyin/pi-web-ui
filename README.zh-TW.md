@@ -1,6 +1,6 @@
 # pi-web-ui
 
-[English](https://github.com/xing-shuyin/pi-web-ui/blob/main/README.md) · [简体中文](https://github.com/xing-shuyin/pi-web-ui/blob/main/README.zh-CN.md) · **繁體中文**
+[English](https://github.com/xing-shuyin/keel/blob/main/README.md) · [简体中文](https://github.com/xing-shuyin/keel/blob/main/README.zh-CN.md) · **繁體中文**
 
 [![npm 版本](https://img.shields.io/npm/v/pi-web-ui?color=cb3837&logo=npm)](https://www.npmjs.com/package/pi-web-ui)
 [![Node.js](https://img.shields.io/node/v/pi-web-ui?logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -8,7 +8,7 @@
 
 pi-web-ui 是面向 AI 程式開發代理的 Web 工作台，將對話、檔案、終端機與 Git 放在同一個介面。它基於 [pi coding agent](https://github.com/badlogic/pi-mono)，支援在瀏覽器中使用，也提供 Electron 桌面版與 Windows 可攜版。
 
-**[官方網站](https://xing-shuyin.github.io/pi-web-ui-site/)** · **[文件中心](https://xing-shuyin.github.io/pi-web-ui-site/docs.html)** · [下載發行版](https://github.com/xing-shuyin/pi-web-ui/releases/latest) · [更新紀錄](CHANGELOG.md)
+**[官方網站](https://xing-shuyin.github.io/pi-web-ui-site/)** · **[文件中心](https://xing-shuyin.github.io/pi-web-ui-site/docs.html)** · [下載發行版](https://github.com/xing-shuyin/keel/releases/latest) · [更新紀錄](CHANGELOG.md)
 
 ## 快速開始
 
@@ -46,7 +46,7 @@ npx --allow-scripts=node-pty,@google/genai,protobufjs pi-web-ui@latest
 | ----------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | npm 全域安裝      | 經常使用 CLI、管理背景服務 | `npm install -g pi-web-ui@latest`                                                                                     |
 | npx               | 快速試用、按需啟動         | `npx pi-web-ui@latest`；仍會使用 npm 快取與應用程式資料目錄                                                           |
-| Electron 桌面版   | 獨立桌面視窗               | [Releases](https://github.com/xing-shuyin/pi-web-ui/releases/latest)：按系統與架構選安裝包；啟動應用程式無需另裝 Node |
+| Electron 桌面版   | 獨立桌面視窗               | [Releases](https://github.com/xing-shuyin/keel/releases/latest)：按系統與架構選安裝包；啟動應用程式無需另裝 Node |
 | Windows 可攜版    | 解壓縮後使用、攜帶設定     | 同一 Releases 頁選擇 portable zip；解壓縮後執行 `启动Pi.bat` / `PiPortable.bat`，設定與工作區放在可攜目錄中           |
 | Docker 原始碼建置 | 容器部署                   | 使用儲存庫的 `docker-compose.yml`，見下方步驟                                                                         |
 | 原始碼執行        | 開發或自行建置             | `npm ci` → `npm run build` → `npm start`                                                                              |
@@ -138,8 +138,8 @@ ssh -N -L 18787:127.0.0.1:8787 user@your-server
 ## 使用儲存庫 Compose 建置 Docker
 
 ```bash
-git clone https://github.com/xing-shuyin/pi-web-ui.git
-cd pi-web-ui
+git clone https://github.com/xing-shuyin/keel.git
+cd keel
 # 先編輯 docker-compose.yml，替換預設存取通行碼並按需設定掛載
 docker compose up -d --build
 docker compose ps
@@ -200,8 +200,8 @@ pi-web-ui server restart  # 已安裝服務時執行；前景程序自行重新�
 ## 開發與貢獻
 
 ```bash
-git clone https://github.com/xing-shuyin/pi-web-ui.git
-cd pi-web-ui
+git clone https://github.com/xing-shuyin/keel.git
+cd keel
 npm ci
 npm run dev
 ```
@@ -215,13 +215,13 @@ npm start
 
 原始碼執行預設連接埠為 `8787`，`npm start` 不自動開啟瀏覽器。開發規範、測試與架構入口見 [AGENTS.md](AGENTS.md) 和[開發指南](docs/development.md)；桌面開發見 [desktop/README.md](desktop/README.md)。
 
-歡迎透過 [Issues](https://github.com/xing-shuyin/pi-web-ui/issues) 回報問題或提出需求，透過 Pull Request 提交改進。回報問題時請附版本、系統、安裝方式、重現步驟與移除敏感資訊的日誌。
+歡迎透過 [Issues](https://github.com/xing-shuyin/keel/issues) 回報問題或提出需求，透過 Pull Request 提交改進。回報問題時請附版本、系統、安裝方式、重現步驟與移除敏感資訊的日誌。
 
 ## 社群與聯絡
 
 - QQ 交流群：`1126050727`
-- [GitHub Discussions](https://github.com/xing-shuyin/pi-web-ui/discussions)：交流用法與想法
-- [GitHub Issues](https://github.com/xing-shuyin/pi-web-ui/issues)：問題回報與需求建議
+- [GitHub Discussions](https://github.com/xing-shuyin/keel/discussions)：交流用法與想法
+- [GitHub Issues](https://github.com/xing-shuyin/keel/issues)：問題回報與需求建議
 - [dsh-ui-tools](https://github.com/xing-shuyin/dsh-ui-tools)：作者相關專案，DSH 生態 UI 工具集
 
 ## 授權條款

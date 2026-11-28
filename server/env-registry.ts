@@ -139,6 +139,7 @@ export const ENV_SPECS: readonly EnvSpec[] = [
 	{ name: "PI_DESKTOP_RUNTIME_ROOT", scope: "public" },
 	{ name: "PI_DESKTOP_SERVICE_AUTO", scope: "public" },
 	{ name: "PI_DESKTOP_UPDATE_FEED", scope: "public" },
+	{ name: "PI_DESKTOP_UPDATE_MIRRORS", scope: "internal" },
 	{ name: "PI_DESKTOP_UPDATE_MODE", scope: "public" },
 	{ name: "PI_DEVICE_DESKTOP", scope: "public" },
 	{ name: "PI_DEVICE_HUB_ALLOW_REGISTRATION", scope: "public", doc: HUB_DOC },

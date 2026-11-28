@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { resolveDefaultDataDir } from "../../shared/data-dir.js";
 import type { DispatchSession, TerminalManagerLike } from "../engine-service.js";
 import { buildSnapshotProduct, SnapshotSinkSet } from "../snapshot-sinks.js";
 import type { SnapshotProduct } from "../snapshot-channel.js";
@@ -72,6 +73,9 @@ import { makePresentFilesTool } from "../present-files-tool.js";
 import { makeLspTool } from "../lsp-tool.js";
 import { makePatchTool } from "../patch-tool.js";
 import { makeAgentBotTool } from "../device-center/bot-creation-tool.js";
+import { makeBgTaskTool } from "../../packages/keel/src/adapters/tools/bg-task.js";
+import { effectiveDisabledAgentTools } from "../../packages/keel/src/tool-catalog.js";
+import { normalizeDisabledPluginTools } from "../../packages/keel/src/settings-normalize.js";
 import {
 	makeBrowserPageTool,
 	type PageCallRequest,
@@ -306,10 +310,7 @@ export class UniversalSession implements DispatchSession {
 		this.lang = opts.lang ?? "zh";
 		this.webUi = new WebUIContext((msg) => this.send(msg));
 
-		const templatesPath = join(
-			this.dataDir || process.env.PI_WEB_DATA_DIR || join(homedir(), ".pi-web"),
-			"subagent-templates.json",
-		);
+		const templatesPath = join(resolveDefaultDataDir({ explicit: this.dataDir }), "subagent-templates.json");
 		this.subagentTemplates = new SubagentTemplatesStore(templatesPath);
 
 		this.subagentHost = {
@@ -568,8 +569,6 @@ export class UniversalSession implements DispatchSession {
 			const initialConv = this.createEmptyConversation("新对话");
 			this.activeConvId = initialConv.id;
 			this.conversations.set(initialConv.id, initialConv);
-			// 构造器不能 await：排队写入的顺序由 store 的写链保证，失败记日志。
-			this.store.queueWrite(this.cwd, initialConv);
 		}
 
 		if (typeof this.stateStore?.remember === "function" && this.cwd) {
@@ -2018,12 +2017,18 @@ export class UniversalSession implements DispatchSession {
 
 	private emitConversations(): UniversalConversation[] {
 		const allList = this.sessionConversations(this.cwd);
+		const listed = allList.filter((c) => {
+			const isStreaming = Boolean(this.activeTurns.has(c.id) || c.subagentStreaming);
+			if (isStreaming || c.pinned || c.isSubagent || c.isEphemeral) return true;
+			if (!UniversalSession.isDefaultTitle(c.title)) return true;
+			return c.messages.length > 0;
+		});
 		// ConversationSummary 是单源协议；会话身份（sessionId=会话 id）必须带上，
 		// 否则客户端无法把「运行中对话」和「历史会话」认成同一条，左栏会重复一遍。
 		// rowKind：universal 底座的会话全部已落盘（sessions 里都有一条），所以只有需要自占一行的
 		// （流式 / 子代理 / 固定 / 临时 / 有子代理的父节点）标 open，其余交给历史行代表。
-		const subagentParentIds = new Set(allList.map((c) => c.subagentParentId).filter((id): id is string => Boolean(id)));
-		const convs: ConversationSummary[] = allList.map((c) => ({
+		const subagentParentIds = new Set(listed.map((c) => c.subagentParentId).filter((id): id is string => Boolean(id)));
+		const convs: ConversationSummary[] = listed.map((c) => ({
 			id: c.id,
 			title: c.title,
 			cwd: this.cwd,
@@ -2086,7 +2091,11 @@ export class UniversalSession implements DispatchSession {
 			this.sessionCwdById.set(c.id, targetCwd);
 		}
 		const sessionSummaries: SessionSummary[] = allList
-			.filter((c) => !c.isSubagent || !c.isEphemeral)
+			.filter(
+				(c) =>
+					(!c.isSubagent || !c.isEphemeral) &&
+					(c.messages.length > 0 || Boolean(c.pinned) || !UniversalSession.isDefaultTitle(c.title)),
+			)
 			.map((c) => {
 				const firstUser = c.messages.find((m) => m.role === "user");
 				const firstText = firstUser?.content.find((b) => b.type === "text");
@@ -2451,7 +2460,6 @@ export class UniversalSession implements DispatchSession {
 					const initialConv = this.createEmptyConversation("新对话");
 					this.activeConvId = initialConv.id;
 					this.conversations.set(initialConv.id, initialConv);
-					await this.store.saveConversation(this.cwd, initialConv);
 				}
 			}
 
@@ -2515,8 +2523,8 @@ export class UniversalSession implements DispatchSession {
 
 	private buildInternalMcpTools(conversationId = this.activeConvId): InternalMcpToolDef[] {
 		const snap = this.stateStore?.getSettingsSnapshot(this.clientId);
-		const disabledAgent = new Set(snap?.disabledAgentTools ?? []);
-		const disabledPlugin = new Set(snap?.disabledPluginTools ?? []);
+		const disabledAgent = new Set(effectiveDisabledAgentTools(snap ?? {}));
+		const disabledPlugin = new Set(normalizeDisabledPluginTools(snap?.disabledPluginTools));
 		const lang = (): ServerLang => this.lang as ServerLang;
 		const pageClient = {
 			pageCall: (req: PageCallRequest, sig: { aborted?: boolean }, convId?: string) =>
@@ -2534,6 +2542,22 @@ export class UniversalSession implements DispatchSession {
 			makeLspTool({ cwd: this.cwd, ownerId: this.clientId, lang }),
 			makePatchTool({ cwd: this.cwd, ownerId: this.clientId, lang }),
 			makeAgentBotTool(),
+			makeBgTaskTool({
+				background: () =>
+					this.backgroundTasks
+						? ({
+								listJobs: () =>
+									this.backgroundTasks!.rows(this.clientId).map((r) => ({
+										id: r.taskId ?? String(r.pid ?? ""),
+										pid: r.pid ?? 0,
+										command: r.command ?? r.name ?? r.taskId ?? "",
+										since: r.since,
+										logPath: r.logPath ?? "",
+									})),
+								killJob: (id: string) => ({ ok: Boolean(this.backgroundTasks!.killJob(this.clientId, id)) }),
+							} as unknown as import("../../packages/keel/src/contracts/background.js").BackgroundPort)
+						: undefined,
+			}),
 			...rawPluginTools,
 		];
 		const seen = new Set<string>();
@@ -2968,7 +2992,7 @@ export class UniversalSession implements DispatchSession {
 			disabledExtensions: s?.disabledExtensions ?? [],
 			disabledAgentTools: [...(s?.disabledAgentTools ?? [])],
 			toolOnDemandTools: [],
-			disabledPluginTools: [],
+			disabledPluginTools: [...(s?.disabledPluginTools ?? [])],
 			nativeCliInheritModel: { ...s?.nativeCliInheritModel },
 			terminalToolsEnabled: s?.terminalToolsEnabled ?? true,
 			terminalBash: s?.terminalBash ?? true,

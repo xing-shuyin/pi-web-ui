@@ -1,6 +1,11 @@
 // 第一条 import：桌面壳（GUI 子系统应用，本来就没有控制台）装上「Windows 不弹控制台」进程级开关，
 // 它对 taskkill / powershell / 更新器等子进程一律建控制台。单一实现见 shared/hide-console-windows.ts。
 import "../shared/hide-console-windows.js";
+import {
+	DESKTOP_USER_DATA_DIR_NAME,
+	LEGACY_DESKTOP_USER_DATA_NAMES,
+	migrateLegacyDirSync,
+} from "../shared/data-dir.js";
 import { app, BrowserWindow, dialog, ipcMain, session, shell, type IpcMainInvokeEvent } from "electron";
 import { ElectronChromeExtensions, setSessionPartitionResolver } from "electron-chrome-extensions";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
@@ -122,6 +127,16 @@ import {
 } from "./kernel-env.js";
 
 const portablePaths = setupPortableMode(app);
+if (!portablePaths) {
+	const appDataDir = app.getPath("appData");
+	const targetUserData = join(appDataDir, DESKTOP_USER_DATA_DIR_NAME);
+	migrateLegacyDirSync(
+		targetUserData,
+		LEGACY_DESKTOP_USER_DATA_NAMES.map((name) => join(appDataDir, name)),
+		"desktop-userData",
+	);
+	app.setPath("userData", targetUserData);
+}
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -995,7 +1010,7 @@ async function installKernelService(): Promise<{ ok: boolean; message: string }>
 	if (decision.kind === "already")
 		return {
 			ok: true,
-			message: `已由 ${decision.supervisor} 托管（${decision.serviceName ?? "pi-web-ui"}），无需重复安装`,
+			message: `已由 ${decision.supervisor} 托管（${decision.serviceName ?? "keel"}），无需重复安装`,
 		};
 	if (decision.kind === "terminal")
 		return { ok: false, message: `Linux 安装系统服务需要超级权限，请在终端执行：${decision.command}` };
@@ -1003,7 +1018,7 @@ async function installKernelService(): Promise<{ ok: boolean; message: string }>
 		return {
 			ok: false,
 			message:
-				"当前连的内核不是本机装的：本机不知道它的数据目录，装服务只会装出一份空数据。请到内核所在机器执行 pi-web-ui server install",
+				"当前连的内核不是本机装的：本机不知道它的数据目录，装服务只会装出一份空数据。请到内核所在机器执行 keel server install",
 		};
 	// 装服务要求磁盘上有全局 npm 包：否则服务会钉死在安装目录，应用一升级就失效。
 	if (kernelSource !== "global-npm" && !activeRuntimeVersion)
@@ -1311,6 +1326,7 @@ async function applyRuntimeSwitch(plan: RuntimePlan): Promise<void> {
 
 async function createWindow(): Promise<void> {
 	mainWin = new BrowserWindow({
+		title: "keel",
 		width: 1280,
 		height: 860,
 		minWidth: 800,

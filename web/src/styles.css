@@ -2559,9 +2559,9 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 16px;
-		height: 16px;
-		margin-right: 4px;
+		width: 14px;
+		height: 14px;
+		margin-right: 8px;
 		color: var(--text-faint);
 		cursor: pointer;
 		flex-shrink: 0;
@@ -2569,12 +2569,6 @@
 		transition:
 			transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
 			color 0.15s ease;
-	}
-	.lp-project-head-row.is-collapsed .lp-project-chevron {
-		transform: rotate(-90deg);
-	}
-	.lp-project-head-row.is-expanded .lp-project-chevron {
-		transform: rotate(0deg);
 	}
 	.lp-project-header-item .lp-project-chevron svg {
 		pointer-events: none;
@@ -7165,6 +7159,15 @@
 	.slot-tabs-bar [role="tab"][aria-selected="true"] {
 		background: var(--bg-elev2);
 		color: var(--text);
+	}
+	.slot-tabs-bar [role="tab"].slot-tab-icon-only {
+		padding: 5px 8px;
+	}
+	.slot-tab-icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		line-height: 1;
 	}
 	.slot-tabs-extra {
 		margin-left: auto;
@@ -20549,11 +20552,10 @@
 		z-index: 10;
 		background: var(--bg-elev);
 
-		border: 1px solid var(--accent);
-		border-left: 3px solid var(--accent);
-		border-radius: 10px;
-		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-		padding: 10px 12px;
+		border: 1px solid var(--border);
+		border-radius: 14px;
+		box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+		padding: 12px 14px;
 		animation: dialog-slide-up 0.18s ease-out;
 		overscroll-behavior: contain;
 	}
@@ -21046,48 +21048,78 @@
 	}
 
 	.dialog-submit {
-		padding: 6px 14px;
-		border-radius: 8px;
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		padding: 5px 14px;
+		border-radius: 999px;
 		border: 1px solid var(--accent);
 		background: var(--accent);
 		color: var(--accent-contrast, #fff);
 		cursor: pointer;
-		font-size: 13px;
+		font-size: 12.5px;
+		font-weight: 600;
+		line-height: 1.3;
+		transition:
+			opacity 0.15s ease,
+			filter 0.15s ease;
+	}
+	.dialog-submit:hover:not(:disabled) {
+		filter: brightness(1.08);
 	}
 	.dialog-submit:disabled {
 		opacity: 0.45;
 		cursor: default;
 	}
-	.dialog-dismiss-inline {
-		padding: 6px 12px;
+	.question-submit-enter {
+		font-size: 12px;
+		opacity: 0.9;
+	}
+	.question-skip {
+		padding: 5px 10px;
 		border-radius: 8px;
-		border: 1px solid var(--border);
+		border: none;
+		background: none;
+		color: var(--text-dim);
+		cursor: pointer;
+		font-size: 12.5px;
+		font-weight: 500;
+	}
+	.question-skip:hover {
+		color: var(--text);
+		background: color-mix(in srgb, var(--text) 6%, transparent);
+	}
+	.dialog-dismiss-inline {
+		padding: 4px 10px;
+		border-radius: 8px;
+		border: 1px solid transparent;
 		background: none;
 		color: var(--text-faint);
 		cursor: pointer;
-		font-size: 13px;
+		font-size: 12px;
 	}
 	.dialog-dismiss-inline:hover {
 		color: var(--text);
-		background: var(--bg-elev);
+		background: color-mix(in srgb, var(--text) 6%, transparent);
 	}
 	.question-auto-submit {
-		display: flex;
+		display: inline-flex;
 		align-items: center;
 		flex-wrap: wrap;
-		gap: 6px;
+		gap: 5px;
 		min-width: 0;
 		max-width: 100%;
-		font-size: 12px;
-		color: var(--text);
+		font-size: 11.5px;
+		color: var(--text-dim);
 		overflow-wrap: anywhere;
 		word-break: break-word;
+		cursor: pointer;
 	}
 	.question-auto-submit input {
 		accent-color: var(--accent);
 	}
 	.question-auto-submit-hint {
-		color: var(--text-dim);
+		color: var(--text-faint);
 	}
 
 	.dialog-nav {
@@ -21095,11 +21127,20 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 8px;
+		flex-wrap: wrap;
+	}
+	.dialog-nav-left {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 8px;
+		min-width: 0;
 	}
 	.dialog-nav-right {
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: 6px;
+		margin-left: auto;
 	}
 	.dialog-prev {
 		padding: 6px 12px;
@@ -21117,68 +21158,245 @@
 		opacity: 0.45;
 		cursor: default;
 	}
-	.question-option {
+	.dialog-head.question-dialog-head {
+		position: static;
+		margin: 0;
+		padding: 0;
+		background: transparent;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 4px;
+		border-bottom: none;
+		border-radius: 0;
+	}
+	.question-head-main {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
+	}
+	.question-head-icon {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex: none;
+		width: 20px;
+		height: 20px;
+		margin-top: 1px;
+		color: var(--text-dim);
+		font-size: 16px;
+	}
+	.question-head-dot {
+		position: absolute;
+		top: 0;
+		right: 0;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--accent);
+		box-shadow: 0 0 0 1.5px var(--bg-elev);
+	}
+	.question-stepper {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		margin-right: 4px;
+		font-size: 12px;
+		color: var(--text-dim);
+		font-variant-numeric: tabular-nums;
+	}
+	.question-step-arrow {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 22px;
+		height: 22px;
+		border-radius: 6px;
+		border: none;
+		background: none;
+		color: var(--text-dim);
+		cursor: pointer;
+		font-size: 13px;
+		padding: 0;
+	}
+	.question-step-arrow:hover:not(:disabled) {
+		color: var(--text);
+		background: color-mix(in srgb, var(--text) 8%, transparent);
+	}
+	.question-step-arrow:disabled {
+		opacity: 0.35;
+		cursor: default;
+	}
+	.question-progress {
+		min-width: 28px;
+		text-align: center;
+		font-size: 12px;
+		color: var(--text-dim);
+	}
+	.question-meta-row {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 6px;
+		padding: 0 2px;
+	}
+	.question-header-tag {
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 12%, transparent);
+		border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+		border-radius: 6px;
+		padding: 1px 7px;
+	}
+	.dialog-inline .set-row.question-option {
 		cursor: pointer;
 		text-align: left;
 
 		display: flex;
-		flex-direction: column;
-		align-items: stretch;
-		gap: 2px;
-		padding: 4px 10px;
+		flex-direction: row;
+		align-items: center;
+		gap: 10px;
+		padding: 5px 6px;
 		min-width: 0;
 		max-width: 100%;
+		width: 100%;
 		flex: 0 1 auto;
+		border-radius: 8px;
+		border: 1px solid transparent;
+		background: transparent;
 
 		overflow-wrap: anywhere;
+		transition:
+			background 0.12s ease,
+			border-color 0.12s ease;
 	}
-	.question-option:hover {
-		background: color-mix(in srgb, var(--accent) 7%, var(--bg-elev2));
+	.dialog-inline .set-row.question-option:hover {
+		background: color-mix(in srgb, var(--text) 5%, transparent);
 	}
-	.question-option.active {
+	.dialog-inline .set-row.question-option.active {
+		border-color: transparent;
+		background: color-mix(in srgb, var(--accent) 10%, transparent);
+	}
+	.question-option-body {
+		flex: 1 1 auto;
+		min-width: 0;
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		align-items: baseline;
+		column-gap: 8px;
+		row-gap: 1px;
+	}
+	.question-select-mark {
+		flex: none;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 18px;
+		height: 18px;
+		margin-top: 1px;
+		border-radius: 5px;
+		border: 1px solid var(--border);
+		color: transparent;
+		font-size: 12px;
+	}
+	.question-select-mark.active {
 		border-color: var(--accent);
-		background: color-mix(in srgb, var(--accent) 12%, var(--bg-elev2));
+		background: var(--accent);
+		color: var(--accent-contrast, #fff);
 	}
-	.question-custom {
-		margin-top: 4px;
+	.question-other-row {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 3px 6px 0;
+		border-radius: 8px;
+		border: 1px solid transparent;
+		transition:
+			background 0.12s ease,
+			border-color 0.12s ease;
+	}
+	.question-other-actions {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		flex: none;
+	}
+	.dialog-inline .dialog-nav.question-sub-bar {
+		position: static;
+		margin: 0;
+		padding: 2px 6px 0;
+		border-top: none;
+		border-radius: 0;
+		background: transparent;
+		justify-content: flex-start;
+		gap: 10px;
+		opacity: 0.72;
+	}
+	.dialog-inline .dialog-nav.question-sub-bar:hover {
+		opacity: 1;
+	}
+	.question-other-row:hover {
+		background: color-mix(in srgb, var(--text) 4%, transparent);
+	}
+	.question-other-row:focus-within,
+	.question-other-row.active {
+		border-color: transparent;
+		background: color-mix(in srgb, var(--text) 4%, transparent);
+	}
+	.question-other-input {
+		flex: 1 1 auto;
+		min-width: 0;
+		border: none;
+		background: transparent;
+		color: var(--text);
+		font-size: 13px;
+		line-height: 1.45;
+		padding: 2px 0;
+		outline: none;
+		font-family: inherit;
+	}
+	.question-other-input::placeholder {
+		color: var(--text-faint);
 	}
 
 	.dialog-inline .set-list {
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		gap: 3px;
 		max-height: none;
 		overflow-y: visible;
 	}
 	.dialog-inline .set-section {
-		padding: 8px 10px;
+		padding: 2px 0 4px;
 		gap: 6px;
 		min-width: 0;
-	}
-	.dialog-inline .set-prompt-input.question-custom {
-		min-height: 32px;
-		max-height: 110px;
-		padding: 6px 10px;
-		line-height: 1.45;
-		height: auto;
-		resize: vertical;
+		background: transparent;
+		border: none;
 	}
 	.dialog-inline .dialog-nav {
 		position: sticky;
-		bottom: -10px;
+		bottom: -12px;
 		z-index: 12;
 		background: var(--bg-elev);
-		margin: 2px -12px -10px;
-		padding: 8px 12px 10px;
+		margin: 2px -14px -12px;
+		padding: 8px 14px 10px;
 		border-top: 1px solid var(--border-soft);
-		border-radius: 0 0 9px 9px;
+		border-radius: 0 0 13px 13px;
 	}
 
+	.dialog-inline .question-head {
+		flex: 1 1 auto;
+		min-width: 0;
+	}
 	.dialog-inline .question-head,
 	.dialog-inline .question-head .md {
-		font-size: 13px;
+		font-size: 13.5px;
 		font-weight: 600;
 		color: var(--text);
+		line-height: 1.45;
 	}
 	.question-mark {
 		display: inline-block;
@@ -21191,23 +21409,24 @@
 	}
 
 	.question-option .set-row-name {
-		flex: 1 1 auto;
-		display: flex;
-		align-items: flex-start;
+		flex: 0 1 auto;
+		display: inline-flex;
+		align-items: center;
+		flex-wrap: wrap;
 		gap: 6px;
 		min-width: 0;
 		max-width: 100%;
-		font-weight: 600;
+		font-weight: 500;
 		color: var(--text);
 		white-space: normal;
 		overflow: visible;
 		overflow-wrap: anywhere;
 		word-break: break-word;
-		line-height: 1.3;
+		line-height: 1.4;
 	}
 
 	.question-option .set-row-name .md {
-		flex: 1 1 auto;
+		flex: 0 1 auto;
 		min-width: 0;
 		max-width: 100%;
 		overflow-wrap: anywhere;
@@ -21217,21 +21436,11 @@
 	.question-option .set-row-desc {
 		font-size: 12px;
 		line-height: 1.4;
+		color: var(--text-dim);
 		white-space: normal;
 		overflow: visible;
 		text-overflow: clip;
 		text-align: left;
-	}
-
-	@media (hover: hover) and (pointer: fine) {
-		.dialog-inline .set-list {
-			flex-direction: row;
-			flex-wrap: wrap;
-		}
-
-		.question-option .set-row-desc {
-			display: none;
-		}
 	}
 
 	.dialog-inline .md {
@@ -21396,20 +21605,25 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		min-width: 15px;
-		height: 15px;
-		padding: 0 3px;
-		font-size: 9.5px;
+		min-width: 20px;
+		height: 20px;
+		padding: 0 5px;
+		margin-top: 1px;
+		font-size: 11px;
 		font-family: var(--mono);
-		font-weight: 700;
-		border-radius: 3px;
-		background: var(--bg);
+		font-weight: 600;
+		border-radius: 5px;
+		background: color-mix(in srgb, var(--text) 7%, var(--bg));
 		border: 1px solid var(--border-soft);
 		color: var(--text-dim);
-		margin-right: 4px;
 		flex: none;
 		line-height: 1;
-		opacity: 0.85;
+	}
+	.question-option.active .question-key-badge,
+	.question-other-row.active .question-key-badge {
+		background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+		border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+		color: var(--accent);
 	}
 	.dialog-dismiss-inline.reject-note {
 		border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
@@ -40974,6 +41188,9 @@
 }
 .lp-panel .lp-project-header-item .lp-project-chevron {
 	display: inline-flex;
+	width: 14px;
+	height: 14px;
+	margin-right: 8px;
 	opacity: 0.65;
 }
 .lp-panel .lp-project-name {
@@ -41073,6 +41290,10 @@
 }
 .lp-engine-glyph[data-engine="pi"]:not(.native-cli-conversation-icon) {
 	color: color-mix(in srgb, #22c55e 72%, var(--text-dim));
+}
+.lp-new-chat-primary .lp-engine-glyph[data-engine]:not(.native-cli-conversation-icon) {
+	color: inherit;
+	opacity: 0.9;
 }
 .lp-cli-badge {
 	display: inline-flex;

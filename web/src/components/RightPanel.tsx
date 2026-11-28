@@ -10,6 +10,7 @@ import {
 	FiEyeOff,
 	FiFile,
 	FiFolder,
+	FiGitBranch,
 	FiHardDrive,
 	FiHome,
 	FiLink,
@@ -18,6 +19,7 @@ import {
 	FiSearch,
 	FiX,
 } from "react-icons/fi";
+import { LuFolderTree } from "react-icons/lu";
 import type { ClientMessage, FileListing, FileSearchResult, UiPluginInfo } from "../types";
 import { useT } from "../i18n";
 import { useAppField } from "../app-globals";
@@ -1074,6 +1076,8 @@ export const RightPanel = memo(function RightPanel({
 									{
 										id: FILES_TAB_ID,
 										label: t("openFiles"),
+										iconNode: <LuFolderTree />,
+										iconOnly: true,
 										element: (
 											<>
 												<div className="panel-crumbs files-toolbar">
@@ -1601,7 +1605,9 @@ export const RightPanel = memo(function RightPanel({
 										),
 									},
 								]),
-						...(scmTab && !scmTabHidden ? [{ id: SCM_TAB_ID, label: t("scmTitle"), element: scmTab }] : []),
+						...(scmTab && !scmTabHidden
+							? [{ id: SCM_TAB_ID, label: t("scmTitle"), iconNode: <FiGitBranch />, iconOnly: true, element: scmTab }]
+							: []),
 						...pluginTabs,
 					])}
 				/>

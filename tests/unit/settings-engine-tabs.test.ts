@@ -39,14 +39,14 @@ describe("设置面板多引擎动态自适应（分区条件隐藏与模型中�
 
 		expect(SETTINGS_SRC).toMatch(/\.\.\.\(isPi\s*\?\s*\[\s*\{\s*id:\s*"scheduler"/);
 
-		expect(SETTINGS_SRC).toMatch(/isPi\s*\?\s*\[\s*\{\s*id:\s*"tools"/);
+		expect(SETTINGS_SRC).toMatch(/id:\s*"tools"/);
 		expect(SETTINGS_SRC).toMatch(/id:\s*"approval-rules"/);
 
 		expect(SETTINGS_SRC).toMatch(/\.\.\.\(isPi\s*\?\s*\[\s*\{\s*id:\s*"skills"/);
 
 		expect(SETTINGS_SRC).toMatch(/isDsh\s*\?\s*\[\s*\{\s*id:\s*"dsh-extensions"/);
 
-		expect(SETTINGS_SRC).toMatch(/\.\.\.\(isPi\s*\?\s*\[\s*\{\s*id:\s*"mcp"/);
+		expect(SETTINGS_SRC).toMatch(/\.\.\.\((?:isPi|isPi\s*\|\|\s*isDsh)\s*\?\s*\[\s*\{\s*id:\s*"mcp"/);
 
 		expect(SETTINGS_SRC).toMatch(/\.\.\.\(isClaude\s*\|\|\s*isCodex\s*\?\s*\[\]\s*:\s*\[\s*\{\s*id:\s*"review"/);
 

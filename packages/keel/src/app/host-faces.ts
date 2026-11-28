@@ -517,6 +517,17 @@ export function createHostFaces(deps: HostFaceDeps): HostFaces {
 		transport,
 		agentDir,
 		runtimeFactory: createModelRuntimeFactory(),
+		sessionRuntime: () => {
+			const active = runtime.registry.activeConv();
+			const opened = active ? sessions.get(active.id) : undefined;
+			const activeMr = (opened?.session as { modelRuntime?: unknown } | undefined)?.modelRuntime;
+			if (activeMr) return activeMr as never;
+			for (const conv of runtime.registry.list()) {
+				const mr = (sessions.get(conv.id)?.session as { modelRuntime?: unknown } | undefined)?.modelRuntime;
+				if (mr) return mr as never;
+			}
+			return undefined;
+		},
 		// 启用范围是「账号设置」（SDK 设置层），只有真开了会话才拿得到；拿不到就不带 enabled。
 		enabledPatterns: () => {
 			const conv = runtime.registry.activeConv();

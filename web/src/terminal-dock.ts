@@ -31,7 +31,7 @@ export const DEFAULT_TERMINAL_DOCK_PREFS: TerminalDockPrefs = {
 
 function clampSize(side: TerminalDockSide, value: unknown, fallback: number): number {
 	const min = side === "bottom" ? MIN_BOTTOM : MIN_SIDE;
-	if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+	if (typeof value !== "number" || !Number.isFinite(value) || value < min) return fallback;
 	return Math.round(Math.min(1200, Math.max(min, value)));
 }
 
@@ -86,7 +86,9 @@ export function readTerminalDockPrefs(): TerminalDockPrefs {
 	return cached;
 }
 
-export function saveTerminalDockPrefs(patch: Partial<TerminalDockPrefs>): TerminalDockPrefs {
+export function saveTerminalDockPrefs(
+	patch: Partial<Omit<TerminalDockPrefs, "sizes">> & { sizes?: Partial<Record<TerminalDockSide, number>> },
+): TerminalDockPrefs {
 	const current = readTerminalDockPrefs();
 	const next = normalizeTerminalDockPrefs({
 		...current,
@@ -114,9 +116,7 @@ export function useTerminalDock(): TerminalDockPrefs {
 	return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
-export interface TerminalShortcut {
-	kind: "toggle" | "new" | "next" | "previous" | "close";
-}
+export type TerminalShortcut = "toggle" | "new" | "next" | "previous" | "close";
 
 export function matchTerminalShortcut(event: {
 	key: string;

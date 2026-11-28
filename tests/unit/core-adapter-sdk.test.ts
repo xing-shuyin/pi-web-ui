@@ -148,6 +148,38 @@ describe("openTurnSession：新建会话", () => {
 		expect(opened.sessionId).toBe("sess-mem");
 		expect("sessionFile" in opened).toBe(false);
 	});
+
+	it("传入 tools 白名单时自动并入扩展工具与 customTools 名（#1026）", async () => {
+		const cwd = await makeTempDir();
+		const agentDir = await makeTempDir();
+		const services = {
+			resourceLoader: {
+				getExtensions: () => ({
+					extensions: [
+						{
+							tools: new Map([
+								["hindsight_recall", {}],
+								["web_search", {}],
+							]),
+						},
+					],
+				}),
+			},
+		};
+		const { mod, sdk } = await importOpener({
+			createAgentSessionServices: vi.fn(async () => services),
+		});
+
+		await mod.openTurnSession({
+			cwd,
+			agentDir,
+			tools: ["read", "bash"],
+			customTools: [{ name: "conversation" }],
+		});
+
+		const fromServicesArg = sdk.createAgentSessionFromServices.mock.calls[0][0] as { tools?: string[] };
+		expect(fromServicesArg.tools).toEqual(["read", "bash", "hindsight_recall", "web_search", "conversation"]);
+	});
 });
 
 describe("openTurnSession：打开已有转录", () => {

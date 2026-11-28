@@ -1,14 +1,14 @@
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { writeAtomicSync } from "./atomic-file.js";
+import { resolveDefaultDataDir } from "../shared/data-dir.js";
 
 const BUSYBOX_URL = "https://frippery.org/files/busybox/busybox64u.exe";
 const MIN_SIZE = 500_000;
 const DOWNLOAD_TIMEOUT_MS = 60_000;
 
 export function windowsBashDir(): string {
-	return join(homedir(), ".pi-web", "bin");
+	return join(resolveDefaultDataDir(), "bin");
 }
 
 export function windowsBashPath(): string {

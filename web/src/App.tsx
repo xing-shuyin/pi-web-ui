@@ -446,7 +446,7 @@ export function App() {
 
 	useEffect(() => {
 		const name = projectTitle ? resolveProjectDisplayName(cwd, chat.projects) : "";
-		const base = name ? `${name} — pi-web-ui` : t("docTitle");
+		const base = name ? `${name} — keel` : t("docTitle");
 		document.title = instanceName ? `[${instanceName}] ${base}` : base;
 	}, [cwd, chat.projects, projectTitle, instanceName, t]);
 	const [attachments, setAttachments] = useState<PendingAttachment[]>([]);

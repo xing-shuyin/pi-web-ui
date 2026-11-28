@@ -84,9 +84,9 @@ describe("install-desktop-local", () => {
 			detached: false,
 		});
 		expect(buildOpenInstallerCommand("C:\\release\\keel-setup.exe", "win32")).toEqual({
-			command: "cmd",
-			argv: ["/c", "start", "", "C:\\release\\keel-setup.exe"],
-			detached: true,
+			command: "powershell.exe",
+			argv: ["-NoProfile", "-NonInteractive", "-Command", "Start-Process -FilePath 'C:\\release\\keel-setup.exe'"],
+			detached: false,
 		});
 		expect(buildOpenInstallerCommand("/tmp/keel.AppImage", "linux")).toEqual({
 			command: "/tmp/keel.AppImage",

@@ -340,9 +340,10 @@ describe("Universal Agent 底座体系单测", () => {
 			});
 
 			await session.newChat();
+			await session.prompt("hello");
 			await session.refreshSessions();
 
-			const convMsg = sentMessages.find((m) => m.type === "conversations");
+			const convMsg = sentMessages.filter((m) => m.type === "conversations").at(-1);
 			expect(convMsg).toBeDefined();
 			if (convMsg && convMsg.type === "conversations") {
 				expect(convMsg.conversations.length).toBeGreaterThanOrEqual(1);

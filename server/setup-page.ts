@@ -4,7 +4,7 @@ export function renderSetupHtml(): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>pi-web-ui 本地配置中心</title>
+<title>keel 本地配置中心</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <style>
 :root {
@@ -605,7 +605,7 @@ $("save").onclick = () => {
 			$("btn-back").href = "/";
 		}
 		if (j.restartRequired) {
-			showBanner("warn", "配置已保存", "Token 已热生效。监听地址、端口或白名单修改需重启服务后生效（pi-web-ui server restart）。");
+			showBanner("warn", "配置已保存", "Token 已热生效。监听地址、端口或白名单修改需重启服务后生效（keel server restart）。");
 		} else {
 			showBanner("ok", "配置已保存并生效", "Token 已成功应用至当前运行中的服务。");
 		}

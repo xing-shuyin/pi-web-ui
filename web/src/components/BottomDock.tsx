@@ -8,11 +8,7 @@ import {
 } from "react";
 import { FiChevronDown, FiChevronUp, FiX } from "react-icons/fi";
 import { useT } from "../i18n";
-import {
-	saveTerminalDockPrefs,
-	useTerminalDock,
-	type TerminalDockSide,
-} from "../terminal-dock";
+import { saveTerminalDockPrefs, useTerminalDock, type TerminalDockSide } from "../terminal-dock";
 
 export interface BottomDockTab {
 	id: string;

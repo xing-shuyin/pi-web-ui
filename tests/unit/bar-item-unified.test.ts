@@ -114,9 +114,9 @@ describe("上下左右四栏通用 BarItem 渲染测试", () => {
 			state.worktree = original;
 		}
 	});
-	it("顶栏「新对话」保文字，CLI 是它右侧的独立 chip；其他栏仍用展开式 CLI 快捷区", () => {
+	it("「新对话」与「CLI」彻底分开为两个独立按钮，各自在四栏独立渲染", () => {
 		const onCreateCli = vi.fn();
-		const entry: UiSlotEntry = {
+		const newChatEntry: UiSlotEntry = {
 			id: "host:new-chat",
 			slot: "topbar.primary",
 			source: "host",
@@ -128,29 +128,45 @@ describe("上下左右四栏通用 BarItem 渲染测试", () => {
 			userOverrides: [],
 			arrangedBy: [],
 		};
-		const top = renderBarItem(entry, "top", undefined, { onCreateCli });
-		try {
-			const button = top.container.querySelector<HTMLButtonElement>('[data-bar-item="host:new-chat"]')!;
-			expect(button.querySelector(".bar-item-text")?.textContent).toBe("新对话");
-			const cli = top.container.querySelector<HTMLButtonElement>(".native-cli-inline-button")!;
-			expect(cli.textContent).toBe("CLI");
-			expect(cli.closest(".native-cli-create-entry")?.getAttribute("data-cli-variant")).toBe("inline");
-			expect(top.container.querySelector(".native-cli-create-hover")).toBeNull();
-			act(() => cli.click());
-			expect(onCreateCli).toHaveBeenCalledOnce();
-		} finally {
-			act(() => top.root.unmount());
-			top.container.remove();
-		}
+		const newCliEntry: UiSlotEntry = {
+			id: "host:new-cli",
+			slot: "topbar.primary",
+			source: "host",
+			label: "新建 CLI 对话",
+			kind: "action",
+			order: 96.2,
+			align: "end",
+			hidden: false,
+			userOverrides: [],
+			arrangedBy: [],
+		};
+		for (const bar of ["top", "bottom", "left", "right"] as const) {
+			const chatBar = renderBarItem(newChatEntry, bar, undefined, { onCreateCli });
+			try {
+				const button = chatBar.container.querySelector<HTMLButtonElement>('[data-bar-item="host:new-chat"]')!;
+				expect(button).not.toBeNull();
+				expect(button.querySelector(".bar-item-text")?.textContent).toBe("新对话");
+				expect(chatBar.container.querySelector(".native-cli-create-entry")).toBeNull();
+				expect(chatBar.container.querySelector(".native-cli-inline-button")).toBeNull();
+				expect(chatBar.container.querySelector(".native-cli-create-hover")).toBeNull();
+			} finally {
+				act(() => chatBar.root.unmount());
+				chatBar.container.remove();
+			}
 
-		const left = renderBarItem(entry, "left", undefined, { onCreateCli });
-		try {
-			expect(left.container.querySelector(".native-cli-create-entry")).not.toBeNull();
-			expect(left.container.querySelector(".native-cli-inline-button")).toBeNull();
-		} finally {
-			act(() => left.root.unmount());
-			left.container.remove();
+			const cliBar = renderBarItem(newCliEntry, bar, undefined, { onCreateCli });
+			try {
+				const cli = cliBar.container.querySelector<HTMLButtonElement>('[data-bar-item="host:new-cli"]')!;
+				expect(cli).not.toBeNull();
+				expect(cli.querySelector(".bar-item-text")?.textContent).toBe("CLI");
+				expect(cli.closest(".native-cli-create-entry")).toBeNull();
+				act(() => cli.click());
+			} finally {
+				act(() => cliBar.root.unmount());
+				cliBar.container.remove();
+			}
 		}
+		expect(onCreateCli).toHaveBeenCalledTimes(4);
 	});
 	it.each(["top", "bottom", "left", "right"] as const)("设备中心在 %s 栏显示图标和名称", (bar) => {
 		const entry: UiSlotEntry = {

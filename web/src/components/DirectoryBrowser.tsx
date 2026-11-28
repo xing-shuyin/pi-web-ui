@@ -279,10 +279,12 @@ export function DirectoryBrowser({
 			}
 			const fullPath = joinProjectPath(browsePath, trimmed);
 			if (onCreateProject) {
-				onCreateProject(fullPath, customProjectName);
+				if (customProjectName) onCreateProject(fullPath, customProjectName);
+				else onCreateProject(fullPath);
 			} else {
 				appSend({ type: "make_dir", path: fullPath });
-				onSelectDirectory(fullPath, customProjectName);
+				if (customProjectName) onSelectDirectory(fullPath, customProjectName);
+				else onSelectDirectory(fullPath);
 			}
 			setShowNew(false);
 			setNewName("");

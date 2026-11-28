@@ -1,6 +1,8 @@
 import type { DispatchSession } from "../engine-service.js";
 import type { ModelAdminPort } from "../contracts/model-admin.js";
 import type { SettingsStorePort } from "../contracts/settings-store.js";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import type { ServerMessage } from "../protocol.js";
 import type { Conversation } from "../kernel/conversation/index.js";
 import { DEFAULT_GOAL_PREFS, goalStatusOfPrefs } from "../domains/goals/handlers.js";
@@ -199,9 +201,50 @@ export interface ConnectionInitInput extends ConnectFrameInput {
  * 连接期的唯一入口（`CoreEngine.attach()` 建好运行时之后调一次）。
  * 返回「重推连接期初始态」的闭包：重连复用同一个运行时时，`attach()` 直接调它。
  */
+const MAX_PINNED_PREOPEN = 12;
+
+function normalizePathKey(p: string): string {
+	const abs = resolve(p);
+	return process.platform === "win32" ? abs.toLowerCase() : abs;
+}
+
+/**
+ * 预开当前工作区钉住（📌）的会话，使其在重启重连后仍出现在左侧「运行的对话」列表（#1029）。
+ * 已由 `openLeadingConversation` 打开的会话跳过；单个损坏或缺失文件只跳过不阻塞连接。
+ */
+async function openPinnedConversations(
+	runtime: ClientRuntime,
+	sessions: SessionRegistry,
+	stateStore: SettingsStorePort,
+): Promise<void> {
+	if (runtime.isDisposed()) return;
+	const pinnedPaths = stateStore.getPinnedSessions?.(runtime.cwd) ?? [];
+	if (pinnedPaths.length === 0) return;
+	const alreadyOpen = new Set(
+		runtime.registry
+			.list()
+			.map((c) => c.meta.sessionFile)
+			.filter((f): f is string => typeof f === "string" && f.length > 0)
+			.map(normalizePathKey),
+	);
+	for (const sessionPath of pinnedPaths) {
+		if (runtime.isDisposed() || runtime.registry.list().length >= MAX_PINNED_PREOPEN) break;
+		if (!sessionPath || !existsSync(sessionPath)) continue;
+		if (alreadyOpen.has(normalizePathKey(sessionPath))) continue;
+		const conv = runtime.openBackgroundConversation({ sessionFile: sessionPath });
+		alreadyOpen.add(normalizePathKey(sessionPath));
+		try {
+			await sessions.ensure(conv);
+		} catch {
+			// 单个钉住会话损坏时保留行或跳过，不阻塞整条连接初始化。
+		}
+	}
+}
+
 export async function initializeConnection(input: ConnectionInitInput): Promise<() => void> {
 	const dispatch = input.runtime.handlers();
 	await openLeadingConversation(input.runtime, input.sessions);
+	await openPinnedConversations(input.runtime, input.sessions, input.stateStore);
 	applyQuiesceGate(dispatch, { isQuiesced: input.isQuiesced, emit: input.emit });
 	const pushInitial = (): void => pushConnectFrames(input, dispatch);
 	pushInitial();

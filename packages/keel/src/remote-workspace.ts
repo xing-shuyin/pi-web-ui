@@ -68,7 +68,7 @@ export function resolveWorkspaceSessionDir(dataDir: string | undefined, cwdOrUri
 	if (!isRemoteWorkspaceUri(trimmed)) {
 		return trimmed;
 	}
-	const safeDataDir = dataDir || process.env.PI_WEB_DATA_DIR || path.join(os.homedir(), ".pi-web");
+	const safeDataDir = dataDir || process.env.PI_WEB_DATA_DIR || path.join(os.homedir(), ".keel");
 	const parsed = parseRemoteWorkspaceUri(trimmed);
 	const hash = createHash("sha1").update(trimmed).digest("hex").slice(0, 10);
 	const baseName = parsed

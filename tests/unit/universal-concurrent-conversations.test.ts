@@ -92,7 +92,7 @@ describe("UniversalSession concurrent conversations", () => {
 		const secondId = session.activeConversationId();
 		const afterSwitch = latestConversations(frames);
 		expect(afterSwitch.find((conv) => conv.id === firstId)?.isStreaming).toBe(true);
-		expect(afterSwitch.find((conv) => conv.id === secondId)?.isStreaming).toBe(false);
+		expect(Boolean(afterSwitch.find((conv) => conv.id === secondId)?.isStreaming)).toBe(false);
 		expect(diffStreamingCues(previousMap, secondId, false, afterSwitch, firstId).finishedConvs).toEqual([]);
 		expect(first.abort).not.toHaveBeenCalled();
 

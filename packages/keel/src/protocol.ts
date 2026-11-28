@@ -1948,7 +1948,8 @@ export type ClientMessage =
 	| { type: "refresh_worktrees" }
 	| { type: "switch_worktree"; path: string }
 	| { type: "remove_worktree"; path: string; force?: boolean }
-	| { type: "delete_session"; path: string }
+	| { type: "delete_session"; path: string; engine?: EngineId }
+	| { type: "delete_project_sessions"; path: string }
 	| { type: "rename_session"; path: string; name: string }
 	| { type: "rename_conversation"; id: string; name: string }
 	| { type: "dismiss_conversation"; id: string; withFinishedSubagents?: boolean; force?: boolean; owner?: string }
@@ -1961,11 +1962,7 @@ export type ClientMessage =
 	| { type: "schedule_delete"; id: string }
 	| { type: "schedule_run"; id: string }
 	| { type: "schedule_toggle"; id: string; enabled: boolean }
-	| {
-			type: "get_compacted_messages";
-			compactionMessageId: string;
-			conversationId?: string;
-	  }
+	| { type: "get_compacted_messages"; compactionMessageId: string; conversationId?: string }
 	| {
 			type: "remote_ssh_probe";
 			reqId?: string;
@@ -4128,9 +4125,5 @@ export interface DeviceFileTransferProgress {
 }
 
 export interface DeviceFileTransferPreviewItem {
-	path: string;
-	size: number;
-	sha256: string;
-	baseline: string | null;
-	status: "create" | "identical" | "conflict";
+	path: string; size: number; sha256: string; baseline: string | null; status: "create" | "identical" | "conflict";
 }

@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { FiChevronDown, FiChevronUp } from "react-icons/fi";
+import {
+	FiArrowLeft,
+	FiArrowRight,
+	FiCheck,
+	FiChevronDown,
+	FiChevronUp,
+	FiCornerDownLeft,
+	FiHelpCircle,
+} from "react-icons/fi";
 import { useT } from "../i18n";
 import { sendQuestionAnswer } from "../question-answer-relay";
 import { useEscapeKey } from "../shortcut-stack";
@@ -79,6 +87,7 @@ export function QuestionDialog({
 	);
 	const [now, setNow] = useState(Date.now);
 	const submittedRef = useRef(false);
+	const otherInputRef = useRef<HTMLInputElement>(null);
 	const [queuedNotice, setQueuedNotice] = useState(false);
 
 	useEffect(() => {
@@ -205,14 +214,15 @@ export function QuestionDialog({
 		return q.options ?? [];
 	})();
 
-	const submitSelections = (sel: Record<string, string[]>) => {
+	const submitSelections = (sel: Record<string, string[]>, customOverride?: Record<string, string>) => {
+		const activeCustoms = customOverride ?? customs;
 		submittedRef.current = true;
 		clearQuestionDraft(draftId);
 		const answers = question.questions
 			.filter((qq) => isQuestionVisible(qq, sel))
 			.map((qq) => {
 				const selected = sel[qq.id] ?? [];
-				const custom = (customs[qq.id] ?? "").trim();
+				const custom = (activeCustoms[qq.id] ?? "").trim();
 				return { id: qq.id, selected, ...(custom ? { custom } : {}) };
 			});
 		const delivered = sendQuestionAnswer({
@@ -223,6 +233,15 @@ export function QuestionDialog({
 			...(owner ? { owner } : {}),
 		});
 		if (!delivered) setQueuedNotice(true);
+	};
+
+	const onSkip = () => {
+		const nextSel = { ...selections, [q.id]: [] };
+		const nextCustoms = { ...customs, [q.id]: "" };
+		setSelections(nextSel);
+		setCustoms(nextCustoms);
+		if (currentStep < total - 1) setStep(currentStep + 1);
+		else submitSelections(nextSel, nextCustoms);
 	};
 
 	const toggleOption = (qid: string, label: string) => {
@@ -293,6 +312,11 @@ export function QuestionDialog({
 					onOptionClick(q.id, effectiveOptions[idx].label, !!q.multiSelect);
 					return;
 				}
+				if (idx === effectiveOptions.length) {
+					e.preventDefault();
+					otherInputRef.current?.focus();
+					return;
+				}
 			}
 
 			if (e.key === "ArrowLeft" && currentStep > 0) {
@@ -316,129 +340,178 @@ export function QuestionDialog({
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [collapsed, effectiveOptions, q.id, q.multiSelect, currentStep, total, answered, onNext, onOptionClick]);
 
+	const waitLabel = questionWaitTime(question.createdAt ?? 0, now);
+	const hasMeta = Boolean(project || convTitle || queuedNotice || remainSec >= 0 || waitLabel);
+	const otherKeyNum = effectiveOptions.length < 9 ? effectiveOptions.length + 1 : undefined;
+
 	return (
 		<div className={`dialog-inline${collapsed ? " collapsed" : ""}`} data-dialog-kind="select">
-			<div className="dialog-head" onClick={collapsed ? () => setCollapsed(false) : undefined}>
-				<span className="dialog-badge">{t("modelQuestion")}</span>
-				{project && <span className="question-conv-title">{project}</span>}
-				{convTitle && (
-					<span className="question-conv-title" title={convTitle}>
-						{convTitle}
+			<div className="dialog-head question-dialog-head" onClick={collapsed ? () => setCollapsed(false) : undefined}>
+				<div className="question-head-main">
+					<span className="question-head-icon" aria-hidden="true">
+						<FiHelpCircle />
+						<span className="question-head-dot" />
 					</span>
-				)}
-				{total > 1 && <span className="question-progress">{t("questionStep", { cur: currentStep + 1, total })}</span>}
-				{queuedNotice && (
-					<span className="question-timer" title="connection lost">
-						{t("questionQueuedOffline")}
-					</span>
-				)}
-				{remainSec >= 0 ? (
-					<span className="question-timer">
-						{remainSec > 0 ? t("questionTimeout", { s: remainSec }) : t("questionTimeoutExpired")}
-					</span>
-				) : questionWaitTime(question.createdAt ?? 0, now) ? (
-					<span className="question-timer question-queue-wait">⏱ {questionWaitTime(question.createdAt ?? 0, now)}</span>
-				) : null}
-				{collapsed && (
-					<span className="question-collapsed-preview" title={questionPreview}>
-						{questionPreview}
-					</span>
-				)}
-				<div className="dialog-head-actions">
-					{onNavigate && (
-						<button
-							type="button"
-							className="btn"
-							onClick={(e) => {
-								e.stopPropagation();
-								onNavigate();
-							}}
-						>
-							{t("questionQueueNavigate")}
-						</button>
-					)}
-					<button
-						type="button"
-						className="dialog-toggle-collapse"
-						title={collapsed ? t("expandSection") : t("collapseSection")}
-						onClick={(e) => {
-							e.stopPropagation();
-							setCollapsed((c) => !c);
-						}}
-					>
-						{collapsed ? <FiChevronUp /> : <FiChevronDown />}
-					</button>
-					<button
-						type="button"
-						className="dialog-dismiss"
-						title={
-							onDefer ? t("questionQueueDefer") : hasRejectNote ? t("modelQuestionRejectWithNoteTip") : t("cancel")
-						}
-						onClick={(e) => {
-							e.stopPropagation();
-							if (onDefer) onDefer();
-							else cancel(hasRejectNote ? rejectReason : undefined);
-						}}
-					>
-						✕
-					</button>
-				</div>
-			</div>
-			{!collapsed && (
-				<>
-					{total > 1 && (
-						<div className="question-step-pills" role="tablist">
-							{visibleQuestions.map((qq, i) => {
-								const isCurrent = i === currentStep;
-								const isDone = answered(qq.id);
-								const pillLabel = qq.header || `${t("modelQuestion")} ${i + 1}`;
-								return (
-									<button
-										key={qq.id}
-										type="button"
-										className={`question-step-pill${isCurrent ? " active" : ""}${isDone ? " done" : ""}`}
-										onClick={() => setStep(i)}
-										title={pillLabel}
-										aria-selected={isCurrent}
-									>
-										<span className="question-step-pill-idx">{isDone && !isCurrent ? "✓" : i + 1}</span>
-										<span className="question-step-pill-label">{pillLabel}</span>
-									</button>
-								);
-							})}
-						</div>
-					)}
-					<div className="set-section" key={q.id}>
-						<div className="set-section-title">{q.header ?? `${t("modelQuestion")} ${currentStep + 1}`}</div>
+					{collapsed ? (
+						<span className="question-collapsed-preview" title={questionPreview}>
+							{questionPreview}
+						</span>
+					) : (
 						<div className="question-head">
 							<Markdown text={q.question} rawHtml />
 						</div>
+					)}
+					<div className="dialog-head-actions">
+						{total > 1 && !collapsed && (
+							<div className="question-stepper">
+								<button
+									type="button"
+									className="question-step-arrow dialog-prev"
+									disabled={currentStep === 0}
+									title={t("previous")}
+									onClick={(e) => {
+										e.stopPropagation();
+										setStep(currentStep - 1);
+									}}
+								>
+									<FiArrowLeft />
+								</button>
+								<span className="question-progress">{`${currentStep + 1} / ${total}`}</span>
+								<button
+									type="button"
+									className="question-step-arrow"
+									disabled={currentStep >= total - 1}
+									title={t("next")}
+									onClick={(e) => {
+										e.stopPropagation();
+										setStep(currentStep + 1);
+									}}
+								>
+									<FiArrowRight />
+								</button>
+							</div>
+						)}
+						{onNavigate && (
+							<button
+								type="button"
+								className="btn"
+								onClick={(e) => {
+									e.stopPropagation();
+									onNavigate();
+								}}
+							>
+								{t("questionQueueNavigate")}
+							</button>
+						)}
+						<button
+							type="button"
+							className="dialog-toggle-collapse"
+							title={collapsed ? t("expandSection") : t("collapseSection")}
+							onClick={(e) => {
+								e.stopPropagation();
+								setCollapsed((c) => !c);
+							}}
+						>
+							{collapsed ? <FiChevronUp /> : <FiChevronDown />}
+						</button>
+						<button
+							type="button"
+							className="dialog-dismiss"
+							title={
+								onDefer ? t("questionQueueDefer") : hasRejectNote ? t("modelQuestionRejectWithNoteTip") : t("cancel")
+							}
+							onClick={(e) => {
+								e.stopPropagation();
+								if (onDefer) onDefer();
+								else cancel(hasRejectNote ? rejectReason : undefined);
+							}}
+						>
+							✕
+						</button>
+					</div>
+				</div>
+				{!collapsed && hasMeta && (
+					<div className="question-meta-row">
+						{project && <span className="question-conv-title">{project}</span>}
+						{convTitle && (
+							<span className="question-conv-title" title={convTitle}>
+								{convTitle}
+							</span>
+						)}
+						{queuedNotice && (
+							<span className="question-timer" title="connection lost">
+								{t("questionQueuedOffline")}
+							</span>
+						)}
+						{remainSec >= 0 ? (
+							<span className="question-timer">
+								{remainSec > 0 ? t("questionTimeout", { s: remainSec }) : t("questionTimeoutExpired")}
+							</span>
+						) : waitLabel ? (
+							<span className="question-timer question-queue-wait">⏱ {waitLabel}</span>
+						) : null}
+					</div>
+				)}
+			</div>
+			{!collapsed && (
+				<>
+					<div className="set-section" key={q.id}>
 						{q.detail && (
 							<div className="set-hint">
 								<Markdown text={q.detail} rawHtml />
 							</div>
 						)}
-						{effectiveOptions.length > 0 && (
-							<div className="set-list">
-								{effectiveOptions.map((o, optIdx) => {
-									const active = (selections[q.id] ?? []).includes(o.label);
-									const isRecommended = o.recommended ?? (optIdx === 0 && effectiveOptions.length > 1);
-									const keyNum = optIdx < 9 ? optIdx + 1 : undefined;
-									return (
-										<QuestionOption
-											key={o.label}
-											label={o.label}
-											description={o.description}
-											mark={q.multiSelect ? (active ? "☑ " : "☐ ") : active ? "● " : "○ "}
-											active={active}
-											keyNumber={keyNum}
-											recommended={isRecommended}
-											onPick={() => onOptionClick(q.id, o.label, !!q.multiSelect)}
-										/>
-									);
-								})}
+						<div className="set-list">
+							{effectiveOptions.map((o, optIdx) => {
+								const active = (selections[q.id] ?? []).includes(o.label);
+								const isRecommended = o.recommended ?? (optIdx === 0 && effectiveOptions.length > 1);
+								const keyNum = optIdx < 9 ? optIdx + 1 : undefined;
+								return (
+									<QuestionOption
+										key={o.label}
+										label={o.label}
+										description={o.description}
+										multiSelect={!!q.multiSelect}
+										active={active}
+										keyNumber={keyNum}
+										recommended={isRecommended}
+										onPick={() => onOptionClick(q.id, o.label, !!q.multiSelect)}
+									/>
+								);
+							})}
+							<div className={`question-other-row${currentCustom ? " active" : ""}`}>
+								<span
+									className="question-key-badge"
+									title={otherKeyNum ? t("keyShortcutTip", { key: otherKeyNum }) : undefined}
+								>
+									{otherKeyNum ?? "✎"}
+								</span>
+								<input
+									ref={otherInputRef}
+									className="question-custom question-other-input"
+									placeholder={effectiveOptions.length > 0 ? t("modelQuestionOther") : t("modelQuestionCustom")}
+									value={customs[q.id] ?? ""}
+									onChange={(e) => setCustoms((prev) => ({ ...prev, [q.id]: e.target.value }))}
+									onCompositionEnd={imeGuard.onCompositionEnd}
+									onKeyDown={(e) => {
+										if (imeGuard.isImeKey(e.nativeEvent)) return;
+										if (e.key === "Enter") {
+											e.preventDefault();
+											if (answered(q.id)) onNext();
+										}
+									}}
+								/>
+								<div className="question-other-actions">
+									<button type="button" className="question-skip" onClick={onSkip}>
+										{t("skip")}
+									</button>
+									<button type="button" className="dialog-submit" disabled={!answered(q.id)} onClick={onNext}>
+										<span>{currentStep === total - 1 ? t("modelQuestionSubmitShort") : t("next")}</span>
+										<FiCornerDownLeft className="question-submit-enter" aria-hidden="true" />
+									</button>
+								</div>
 							</div>
-						)}
+						</div>
 						{previews.length > 0 && (
 							<div className="question-preview">
 								<div className="question-preview-label">{t("optionPreview")}</div>
@@ -449,39 +522,8 @@ export function QuestionDialog({
 								))}
 							</div>
 						)}
-						<input
-							className="set-prompt-input question-custom"
-							placeholder={t("modelQuestionCustom")}
-							value={customs[q.id] ?? ""}
-							onChange={(e) => setCustoms((prev) => ({ ...prev, [q.id]: e.target.value }))}
-							onCompositionEnd={imeGuard.onCompositionEnd}
-							onKeyDown={(e) => {
-								if (imeGuard.isImeKey(e.nativeEvent)) return;
-								if (e.key === "Enter") {
-									e.preventDefault();
-									if (answered(q.id)) onNext();
-								}
-							}}
-						/>
 					</div>
-					<label className="question-auto-submit">
-						<input
-							type="checkbox"
-							checked={autoSubmitLast}
-							onChange={(e) => {
-								const enabled = e.target.checked;
-								setAutoSubmitLast(enabled);
-								try {
-									localStorage.setItem("pi-web:question-auto-submit-last", enabled ? "1" : "0");
-								} catch {}
-							}}
-						/>
-						<span>{t("questionAutoSubmitLast")}</span>
-						{autoSubmitLast && currentStep === total - 1 && !q.multiSelect && effectiveOptions.length > 0 && (
-							<span className="question-auto-submit-hint">{t("questionPickSubmits")}</span>
-						)}
-					</label>
-					<div className="dialog-nav">
+					<div className="dialog-nav question-sub-bar">
 						<button
 							type="button"
 							className={`dialog-dismiss-inline${hasRejectNote ? " reject-note" : ""}`}
@@ -490,19 +532,23 @@ export function QuestionDialog({
 						>
 							{hasRejectNote ? t("modelQuestionRejectWithNote") : t("cancel")}
 						</button>
-						<div className="dialog-nav-right">
-							<button
-								type="button"
-								className="dialog-prev"
-								disabled={currentStep === 0}
-								onClick={() => setStep(currentStep - 1)}
-							>
-								{t("previous")}
-							</button>
-							<button type="button" className="dialog-submit" disabled={!answered(q.id)} onClick={onNext}>
-								{currentStep === total - 1 ? t("modelQuestionSubmit") : t("next")}
-							</button>
-						</div>
+						<label className="question-auto-submit">
+							<input
+								type="checkbox"
+								checked={autoSubmitLast}
+								onChange={(e) => {
+									const enabled = e.target.checked;
+									setAutoSubmitLast(enabled);
+									try {
+										localStorage.setItem("pi-web:question-auto-submit-last", enabled ? "1" : "0");
+									} catch {}
+								}}
+							/>
+							<span>{t("questionAutoSubmitLast")}</span>
+							{autoSubmitLast && currentStep === total - 1 && !q.multiSelect && effectiveOptions.length > 0 && (
+								<span className="question-auto-submit-hint">{t("questionPickSubmits")}</span>
+							)}
+						</label>
 					</div>
 				</>
 			)}
@@ -513,7 +559,7 @@ export function QuestionDialog({
 function QuestionOption({
 	label,
 	description,
-	mark,
+	multiSelect,
 	active,
 	keyNumber,
 	recommended,
@@ -521,7 +567,7 @@ function QuestionOption({
 }: {
 	label: string;
 	description?: string;
-	mark: string;
+	multiSelect: boolean;
 	active: boolean;
 	keyNumber?: number;
 	recommended?: boolean;
@@ -531,25 +577,31 @@ function QuestionOption({
 	const t = useT();
 	return (
 		<button type="button" ref={rowRef} className={`set-row question-option${active ? " active" : ""}`} onClick={onPick}>
-			<div className="set-row-name">
-				{keyNumber !== undefined && (
-					<span className="question-key-badge" title={t("keyShortcutTip", { key: keyNumber })}>
-						{keyNumber}
-					</span>
+			{keyNumber !== undefined && (
+				<span className="question-key-badge" title={t("keyShortcutTip", { key: keyNumber })}>
+					{keyNumber}
+				</span>
+			)}
+			<div className="question-option-body">
+				<div className="set-row-name">
+					<Markdown text={label} rawHtml />
+					{recommended && <span className="question-recommended-badge">{t("recommended")}</span>}
+				</div>
+				{description && (
+					<>
+						<div className="set-row-desc">
+							<Markdown text={description} rawHtml />
+						</div>
+						<HoverDetail anchorRef={rowRef} enabled={hoverCapable()} className="question-desc-tip">
+							<Markdown text={description} rawHtml />
+						</HoverDetail>
+					</>
 				)}
-				<span className="question-mark">{mark}</span>
-				<Markdown text={label} rawHtml />
-				{recommended && <span className="question-recommended-badge">{t("recommended")}</span>}
 			</div>
-			{description && (
-				<>
-					<div className="set-row-desc">
-						<Markdown text={description} rawHtml />
-					</div>
-					<HoverDetail anchorRef={rowRef} enabled={hoverCapable()} className="question-desc-tip">
-						<Markdown text={description} rawHtml />
-					</HoverDetail>
-				</>
+			{multiSelect && (
+				<span className={`question-select-mark${active ? " active" : ""}`} aria-hidden="true">
+					{active ? <FiCheck /> : null}
+				</span>
 			)}
 		</button>
 	);

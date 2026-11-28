@@ -188,6 +188,6 @@ describe("domains/engine-extras · 7 个引擎专属成员的转发", () => {
 		const { handlers } = createDispatchHandlers(runtime);
 		const missing = DISPATCH_SURFACE.filter((member) => handlers[member] === undefined);
 		expect(missing).toEqual([]);
-		expect(DISPATCH_SURFACE.length).toBe(185);
+		expect(DISPATCH_SURFACE.length).toBe(187);
 	});
 });

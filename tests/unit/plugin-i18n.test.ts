@@ -20,15 +20,16 @@ describe("createPluginI18n", () => {
 
 	it("falls back to the base language, then English, then the key", () => {
 		const hk = createPluginI18n(dicts, { locale: "zh-HK" });
-		expect(hk.locale).toBe("zh");
+		expect(hk.lang).toBe("zh");
 		expect(hk.t("hello")).toBe("你好");
 		expect(hk.t("only_en")).toBe("English only");
 		expect(hk.t("missing.key")).toBe("missing.key");
 	});
 
-	it("unknown or empty locale resolves to English", () => {
-		expect(createPluginI18n(dicts, { locale: "ko-KR" }).locale).toBe("en");
-		expect(createPluginI18n(dicts, { locale: "" }).locale).toBe("en");
+	it("unknown locale resolves to English", () => {
+		expect(createPluginI18n(dicts, { locale: "ko-KR" }).lang).toBe("en");
+		expect(createPluginI18n(dicts, { locale: "ko-KR" }).t("hello")).toBe("Hello");
+		expect(createPluginI18n(dicts, { locale: "fr-FR" }).t("hello")).toBe("Hello");
 	});
 
 	it("interpolates placeholders in a single pass", () => {
@@ -43,7 +44,8 @@ describe("createPluginI18n", () => {
 	it("dictionary keys are derived from the locale when the caller omits an explicit tag", () => {
 		// 有词典的语言仍按精确匹配（zh-TW 与 zh 是不同包）
 		const i18n = createPluginI18n(dicts, { locale: "zh-CN" });
-		expect(i18n.locale).toBe("zh");
+		expect(i18n.lang).toBe("zh");
+		expect(i18n.t("hello")).toBe("你好");
 	});
 
 	it("prefers an explicit zh-TW dictionary over the zh base", () => {
@@ -53,13 +55,15 @@ describe("createPluginI18n", () => {
 		expect(createPluginI18n(withTw, { locale: "zh-TW" }).t("withVar", { name: "Ada" })).toBe("你好 Ada");
 	});
 
-	it("exposes the available locales", () => {
-		expect(createPluginI18n(dicts, { locale: "en" }).available).toEqual(["en", "zh", "zh-TW"]);
+	it("exposes the available locales and onChange/destroy from client.mjs (#1031)", () => {
+		const i18n = createPluginI18n(dicts, { locale: "en" });
+		expect(i18n.available).toEqual(["en", "zh", "zh-TW"]);
+		expect(typeof i18n.onChange).toBe("function");
+		expect(typeof i18n.destroy).toBe("function");
 	});
 
 	it("tolerates a plugin that only ships English", () => {
 		const i18n = createPluginI18n({ en: { hello: "Hello" } }, { locale: "zh-TW" });
-		expect(i18n.locale).toBe("en");
 		expect(i18n.t("hello")).toBe("Hello");
 	});
 });

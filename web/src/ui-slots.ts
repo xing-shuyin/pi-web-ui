@@ -77,7 +77,7 @@ export interface BuiltinUiItem {
 	hidden?: boolean;
 	align?: UiAlign;
 	view?: string;
-	context?: "message" | "session" | "file" | "topbar" | "toolcall";
+	context?: "message" | "session" | "project" | "file" | "topbar" | "toolcall";
 }
 
 const SLOT_IDS: UiSlotId[] = [
@@ -235,6 +235,18 @@ export const BUILTIN_UI_ITEMS: BuiltinUiItem[] = [
 		order: 96,
 		group: "primary",
 		align: "end",
+		hidden: true,
+	},
+	{
+		id: "host:new-cli",
+		slot: "topbar.primary",
+		labelKey: "nativeCliCreate",
+		icon: "command",
+		kind: "action",
+		order: 96.2,
+		group: "primary",
+		align: "end",
+		hidden: true,
 	},
 	{
 		id: "host:new-ephemeral-chat",
@@ -288,6 +300,7 @@ export const BUILTIN_UI_ITEMS: BuiltinUiItem[] = [
 		order: 22,
 		group: "views",
 		align: "end",
+		hidden: true,
 	},
 	{
 		id: "host:canvas",
@@ -974,6 +987,34 @@ export const BUILTIN_UI_ITEMS: BuiltinUiItem[] = [
 		kind: "action",
 		context: "session",
 		order: 55,
+	},
+
+	{
+		id: "host:proj-new-chat",
+		slot: "contextmenu.project",
+		labelKey: "newChatAction",
+		icon: "plus",
+		kind: "action",
+		context: "project",
+		order: 1,
+	},
+	{
+		id: "host:proj-rename",
+		slot: "contextmenu.project",
+		labelKey: "renameProject",
+		icon: "edit",
+		kind: "action",
+		context: "project",
+		order: 2,
+	},
+	{
+		id: "host:proj-delete-all-sessions",
+		slot: "contextmenu.project",
+		labelKey: "deleteAllProjectSessions",
+		icon: "trash",
+		kind: "action",
+		context: "project",
+		order: 3,
 	},
 
 	{

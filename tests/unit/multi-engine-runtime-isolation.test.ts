@@ -272,7 +272,9 @@ describe("DSH workspace transaction", () => {
 			allEngines: ["codex", "dsh"],
 			ensureEngine: (engine) => services[engine as "codex" | "dsh"],
 			probeEngine: async () => ({ installed: true }),
-			send: (msg) => sent.push(msg),
+			send: (msg) => {
+				sent.push(msg);
+			},
 			sendShared: () => {},
 			buildReady: (engine) => ({ type: "ready", engine }) as any,
 			onEngineChanged: () => {},

@@ -3,11 +3,11 @@ import { existsSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { publishFileExclusiveSync } from "./atomic-file.js";
 import { shellQuotePosix, type RemoteSshService } from "./remote-ssh-service.js";
-import { homedir } from "node:os";
 import { join, resolve, posix } from "node:path";
+import { resolveDefaultDataDir } from "../shared/data-dir.js";
 
 export function resolveDataDir(): string {
-	return resolve(process.env.PI_WEB_DATA_DIR ?? join(homedir(), ".pi-web"));
+	return resolveDefaultDataDir();
 }
 
 export function uploadsRoot(dataDir = resolveDataDir()): string {

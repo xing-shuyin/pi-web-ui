@@ -3,6 +3,7 @@ import { resolveEnabledAgentTools } from "./tool-manager.js";
 export const PRESET_EXCLUDED_KEYS = [
 	"_promptPluginDevConfigured",
 	"nativeCliInheritModel",
+	"internalMcpEnabled",
 	"quickAskEnabled",
 	"quickAskModel",
 	"quickAskThinking",

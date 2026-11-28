@@ -8,6 +8,7 @@ import {
 } from "../domains/subagents/host.js";
 import { createSubagentTool } from "../adapters/tools/subagent.js";
 import { modelKeyOf, parseModelId } from "../domains/models/project-memory.js";
+import { getSubagentLedger } from "../subagent-ledger.js";
 import type { Conversation } from "../kernel/conversation/index.js";
 import type { TurnCapableSession } from "../contracts/session.js";
 import type { ClientRuntime } from "./client-runtime.js";
@@ -71,6 +72,80 @@ export function createSubagentRuntime(options: SubagentRuntimeOptions): Subagent
 	const sendWarning = (text: string, textEn: string): void => {
 		if (runtime.options.transport.isClosed()) return;
 		runtime.options.transport.send({ type: "notice", level: "warning", text, textEn });
+	};
+
+	const ledgerFor = (owner: ClientRuntime) => {
+		const dataDir = owner.options.stateStore?.()?.dataDir ?? runtime.options.stateStore?.()?.dataDir;
+		return dataDir ? getSubagentLedger(dataDir) : undefined;
+	};
+
+	type CompletedNotice = {
+		id: string;
+		type: string;
+		title: string;
+		state: "done" | "failed";
+		output: string;
+		error?: string;
+	};
+	const pendingNotices = new Map<
+		string,
+		{ owner: ClientRuntime; timer?: ReturnType<typeof setTimeout>; items: CompletedNotice[] }
+	>();
+	const wakeBursts = new Map<string, { count: number; lastAt: number }>();
+
+	const flushParentNotice = (parentId: string): void => {
+		const entry = pendingNotices.get(parentId);
+		if (!entry) return;
+		pendingNotices.delete(parentId);
+		if (entry.owner.isDisposed() || entry.items.length === 0) return;
+
+		const now = options.now();
+		const burst = wakeBursts.get(parentId);
+		const count = burst && now - burst.lastAt < 60_000 ? burst.count + 1 : 1;
+		wakeBursts.set(parentId, { count, lastAt: now });
+		if (count > 2) return;
+
+		const lines: string[] = [`[子代理执行完成通知] 共有 ${entry.items.length} 个子代理已完成：`, ""];
+		for (const item of entry.items) {
+			const badge = item.state === "done" ? "✅ 正常完成" : `❌ 执行失败${item.error ? `（${item.error}）` : ""}`;
+			lines.push(`- **${item.id}**（${item.type} · ${item.title}）— ${badge}`);
+			const summary = item.output.trim().slice(-500);
+			if (summary) {
+				lines.push(`  - 产出摘要:`);
+				lines.push(`  > ${summary.replace(/\r?\n/g, "\n  > ")}`);
+			}
+		}
+		const ledger = ledgerFor(entry.owner);
+		for (const item of entry.items) {
+			ledger?.upsert({
+				runId: item.id,
+				parentRunId: parentId,
+				cwd: entry.owner.cwd,
+				type: item.type,
+				title: item.title,
+				prompt: item.title,
+				state: item.state,
+				notifiedAt: now,
+				createdAt: now,
+				updatedAt: now,
+				bootId: "",
+				persisted: false,
+			});
+		}
+		void entry.owner.noteConversation(parentId, lines.join("\n")).catch(() => {});
+	};
+
+	const enqueueParentNotice = (owner: ClientRuntime, parentId: string, item: CompletedNotice): void => {
+		let entry = pendingNotices.get(parentId);
+		if (!entry) {
+			entry = { owner, items: [] };
+			pendingNotices.set(parentId, entry);
+		}
+		entry.owner = owner;
+		entry.items.push(item);
+		if (entry.timer) clearTimeout(entry.timer);
+		entry.timer = setTimeout(() => flushParentNotice(parentId), 400);
+		entry.timer.unref?.();
 	};
 
 	/**
@@ -226,6 +301,19 @@ export function createSubagentRuntime(options: SubagentRuntimeOptions): Subagent
 				cwd: spec.cwd,
 			});
 			registry.register({ id: child.id, parentId, title: child.meta.title, type: spec.type, prompt: spec.prompt });
+			ledgerFor(ownerRuntime)?.upsert({
+				runId: child.id,
+				parentRunId: parentId,
+				cwd: child.meta.cwd,
+				type: spec.type,
+				title: child.meta.title,
+				prompt: spec.prompt,
+				state: "running",
+				createdAt: options.now(),
+				updatedAt: options.now(),
+				bootId: "",
+				persisted: Boolean(spec.persist),
+			});
 			try {
 				const sessionRegistry = ownerRuntime.options.sessions ?? sessions;
 				const opened = await sessionRegistry.ensure(child);
@@ -237,12 +325,66 @@ export function createSubagentRuntime(options: SubagentRuntimeOptions): Subagent
 						const settled = registry.get(child.id);
 						if (settled?.state === "stopped") return;
 						registry.settle(child.id, { state: "done" });
+						const output = opened.session.getLastAssistantText?.() ?? "";
+						const finishedAt = options.now();
+						ledgerFor(ownerRuntime)?.upsert({
+							runId: child.id,
+							parentRunId: parentId,
+							cwd: child.meta.cwd,
+							type: spec.type,
+							title: child.meta.title,
+							prompt: spec.prompt,
+							state: "done",
+							outputTail: output,
+							createdAt: finishedAt,
+							finishedAt,
+							updatedAt: finishedAt,
+							bootId: "",
+							persisted: Boolean(spec.persist),
+						});
+						if (spec.notifyOnDone !== false && spec.notifyOnDone !== "manual") {
+							enqueueParentNotice(ownerRuntime, parentId, {
+								id: child.id,
+								type: spec.type,
+								title: child.meta.title,
+								state: "done",
+								output,
+							});
+						}
 					},
 					(error: unknown) => {
 						const settled = registry.get(child.id);
 						if (settled?.state === "stopped") return;
 						const msg = error instanceof Error ? error.message : String(error);
 						registry.settle(child.id, { state: "failed", error: msg });
+						const output = opened.session.getLastAssistantText?.() ?? "";
+						const finishedAt = options.now();
+						ledgerFor(ownerRuntime)?.upsert({
+							runId: child.id,
+							parentRunId: parentId,
+							cwd: child.meta.cwd,
+							type: spec.type,
+							title: child.meta.title,
+							prompt: spec.prompt,
+							state: "failed",
+							error: msg,
+							outputTail: output,
+							createdAt: finishedAt,
+							finishedAt,
+							updatedAt: finishedAt,
+							bootId: "",
+							persisted: Boolean(spec.persist),
+						});
+						if (spec.notifyOnDone !== false && spec.notifyOnDone !== "manual") {
+							enqueueParentNotice(ownerRuntime, parentId, {
+								id: child.id,
+								type: spec.type,
+								title: child.meta.title,
+								state: "failed",
+								output,
+								error: msg,
+							});
+						}
 					},
 				);
 			} catch (error) {
