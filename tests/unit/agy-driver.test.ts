@@ -63,4 +63,30 @@ console.log(JSON.stringify({ event: "result", result: { conversation_id: "conv-a
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
+
+	it("parses tab-separated and multi-space agy models output", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "agy-driver-models-"));
+		try {
+			const script = createFakeAgyExecutable(
+				dir,
+				`
+if (process.argv.includes("models")) {
+  console.log("Available models:");
+  console.log("gemini-4-neon-high\\tGemini 4 Neon (High)");
+  console.log("gemini-4-hydrogen-low" + "  " + "Gemini 4 Hydrogen (Low)");
+  process.exit(0);
+}
+`,
+			);
+			const driver = new AgyDriver(dir, { executablePath: script });
+			const models = await driver.listModels();
+			expect(models).toEqual([
+				{ id: "default", name: "Antigravity config default" },
+				{ id: "gemini-4-neon-high", name: "Gemini 4 Neon (High)" },
+				{ id: "gemini-4-hydrogen-low", name: "Gemini 4 Hydrogen (Low)" },
+			]);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 });

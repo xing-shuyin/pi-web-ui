@@ -109,7 +109,7 @@ export class AgyDriver extends BaseAgentDriver {
 			});
 			for (const rawLine of stdout.split(/\r?\n/)) {
 				const line = rawLine.replace(/^\r?[^\w\s]*\s*/, "").trim();
-				const match = line.match(/^([a-z0-9][a-z0-9._-]+)\s{2,}(.+)$/i);
+				const match = line.match(/^([a-z0-9][a-z0-9._-]+)(?:\t|\s{2,})(.+)$/i);
 				if (!match) continue;
 				const [, id, name] = match;
 				if (!rows.some((r) => r.id === id)) rows.push({ id, name: name.trim() });
